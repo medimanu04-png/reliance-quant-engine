@@ -259,7 +259,7 @@ class TelegramNotifier:
 📌 <b>Contract:</b> <code>{contract}</code>
 ⚡ <b>Action:</b> <b>BUY NOW AT MARKET</b>
 {dir_icon} <b>Direction:</b> {direction}
-📊 <b>Statistical Win Rate:</b> <b>{win_prob:.1f}%</b> (Optimal Gate ≥65%)
+📊 <b>Statistical Win Rate:</b> <b>{win_prob:.1f}%</b> (Execution Gate >60%)
 
 💰 <b>Entry Trigger:</b> <b>₹{entry_price:.2f}</b>
 🎯 <b>Profit Target:</b> <b>₹{target_price:.2f}</b> (+{target_pts:.1f} pts | +₹{potential_gain:,})
@@ -311,7 +311,7 @@ class TelegramNotifier:
 ⚠️ <b>ACTION:</b> <b>DO NOT BUY YET — GET READY ON BROKER!</b>
 📌 <b>Contract to Watch:</b> <code>{contract}</code>
 {dir_icon} <b>Directional Bias:</b> {bias_label}
-📊 <b>Statistical Confluence:</b> <b>{win_prob:.1f}%</b> (Optimal Gate ≥65%)
+📊 <b>Statistical Confluence:</b> <b>{win_prob:.1f}%</b> (Execution Gate >60%)
 
 💰 <b>Current Live LTP:</b> <b>₹{current_ltp:.2f}</b>
 ⚡ <b>Breakout Trigger Level:</b> <b>₹{breakout_trigger:.2f}</b>

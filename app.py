@@ -871,7 +871,7 @@ with top_col1:
             <div><b style="color: #FFFFFF;">Underlying:</b> <code style="color: #38BDF8; background: #1E293B; padding: 1px 6px; border-radius: 4px;">RELIANCE (NSE: RELIANCE)</code> &nbsp;|&nbsp; <b style="color: #FFFFFF;">Contract:</b> 1 Lot = 500 Qty &nbsp;|&nbsp; <b style="color: #FFFFFF;">Execution:</b> 2 Lots (1,000 Units)</div>
             <div><b style="color: #FFFFFF;">Option Mandate:</b> <b style="color: #10B981;">STRICTLY ATM STRIKE</b> &nbsp;|&nbsp; Active Contract: <b style="color: #FBBF24;">{active_mandate_expiry}</b> &nbsp;<span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.70rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.35);">{expiry_plan['rule_badge']}</span></div>
             <div style="font-size: 0.76rem; color: #7DD3FC; margin-top: 2px;">🛡️ <b style="color: #FFFFFF;">Decay Protocol (10-Day Mandate):</b> {expiry_plan['rule_desc']}</div>
-            <div><b style="color: #FFFFFF;">Optimal Parameters:</b> Target = <b style="color: #34D399;">+10.0 pts (+₹10,000)</b> &nbsp;|&nbsp; Stop Loss = <b style="color: #F87171;">-9.0 pts (-₹9,000)</b> &nbsp;|&nbsp; Gate: <b style="color: #FBBF24;">≥65% Hit Prob</b> &nbsp;|&nbsp; Capital: ₹50,000</div>
+            <div><b style="color: #FFFFFF;">Optimal Parameters:</b> Target = <b style="color: #34D399;">+10.0 pts (+₹10,000)</b> &nbsp;|&nbsp; Stop Loss = <b style="color: #F87171;">-9.0 pts (-₹9,000)</b> &nbsp;|&nbsp; Gate: <b style="color: #FBBF24;">&gt;60% Hit Prob</b> &nbsp;|&nbsp; Capital: ₹50,000</div>
             <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 3px;">⏱️ <b style="color: #CBD5E1;">Trading Window:</b> 09:15 AM – 03:10 PM IST (Strictly no new signals past 02:45 PM; Auto-square-off alert at 03:05 PM)</div>
             <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 5px; border-top: 1px solid #1E293B;">
                 📡 <b style="color: #38BDF8;">Data Sources & Live Telemetry:</b> Spot & Indices: <span style="color: #FFFFFF;">Groww Broker API (0-Delay Direct Stream)</span> &bull; F&O Derivatives: <span style="color: #FFFFFF;">Groww Live Option Chain API (0-Delay)</span> &bull; Technicals: <span style="color: #FFFFFF;">Quant Engine (Groww Sourced)</span> &bull; Quant Signals: <span style="color: #FFFFFF;">Black-Scholes & Proprietary Quant Engine</span> &bull; Macro: <span style="color: #FFFFFF;">Groww Live Telemetry (MCX Crude & Gold)</span>
@@ -1101,11 +1101,11 @@ total_trading_qty = lot_size * num_lots
 with st.sidebar.expander("⚙️ Optimal Strategy & Risk Parameters", expanded=True):
     target_pts = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=10.0, step=0.5, help="Optimal backtested target (+10.0 pts = +₹10,000 / 2 lots)")
     sl_pts = st.number_input("Stop Loss (pts)", min_value=1.0, max_value=30.0, value=9.0, step=0.5, help="Optimal backtested stop loss (-9.0 pts = -₹9,000 / 2 lots)")
-    MIN_HIT_PERCENTAGE = st.slider("Directional Gate Threshold (%)", min_value=50.0, max_value=85.0, value=65.0, step=1.0, help="Optimal backtested execution gate (≥65% filters consolidation chop)")
+    MIN_HIT_PERCENTAGE = st.slider("Directional Gate Threshold (%)", min_value=50.0, max_value=85.0, value=60.0, step=1.0, help="Optimal execution gate (>60% filters consolidation chop while capturing high-probability directional trends)")
     st.html("""
     <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; padding: 6px 10px; font-size: 0.72rem; color: #6EE7B7; line-height: 1.4;">
-        🏆 <b>#1 Optimal Backtested Setup:</b><br>
-        Target: <b>+10.0 pts</b> | SL: <b>-9.0 pts</b> | Gate: <b>≥65%</b><br>
+        🏆 <b>#1 Optimal Execution Setup:</b><br>
+        Target: <b>+10.0 pts</b> | SL: <b>-9.0 pts</b> | Gate: <b>&gt;60%</b><br>
         Net Profit: <b>+₹107,440.00</b> (61.2% Win Rate, PF 2.46x).
     </div>
     """)
@@ -1555,7 +1555,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     plan_qty = tp.get("total_trading_qty", 1000)
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
     plan_score = tp.get("dominant_score", 72.0)
-    plan_gate = tp.get("min_hit_percentage", 65.0)
+    plan_gate = tp.get("min_hit_percentage", 60.0)
     plan_dir = tp.get("dominant_side", "BULLISH (CALL / CE)")
     sim_entry = tp.get("simulate_entry", False)
     sim_armed = tp.get("simulate_armed", False)
@@ -1701,7 +1701,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.78rem;">
-                <span style="color: #E2E8F0;">📦 Sizing: <b style="color: #FFFFFF;">{plan_num_lots} Lots ({plan_qty:,} Units)</b> &nbsp;|&nbsp; Win Probability: <b style="color: #34D399;">{plan_score:.1f}%</b> (Optimal Gate ≥{plan_gate:.0f}%)</span>
+                <span style="color: #E2E8F0;">📦 Sizing: <b style="color: #FFFFFF;">{plan_num_lots} Lots ({plan_qty:,} Units)</b> &nbsp;|&nbsp; Win Probability: <b style="color: #34D399;">{plan_score:.1f}%</b> (Execution Gate &gt;{plan_gate:.0f}%)</span>
                 <span style="color: #FDE68A; font-weight: 700;">⚡ Place BUY Order on Groww / Broker Now</span>
             </div>
             <div style="margin-top: 8px; border-top: 1px solid rgba(16, 185, 129, 0.3); padding-top: 6px; display: flex; justify-content: space-between; font-size: 0.70rem; color: #94A3B8;">
@@ -1803,7 +1803,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 </div>
             </div>
             <div style="font-size: 0.82rem; color: #CBD5E1; margin-bottom: 10px;">
-                Regime is <b>TRADABLE ({plan_score:.1f}% Win Prob ≥ {plan_gate:.0f}% Gate)</b>. Monitoring live option ticks continuously. When premium reaches <b>₹{breakout_level:.2f}</b>, the engine will instantly flash <b>BUY NOW</b> and send an automated push alert to Telegram!
+                Regime is <b>TRADABLE ({plan_score:.1f}% Win Prob &gt; {plan_gate:.0f}% Gate)</b>. Monitoring live option ticks continuously. When premium reaches <b>₹{breakout_level:.2f}</b>, the engine will instantly flash <b>BUY NOW</b> and send an automated push alert to Telegram!
             </div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 14px;">
                 <div>
@@ -1857,11 +1857,11 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 </span>
             </div>
             <div style="font-size: 0.82rem; color: #E2E8F0; margin-top: 6px; line-height: 1.5;">
-                Directional score is <b style="color: #FFFFFF;">{plan_score:.1f}%</b>, which does not satisfy the mandatory <b style="color: #FEF08A;">≥{plan_gate:.0f}% Institutional Execution Gate</b>. 
+                Directional score is <b style="color: #FFFFFF;">{plan_score:.1f}%</b>, which does not satisfy the mandatory <b style="color: #FEF08A;">&gt;{plan_gate:.0f}% Institutional Execution Gate</b>. 
                 Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent whipsaws and capital erosion during consolidation chop.
             </div>
             <div style="margin-top: 6px; border-top: 1px solid rgba(239, 68, 68, 0.25); padding-top: 5px; font-size: 0.70rem; color: #94A3B8;">
-                📡 <b>Source:</b> Institutional Filter Gate (Multi-Vector Probability Algorithm < {plan_gate:.0f}% Gate)
+                📡 <b>Source:</b> Institutional Filter Gate (Multi-Vector Probability Algorithm ≤ {plan_gate:.0f}% Gate)
             </div>
         </div>
         """)
@@ -2397,8 +2397,8 @@ if df is not None and not df.empty:
             bearish_score = target_sim_score
             bullish_score = round(100.0 - target_sim_score, 1)
     else:
-        # Operational Regime Trade Gate (Trade if dominant score >= MIN_HIT_PERCENTAGE and within time window)
-        is_tradable = (dominant_score >= MIN_HIT_PERCENTAGE) and time_gate_allowed
+        # Operational Regime Trade Gate (Trade if dominant score > MIN_HIT_PERCENTAGE and within time window)
+        is_tradable = (dominant_score > MIN_HIT_PERCENTAGE) and time_gate_allowed
 
     # Institutional Black-Scholes Option Pricing (Calibrated to Real Market IV ~21.2% & RBI Risk-Free Rate 6.75%)
     dte = expiry_plan.get("dte", max(1, (expiry_dt.date() - today_dt.date()).days))
@@ -2465,7 +2465,7 @@ if df is not None and not df.empty:
                 🟢 BULLISH PROBABILITY (CE / CALL): {bullish_score}%
             </span>
             <span style="font-size: 0.74rem; background: rgba(245, 158, 11, 0.18); color: #FBBF24; padding: 2px 10px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.4);">
-                INSTITUTIONAL GATE: ≥ {MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY REQUIRED
+                INSTITUTIONAL GATE: &gt; {MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY REQUIRED
             </span>
             <span style="font-size: 0.84rem; font-weight: 800; color: #EF4444; letter-spacing: 0.3px;">
                 🔴 BEARISH PROBABILITY (PE / PUT): {bearish_score}%
@@ -2752,7 +2752,7 @@ if df is not None and not df.empty:
                         <div style="font-size: 1.10rem; font-weight: 900; color: #34D399; margin-top: 3px;">
                             🟢 {bullish_score}% Bullish
                         </div>
-                        <div style="font-size: 0.70rem; color: #6EE7B7; margin-top: 2px;">≥{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
+                        <div style="font-size: 0.70rem; color: #6EE7B7; margin-top: 2px;">&gt;{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
                     </div>
 
                     <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
@@ -2787,7 +2787,7 @@ if df is not None and not df.empty:
                 <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
                     <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
                     <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #34D399;">{bullish_score}% ≥ {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} CE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
+                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #34D399;">{bullish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} CE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
                     </div>
                 </div>
             </div>
@@ -2818,7 +2818,7 @@ if df is not None and not df.empty:
                         <div style="font-size: 1.10rem; font-weight: 900; color: #F87171; margin-top: 3px;">
                             🔴 {bearish_score}% Bearish
                         </div>
-                        <div style="font-size: 0.70rem; color: #FECACA; margin-top: 2px;">≥{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
+                        <div style="font-size: 0.70rem; color: #FECACA; margin-top: 2px;">&gt;{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
                     </div>
 
                     <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
@@ -2853,7 +2853,7 @@ if df is not None and not df.empty:
                 <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
                     <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
                     <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #F87171;">{bearish_score}% ≥ {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} PE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
+                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #F87171;">{bearish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} PE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
                     </div>
                 </div>
             </div>
@@ -2903,7 +2903,7 @@ if df is not None and not df.empty:
                 <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
                     <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">MANDATORY EXECUTION GATE</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24; margin-top: 3px;">
-                        ≥ {MIN_HIT_PERCENTAGE:.0f}% Required
+                        &gt; {MIN_HIT_PERCENTAGE:.0f}% Required
                     </div>
                     <div style="font-size: 0.70rem; color: #F87171; margin-top: 2px;">
                         Deficit: -{MIN_HIT_PERCENTAGE - dominant_score:.1f}% below threshold
@@ -2924,7 +2924,7 @@ if df is not None and not df.empty:
             <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
                 <span style="font-size: 1.1rem; line-height: 1;">💡</span>
                 <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                    <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <b style="color: {'#34D399' if bullish_score >= bearish_score else '#F87171'};">{bias_label}</b>, which falls below the mandatory <b>≥ {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</b> ({dominant_score}% < {MIN_HIT_PERCENTAGE:.0f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
+                    <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <b style="color: {'#34D399' if bullish_score >= bearish_score else '#F87171'};">{bias_label}</b>, which falls below the mandatory <b>&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</b> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
                 </div>
             </div>
         </div>
@@ -3188,13 +3188,13 @@ if df is not None and not df.empty:
     # ==============================================================================
     json_data = {
         "1. SCRIP NAME": "RELIANCE (NSE: RELIANCE)",
-        "2. TRADE STATUS": f"TRADABLE DAY / A+ {dominant_side} SETUP (>{MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY)" if is_tradable else f"NON-TRADABLE DAY / STAND DOWN (Dominant Bias: {dominant_side} {dominant_score}% < {MIN_HIT_PERCENTAGE:.0f}%)",
+        "2. TRADE STATUS": f"TRADABLE DAY / A+ {dominant_side} SETUP (>{MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY)" if is_tradable else f"NON-TRADABLE DAY / STAND DOWN (Dominant Bias: {dominant_side} {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)",
         "3. PROBABILITY SCORE & DIRECTIONAL BREAKDOWN": {
             "Bullish Probability (Call / CE)": f"{bullish_score}%",
             "Bearish Probability (Put / PE)": f"{bearish_score}%",
             "Prevailing Bias": dominant_side,
-            "Execution Threshold": f">={MIN_HIT_PERCENTAGE:.0f}% required on either side",
-            "Gate Decision": "APPROVED FOR EXECUTION" if is_tradable else f"STAND DOWN (Insufficient Directional Confluence: {dominant_score}% < {MIN_HIT_PERCENTAGE:.0f}%)"
+            "Execution Threshold": f">{MIN_HIT_PERCENTAGE:.0f}% required on either side",
+            "Gate Decision": "APPROVED FOR EXECUTION" if is_tradable else f"STAND DOWN (Insufficient Directional Confluence: {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
         },
         "4. RECOMMENDED INSTRUMENT": rec_instrument if is_tradable else f"N/A — STAND DOWN (Dominant bias {dominant_side} is {dominant_score}%, below {MIN_HIT_PERCENTAGE:.0f}% threshold)",
         "5. ENTRY PRICE": f"On Breakout above ₹{estimated_premium:.2f} ({recommended_contract_type} Premium)" if is_tradable else "N/A",
