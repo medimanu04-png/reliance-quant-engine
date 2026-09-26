@@ -647,8 +647,8 @@ def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance
         "calendar": False,
         "support_host": "https://www.tradingview.com"
     }
-    encoded_params = urllib.parse.quote(json.dumps(tv_params))
-    tv_embed_url = f"https://www.tradingview-widget.com/embed-widget/advanced-chart/?locale=en#{encoded_params}"
+    encoded_params = urllib.parse.quote(json.dumps(tv_params, separators=(',', ':')))
+    tv_embed_url = f"https://www.tradingview-widget.com/embed-widget/advanced-chart/?symbol={clean_sym}&interval={tf_tv}&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en#{encoded_params}"
     popout_url = f"https://in.tradingview.com/chart/?symbol={clean_sym}&interval={tf_tv}"
 
     tf_html = ""
