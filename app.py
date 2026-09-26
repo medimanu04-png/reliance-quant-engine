@@ -526,186 +526,157 @@ st.markdown("""
         padding: 12px 15px !important;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
     }
+
+    /* ========================================================================= */
+    /* ZERO-DELAY NATIVE POPUP CHART MODAL SYSTEM (:target)                      */
+    /* ========================================================================= */
+    .quant-chart-modal {
+        display: none;
+        position: fixed !important;
+        z-index: 999999999 !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        background: rgba(3, 7, 18, 0.88) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    .quant-chart-modal:target {
+        display: flex !important;
+    }
+    .quant-modal-backdrop {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        z-index: 1 !important;
+        cursor: default !important;
+    }
+    .quant-modal-content {
+        background: #0B1120 !important;
+        border: 1.5px solid #334155 !important;
+        border-radius: 14px !important;
+        width: 92vw !important;
+        max-width: 1400px !important;
+        height: 86vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        box-shadow: 0 25px 70px rgba(0,0,0,0.95) !important;
+        z-index: 2 !important;
+        position: relative !important;
+        animation: zoomInModal 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    .quant-card-link {
+        text-decoration: none !important;
+        color: inherit !important;
+        display: block !important;
+        cursor: pointer !important;
+    }
+    .quant-card-link:hover {
+        text-decoration: none !important;
+        color: inherit !important;
+    }
+    .clickable-quant-card {
+        cursor: pointer !important;
+        transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
+    }
+    .clickable-quant-card:hover {
+        transform: translateY(-2px) !important;
+        border-color: #38BDF8 !important;
+        box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25) !important;
+    }
+    @keyframes zoomInModal {
+        from { transform: scale(0.96); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 0.5. ZERO-DELAY CLIENT-SIDE LIVE TRADINGVIEW CHART POPOUT MODAL & CONTROLLER
+# 0.5. ZERO-DELAY POPUP CHART MODAL SYSTEM
 # ==============================================================================
-st.html("""
-<!-- Global Zero-Delay Live Chart Popout Modal -->
-<div id="quantChartModal" style="display: none; position: fixed; z-index: 99999999; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(3, 7, 18, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); align-items: center; justify-content: center; opacity: 0; transition: opacity 0.18s ease-in-out;">
-    <div style="background: #0B1120; border: 1.5px solid #334155; border-radius: 14px; width: 92vw; max-width: 1400px; height: 86vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 70px rgba(0,0,0,0.95); animation: zoomInModal 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
-        <!-- Modal Top Bar -->
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #070B14; border-bottom: 1px solid #1E293B;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <span class="live-dot" style="margin-right: 0;"></span>
-                <div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <h3 id="chartModalTitle" style="margin: 0; font-size: 1.10rem; color: #FFFFFF; font-weight: 800; letter-spacing: -0.3px;">RELIANCE Spot • Live Chart</h3>
-                        <span id="chartSymbolBadge" style="background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 2px 8px; border-radius: 4px; font-size: 0.70rem; font-weight: 700;">NSE:RELIANCE</span>
-                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 8px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">0-DELAY REAL-TIME</span>
-                    </div>
-                    <div style="font-size: 0.70rem; color: #94A3B8; margin-top: 2px;">
-                        Interactive Candlestick Feed • Asia/Kolkata (IST) • Direct Streaming
+import streamlit.components.v1 as _modal_components
+
+def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance=False):
+    clean_sym = symbol.replace(":", "%3A")
+    tv_embed_url = f"https://s.tradingview.com/widgetembed/?symbol={clean_sym}&interval={active_tf}&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en&hideideas=1"
+    popout_url = f"https://s.tradingview.com/widgetembed/?symbol={clean_sym}&interval={active_tf}&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en"
+
+    tf_html = ""
+    if is_reliance:
+        tfs = [("1", "#modal-chart-reliance-1m"), ("5", "#modal-chart-reliance"), ("15", "#modal-chart-reliance-15m"), ("1D", "#modal-chart-reliance-1d")]
+        btns = []
+        for tf_label, tf_href in tfs:
+            active_style = "background: #10B981; color: #FFFFFF;" if (tf_label == active_tf or (tf_label == '1D' and active_tf == 'D')) else "background: transparent; color: #94A3B8;"
+            btns.append(f'<a href="{tf_href}" style="{active_style} padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; text-decoration: none; display: inline-block;">{tf_label}</a>')
+        tf_html = f'<div style="display: flex; background: #0F172A; border: 1px solid #334155; border-radius: 6px; padding: 2px; gap: 2px;">{"".join(btns)}</div>'
+
+    tf_disp = active_tf if active_tf != 'D' else '1D'
+    return f"""
+    <div id="{modal_id}" class="quant-chart-modal">
+        <a href="#close" class="quant-modal-backdrop" aria-label="Close modal"></a>
+        <div class="quant-modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #070B14; border-bottom: 1px solid #1E293B; z-index: 2; position: relative;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="live-dot" style="margin-right: 0;"></span>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <h3 style="margin: 0; font-size: 1.10rem; color: #FFFFFF; font-weight: 800; letter-spacing: -0.3px;">{title}</h3>
+                            <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 2px 8px; border-radius: 4px; font-size: 0.70rem; font-weight: 700;">{symbol}</span>
+                            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 8px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">0-DELAY REAL-TIME</span>
+                        </div>
+                        <div style="font-size: 0.70rem; color: #94A3B8; margin-top: 2px;">
+                            Interactive Candlestick Feed • Asia/Kolkata (IST) • Direct Streaming ({tf_disp} Interval)
+                        </div>
                     </div>
                 </div>
-            </div>
-            <!-- Timeframe selector and action buttons -->
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="display: flex; background: #0F172A; border: 1px solid #334155; border-radius: 6px; padding: 2px; gap: 2px;">
-                    <button onclick="window.setChartInterval('1')" class="chart-tf-btn" id="tf_btn_1" style="background: transparent; border: none; color: #94A3B8; padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; cursor: pointer;">1m</button>
-                    <button onclick="window.setChartInterval('5')" class="chart-tf-btn" id="tf_btn_5" style="background: #10B981; border: none; color: #FFFFFF; padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; cursor: pointer;">5m</button>
-                    <button onclick="window.setChartInterval('15')" class="chart-tf-btn" id="tf_btn_15" style="background: transparent; border: none; color: #94A3B8; padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; cursor: pointer;">15m</button>
-                    <button onclick="window.setChartInterval('D')" class="chart-tf-btn" id="tf_btn_D" style="background: transparent; border: none; color: #94A3B8; padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; cursor: pointer;">1D</button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    {tf_html}
+                    <a href="{popout_url}" target="_blank" title="Open detached popup window for dual monitors" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38BDF8; padding: 6px 13px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                        <span>↗ Popout Window</span>
+                    </a>
+                    <a href="#close" title="Close chart popout (or press Esc)" style="background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.45); color: #F87171; padding: 6px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; text-decoration: none; display: inline-block;">
+                        ✕ Close
+                    </a>
                 </div>
-                <button onclick="window.popoutNewWindow()" title="Open detached popup window for dual monitors" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38BDF8; padding: 6px 13px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 4px;">
-                    <span>↗ Popout Window</span>
-                </button>
-                <button onclick="window.closeChartModal()" title="Close chart popout (Esc)" style="background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.45); color: #F87171; padding: 6px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; cursor: pointer;">
-                    ✕ Close (Esc)
-                </button>
             </div>
-        </div>
-        <!-- Chart Iframe Container -->
-        <div style="flex: 1; width: 100%; height: 100%; position: relative; background: #0F172A;">
-            <iframe id="chartModalIframe" src="" style="width: 100%; height: 100%; border: none; display: block;" allowtransparency="true"></iframe>
+            <div style="flex: 1; width: 100%; height: 100%; position: relative; background: #0F172A; z-index: 2;">
+                <iframe src="{tv_embed_url}" style="width: 100%; height: 100%; border: none; display: block;" allowtransparency="true" loading="lazy"></iframe>
+            </div>
         </div>
     </div>
-</div>
+    """
 
-<style>
-@keyframes zoomInModal {
-    from { transform: scale(0.96); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-}
-.clickable-quant-card {
-    cursor: pointer !important;
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
-}
-.clickable-quant-card:hover {
-    transform: translateY(-2px) !important;
-    border-color: #38BDF8 !important;
-    box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25) !important;
-}
-</style>
+_all_modals_html = "".join([
+    _render_chart_modal_html("modal-chart-reliance", "NSE:RELIANCE", "RELIANCE Spot • Live Chart", active_tf="5", is_reliance=True),
+    _render_chart_modal_html("modal-chart-reliance-1m", "NSE:RELIANCE", "RELIANCE Spot (1m) • Live Chart", active_tf="1", is_reliance=True),
+    _render_chart_modal_html("modal-chart-reliance-15m", "NSE:RELIANCE", "RELIANCE Spot (15m) • Live Chart", active_tf="15", is_reliance=True),
+    _render_chart_modal_html("modal-chart-reliance-1d", "NSE:RELIANCE", "RELIANCE Spot (1D) • Live Chart", active_tf="D", is_reliance=True),
+    _render_chart_modal_html("modal-chart-nifty", "NSE:NIFTY", "NIFTY 50 • Live Index Chart", active_tf="5"),
+    _render_chart_modal_html("modal-chart-sensex", "BSE:SENSEX", "BSE SENSEX • Live Index Chart", active_tf="5"),
+    _render_chart_modal_html("modal-chart-banknifty", "NSE:BANKNIFTY", "BANK NIFTY • Live Index Chart", active_tf="5"),
+    _render_chart_modal_html("modal-chart-crude", "MCX:CRUDEOIL1!", "CRUDE OIL (MCX) • Live Commodity Chart", active_tf="5"),
+    _render_chart_modal_html("modal-chart-gold", "MCX:GOLD1!", "GOLD (MCX) • Live Commodity Chart", active_tf="5"),
+])
+st.html(_all_modals_html)
 
+_modal_components.html("""
 <script>
-(function() {
-    window.currentChartSymbol = 'NSE:RELIANCE';
-    window.currentChartInterval = '5';
-
-    function getTargetDoc() {
-        if (document.getElementById('quantChartModal')) return document;
-        try {
-            if (window.parent && window.parent.document && window.parent.document.getElementById('quantChartModal')) {
-                return window.parent.document;
-            }
-        } catch(e) {}
-        try {
-            if (window.top && window.top.document && window.top.document.getElementById('quantChartModal')) {
-                return window.top.document;
-            }
-        } catch(e) {}
-        return document;
-    }
-
-    window.openChartModal = function(symbol, title) {
-        window.currentChartSymbol = symbol || 'NSE:RELIANCE';
-        const doc = getTargetDoc();
-        const modal = doc.getElementById('quantChartModal') || document.getElementById('quantChartModal');
-        const iframe = doc.getElementById('chartModalIframe') || document.getElementById('chartModalIframe');
-        const titleEl = doc.getElementById('chartModalTitle') || document.getElementById('chartModalTitle');
-        const badgeEl = doc.getElementById('chartSymbolBadge') || document.getElementById('chartSymbolBadge');
-
-        if (titleEl) titleEl.innerText = (title || symbol) + ' • Live Chart';
-        if (badgeEl) badgeEl.innerText = window.currentChartSymbol;
-
-        if (iframe) {
-            const cleanSym = encodeURIComponent(window.currentChartSymbol);
-            iframe.src = 'https://s.tradingview.com/widgetembed/?symbol=' + cleanSym + '&interval=' + window.currentChartInterval + '&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en&hideideas=1';
+try {
+    const parentWin = window.parent;
+    parentWin.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            parentWin.location.hash = 'close';
         }
-        if (modal) {
-            modal.style.display = 'flex';
-            setTimeout(function() { modal.style.opacity = '1'; }, 10);
-        }
-    };
-
-    window.closeChartModal = function() {
-        const doc = getTargetDoc();
-        const modal = doc.getElementById('quantChartModal') || document.getElementById('quantChartModal');
-        const iframe = doc.getElementById('chartModalIframe') || document.getElementById('chartModalIframe');
-        if (modal) {
-            modal.style.opacity = '0';
-            setTimeout(function() { modal.style.display = 'none'; }, 180);
-        }
-        if (iframe) {
-            iframe.src = '';
-        }
-    };
-
-    window.setChartInterval = function(interval) {
-        window.currentChartInterval = interval;
-        const doc = getTargetDoc();
-        const iframe = doc.getElementById('chartModalIframe') || document.getElementById('chartModalIframe');
-
-        ['1', '5', '15', 'D'].forEach(function(tf) {
-            const btn = doc.getElementById('tf_btn_' + tf) || document.getElementById('tf_btn_' + tf);
-            if (btn) {
-                if (tf === interval) {
-                    btn.style.background = '#10B981';
-                    btn.style.color = '#FFFFFF';
-                } else {
-                    btn.style.background = 'transparent';
-                    btn.style.color = '#94A3B8';
-                }
-            }
-        });
-
-        if (iframe && iframe.src) {
-            const cleanSym = encodeURIComponent(window.currentChartSymbol);
-            iframe.src = 'https://s.tradingview.com/widgetembed/?symbol=' + cleanSym + '&interval=' + interval + '&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en&hideideas=1';
-        }
-    };
-
-    window.popoutNewWindow = function() {
-        const cleanSym = encodeURIComponent(window.currentChartSymbol || 'NSE:RELIANCE');
-        const url = 'https://s.tradingview.com/widgetembed/?symbol=' + cleanSym + '&interval=' + window.currentChartInterval + '&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en';
-        window.open(url, '_blank', 'width=1280,height=800,location=no,toolbar=no,menubar=no,status=no');
-    };
-
-    // Close on backdrop click
-    const localModal = document.getElementById('quantChartModal');
-    if (localModal) {
-        localModal.addEventListener('click', function(e) {
-            if (e.target === localModal) window.closeChartModal();
-        });
-    }
-
-    window.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') window.closeChartModal();
     });
-
-    try {
-        if (window.parent && window.parent !== window) {
-            window.parent.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') window.closeChartModal();
-            });
-            window.parent.openChartModal = window.openChartModal;
-            window.parent.closeChartModal = window.closeChartModal;
-            window.parent.setChartInterval = window.setChartInterval;
-            window.parent.popoutNewWindow = window.popoutNewWindow;
-        }
-        if (window.top && window.top !== window) {
-            window.top.openChartModal = window.openChartModal;
-            window.top.closeChartModal = window.closeChartModal;
-            window.top.setChartInterval = window.setChartInterval;
-            window.top.popoutNewWindow = window.popoutNewWindow;
-        }
-    } catch(e) {}
-})();
+} catch(e) {}
 </script>
-""")
+""", height=0)
 
 # ==============================================================================
 # MANDATORY GROWW BROKER AUTHENTICATION GATE
@@ -1113,19 +1084,19 @@ def render_live_macro_benchmarks_strip():
         "CRUDE OIL": "Groww API (MCX: CRUDE OIL)",
         "GOLD": "Groww API (MCX: GOLD)"
     }
-    benchmark_tv_map = {
-        "NIFTY 50": "NSE:NIFTY",
-        "SENSEX": "BSE:SENSEX",
-        "BANK NIFTY": "NSE:BANKNIFTY",
-        "CRUDE OIL": "MCX:CRUDEOIL1!",
-        "GOLD": "MCX:GOLD1!"
+    benchmark_modal_map = {
+        "NIFTY 50": "modal-chart-nifty",
+        "SENSEX": "modal-chart-sensex",
+        "BANK NIFTY": "modal-chart-banknifty",
+        "CRUDE OIL": "modal-chart-crude",
+        "GOLD": "modal-chart-gold"
     }
     for key in order:
         if key not in benchmarks:
             continue
         data = benchmarks[key]
         card_source = benchmark_source_map.get(key, "Groww Live Feed")
-        tv_sym = benchmark_tv_map.get(key, "NSE:NIFTY")
+        target_modal_id = benchmark_modal_map.get(key, "modal-chart-nifty")
         is_pos = data['change'] >= 0
 
         if is_pos:
@@ -1154,32 +1125,34 @@ def render_live_macro_benchmarks_strip():
         icon_prefix = f"{data['icon']} " if data.get('icon') else ""
 
         cards_html.append(f"""
-        <div class="live-benchmark-card clickable-quant-card" onclick="window.openChartModal('{tv_sym}', '{data['name']}')" title="Click to popout live 0-delay chart">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.5px;">{icon_prefix}{data['name']}</span>
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid {badge_border};">
-                        {pts_sign}{data['pct_change']:.2f}%
+        <a href="#{target_modal_id}" class="quant-card-link" title="Click to popout live 0-delay chart">
+            <div class="live-benchmark-card clickable-quant-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.5px;">{icon_prefix}{data['name']}</span>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid {badge_border};">
+                            {pts_sign}{data['pct_change']:.2f}%
+                        </span>
+                        <span style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 1px 5px; border-radius: 3px; font-weight: 700;">📈</span>
+                    </div>
+                </div>
+                <div style="font-size: 1.55rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0; letter-spacing: -0.5px;">
+                    {val_str}
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                    <span style="color: {pts_color}; font-weight: 700; font-size: 0.86rem; letter-spacing: 0.2px;">
+                        {chg_sub_str}
                     </span>
-                    <span style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 1px 5px; border-radius: 3px; font-weight: 700;">📈</span>
+                    <span style="color: #94A3B8; font-size: 0.70rem; font-weight: 500;">
+                        {data['category']}
+                    </span>
+                </div>
+                <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Source: <b style="color: #38BDF8;">{card_source}</b></span>
+                    <span style="color: #34D399; font-weight: 700; font-size: 0.65rem;">📈 POP CHART</span>
                 </div>
             </div>
-            <div style="font-size: 1.55rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0; letter-spacing: -0.5px;">
-                {val_str}
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-                <span style="color: {pts_color}; font-weight: 700; font-size: 0.86rem; letter-spacing: 0.2px;">
-                    {chg_sub_str}
-                </span>
-                <span style="color: #94A3B8; font-size: 0.70rem; font-weight: 500;">
-                    {data['category']}
-                </span>
-            </div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #38BDF8;">{card_source}</b></span>
-                <span style="color: #34D399; font-weight: 700; font-size: 0.65rem;">📈 POP CHART</span>
-            </div>
-        </div>
+        </a>
         """)
 
     all_cards_str = "\n".join(cards_html)
@@ -2094,98 +2067,106 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
     with c1:
         st.html(f"""
-        <div class="clickable-quant-card" onclick="window.openChartModal('NSE:RELIANCE', 'RELIANCE {low['strike']} CE ({plan_expiry}) • Best Strike')" style="background: #0F172A !important; border: 2px solid #10B981 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer;" title="Click to popout live 0-delay chart">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #34D399;">📞 {low['strike']} CE ({plan_expiry})</span>
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="font-size: 0.70rem; background: #059669; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 800;">🏆 BEST STRIKE</span>
-                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+        <a href="#modal-chart-reliance" class="quant-card-link" title="Click to popout live 0-delay chart">
+            <div class="clickable-quant-card" style="background: #0F172A !important; border: 2px solid #10B981 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 0.90rem; font-weight: 800; color: #34D399;">📞 {low['strike']} CE ({plan_expiry})</span>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 0.70rem; background: #059669; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 800;">🏆 BEST STRIKE</span>
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+                    </div>
+                </div>
+                <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{low['call_ltp']:.2f}</div>
+                <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{low['delta_ce']}</b> | Intrinsic: <b style="color: #34D399;">₹{low['intrinsic_ce']:.2f}</b></div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
+                <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['call_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{low['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['call_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{low['call_oi_change_pct']:.1f}% (Squeeze Fuel)</div>
+                <div style="font-size: 0.74rem; color: #38BDF8; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #7DD3FC;">+{low['spot_move_needed_ce']} pts</b></div>
+                <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
+                    <span style="color: #34D399; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
                 </div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{low['call_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{low['delta_ce']}</b> | Intrinsic: <b style="color: #34D399;">₹{low['intrinsic_ce']:.2f}</b></div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['call_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{low['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['call_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{low['call_oi_change_pct']:.1f}% (Squeeze Fuel)</div>
-            <div style="font-size: 0.74rem; color: #38BDF8; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #7DD3FC;">+{low['spot_move_needed_ce']} pts</b></div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #34D399; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
-            </div>
-        </div>
+        </a>
         """)
 
     with c2:
         st.html(f"""
-        <div class="clickable-quant-card" onclick="window.openChartModal('NSE:RELIANCE', 'RELIANCE {low['strike']} PE ({plan_expiry}) • Support Floor')" style="background: #0F172A !important; border: 1px solid #475569 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer;" title="Click to popout live 0-delay chart">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {low['strike']} PE ({plan_expiry})</span>
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SUPPORT FLOOR</span>
-                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+        <a href="#modal-chart-reliance" class="quant-card-link" title="Click to popout live 0-delay chart">
+            <div class="clickable-quant-card" style="background: #0F172A !important; border: 1px solid #475569 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {low['strike']} PE ({plan_expiry})</span>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SUPPORT FLOOR</span>
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+                    </div>
+                </div>
+                <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{low['put_ltp']:.2f}</div>
+                <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{low['delta_pe']}</b> | OTM Put</div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
+                <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['put_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{low['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['put_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{low['put_oi_change_pct']:.1f}% (Put Writing)</div>
+                <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">Solidified Support Floor</div>
+                <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
+                    <span style="color: #C084FC; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
                 </div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{low['put_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{low['delta_pe']}</b> | OTM Put</div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['put_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{low['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['put_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{low['put_oi_change_pct']:.1f}% (Put Writing)</div>
-            <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">Solidified Support Floor</div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #C084FC; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
-            </div>
-        </div>
+        </a>
         """)
 
     with c3:
         st.html(f"""
-        <div class="clickable-quant-card" onclick="window.openChartModal('NSE:RELIANCE', 'RELIANCE {high['strike']} CE ({plan_expiry}) • Upper ATM')" style="background: #0F172A !important; border: 1px solid #0284C7 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer;" title="Click to popout live 0-delay chart">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #38BDF8;">📞 {high['strike']} CE ({plan_expiry})</span>
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="font-size: 0.70rem; background: #0C4A6E; color: #7DD3FC; border: 1px solid #0284C7; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER ATM</span>
-                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+        <a href="#modal-chart-reliance" class="quant-card-link" title="Click to popout live 0-delay chart">
+            <div class="clickable-quant-card" style="background: #0F172A !important; border: 1px solid #0284C7 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 0.90rem; font-weight: 800; color: #38BDF8;">📞 {high['strike']} CE ({plan_expiry})</span>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 0.70rem; background: #0C4A6E; color: #7DD3FC; border: 1px solid #0284C7; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER ATM</span>
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+                    </div>
+                </div>
+                <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{high['call_ltp']:.2f}</div>
+                <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{high['delta_ce']}</b> | OTM Call</div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
+                <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['call_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{high['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['call_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.76rem; color: #38BDF8; font-weight: 700; margin-top: 3px;">Shift: +{high['call_oi_change_pct']:.1f}% (Resistance)</div>
+                <div style="font-size: 0.74rem; color: #FBBF24; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #FDE68A;">+{high['spot_move_needed_ce']} pts</b></div>
+                <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
+                    <span style="color: #38BDF8; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
                 </div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{high['call_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{high['delta_ce']}</b> | OTM Call</div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['call_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{high['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['call_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #38BDF8; font-weight: 700; margin-top: 3px;">Shift: +{high['call_oi_change_pct']:.1f}% (Resistance)</div>
-            <div style="font-size: 0.74rem; color: #FBBF24; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #FDE68A;">+{high['spot_move_needed_ce']} pts</b></div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #38BDF8; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
-            </div>
-        </div>
+        </a>
         """)
 
     with c4:
         st.html(f"""
-        <div class="clickable-quant-card" onclick="window.openChartModal('NSE:RELIANCE', 'RELIANCE {high['strike']} PE ({plan_expiry}) • Upper Hedge')" style="background: #0F172A !important; border: 1px solid #475569 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer;" title="Click to popout live 0-delay chart">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {high['strike']} PE ({plan_expiry})</span>
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER HEDGE</span>
-                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+        <a href="#modal-chart-reliance" class="quant-card-link" title="Click to popout live 0-delay chart">
+            <div class="clickable-quant-card" style="background: #0F172A !important; border: 1px solid #475569 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {high['strike']} PE ({plan_expiry})</span>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER HEDGE</span>
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+                    </div>
+                </div>
+                <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{high['put_ltp']:.2f}</div>
+                <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{high['delta_pe']}</b> | ITM Put</div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
+                <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['put_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{high['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['put_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{high['put_oi_change_pct']:.1f}% (Writing)</div>
+                <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">In-The-Money Hedge Floor</div>
+                <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
+                    <span style="color: #C084FC; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
                 </div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{high['put_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{high['delta_pe']}</b> | ITM Put</div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['put_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{high['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['put_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{high['put_oi_change_pct']:.1f}% (Writing)</div>
-            <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">In-The-Money Hedge Floor</div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #C084FC; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR CHART</span>
-            </div>
-        </div>
+        </a>
         """)
 
     # Comparative Flow Telemetry & Live Order Tape
@@ -2688,21 +2669,23 @@ if df is not None and not df.empty:
         delta_bg = "rgba(16, 185, 129, 0.16)" if spot_diff >= 0 else "rgba(239, 68, 68, 0.16)"
         delta_border = "rgba(16, 185, 129, 0.4)" if spot_diff >= 0 else "rgba(239, 68, 68, 0.4)"
         st.html(f"""
-        <div onclick="window.openChartModal('NSE:RELIANCE', 'RELIANCE Spot')" class="clickable-quant-card" style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 12px 14px; min-height: 106px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4);" title="Click to popout live 0-delay chart">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 0.76rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">RELIANCE SPOT</span>
-                <span style="font-size: 0.66rem; background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 1px 6px; border-radius: 4px; font-weight: 700;">📈 POP CHART</span>
+        <a href="#modal-chart-reliance" class="quant-card-link" title="Click to popout live 0-delay chart">
+            <div class="clickable-quant-card" style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 12px 14px; min-height: 106px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.76rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">RELIANCE SPOT</span>
+                    <span style="font-size: 0.66rem; background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 1px 6px; border-radius: 4px; font-weight: 700;">📈 POP CHART</span>
+                </div>
+                <div style="font-size: 1.65rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.5px; margin: 2px 0;">
+                    ₹{spot_disp:.2f}
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="background: {delta_bg}; color: {delta_color}; border: 1px solid {delta_border}; font-size: 0.74rem; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
+                        {delta_arrow} {spot_diff:+.2f} pts ({spot_diff_pct:+.2f}%)
+                    </span>
+                    <span style="font-size: 0.65rem; color: #64748B;">Groww API</span>
+                </div>
             </div>
-            <div style="font-size: 1.65rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.5px; margin: 2px 0;">
-                ₹{spot_disp:.2f}
-            </div>
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span style="background: {delta_bg}; color: {delta_color}; border: 1px solid {delta_border}; font-size: 0.74rem; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
-                    {delta_arrow} {spot_diff:+.2f} pts ({spot_diff_pct:+.2f}%)
-                </span>
-                <span style="font-size: 0.65rem; color: #64748B;">Groww API</span>
-            </div>
-        </div>
+        </a>
         """)
         st.caption("📡 **Source**: Groww API (0-Delay) • *Click to pop chart*")
 
@@ -3312,54 +3295,58 @@ if df is not None and not df.empty:
         st.html(f"""
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 100%; align-items: stretch; margin-top: 4px;">
             <!-- Card 1: Lower ATM Strike -->
-            <div class="clickable-quant-card" onclick="window.openChartModal('NSE:RELIANCE', 'RELIANCE {lower_atm} CE ({expiry_date_str}) • Rank #1 Strike')" style="background: #0F172A !important; border: 2px solid {border_c1} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%; cursor: pointer;" title="Click to popout live 0-delay chart">
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; min-height: 28px;">
-                        <span style="font-weight: 800; color: #34D399; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">📞 RELIANCE {lower_atm} CE ({expiry_date_str})</span>
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <span style="background: #059669; color: #FFFFFF; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; border: 1px solid #10B981; display: inline-flex; align-items: center;">RANK #1 BEST STRIKE (Score: 96/100)</span>
-                            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.68rem; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+            <a href="#modal-chart-reliance" class="quant-card-link" style="height: 100%;" title="Click to popout live 0-delay chart">
+                <div class="clickable-quant-card" style="background: #0F172A !important; border: 2px solid {border_c1} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; min-height: 28px;">
+                            <span style="font-weight: 800; color: #34D399; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">📞 RELIANCE {lower_atm} CE ({expiry_date_str})</span>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="background: #059669; color: #FFFFFF; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; border: 1px solid #10B981; display: inline-flex; align-items: center;">RANK #1 BEST STRIKE (Score: 96/100)</span>
+                                <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.68rem; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+                            </div>
+                        </div>
+                        <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
+                            ₹{low_data['call_ltp']:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
                         </div>
                     </div>
-                    <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
-                        ₹{low_data['call_ltp']:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
+                    <ul style="font-size: 0.82rem; color: #E2E8F0; margin: 0 0 0 18px; padding: 0; line-height: 1.55; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;">
+                        <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Delta Efficiency ({low_data['delta_ce']}):</b> Requires only <b style="color: #34D399;">+{low_data['spot_move_needed_ce']} pts</b> spot move to hit +{target_pts:.1f} pts target (within daily ATR 17.8 pts).</li>
+                        <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Intrinsic Buffer (₹{low_data['intrinsic_ce']:.2f}):</b> In-the-money cushion protects against pure theta time decay.</li>
+                        <li style="margin-bottom: 0;"><b style="color: #FFFFFF;">Short Squeeze Catalyst:</b> <b style="color: #34D399;">+{low_data['call_oi_change_pct']:.1f}%</b> surge in {low_data['call_oi_lots']:,} lots creates explosive short-covering fuel.</li>
+                    </ul>
+                    <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>📡 <b>Source:</b> Groww Live Option Chain (0-Delay LTP & OI) & Black-Scholes Greeks Engine</span>
+                        <span style="color: #34D399; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR 0-DELAY CHART</span>
                     </div>
                 </div>
-                <ul style="font-size: 0.82rem; color: #E2E8F0; margin: 0 0 0 18px; padding: 0; line-height: 1.55; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;">
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Delta Efficiency ({low_data['delta_ce']}):</b> Requires only <b style="color: #34D399;">+{low_data['spot_move_needed_ce']} pts</b> spot move to hit +{target_pts:.1f} pts target (within daily ATR 17.8 pts).</li>
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Intrinsic Buffer (₹{low_data['intrinsic_ce']:.2f}):</b> In-the-money cushion protects against pure theta time decay.</li>
-                    <li style="margin-bottom: 0;"><b style="color: #FFFFFF;">Short Squeeze Catalyst:</b> <b style="color: #34D399;">+{low_data['call_oi_change_pct']:.1f}%</b> surge in {low_data['call_oi_lots']:,} lots creates explosive short-covering fuel.</li>
-                </ul>
-                <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-                    <span>📡 <b>Source:</b> Groww Live Option Chain (0-Delay LTP & OI) & Black-Scholes Greeks Engine</span>
-                    <span style="color: #34D399; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR 0-DELAY CHART</span>
-                </div>
-            </div>
+            </a>
 
             <!-- Card 2: Upper ATM Strike -->
-            <div class="clickable-quant-card" onclick="window.openChartModal('NSE:RELIANCE', 'RELIANCE {upper_atm} CE ({expiry_date_str}) • Rank #2 Strike')" style="background: #0F172A !important; border: 2px solid {border_c2} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%; cursor: pointer;" title="Click to popout live 0-delay chart">
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; min-height: 28px;">
-                        <span style="font-weight: 800; color: #38BDF8; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">📞 RELIANCE {upper_atm} CE ({expiry_date_str})</span>
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <span style="background: #1E293B; color: #CBD5E1; border: 1px solid #334155; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; display: inline-flex; align-items: center;">RANK #2 ALTERNATIVE (Score: 78/100)</span>
-                            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.68rem; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+            <a href="#modal-chart-reliance" class="quant-card-link" style="height: 100%;" title="Click to popout live 0-delay chart">
+                <div class="clickable-quant-card" style="background: #0F172A !important; border: 2px solid {border_c2} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; min-height: 28px;">
+                            <span style="font-weight: 800; color: #38BDF8; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">📞 RELIANCE {upper_atm} CE ({expiry_date_str})</span>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="background: #1E293B; color: #CBD5E1; border: 1px solid #334155; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; display: inline-flex; align-items: center;">RANK #2 ALTERNATIVE (Score: 78/100)</span>
+                                <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.68rem; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700;">📈 POP CHART</span>
+                            </div>
+                        </div>
+                        <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
+                            ₹{high_data['call_ltp']:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
                         </div>
                     </div>
-                    <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
-                        ₹{high_data['call_ltp']:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
+                    <ul style="font-size: 0.82rem; color: #E2E8F0; margin: 0 0 0 18px; padding: 0; line-height: 1.55; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;">
+                        <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Out-Of-The-Money:</b> Cheaper premium yields higher percentage ROI on breakout, but zero intrinsic cushion.</li>
+                        <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Delta Sensitivity ({high_data['delta_ce']}):</b> Requires larger <b style="color: #FBBF24;">+{high_data['spot_move_needed_ce']} pts</b> spot move to hit +{target_pts:.1f} pts target (exceeds standard 15m ATR).</li>
+                        <li style="margin-bottom: 0;"><b style="color: #FFFFFF;">Higher Decay Vulnerability:</b> 100% extrinsic value makes it vulnerable if momentum stalls.</li>
+                    </ul>
+                    <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>📡 <b>Source:</b> Groww Live Option Chain (0-Delay LTP & OI) & Black-Scholes Greeks Engine</span>
+                        <span style="color: #38BDF8; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR 0-DELAY CHART</span>
                     </div>
                 </div>
-                <ul style="font-size: 0.82rem; color: #E2E8F0; margin: 0 0 0 18px; padding: 0; line-height: 1.55; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;">
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Out-Of-The-Money:</b> Cheaper premium yields higher percentage ROI on breakout, but zero intrinsic cushion.</li>
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Delta Sensitivity ({high_data['delta_ce']}):</b> Requires larger <b style="color: #FBBF24;">+{high_data['spot_move_needed_ce']} pts</b> spot move to hit +{target_pts:.1f} pts target (exceeds standard 15m ATR).</li>
-                    <li style="margin-bottom: 0;"><b style="color: #FFFFFF;">Higher Decay Vulnerability:</b> 100% extrinsic value makes it vulnerable if momentum stalls.</li>
-                </ul>
-                <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-                    <span>📡 <b>Source:</b> Groww Live Option Chain (0-Delay LTP & OI) & Black-Scholes Greeks Engine</span>
-                    <span style="color: #38BDF8; font-weight: 700; font-size: 0.65rem;">📈 CLICK FOR 0-DELAY CHART</span>
-                </div>
-            </div>
+            </a>
         </div>
         """)
 
