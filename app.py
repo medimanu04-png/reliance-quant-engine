@@ -243,10 +243,10 @@ st.markdown("""
         backdrop-filter: blur(10px) !important;
     }
     .status-standdown {
-        background: linear-gradient(135deg, rgba(38, 20, 26, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
-        border: 1px solid rgba(239, 68, 68, 0.35) !important;
-        border-left: 5px solid #EF4444 !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(239, 68, 68, 0.12) !important;
+        background: linear-gradient(135deg, rgba(75, 12, 22, 0.94) 0%, rgba(42, 10, 18, 0.96) 50%, rgba(15, 23, 42, 0.98) 100%) !important;
+        border: 1.5px solid rgba(239, 68, 68, 0.65) !important;
+        border-left: 6px solid #EF4444 !important;
+        box-shadow: 0 10px 35px rgba(0, 0, 0, 0.55), 0 0 30px rgba(239, 68, 68, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
     }
     .status-tradable-bullish {
         background: linear-gradient(135deg, rgba(6, 78, 59, 0.45) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
@@ -407,6 +407,7 @@ st.markdown("""
         gap: 12px;
         width: 100%;
         margin-top: 4px;
+        align-items: stretch !important;
     }
     @media (max-width: 1200px) {
         .live-benchmark-grid {
@@ -422,12 +423,15 @@ st.markdown("""
         background: #0F172A !important;
         border: 1px solid #1E293B !important;
         border-radius: 10px !important;
-        padding: 13px 15px !important;
+        padding: 12px 14px !important;
         min-height: 114px !important;
+        height: 100% !important;
+        box-sizing: border-box !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.40) !important;
+        flex: 1 1 auto !important;
     }
 
     /* 6-Vector Quantitative Confluence Grid */
@@ -563,6 +567,7 @@ st.markdown("""
         width: 92vw !important;
         max-width: 1400px !important;
         height: 86vh !important;
+        min-height: 560px !important;
         display: flex !important;
         flex-direction: column !important;
         overflow: hidden !important;
@@ -571,10 +576,31 @@ st.markdown("""
         position: relative !important;
         animation: zoomInModal 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
     }
+    .quant-chart-container {
+        flex: 1 1 auto !important;
+        width: 100% !important;
+        height: calc(86vh - 62px) !important;
+        min-height: 480px !important;
+        position: relative !important;
+        background: #0F172A !important;
+        overflow: hidden !important;
+    }
+    .quant-chart-container iframe {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        border: 0 !important;
+        outline: none !important;
+        display: block !important;
+    }
     .quant-card-link {
         text-decoration: none !important;
         color: inherit !important;
-        display: block !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
         cursor: pointer !important;
     }
     .quant-card-link:hover {
@@ -601,11 +627,29 @@ st.markdown("""
 # 0.5. ZERO-DELAY POPUP CHART MODAL SYSTEM
 # ==============================================================================
 import streamlit.components.v1 as _modal_components
+import json
+import urllib.parse
 
 def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance=False):
     clean_sym = symbol.replace(":", "%3A")
-    tv_embed_url = f"https://s.tradingview.com/widgetembed/?symbol={clean_sym}&interval={active_tf}&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en&hideideas=1"
-    popout_url = f"https://s.tradingview.com/widgetembed/?symbol={clean_sym}&interval={active_tf}&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en"
+    tf_tv = active_tf if active_tf != "1D" else "D"
+    
+    tv_params = {
+        "autosize": True,
+        "symbol": symbol,
+        "interval": tf_tv,
+        "timezone": "Asia/Kolkata",
+        "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "enable_publishing": False,
+        "allow_symbol_change": True,
+        "calendar": False,
+        "support_host": "https://www.tradingview.com"
+    }
+    encoded_params = urllib.parse.quote(json.dumps(tv_params))
+    tv_embed_url = f"https://www.tradingview-widget.com/embed-widget/advanced-chart/?locale=en#{encoded_params}"
+    popout_url = f"https://in.tradingview.com/chart/?symbol={clean_sym}&interval={tf_tv}"
 
     tf_html = ""
     if is_reliance:
@@ -637,7 +681,7 @@ def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     {tf_html}
-                    <a href="{popout_url}" target="_blank" title="Open detached popup window for dual monitors" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38BDF8; padding: 6px 13px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                    <a href="{popout_url}" target="_blank" rel="noopener noreferrer" title="Open full interactive chart on TradingView" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38BDF8; padding: 6px 13px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
                         <span>↗ Popout Window</span>
                     </a>
                     <a href="#close" title="Close chart popout (or press Esc)" style="background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.45); color: #F87171; padding: 6px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; text-decoration: none; display: inline-block;">
@@ -645,8 +689,8 @@ def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance
                     </a>
                 </div>
             </div>
-            <div style="flex: 1; width: 100%; height: 100%; position: relative; background: #0F172A; z-index: 2;">
-                <iframe src="{tv_embed_url}" style="width: 100%; height: 100%; border: none; display: block;" allowtransparency="true" loading="lazy"></iframe>
+            <div class="quant-chart-container">
+                <iframe id="iframe-{modal_id}" src="{tv_embed_url}" data-src="{tv_embed_url}" allowtransparency="true" loading="eager" allow="clipboard-write; fullscreen"></iframe>
             </div>
         </div>
     </div>
@@ -669,11 +713,48 @@ _modal_components.html("""
 <script>
 try {
     const parentWin = window.parent;
+    
+    // Close modal on Escape key
     parentWin.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             parentWin.location.hash = 'close';
         }
     });
+
+    // When modal opens (hash change or click), ensure chart iframe is active and trigger layout refresh
+    function refreshActiveModalChart() {
+        const hash = parentWin.location.hash;
+        if (hash && hash.startsWith('#modal-chart-')) {
+            const modal = parentWin.document.querySelector(hash);
+            if (modal) {
+                const iframe = modal.querySelector('iframe');
+                if (iframe) {
+                    const dataSrc = iframe.getAttribute('data-src');
+                    if (dataSrc && (!iframe.src || iframe.src === 'about:blank' || iframe.src === '')) {
+                        iframe.src = dataSrc;
+                    }
+                    setTimeout(() => {
+                        try {
+                            parentWin.dispatchEvent(new Event('resize'));
+                        } catch(err) {}
+                    }, 150);
+                }
+            }
+        }
+    }
+
+    parentWin.addEventListener('hashchange', refreshActiveModalChart);
+
+    // Also trigger on direct link clicks
+    parentWin.document.addEventListener('click', function(e) {
+        const link = e.target.closest('a[href^="#modal-chart-"]');
+        if (link) {
+            setTimeout(refreshActiveModalChart, 60);
+        }
+    }, true);
+
+    // Initial check if opened with hash
+    refreshActiveModalChart();
 } catch(e) {}
 </script>
 """, height=0)
@@ -1078,11 +1159,11 @@ def render_live_macro_benchmarks_strip():
     cards_html = []
     order = ["NIFTY 50", "SENSEX", "BANK NIFTY", "CRUDE OIL", "GOLD"]
     benchmark_source_map = {
-        "NIFTY 50": "Groww API (NSE: NIFTY 50)",
-        "SENSEX": "Groww API (BSE: SENSEX)",
-        "BANK NIFTY": "Groww API (NSE: BANK NIFTY)",
-        "CRUDE OIL": "Groww API (MCX: CRUDE OIL)",
-        "GOLD": "Groww API (MCX: GOLD)"
+        "NIFTY 50": "Groww (NSE)",
+        "SENSEX": "Groww (BSE)",
+        "BANK NIFTY": "Groww (NSE)",
+        "CRUDE OIL": "Groww (MCX)",
+        "GOLD": "Groww (MCX)"
     }
     benchmark_modal_map = {
         "NIFTY 50": "modal-chart-nifty",
@@ -1147,9 +1228,9 @@ def render_live_macro_benchmarks_strip():
                         {data['category']}
                     </span>
                 </div>
-                <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                    <span>Source: <b style="color: #38BDF8;">{card_source}</b></span>
-                    <span style="color: #34D399; font-weight: 700; font-size: 0.65rem;">📈 POP CHART</span>
+                <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; gap: 4px; width: 100%; box-sizing: border-box;">
+                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 58%; color: #64748B;">Source: <b style="color: #38BDF8;">{card_source}</b></span>
+                    <span style="color: #34D399; font-weight: 700; font-size: 0.66rem; white-space: nowrap; flex-shrink: 0; background: rgba(16, 185, 129, 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.25);">📈 POP CHART</span>
                 </div>
             </div>
         </a>
@@ -3104,71 +3185,88 @@ if df is not None and not df.empty:
             ''')
     else:
         bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if bullish_score > bearish_score else (f"🔴 Mild Bearish Lean ({bearish_score}%)" if bearish_score > bullish_score else "⚪ Neutral Chop (50-50)")
+        is_bull_lean = bullish_score >= bearish_score
+        lean_color = "#34D399" if is_bull_lean else "#F87171"
+        lean_border = "rgba(16, 185, 129, 0.45)" if is_bull_lean else "rgba(239, 68, 68, 0.45)"
+        lean_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(6, 95, 70, 0.15) 100%)" if is_bull_lean else "linear-gradient(135deg, rgba(127, 29, 29, 0.40) 0%, rgba(153, 27, 27, 0.15) 100%)"
+        lean_shadow = "0 0 16px rgba(16, 185, 129, 0.15)" if is_bull_lean else "0 0 16px rgba(239, 68, 68, 0.15)"
+        deficit_val = max(0.0, MIN_HIT_PERCENTAGE - dominant_score)
+
         st.html(f'''
         <div class="trade-status-card status-standdown">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 12px #EF4444; display: inline-block;"></span>
-                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
-                        🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN
-                    </span>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="width: 12px; height: 12px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 16px #EF4444; display: inline-block;"></span>
+                    <div>
+                        <div style="font-size: 1.18rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <span>🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN</span>
+                            <span style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); padding: 3px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 900; letter-spacing: 0.6px; box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);">
+                                STAND DOWN / CONSOLIDATION CHOP FILTER ACTIVE
+                            </span>
+                        </div>
+                        <div style="font-size: 0.76rem; color: #FCA5A5; font-weight: 600; margin-top: 3px;">
+                            Directional confluence is sub-threshold &bull; Strict capital preservation enforced &bull; 0 trades permitted in consolidation chop
+                        </div>
+                    </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="background: rgba(239, 68, 68, 0.15); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
+                    <span style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55); padding: 5px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 0 14px rgba(239, 68, 68, 0.25);">
                         🛡️ CAPITAL PRESERVATION ACTIVE
                     </span>
-                    <span style="background: rgba(148, 163, 184, 0.12); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.25); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
+                    <span style="background: rgba(15, 23, 42, 0.85); color: #CBD5E1; border: 1px solid rgba(255, 255, 255, 0.15); padding: 5px 12px; border-radius: 6px; font-size: 0.76rem; font-weight: 800;">
                         0 Orders Placed
                     </span>
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
-                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">PREVAILING MARKET BIAS</div>
-                    <div style="font-size: 1.02rem; font-weight: 800; color: {'#34D399' if bullish_score >= bearish_score else '#F87171'}; margin-top: 3px;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px;">
+                <div style="background: {lean_bg}; border: 1.5px solid {lean_border}; border-radius: 8px; padding: 12px 14px; box-shadow: {lean_shadow};">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">PREVAILING MARKET BIAS</div>
+                    <div style="font-size: 1.05rem; font-weight: 900; color: {lean_color}; margin-top: 4px; text-shadow: 0 0 10px {lean_color}40;">
                         {bias_label}
                     </div>
-                    <div style="font-size: 0.70rem; color: #94A3B8; margin-top: 2px;">Directional tendency</div>
+                    <div style="font-size: 0.72rem; color: #CBD5E1; margin-top: 3px;">
+                        {'Directional bullish lean' if is_bull_lean else 'Directional bearish lean'}
+                    </div>
                 </div>
 
-                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
+                <div style="background: rgba(15, 23, 42, 0.80); border: 1.5px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
                     <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
-                        <span style="color: #34D399;">Bullish: {bullish_score}%</span>
-                        <span style="color: #F87171;">Bearish: {bearish_score}%</span>
+                        <span style="color: #34D399; background: rgba(16, 185, 129, 0.18); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.35);">🟢 Bullish: {bullish_score}%</span>
+                        <span style="color: #F87171; background: rgba(239, 68, 68, 0.18); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.35);">🔴 Bearish: {bearish_score}%</span>
                     </div>
-                    <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
-                        <div style="width: {bullish_score}%; background: #10B981;"></div>
-                        <div style="width: {bearish_score}%; background: #EF4444;"></div>
+                    <div style="width: 100%; height: 8px; background: #1E293B; border-radius: 4px; overflow: hidden; margin-top: 8px; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
+                        <div style="width: {bullish_score}%; background: #10B981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);"></div>
+                        <div style="width: {bearish_score}%; background: #EF4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);"></div>
                     </div>
                 </div>
 
-                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">MANDATORY EXECUTION GATE</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24; margin-top: 3px;">
+                <div style="background: linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%); border: 1.5px solid rgba(239, 68, 68, 0.50); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">MANDATORY EXECUTION GATE</div>
+                    <div style="font-size: 1.05rem; font-weight: 900; color: #FBBF24; margin-top: 4px; text-shadow: 0 0 10px rgba(251, 191, 36, 0.30);">
                         &gt; {MIN_HIT_PERCENTAGE:.0f}% Required
                     </div>
-                    <div style="font-size: 0.70rem; color: #F87171; margin-top: 2px;">
-                        Deficit: -{MIN_HIT_PERCENTAGE - dominant_score:.1f}% below threshold
+                    <div style="font-size: 0.72rem; color: #FCA5A5; margin-top: 3px; font-weight: 700;">
+                        Deficit: -{deficit_val:.1f}% below threshold
                     </div>
                 </div>
 
-                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CAPITAL ALLOCATION</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #38BDF8; margin-top: 3px;">
+                <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.65) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">CAPITAL ALLOCATION</div>
+                    <div style="font-size: 1.05rem; font-weight: 900; color: #34D399; margin-top: 4px; text-shadow: 0 0 10px rgba(52, 211, 153, 0.35);">
                         100% Cash Preserved
                     </div>
-                    <div style="font-size: 0.70rem; color: #34D399; margin-top: 2px;">
-                        Protected from chop & theta decay
+                    <div style="font-size: 0.72rem; color: #A7F3D0; margin-top: 3px; font-weight: 600;">
+                        🛡️ Protected from chop & theta decay
                     </div>
                 </div>
             </div>
 
-            <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
-                <span style="font-size: 1.1rem; line-height: 1;">💡</span>
-                <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                    <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <b style="color: {'#34D399' if bullish_score >= bearish_score else '#F87171'};">{bias_label}</b>, which falls below the mandatory <b>&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</b> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
+            <div style="background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(239, 68, 68, 0.35); border-left: 4px solid #EF4444; border-radius: 8px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px;">
+                <span style="font-size: 1.25rem; line-height: 1;">💡</span>
+                <div style="font-size: 0.85rem; color: #E2E8F0; line-height: 1.6;">
+                    <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory <span style="background: rgba(251, 191, 36, 0.15); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.35); padding: 1px 7px; border-radius: 4px; font-weight: 800;">&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</span> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
                 </div>
             </div>
         </div>
