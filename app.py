@@ -689,15 +689,8 @@ def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance
                     </a>
                 </div>
             </div>
-            <div class="quant-chart-container" id="container-{modal_id}" data-url="{tv_embed_url}" style="position: relative; width: 100%; height: calc(86vh - 62px); min-height: 480px; background: #0B1120;">
-                <div id="loader-{modal_id}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0B1120; color: #94A3B8; z-index: 1;">
-                    <div style="font-size: 2.2rem; margin-bottom: 10px;">📈</div>
-                    <div style="font-size: 1rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.2px;">Connecting to Live Chart ({symbol})...</div>
-                    <div style="font-size: 0.76rem; color: #64748B; margin-top: 5px;">TradingView 0-Delay Direct Stream • Asia/Kolkata</div>
-                    <a href="{popout_url}" target="_blank" rel="noopener noreferrer" style="margin-top: 14px; background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.45); color: #38BDF8; padding: 7px 16px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
-                        <span>↗ Open in New Window</span>
-                    </a>
-                </div>
+            <div class="quant-chart-container" id="container-{modal_id}" data-symbol="{symbol}" data-tf="{tf_tv}" style="position: relative; width: 100%; height: calc(86vh - 62px); min-height: 480px; background: #0B1120;">
+                <div id="tv-widget-{modal_id}" style="width: 100%; height: 100%;"></div>
             </div>
         </div>
     </div>
@@ -716,63 +709,74 @@ _all_modals_html = "".join([
 ])
 
 _chart_mount_script = """
+<script src="https://s3.tradingview.com/tv.js"></script>
 <script>
 (function() {
-    function mountIframe(modalId) {
+    var loaded = {};
+
+    function mountTradingView(modalId) {
+        if (loaded[modalId]) return;
         var c = document.getElementById('container-' + modalId);
         if (!c) return;
-        if (c.querySelector('iframe')) return;
-        var url = c.getAttribute('data-url');
-        if (!url) return;
-        var f = document.createElement('iframe');
-        f.src = url;
-        f.id = 'iframe-' + modalId;
-        f.style.position = 'absolute';
-        f.style.top = '0';
-        f.style.left = '0';
-        f.style.width = '100%';
-        f.style.height = '100%';
-        f.style.border = '0';
-        f.style.zIndex = '3';
-        f.allowFullscreen = true;
-        f.setAttribute('allow', 'clipboard-write; fullscreen');
-        f.setAttribute('allowtransparency', 'true');
-        f.onload = function() {
-            var l = document.getElementById('loader-' + modalId);
-            if (l) l.style.display = 'none';
-        };
-        c.appendChild(f);
+        var sym = c.getAttribute('data-symbol');
+        var tf = c.getAttribute('data-tf') || '5';
+        if (!sym) return;
+
+        if (typeof TradingView === 'undefined' || !TradingView.widget) {
+            setTimeout(function() { mountTradingView(modalId); }, 100);
+            return;
+        }
+
+        loaded[modalId] = true;
+        var targetId = 'tv-widget-' + modalId;
+        var t = document.getElementById(targetId);
+        if (t) t.innerHTML = '';
+
+        new TradingView.widget({
+            "autosize": true,
+            "symbol": sym,
+            "tvwidgetsymbol": sym,
+            "interval": tf,
+            "timezone": "Asia/Kolkata",
+            "theme": "dark",
+            "style": "1",
+            "locale": "en",
+            "toolbar_bg": "#0B1120",
+            "enable_publishing": false,
+            "allow_symbol_change": true,
+            "container_id": targetId
+        });
     }
 
-    function syncActiveModals() {
+    function checkActive() {
         var h = window.location.hash;
         if (h && h.indexOf('#modal-chart-') === 0) {
-            mountIframe(h.substring(1));
+            mountTradingView(h.substring(1));
             setTimeout(function() {
                 try { window.dispatchEvent(new Event('resize')); } catch(e) {}
-            }, 100);
+            }, 150);
         }
     }
 
-    window.addEventListener('hashchange', syncActiveModals);
+    window.addEventListener('hashchange', checkActive);
 
     document.addEventListener('click', function(e) {
         var a = e.target.closest ? e.target.closest('a[href^="#modal-chart-"]') : null;
         if (a) {
             var href = a.getAttribute('href');
             if (href && href.indexOf('#modal-chart-') === 0) {
-                mountIframe(href.substring(1));
+                mountTradingView(href.substring(1));
             }
         }
     }, true);
 
     setTimeout(function() {
-        mountIframe('modal-chart-nifty');
-        mountIframe('modal-chart-reliance');
-        syncActiveModals();
+        mountTradingView('modal-chart-nifty');
+        mountTradingView('modal-chart-reliance');
+        checkActive();
     }, 200);
 
-    syncActiveModals();
+    checkActive();
 })();
 </script>
 """
@@ -780,53 +784,66 @@ _chart_mount_script = """
 st.html(_all_modals_html + _chart_mount_script, unsafe_allow_javascript=True)
 
 _modal_components.html("""
+<script src="https://s3.tradingview.com/tv.js"></script>
 <script>
 try {
     const parentWin = window.parent;
     const parentDoc = parentWin.document;
-    
-    // Close modal on Escape key
+
+    if (!parentWin.TradingView) {
+        const s = parentDoc.createElement('script');
+        s.src = 'https://s3.tradingview.com/tv.js';
+        parentDoc.head.appendChild(s);
+    }
+
     parentWin.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            parentWin.location.hash = 'close';
-        }
+        if (e.key === 'Escape') parentWin.location.hash = 'close';
     });
 
+    const parentLoaded = {};
     function mountInParent(modalId) {
         try {
+            if (parentLoaded[modalId]) return;
             const c = parentDoc.getElementById('container-' + modalId);
-            if (!c || c.querySelector('iframe')) return;
-            const url = c.getAttribute('data-url');
-            if (!url) return;
-            const f = parentDoc.createElement('iframe');
-            f.src = url;
-            f.id = 'iframe-comp-' + modalId;
-            f.style.position = 'absolute';
-            f.style.top = '0';
-            f.style.left = '0';
-            f.style.width = '100%';
-            f.style.height = '100%';
-            f.style.border = '0';
-            f.style.zIndex = '3';
-            f.allowFullscreen = true;
-            f.setAttribute('allow', 'clipboard-write; fullscreen');
-            f.setAttribute('allowtransparency', 'true');
-            f.onload = function() {
-                const l = parentDoc.getElementById('loader-' + modalId);
-                if (l) l.style.display = 'none';
-            };
-            c.appendChild(f);
+            if (!c) return;
+            const sym = c.getAttribute('data-symbol');
+            const tf = c.getAttribute('data-tf') || '5';
+            if (!sym) return;
+
+            if (!parentWin.TradingView || !parentWin.TradingView.widget) {
+                setTimeout(() => mountInParent(modalId), 150);
+                return;
+            }
+
+            parentLoaded[modalId] = true;
+            const targetId = 'tv-widget-' + modalId;
+            const t = parentDoc.getElementById(targetId);
+            if (t) t.innerHTML = '';
+
+            new parentWin.TradingView.widget({
+                "autosize": true,
+                "symbol": sym,
+                "tvwidgetsymbol": sym,
+                "interval": tf,
+                "timezone": "Asia/Kolkata",
+                "theme": "dark",
+                "style": "1",
+                "locale": "en",
+                "toolbar_bg": "#0B1120",
+                "enable_publishing": false,
+                "allow_symbol_change": true,
+                "container_id": targetId
+            });
         } catch(e) {}
     }
 
     function checkParent() {
-        const hash = parentWin.location.hash;
-        if (hash && hash.startsWith('#modal-chart-')) {
-            const mId = hash.substring(1);
-            mountInParent(mId);
+        const h = parentWin.location.hash;
+        if (h && h.startsWith('#modal-chart-')) {
+            mountInParent(h.substring(1));
             setTimeout(() => {
                 try { parentWin.dispatchEvent(new Event('resize')); } catch(e) {}
-            }, 100);
+            }, 150);
         }
     }
 
