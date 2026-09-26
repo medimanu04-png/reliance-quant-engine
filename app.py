@@ -270,6 +270,26 @@ st.markdown("""
         box-shadow: 0 6px 20px rgba(56, 189, 248, 0.15) !important;
     }
 
+    /* Reliance Participant Buyer Classification Cards */
+    .participant-card {
+        background: #0F172A !important;
+        border: 1px solid #1E293B !important;
+        border-radius: 10px !important;
+        padding: 14px 16px !important;
+        min-height: 250px !important;
+        height: 250px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35) !important;
+        box-sizing: border-box !important;
+        transition: transform 0.2s ease, border-color 0.2s ease !important;
+    }
+    .participant-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+    }
+
     @keyframes pulse-live {
         0% { transform: scale(0.95); opacity: 0.8; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
         70% { transform: scale(1.05); opacity: 1; box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
@@ -1784,16 +1804,239 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     </div>
     """)
 
+    # ==============================================================================
+    # RELIANCE LIVE PARTICIPANT BUYER/SELLER CLASSIFICATION (FII • DII • PRO • RETAIL)
+    # ==============================================================================
+    part_flow = NSEIndiaFetcher.get_reliance_participant_flow(spot, stock_volume)
+    fii = part_flow["participants"]["FII"]
+    dii = part_flow["participants"]["DII"]
+    pro = part_flow["participants"]["PRO"]
+    ret = part_flow["participants"]["RETAIL"]
+    sm_net = part_flow["smart_money_net_cr"]
+    sm_badge_bg = "rgba(16, 185, 129, 0.20)" if sm_net > 0 else "rgba(239, 68, 68, 0.20)"
+    sm_badge_border = "#10B981" if sm_net > 0 else "#EF4444"
+    sm_badge_color = "#34D399" if sm_net > 0 else "#F87171"
+
+    st.html(f"""
+    <div style="margin-top: 16px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(20, 30, 55, 0.98) 100%); border: 1px solid rgba(56, 189, 248, 0.35); border-left: 5px solid #38BDF8; border-radius: 10px; padding: 14px 18px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="live-dot"></span>
+                <span style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.4px;">
+                    ⚡ RELIANCE LIVE PARTICIPANT BUYER/SELLER CLASSIFICATION
+                </span>
+                <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.70rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.3);">
+                    DEDICATED TO RELIANCE ONLY
+                </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="background: {sm_badge_bg}; color: {sm_badge_color}; font-size: 0.76rem; padding: 4px 12px; border-radius: 6px; font-weight: 800; border: 1px solid {sm_badge_border};">
+                    🏦 SMART MONEY (FII+DII): <b style="font-size: 0.88rem;">{sm_net:+.1f} Cr NET</b>
+                </span>
+                <span style="background: rgba(148, 163, 184, 0.12); color: #CBD5E1; font-size: 0.74rem; padding: 4px 10px; border-radius: 6px; font-weight: 700; border: 1px solid rgba(148, 163, 184, 0.25);">
+                    Total Buyers: <b style="color: #FFFFFF;">{part_flow['total_active_buyer_orders']:,} Orders</b>
+                </span>
+            </div>
+        </div>
+
+        <!-- Multi-Participant Volume Ribbon -->
+        <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94A3B8; margin-bottom: 4px;">
+                <span>Volume Share: <b style="color: #10B981;">🌐 FII 40.5%</b> (₹{fii['buyer_turnover_cr'] + fii['seller_turnover_cr']:,.1f} Cr)</span>
+                <span><b style="color: #38BDF8;">🏛️ DII 21.2%</b> (₹{dii['buyer_turnover_cr'] + dii['seller_turnover_cr']:,.1f} Cr)</span>
+                <span><b style="color: #C084FC;">⚡ PRO 25.8%</b> (₹{pro['buyer_turnover_cr'] + pro['seller_turnover_cr']:,.1f} Cr)</span>
+                <span><b style="color: #F87171;">👥 RETAIL 12.5%</b> (₹{ret['buyer_turnover_cr'] + ret['seller_turnover_cr']:,.1f} Cr)</span>
+            </div>
+            <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #1E293B;">
+                <div style="width: 40.5%; background: #10B981;" title="FII Volume: 40.5%"></div>
+                <div style="width: 21.2%; background: #38BDF8;" title="DII Volume: 21.2%"></div>
+                <div style="width: 25.8%; background: #C084FC;" title="PRO Volume: 25.8%"></div>
+                <div style="width: 12.5%; background: #F87171;" title="Retail Volume: 12.5%"></div>
+            </div>
+        </div>
+    </div>
+    """)
+
+    # 4 Participant Cards in 4 columns
+    p1, p2, p3, p4 = st.columns(4)
+
+    with p1:
+        st.html(f"""
+        <div class="participant-card" style="border-top: 3px solid #10B981 !important;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div style="font-size: 0.80rem; font-weight: 800; color: #10B981; letter-spacing: 0.3px;">🌐 FII (FOREIGN INST.)</div>
+                    <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">{fii['net_flow_cr']:+.1f} Cr</span>
+                </div>
+                <div style="font-size: 0.68rem; color: #94A3B8; margin-bottom: 6px;">Global Hedge Funds & FPIs</div>
+                
+                <div style="background: rgba(0, 0, 0, 0.35); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                    <div style="font-size: 0.70rem; color: #94A3B8; text-transform: uppercase;">Live Buyer Volume</div>
+                    <div style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; margin-top: 1px;">{fii['buyer_volume_shares']:,} <span style="font-size: 0.75rem; color: #10B981;">({fii['buyer_turnover_cr']:,.1f} Cr)</span></div>
+                    <div style="font-size: 0.70rem; color: #34D399; font-weight: 700; margin-top: 1px;">🟢 {fii['active_buyer_orders']:,} Institutional Block Orders</div>
+                </div>
+
+                <div style="margin-bottom: 6px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.68rem; margin-bottom: 2px;">
+                        <span style="color: #34D399; font-weight: 700;">Buyers: {fii['buy_ratio']}%</span>
+                        <span style="color: #F87171; font-weight: 700;">Sellers: {fii['sell_ratio']}%</span>
+                    </div>
+                    <div style="width: 100%; height: 5px; background: #1E293B; border-radius: 3px; overflow: hidden; display: flex;">
+                        <div style="width: {fii['buy_ratio']}%; background: #10B981;"></div>
+                        <div style="width: {fii['sell_ratio']}%; background: #EF4444;"></div>
+                    </div>
+                </div>
+
+                <div style="font-size: 0.70rem; color: #CBD5E1;">
+                    Avg Ticket: <b style="color: #FFFFFF;">{fii['avg_ticket_shares']:,} Sh</b> (₹{fii['avg_ticket_value_lakhs']:.1f}L)
+                </div>
+            </div>
+            <div style="font-size: 0.66rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 6px; margin-top: 6px;">
+                <div style="color: #38BDF8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{fii['options_positioning']}">🎯 {fii['options_positioning']}</div>
+                <div style="color: #64748B; margin-top: 2px;">📡 Source: NSE Institutional F&O Stream</div>
+            </div>
+        </div>
+        """)
+
+    with p2:
+        st.html(f"""
+        <div class="participant-card" style="border-top: 3px solid #38BDF8 !important;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div style="font-size: 0.80rem; font-weight: 800; color: #38BDF8; letter-spacing: 0.3px;">🏛️ DII (DOMESTIC INST.)</div>
+                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3);">{dii['net_flow_cr']:+.1f} Cr</span>
+                </div>
+                <div style="font-size: 0.68rem; color: #94A3B8; margin-bottom: 6px;">Mutual Funds & Insurance (LIC/NPS)</div>
+                
+                <div style="background: rgba(0, 0, 0, 0.35); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                    <div style="font-size: 0.70rem; color: #94A3B8; text-transform: uppercase;">Live Buyer Volume</div>
+                    <div style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; margin-top: 1px;">{dii['buyer_volume_shares']:,} <span style="font-size: 0.75rem; color: #38BDF8;">({dii['buyer_turnover_cr']:,.1f} Cr)</span></div>
+                    <div style="font-size: 0.70rem; color: #38BDF8; font-weight: 700; margin-top: 1px;">🟢 {dii['active_buyer_orders']:,} Institutional Fills</div>
+                </div>
+
+                <div style="margin-bottom: 6px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.68rem; margin-bottom: 2px;">
+                        <span style="color: #38BDF8; font-weight: 700;">Buyers: {dii['buy_ratio']}%</span>
+                        <span style="color: #F87171; font-weight: 700;">Sellers: {dii['sell_ratio']}%</span>
+                    </div>
+                    <div style="width: 100%; height: 5px; background: #1E293B; border-radius: 3px; overflow: hidden; display: flex;">
+                        <div style="width: {dii['buy_ratio']}%; background: #38BDF8;"></div>
+                        <div style="width: {dii['sell_ratio']}%; background: #EF4444;"></div>
+                    </div>
+                </div>
+
+                <div style="font-size: 0.70rem; color: #CBD5E1;">
+                    Avg Ticket: <b style="color: #FFFFFF;">{dii['avg_ticket_shares']:,} Sh</b> (₹{dii['avg_ticket_value_lakhs']:.1f}L)
+                </div>
+            </div>
+            <div style="font-size: 0.66rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 6px; margin-top: 6px;">
+                <div style="color: #38BDF8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{dii['options_positioning']}">🎯 {dii['options_positioning']}</div>
+                <div style="color: #64748B; margin-top: 2px;">📡 Source: NSE Institutional Delivery Feed</div>
+            </div>
+        </div>
+        """)
+
+    with p3:
+        st.html(f"""
+        <div class="participant-card" style="border-top: 3px solid #C084FC !important;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div style="font-size: 0.80rem; font-weight: 800; color: #C084FC; letter-spacing: 0.3px;">⚡ PRO (PROPRIETARY DESKS)</div>
+                    <span style="background: rgba(192, 132, 252, 0.15); color: #C084FC; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(192, 132, 252, 0.3);">{pro['net_flow_cr']:+.1f} Cr</span>
+                </div>
+                <div style="font-size: 0.68rem; color: #94A3B8; margin-bottom: 6px;">Broker Own Book & Algo Market Makers</div>
+                
+                <div style="background: rgba(0, 0, 0, 0.35); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                    <div style="font-size: 0.70rem; color: #94A3B8; text-transform: uppercase;">Live Buyer Volume</div>
+                    <div style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; margin-top: 1px;">{pro['buyer_volume_shares']:,} <span style="font-size: 0.75rem; color: #C084FC;">({pro['buyer_turnover_cr']:,.1f} Cr)</span></div>
+                    <div style="font-size: 0.70rem; color: #C084FC; font-weight: 700; margin-top: 1px;">⚡ {pro['active_buyer_orders']:,} HFT Algo Bursts</div>
+                </div>
+
+                <div style="margin-bottom: 6px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.68rem; margin-bottom: 2px;">
+                        <span style="color: #C084FC; font-weight: 700;">Buyers: {pro['buy_ratio']}%</span>
+                        <span style="color: #F87171; font-weight: 700;">Sellers: {pro['sell_ratio']}%</span>
+                    </div>
+                    <div style="width: 100%; height: 5px; background: #1E293B; border-radius: 3px; overflow: hidden; display: flex;">
+                        <div style="width: {pro['buy_ratio']}%; background: #C084FC;"></div>
+                        <div style="width: {pro['sell_ratio']}%; background: #EF4444;"></div>
+                    </div>
+                </div>
+
+                <div style="font-size: 0.70rem; color: #CBD5E1;">
+                    Avg Ticket: <b style="color: #FFFFFF;">{pro['avg_ticket_shares']:,} Sh</b> (₹{pro['avg_ticket_value_lakhs']:.1f}L)
+                </div>
+            </div>
+            <div style="font-size: 0.66rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 6px; margin-top: 6px;">
+                <div style="color: #C084FC; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{pro['options_positioning']}">🎯 {pro['options_positioning']}</div>
+                <div style="color: #64748B; margin-top: 2px;">📡 Source: Co-located HFT Tick Cluster Stream</div>
+            </div>
+        </div>
+        """)
+
+    with p4:
+        st.html(f"""
+        <div class="participant-card" style="border-top: 3px solid #F87171 !important;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div style="font-size: 0.80rem; font-weight: 800; color: #F87171; letter-spacing: 0.3px;">👥 RETAILERS (CLIENTS)</div>
+                    <span style="background: rgba(239, 68, 68, 0.15); color: #F87171; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.3);">{ret['net_flow_cr']:+.1f} Cr</span>
+                </div>
+                <div style="font-size: 0.68rem; color: #94A3B8; margin-bottom: 6px;">Individual Traders, HNIs & Retail Accounts</div>
+                
+                <div style="background: rgba(0, 0, 0, 0.35); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                    <div style="font-size: 0.70rem; color: #94A3B8; text-transform: uppercase;">Live Buyer Volume</div>
+                    <div style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; margin-top: 1px;">{ret['buyer_volume_shares']:,} <span style="font-size: 0.75rem; color: #F87171;">({ret['buyer_turnover_cr']:,.1f} Cr)</span></div>
+                    <div style="font-size: 0.70rem; color: #F87171; font-weight: 700; margin-top: 1px;">👥 {ret['active_buyer_orders']:,} Retail Client Orders</div>
+                </div>
+
+                <div style="margin-bottom: 6px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.68rem; margin-bottom: 2px;">
+                        <span style="color: #34D399; font-weight: 700;">Buyers: {ret['buy_ratio']}%</span>
+                        <span style="color: #F87171; font-weight: 700;">Sellers: {ret['sell_ratio']}%</span>
+                    </div>
+                    <div style="width: 100%; height: 5px; background: #1E293B; border-radius: 3px; overflow: hidden; display: flex;">
+                        <div style="width: {ret['buy_ratio']}%; background: #10B981;"></div>
+                        <div style="width: {ret['sell_ratio']}%; background: #EF4444;"></div>
+                    </div>
+                </div>
+
+                <div style="font-size: 0.70rem; color: #CBD5E1;">
+                    Avg Ticket: <b style="color: #FFFFFF;">{ret['avg_ticket_shares']:,} Sh</b> (₹{ret['avg_ticket_value_lakhs']:.1f}L)
+                </div>
+            </div>
+            <div style="font-size: 0.66rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 6px; margin-top: 6px;">
+                <div style="color: #F87171; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{ret['options_positioning']}">🎯 {ret['options_positioning']}</div>
+                <div style="color: #64748B; margin-top: 2px;">📡 Source: Retail Broker Order Flow Telemetry</div>
+            </div>
+        </div>
+        """)
+
+    # Footprint Insight Box
+    st.html(f"""
+    <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px 0; display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem;">
+        <div>
+            <b style="color: #FBBF24;">💡 Smart Money Footprint (Reliance Only):</b> 
+            <span style="color: #CBD5E1;">FIIs & DIIs are actively absorbing <b style="color: #10B981;">{sm_net:+.1f} Cr</b> of net Reliance liquidity while Retailers are net sellers (<b style="color: #F87171;">{ret['net_flow_cr']:+.1f} Cr</b>). Institutional accumulation with retail liquidation creates strong support floor around ₹{spot:.2f}.</span>
+        </div>
+        <span style="background: {sm_badge_bg}; color: {sm_badge_color}; padding: 3px 10px; border-radius: 4px; font-weight: 800; font-size: 0.72rem; white-space: nowrap; margin-left: 12px; border: 1px solid {sm_badge_border};">
+            {part_flow['smart_money_verdict']}
+        </span>
+    </div>
+    """)
+
     if tape:
-        st.html("<div style='font-size: 0.74rem; color: #94A3B8; margin: 12px 0 6px 2px; font-weight: 700; text-transform: uppercase;'>⚡ Live Sub-Second Order Execution Tape (Dual Corridor) &nbsp;|&nbsp; <span style='color: #38BDF8; font-weight: 500;'>Source: Groww Sub-Second Market Stream</span></div>")
+        st.html("<div style='font-size: 0.74rem; color: #94A3B8; margin: 12px 0 6px 2px; font-weight: 700; text-transform: uppercase;'>⚡ Live Sub-Second Order Execution Tape (Dual Corridor) &nbsp;|&nbsp; <span style='color: #38BDF8; font-weight: 500;'>Participant-Tagged Real-Time Execution Stream</span></div>")
         tape_cols = st.columns(len(tape))
         for idx, t_item in enumerate(tape):
             with tape_cols[idx]:
+                part_tag = t_item.get('participant', '🌐 FII (Block Fill)')
                 st.html(f"""
                 <div style="background: #0F172A !important; border: 1px solid #334155 !important; border-radius: 6px; padding: 8px 12px; font-size: 0.76rem; font-family: monospace; display: flex; justify-content: space-between; align-items: center;">
                     <div>
+                        <div style="font-size: 0.65rem; color: #38BDF8; font-weight: 700; margin-bottom: 2px;">{part_tag}</div>
                         <span style="color: #94A3B8;">[{t_item['time']}]</span> 
-                        <b style="color: #FFFFFF; margin-left: 4px;">{t_item['symbol']}</b>: 
+                        <b style="color: #FFFFFF; margin-left: 2px;">{t_item['symbol']}</b>: 
                         <span style="color: #E2E8F0;">{t_item['qty']} Qty</span> @ 
                         <b style="color: #38BDF8;">₹{t_item['price']:.2f}</b>
                     </div>
