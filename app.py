@@ -689,8 +689,15 @@ def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance
                     </a>
                 </div>
             </div>
-            <div class="quant-chart-container">
-                <iframe id="iframe-{modal_id}" src="{tv_embed_url}" data-src="{tv_embed_url}" allowtransparency="true" loading="eager" allow="clipboard-write; fullscreen"></iframe>
+            <div class="quant-chart-container" id="container-{modal_id}" data-url="{tv_embed_url}" style="position: relative; width: 100%; height: calc(86vh - 62px); min-height: 480px; background: #0B1120;">
+                <div id="loader-{modal_id}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0B1120; color: #94A3B8; z-index: 1;">
+                    <div style="font-size: 2.2rem; margin-bottom: 10px;">📈</div>
+                    <div style="font-size: 1rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.2px;">Connecting to Live Chart ({symbol})...</div>
+                    <div style="font-size: 0.76rem; color: #64748B; margin-top: 5px;">TradingView 0-Delay Direct Stream • Asia/Kolkata</div>
+                    <a href="{popout_url}" target="_blank" rel="noopener noreferrer" style="margin-top: 14px; background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.45); color: #38BDF8; padding: 7px 16px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+                        <span>↗ Open in New Window</span>
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -707,12 +714,76 @@ _all_modals_html = "".join([
     _render_chart_modal_html("modal-chart-crude", "MCX:CRUDEOIL1!", "CRUDE OIL (MCX) • Live Commodity Chart", active_tf="5"),
     _render_chart_modal_html("modal-chart-gold", "MCX:GOLD1!", "GOLD (MCX) • Live Commodity Chart", active_tf="5"),
 ])
-st.html(_all_modals_html)
+
+_chart_mount_script = """
+<script>
+(function() {
+    function mountIframe(modalId) {
+        var c = document.getElementById('container-' + modalId);
+        if (!c) return;
+        if (c.querySelector('iframe')) return;
+        var url = c.getAttribute('data-url');
+        if (!url) return;
+        var f = document.createElement('iframe');
+        f.src = url;
+        f.id = 'iframe-' + modalId;
+        f.style.position = 'absolute';
+        f.style.top = '0';
+        f.style.left = '0';
+        f.style.width = '100%';
+        f.style.height = '100%';
+        f.style.border = '0';
+        f.style.zIndex = '3';
+        f.allowFullscreen = true;
+        f.setAttribute('allow', 'clipboard-write; fullscreen');
+        f.setAttribute('allowtransparency', 'true');
+        f.onload = function() {
+            var l = document.getElementById('loader-' + modalId);
+            if (l) l.style.display = 'none';
+        };
+        c.appendChild(f);
+    }
+
+    function syncActiveModals() {
+        var h = window.location.hash;
+        if (h && h.indexOf('#modal-chart-') === 0) {
+            mountIframe(h.substring(1));
+            setTimeout(function() {
+                try { window.dispatchEvent(new Event('resize')); } catch(e) {}
+            }, 100);
+        }
+    }
+
+    window.addEventListener('hashchange', syncActiveModals);
+
+    document.addEventListener('click', function(e) {
+        var a = e.target.closest ? e.target.closest('a[href^="#modal-chart-"]') : null;
+        if (a) {
+            var href = a.getAttribute('href');
+            if (href && href.indexOf('#modal-chart-') === 0) {
+                mountIframe(href.substring(1));
+            }
+        }
+    }, true);
+
+    setTimeout(function() {
+        mountIframe('modal-chart-nifty');
+        mountIframe('modal-chart-reliance');
+        syncActiveModals();
+    }, 200);
+
+    syncActiveModals();
+})();
+</script>
+"""
+
+st.html(_all_modals_html + _chart_mount_script, unsafe_allow_javascript=True)
 
 _modal_components.html("""
 <script>
 try {
     const parentWin = window.parent;
+    const parentDoc = parentWin.document;
     
     // Close modal on Escape key
     parentWin.addEventListener('keydown', function(e) {
@@ -721,40 +792,62 @@ try {
         }
     });
 
-    // When modal opens (hash change or click), ensure chart iframe is active and trigger layout refresh
-    function refreshActiveModalChart() {
+    function mountInParent(modalId) {
+        try {
+            const c = parentDoc.getElementById('container-' + modalId);
+            if (!c || c.querySelector('iframe')) return;
+            const url = c.getAttribute('data-url');
+            if (!url) return;
+            const f = parentDoc.createElement('iframe');
+            f.src = url;
+            f.id = 'iframe-comp-' + modalId;
+            f.style.position = 'absolute';
+            f.style.top = '0';
+            f.style.left = '0';
+            f.style.width = '100%';
+            f.style.height = '100%';
+            f.style.border = '0';
+            f.style.zIndex = '3';
+            f.allowFullscreen = true;
+            f.setAttribute('allow', 'clipboard-write; fullscreen');
+            f.setAttribute('allowtransparency', 'true');
+            f.onload = function() {
+                const l = parentDoc.getElementById('loader-' + modalId);
+                if (l) l.style.display = 'none';
+            };
+            c.appendChild(f);
+        } catch(e) {}
+    }
+
+    function checkParent() {
         const hash = parentWin.location.hash;
         if (hash && hash.startsWith('#modal-chart-')) {
-            const modal = parentWin.document.querySelector(hash);
-            if (modal) {
-                const iframe = modal.querySelector('iframe');
-                if (iframe) {
-                    const dataSrc = iframe.getAttribute('data-src');
-                    if (dataSrc && (!iframe.src || iframe.src === 'about:blank' || iframe.src === '')) {
-                        iframe.src = dataSrc;
-                    }
-                    setTimeout(() => {
-                        try {
-                            parentWin.dispatchEvent(new Event('resize'));
-                        } catch(err) {}
-                    }, 150);
-                }
-            }
+            const mId = hash.substring(1);
+            mountInParent(mId);
+            setTimeout(() => {
+                try { parentWin.dispatchEvent(new Event('resize')); } catch(e) {}
+            }, 100);
         }
     }
 
-    parentWin.addEventListener('hashchange', refreshActiveModalChart);
-
-    // Also trigger on direct link clicks
-    parentWin.document.addEventListener('click', function(e) {
-        const link = e.target.closest('a[href^="#modal-chart-"]');
-        if (link) {
-            setTimeout(refreshActiveModalChart, 60);
+    parentWin.addEventListener('hashchange', checkParent);
+    parentDoc.addEventListener('click', function(e) {
+        const a = e.target.closest ? e.target.closest('a[href^="#modal-chart-"]') : null;
+        if (a) {
+            const href = a.getAttribute('href');
+            if (href && href.startsWith('#modal-chart-')) {
+                mountInParent(href.substring(1));
+            }
         }
     }, true);
 
-    // Initial check if opened with hash
-    refreshActiveModalChart();
+    setTimeout(() => {
+        mountInParent('modal-chart-nifty');
+        mountInParent('modal-chart-reliance');
+        checkParent();
+    }, 250);
+
+    checkParent();
 } catch(e) {}
 </script>
 """, height=0)
