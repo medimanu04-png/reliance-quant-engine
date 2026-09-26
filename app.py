@@ -93,7 +93,10 @@ st.markdown("""
         border: 1px solid #1E293B !important;
         border-radius: 10px !important;
         padding: 14px 16px !important;
-        min-height: 130px !important;
+        height: 180px !important;
+        min-height: 180px !important;
+        max-height: 180px !important;
+        box-sizing: border-box !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
@@ -2343,21 +2346,28 @@ if df is not None and not df.empty:
         </div>
         ''', unsafe_allow_html=True)
 
-    # 4 Execution Blocks (Solid Dark High-Contrast Cards)
+    # 4 Execution Blocks (Solid Dark High-Contrast Cards - Symmetrically Aligned)
     b1, b2, b3, b4 = st.columns(4)
     with b1:
         side_tag = "🟢 Call (CE)" if recommended_contract_type == "CE" else "🔴 Put (PE)"
         st.html(f"""
         <div class="exec-block-card">
             <div>
-                <div style="font-size: 0.74rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">📌 Selected Contract ({recommended_contract_type})</div>
-                <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0;">RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str})</div>
-                <div style="font-size: 0.70rem; color: #FBBF24; font-weight: 600;">{expiry_plan['rule_badge']}</div>
-                <div style="font-size: 0.82rem; color: #E2E8F0; margin-top: 3px;">Current: <span style="font-size: 1.25rem; font-weight: 800; color: #38BDF8;">₹{current_option_ltp:.2f}</span> <span style="font-size: 0.72rem; color: #94A3B8;">(LTP)</span></div>
+                <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; height: 18px; display: flex; align-items: center;">📌 Selected Contract ({recommended_contract_type})</div>
+                <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; height: 26px; margin: 4px 0 6px 0; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    RELIANCE {atm_strike} {recommended_contract_type}&nbsp;<span style="font-size: 0.76rem; color: #94A3B8; font-weight: 600;">({expiry_date_str})</span>
+                </div>
+                <div style="height: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
+                    <span>Current: <b style="font-size: 1.08rem; font-weight: 800; color: #38BDF8;">₹{current_option_ltp:.2f}</b> <span style="font-size: 0.68rem; color: #94A3B8;">(LTP)</span></span>
+                    <span style="background: rgba(251, 191, 36, 0.12); color: #FBBF24; font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(251, 191, 36, 0.28);">🛡️ 10D Active</span>
+                </div>
             </div>
             <div style="font-size: 0.72rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 8px; margin-top: 8px;">
-                Direction: <b style="color: {'#34D399' if recommended_contract_type == 'CE' else '#F87171'};">{side_tag}</b> &nbsp;|&nbsp; Spot: <b style="color: #FFFFFF;">₹{spot:.2f}</b>
-                <div style="font-size: 0.67rem; color: #38BDF8; margin-top: 3px;">📡 Source: Groww API (0-Delay Real-Time Feed)</div>
+                <div style="height: 18px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Direction: <b style="color: {'#34D399' if recommended_contract_type == 'CE' else '#F87171'};">{side_tag}</b></span>
+                    <span>Spot: <b style="color: #FFFFFF;">₹{spot:.2f}</b></span>
+                </div>
+                <div style="font-size: 0.67rem; color: #38BDF8; margin-top: 3px; height: 16px; display: flex; align-items: center;">📡 Source: Groww API (0-Delay Live Feed)</div>
             </div>
         </div>
         """)
@@ -2365,13 +2375,20 @@ if df is not None and not df.empty:
         st.html(f"""
         <div class="exec-block-card">
             <div>
-                <div style="font-size: 0.74rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">🎯 Entry Level</div>
-                <div style="font-size: 1.15rem; font-weight: 800; color: #FBBF24; margin: 4px 0 2px 0;">Breakout above ₹{estimated_premium:.2f}</div>
-                <div style="font-size: 0.80rem; color: #E2E8F0;">Condition: <b style="color: #38BDF8;">Candle Close Confirmation</b></div>
+                <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; height: 18px; display: flex; align-items: center;">🎯 Entry Trigger Level</div>
+                <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24; height: 26px; margin: 4px 0 6px 0; display: flex; align-items: center;">
+                    Breakout above ₹{estimated_premium:.2f}
+                </div>
+                <div style="height: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
+                    <span style="color: #CBD5E1;">Condition: <b style="color: #38BDF8;">Candle Close</b></span>
+                    <span style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.28);">5m Frame</span>
+                </div>
             </div>
             <div style="font-size: 0.72rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 8px; margin-top: 8px;">
-                ⏱️ Confirm on 5m candle close above trigger
-                <div style="font-size: 0.67rem; color: #FBBF24; margin-top: 3px;">📡 Source: Algorithmic Breakout Engine (+1.20 pts pin)</div>
+                <div style="height: 18px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>⏱️ Execution: <b style="color: #FFFFFF;">5m Candle Close > Trigger</b></span>
+                </div>
+                <div style="font-size: 0.67rem; color: #FBBF24; margin-top: 3px; height: 16px; display: flex; align-items: center;">📡 Source: Algorithmic Breakout Engine (+1.20 pts pin)</div>
             </div>
         </div>
         """)
@@ -2379,23 +2396,22 @@ if df is not None and not df.empty:
         st.html(f"""
         <div class="exec-block-card">
             <div>
-                <div style="font-size: 0.74rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">⚖️ Optimal Risk-Reward (1:{round(target_pts/sl_pts, 2)})</div>
-                <div style="display: flex; justify-content: space-between; margin-top: 4px;">
-                    <div>
-                        <span style="font-size: 0.68rem; color: #34D399; font-weight: 700;">TARGET (+{target_pts:.1f} pts)</span>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #34D399;">₹{target_premium:.2f}</div>
-                        <div style="font-size: 0.70rem; color: #6EE7B7;">+₹{actual_reward:,.0f} Gain</div>
-                    </div>
-                    <div style="text-align: right;">
-                        <span style="font-size: 0.68rem; color: #F87171; font-weight: 700;">STOP LOSS (-{sl_pts:.1f} pts)</span>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #F87171;">₹{sl_premium:.2f}</div>
-                        <div style="font-size: 0.70rem; color: #FECACA;">-₹{actual_risk:,.0f} Risk</div>
-                    </div>
+                <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; height: 18px; display: flex; align-items: center;">⚖️ Optimal Risk-Reward (1:{round(target_pts/sl_pts, 2)})</div>
+                <div style="height: 26px; margin: 4px 0 6px 0; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 1.05rem; font-weight: 800; color: #34D399;">TGT: ₹{target_premium:.2f}</span>
+                    <span style="font-size: 1.05rem; font-weight: 800; color: #F87171;">SL: ₹{sl_premium:.2f}</span>
+                </div>
+                <div style="height: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
+                    <span style="color: #34D399; font-weight: 700;">+₹{actual_reward:,.0f} (+{target_pts:.1f}p)</span>
+                    <span style="color: #F87171; font-weight: 700;">-₹{actual_risk:,.0f} (-{sl_pts:.1f}p)</span>
                 </div>
             </div>
             <div style="font-size: 0.72rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 8px; margin-top: 8px;">
-                +{target_pts:.1f} pts Target &nbsp;|&nbsp; -{sl_pts:.1f} pts Stop Loss
-                <div style="font-size: 0.67rem; color: #34D399; margin-top: 3px;">📡 Source: Fixed 10/9 Institutional R:R Framework</div>
+                <div style="height: 18px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Target: <b style="color: #34D399;">+{target_pts:.1f} pts</b></span>
+                    <span>Stop: <b style="color: #F87171;">-{sl_pts:.1f} pts</b></span>
+                </div>
+                <div style="font-size: 0.67rem; color: #34D399; margin-top: 3px; height: 16px; display: flex; align-items: center;">📡 Source: Fixed 10/9 Institutional R:R Framework</div>
             </div>
         </div>
         """)
@@ -2403,13 +2419,21 @@ if df is not None and not df.empty:
         st.html(f"""
         <div class="exec-block-card">
             <div>
-                <div style="font-size: 0.74rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">🛡️ Position & Risk Allocation</div>
-                <div style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0;">{total_trading_qty:,} Units <span style="font-size: 0.85rem; color: #38BDF8;">({num_lots} Lots)</span></div>
-                <div style="font-size: 0.80rem; color: #E2E8F0;">Required Capital: <b style="color: #FFFFFF;">₹50,000</b></div>
+                <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; height: 18px; display: flex; align-items: center;">🛡️ Position & Risk Allocation</div>
+                <div style="height: 26px; margin: 4px 0 6px 0; display: flex; align-items: center;">
+                    <span style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF;">{total_trading_qty:,} Units</span>&nbsp;<span style="font-size: 0.80rem; font-weight: 700; color: #38BDF8;">({num_lots} Lots)</span>
+                </div>
+                <div style="height: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
+                    <span style="color: #CBD5E1;">Capital: <b style="color: #FFFFFF;">₹50,000</b></span>
+                    <span style="background: rgba(16, 185, 129, 0.12); color: #34D399; font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.28);">500 Qty/Lot</span>
+                </div>
             </div>
             <div style="font-size: 0.72rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 8px; margin-top: 8px;">
-                Max Risk: <b style="color: #F87171;">₹{actual_risk:,.0f}</b> &nbsp;|&nbsp; Max Gain: <b style="color: #34D399;">+₹{actual_reward:,.0f}</b>
-                <div style="font-size: 0.67rem; color: #38BDF8; margin-top: 3px;">📡 Source: Position Sizing Engine (500 Qty/Lot x 2 Lots)</div>
+                <div style="height: 18px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Max Risk: <b style="color: #F87171;">₹{actual_risk:,.0f}</b></span>
+                    <span>Max Gain: <b style="color: #34D399;">+₹{actual_reward:,.0f}</b></span>
+                </div>
+                <div style="font-size: 0.67rem; color: #38BDF8; margin-top: 3px; height: 16px; display: flex; align-items: center;">📡 Source: Position Sizing Engine (500 Qty/Lot x 2 Lots)</div>
             </div>
         </div>
         """)
@@ -2417,19 +2441,21 @@ if df is not None and not df.empty:
     # Dual ATM Corridor Strike Selection Matrix & Comparison Table
     with st.expander(f"🏆 Dual ATM Corridor Quantitative Strike Selection Matrix & Rationale ({lower_atm} CE vs {upper_atm} CE - {expiry_date_str})", expanded=True):
         st.html(f"""
-        <div style="background: #0B1120 !important; border: 1px solid #334155 !important; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                <div>
-                    <span style="font-size: 0.74rem; color: #34D399; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">⚡ DUAL ATM CORRIDOR DEFINITION (10-Pt Increment)</span>
-                    <div style="font-size: 0.90rem; color: #FFFFFF; margin-top: 3px; line-height: 1.45;">
-                        RELIANCE Spot is at <b style="color: #38BDF8;">₹{spot:.2f}</b>, bracketed by Lower ATM <b style="color: #FFFFFF;">₹{lower_atm}</b> (<span style="color: #F87171; font-weight: 700;">-{spot - lower_atm:.2f} pts</span>) and Upper ATM <b style="color: #FFFFFF;">₹{upper_atm}</b> (<span style="color: #34D399; font-weight: 700;">+{upper_atm - spot:.2f} pts</span>). 
-                        Both strikes qualify as At-The-Money under live market mechanics.
+        <div style="background: #0B1120 !important; border: 1px solid #1E293B !important; border-left: 4px solid #10B981 !important; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);">
+            <div style="display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px;">
+                <div style="min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <span style="font-size: 0.72rem; color: #10B981; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; background: rgba(16, 185, 129, 0.12); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.25);">⚡ DUAL ATM CORRIDOR DEFINITION (10-PT INCREMENT)</span>
+                    </div>
+                    <div style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.5;">
+                        RELIANCE Spot is at <b style="color: #38BDF8; font-weight: 800;">₹{spot:.2f}</b>, bracketed by Lower ATM <b style="color: #FFFFFF; font-weight: 700;">₹{lower_atm}</b> (<span style="color: #F87171; font-weight: 700;">-{spot - lower_atm:.2f} pts</span>) and Upper ATM <b style="color: #FFFFFF; font-weight: 700;">₹{upper_atm}</b> (<span style="color: #34D399; font-weight: 700;">+{upper_atm - spot:.2f} pts</span>). Both strikes qualify as At-The-Money under live market mechanics.
                     </div>
                 </div>
-                <div style="text-align: right;">
-                    <span style="background: #065F46; color: #FFFFFF; font-size: 0.78rem; padding: 6px 14px; border-radius: 6px; font-weight: 800; border: 1px solid #10B981; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35); display: inline-block;">
-                        RECOMMENDED: RELIANCE {best_strike_meta['strike']} CE ({expiry_date_str})
-                    </span>
+                <div style="flex-shrink: 0;">
+                    <div style="background: linear-gradient(135deg, rgba(6, 95, 70, 0.5) 0%, rgba(16, 185, 129, 0.18) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 10px 16px; text-align: right; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25); white-space: nowrap;">
+                        <div style="font-size: 0.66rem; font-weight: 800; color: #34D399; text-transform: uppercase; letter-spacing: 0.8px;">⭐ ALGORITHMIC RECOMMENDATION</div>
+                        <div style="font-size: 0.95rem; font-weight: 800; color: #FFFFFF; margin-top: 2px; letter-spacing: 0.3px;">RELIANCE {best_strike_meta['strike']} CE <span style="font-size: 0.78rem; color: #A7F3D0; font-weight: 600;">({expiry_date_str})</span></div>
+                    </div>
                 </div>
             </div>
         </div>
