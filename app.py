@@ -630,25 +630,92 @@ import streamlit.components.v1 as _modal_components
 import json
 import urllib.parse
 
+@st.cache_data(ttl=60)
+def _get_live_candlesticks_data():
+    batch_5m = ['RELIANCE.NS', '^NSEI', '^BSESN', '^NSEBANK', 'CL=F', 'GC=F']
+    mapping = {
+        'modal-chart-reliance': 'RELIANCE.NS',
+        'modal-chart-nifty': '^NSEI',
+        'modal-chart-sensex': '^BSESN',
+        'modal-chart-banknifty': '^NSEBANK',
+        'modal-chart-crude': 'CL=F',
+        'modal-chart-gold': 'GC=F',
+    }
+    
+    data_out = {}
+    try:
+        df_5m = yf.download(batch_5m, period='2d', interval='5m', group_by='ticker', progress=False)
+    except Exception:
+        df_5m = pd.DataFrame()
+        
+    try:
+        rel_1m = yf.download('RELIANCE.NS', period='1d', interval='1m', progress=False)
+    except Exception:
+        rel_1m = pd.DataFrame()
+    try:
+        rel_15m = yf.download('RELIANCE.NS', period='5d', interval='15m', progress=False)
+    except Exception:
+        rel_15m = pd.DataFrame()
+    try:
+        rel_1d = yf.download('RELIANCE.NS', period='3mo', interval='1d', progress=False)
+    except Exception:
+        rel_1d = pd.DataFrame()
+
+    def _extract_series(df):
+        candles = []
+        volumes = []
+        ema20 = []
+        if df.empty:
+            return candles, volumes, ema20
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.droplevel(1, axis=1) if df.columns.nlevels > 1 else df
+        df = df.dropna(subset=['Close'])
+        if df.empty:
+            return candles, volumes, ema20
+        c_series = df['Close']
+        e_series = c_series.ewm(span=20, adjust=False).mean()
+        for ts, row in df.iterrows():
+            try:
+                t_val = int(ts.timestamp())
+                o = round(float(row['Open']), 2)
+                h = round(float(row['High']), 2)
+                l = round(float(row['Low']), 2)
+                c = round(float(row['Close']), 2)
+                v = round(float(row['Volume']), 2) if 'Volume' in row and not pd.isna(row['Volume']) else 0.0
+                em = round(float(e_series.loc[ts]), 2)
+                candles.append({'time': t_val, 'open': o, 'high': h, 'low': l, 'close': c})
+                col = 'rgba(16, 185, 129, 0.45)' if c >= o else 'rgba(239, 68, 68, 0.45)'
+                volumes.append({'time': t_val, 'value': v, 'color': col})
+                ema20.append({'time': t_val, 'value': em})
+            except Exception:
+                continue
+        return candles, volumes, ema20
+
+    for m_id, tkr in mapping.items():
+        sub_df = pd.DataFrame()
+        if not df_5m.empty:
+            try:
+                sub_df = df_5m[tkr]
+            except Exception:
+                pass
+        c, v, e = _extract_series(sub_df)
+        data_out[m_id] = {'candles': c, 'volumes': v, 'ema20': e}
+
+    c, v, e = _extract_series(rel_1m)
+    data_out['modal-chart-reliance-1m'] = {'candles': c, 'volumes': v, 'ema20': e}
+    c, v, e = _extract_series(rel_15m)
+    data_out['modal-chart-reliance-15m'] = {'candles': c, 'volumes': v, 'ema20': e}
+    c, v, e = _extract_series(rel_1d)
+    data_out['modal-chart-reliance-1d'] = {'candles': c, 'volumes': v, 'ema20': e}
+
+    return data_out
+
+_live_candlesticks_db = _get_live_candlesticks_data()
+_live_candlesticks_json = json.dumps(_live_candlesticks_db)
+
 def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance=False):
     clean_sym = symbol.replace(":", "%3A")
     tf_tv = active_tf if active_tf != "1D" else "D"
-    
-    tv_params = {
-        "autosize": True,
-        "symbol": symbol,
-        "interval": tf_tv,
-        "timezone": "Asia/Kolkata",
-        "theme": "dark",
-        "style": "1",
-        "locale": "en",
-        "enable_publishing": False,
-        "allow_symbol_change": True,
-        "calendar": False,
-        "support_host": "https://www.tradingview.com"
-    }
-    encoded_params = urllib.parse.quote(json.dumps(tv_params, separators=(',', ':')))
-    tv_embed_url = f"https://www.tradingview-widget.com/embed-widget/advanced-chart/?symbol={clean_sym}&interval={tf_tv}&theme=dark&style=1&timezone=Asia%2FKolkata&locale=en#{encoded_params}"
     popout_url = f"https://in.tradingview.com/chart/?symbol={clean_sym}&interval={tf_tv}"
 
     tf_html = ""
@@ -665,32 +732,37 @@ def _render_chart_modal_html(modal_id, symbol, title, active_tf="5", is_reliance
     <div id="{modal_id}" class="quant-chart-modal">
         <a href="#close" class="quant-modal-backdrop" aria-label="Close modal"></a>
         <div class="quant-modal-content">
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #070B14; border-bottom: 1px solid #1E293B; z-index: 2; position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #070B14; border-bottom: 1px solid #1E293B; z-index: 10; position: relative;">
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <span class="live-dot" style="margin-right: 0;"></span>
                     <div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <h3 style="margin: 0; font-size: 1.10rem; color: #FFFFFF; font-weight: 800; letter-spacing: -0.3px;">{title}</h3>
                             <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 2px 8px; border-radius: 4px; font-size: 0.70rem; font-weight: 700;">{symbol}</span>
-                            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 8px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">0-DELAY REAL-TIME</span>
+                            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 8px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">TRADINGVIEW LIGHTWEIGHT</span>
                         </div>
                         <div style="font-size: 0.70rem; color: #94A3B8; margin-top: 2px;">
-                            Interactive Candlestick Feed • Asia/Kolkata (IST) • Direct Streaming ({tf_disp} Interval)
+                            Interactive Candlestick Feed • Asia/Kolkata (IST) • 0-Delay Stream ({tf_disp} Interval)
                         </div>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     {tf_html}
-                    <a href="{popout_url}" target="_blank" rel="noopener noreferrer" title="Open full interactive chart on TradingView" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38BDF8; padding: 6px 13px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
-                        <span>↗ Popout Window</span>
+                    <a href="{popout_url}" target="_blank" rel="noopener noreferrer" title="Open full interactive chart on TradingView.com" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38BDF8; padding: 6px 13px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                        <span>↗ Open on TradingView.com</span>
                     </a>
                     <a href="#close" title="Close chart popout (or press Esc)" style="background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.45); color: #F87171; padding: 6px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; text-decoration: none; display: inline-block;">
                         ✕ Close
                     </a>
                 </div>
             </div>
-            <div class="quant-chart-container" id="container-{modal_id}" data-symbol="{symbol}" data-tf="{tf_tv}" style="position: relative; width: 100%; height: calc(86vh - 62px); min-height: 480px; background: #0B1120;">
-                <div id="tv-widget-{modal_id}" style="width: 100%; height: 100%;"></div>
+            <div class="quant-chart-container" id="container-{modal_id}" style="position: relative; width: 100%; height: calc(86vh - 62px); min-height: 480px; background: #070B14; overflow: hidden;">
+                <div id="legend-{modal_id}" style="position: absolute; top: 12px; left: 16px; z-index: 10; display: flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.76rem; color: #94A3B8; background: rgba(11, 17, 32, 0.88); border: 1px solid rgba(51, 65, 85, 0.6); border-radius: 6px; padding: 4px 12px; backdrop-filter: blur(8px); pointer-events: none;">
+                    <span style="color: #F8FAFC; font-weight: 800;">{symbol}</span>
+                    <span style="color: #64748B;">•</span>
+                    <span id="ohlc-{modal_id}" style="color: #CBD5E1;">Loading live candlesticks...</span>
+                </div>
+                <div id="tv-chart-{modal_id}" style="width: 100%; height: 100%;"></div>
             </div>
         </div>
     </div>
@@ -708,164 +780,199 @@ _all_modals_html = "".join([
     _render_chart_modal_html("modal-chart-gold", "MCX:GOLD1!", "GOLD (MCX) • Live Commodity Chart", active_tf="5"),
 ])
 
-_chart_mount_script = """
-<script src="https://s3.tradingview.com/tv.js"></script>
+st.html(_all_modals_html, unsafe_allow_javascript=True)
+
+_modal_components.html(f"""
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
-(function() {
-    var loaded = {};
+(function() {{
+    try {{
+        const parentWin = window.parent;
+        const parentDoc = parentWin.document;
 
-    function mountTradingView(modalId) {
-        if (loaded[modalId]) return;
-        var c = document.getElementById('container-' + modalId);
-        if (!c) return;
-        var sym = c.getAttribute('data-symbol');
-        var tf = c.getAttribute('data-tf') || '5';
-        if (!sym) return;
+        if (!parentWin.LightweightCharts) {{
+            const s = parentDoc.createElement('script');
+            s.src = 'https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js';
+            parentDoc.head.appendChild(s);
+        }}
 
-        if (typeof TradingView === 'undefined' || !TradingView.widget) {
-            setTimeout(function() { mountTradingView(modalId); }, 100);
-            return;
-        }
+        parentWin.addEventListener('keydown', function(e) {{
+            if (e.key === 'Escape') parentWin.location.hash = 'close';
+        }});
 
-        loaded[modalId] = true;
-        var targetId = 'tv-widget-' + modalId;
-        var t = document.getElementById(targetId);
-        if (t) t.innerHTML = '';
+        const chartDataStore = {_live_candlesticks_json};
+        const parentCharts = {{}};
 
-        new TradingView.widget({
-            "autosize": true,
-            "symbol": sym,
-            "tvwidgetsymbol": sym,
-            "interval": tf,
-            "timezone": "Asia/Kolkata",
-            "theme": "dark",
-            "style": "1",
-            "locale": "en",
-            "toolbar_bg": "#0B1120",
-            "enable_publishing": false,
-            "allow_symbol_change": true,
-            "container_id": targetId
-        });
-    }
+        function renderChart(modalId) {{
+            try {{
+                if (parentCharts[modalId]) return;
+                const container = parentDoc.getElementById('tv-chart-' + modalId);
+                if (!container) return;
 
-    function checkActive() {
-        var h = window.location.hash;
-        if (h && h.indexOf('#modal-chart-') === 0) {
-            mountTradingView(h.substring(1));
-            setTimeout(function() {
-                try { window.dispatchEvent(new Event('resize')); } catch(e) {}
-            }, 150);
-        }
-    }
+                const LWC = parentWin.LightweightCharts || window.LightweightCharts;
+                if (!LWC || !LWC.createChart) {{
+                    setTimeout(() => renderChart(modalId), 100);
+                    return;
+                }}
 
-    window.addEventListener('hashchange', checkActive);
+                const data = chartDataStore[modalId];
+                if (!data || !data.candles || data.candles.length === 0) return;
 
-    document.addEventListener('click', function(e) {
-        var a = e.target.closest ? e.target.closest('a[href^="#modal-chart-"]') : null;
-        if (a) {
-            var href = a.getAttribute('href');
-            if (href && href.indexOf('#modal-chart-') === 0) {
-                mountTradingView(href.substring(1));
-            }
-        }
-    }, true);
+                const chart = LWC.createChart(container, {{
+                    width: container.clientWidth || 800,
+                    height: container.clientHeight || 500,
+                    layout: {{
+                        background: {{ type: 'solid', color: '#070B14' }},
+                        textColor: '#94A3B8',
+                        fontSize: 11,
+                        fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                    }},
+                    grid: {{
+                        vertLines: {{ color: 'rgba(30, 41, 59, 0.45)' }},
+                        horzLines: {{ color: 'rgba(30, 41, 59, 0.45)' }},
+                    }},
+                    crosshair: {{
+                        mode: LWC.CrosshairMode.Normal,
+                        vertLine: {{
+                            color: '#38BDF8',
+                            width: 1,
+                            style: 3,
+                            labelBackgroundColor: '#0284C7',
+                        }},
+                        horzLine: {{
+                            color: '#38BDF8',
+                            width: 1,
+                            style: 3,
+                            labelBackgroundColor: '#0284C7',
+                        }},
+                    }},
+                    rightPriceScale: {{
+                        borderColor: '#1E293B',
+                        scaleMargins: {{
+                            top: 0.08,
+                            bottom: 0.22,
+                        }},
+                    }},
+                    timeScale: {{
+                        borderColor: '#1E293B',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    }},
+                }});
 
-    setTimeout(function() {
-        mountTradingView('modal-chart-nifty');
-        mountTradingView('modal-chart-reliance');
-        checkActive();
-    }, 200);
+                const candleSeries = chart.addCandlestickSeries({{
+                    upColor: '#10B981',
+                    downColor: '#EF4444',
+                    borderDownColor: '#EF4444',
+                    borderUpColor: '#10B981',
+                    wickDownColor: '#EF4444',
+                    wickUpColor: '#10B981',
+                }});
+                candleSeries.setData(data.candles);
 
-    checkActive();
-})();
-</script>
-"""
+                if (data.volumes && data.volumes.length > 0) {{
+                    const volumeSeries = chart.addHistogramSeries({{
+                        priceFormat: {{ type: 'volume' }},
+                        priceScaleId: '',
+                        scaleMargins: {{
+                            top: 0.82,
+                            bottom: 0,
+                        }},
+                    }});
+                    volumeSeries.setData(data.volumes);
+                }}
 
-st.html(_all_modals_html + _chart_mount_script, unsafe_allow_javascript=True)
+                if (data.ema20 && data.ema20.length > 0) {{
+                    const emaSeries = chart.addLineSeries({{
+                        color: '#38BDF8',
+                        lineWidth: 1.5,
+                        priceScaleId: 'right',
+                        title: 'EMA 20',
+                    }});
+                    emaSeries.setData(data.ema20);
+                }}
 
-_modal_components.html("""
-<script src="https://s3.tradingview.com/tv.js"></script>
-<script>
-try {
-    const parentWin = window.parent;
-    const parentDoc = parentWin.document;
+                chart.timeScale().fitContent();
+                parentCharts[modalId] = chart;
 
-    if (!parentWin.TradingView) {
-        const s = parentDoc.createElement('script');
-        s.src = 'https://s3.tradingview.com/tv.js';
-        parentDoc.head.appendChild(s);
-    }
+                const ohlcEl = parentDoc.getElementById('ohlc-' + modalId);
+                chart.subscribeCrosshairMove(param => {{
+                    if (!ohlcEl) return;
+                    if (!param || !param.time || !param.seriesPrices) {{
+                        const last = data.candles[data.candles.length - 1];
+                        if (last) {{
+                            const diff = (last.close - last.open).toFixed(2);
+                            const col = last.close >= last.open ? '#10B981' : '#EF4444';
+                            ohlcEl.innerHTML = `O: <b style="color:#FFF">${{last.open.toFixed(2)}}</b> H: <b style="color:#FFF">${{last.high.toFixed(2)}}</b> L: <b style="color:#FFF">${{last.low.toFixed(2)}}</b> C: <b style="color:${{col}}">${{last.close.toFixed(2)}}</b> (<span style="color:${{col}}">${{diff >= 0 ? '+' : ''}}${{diff}}</span>)`;
+                        }}
+                        return;
+                    }}
+                    const p = param.seriesPrices.get(candleSeries);
+                    if (p) {{
+                        const diff = (p.close - p.open).toFixed(2);
+                        const col = p.close >= p.open ? '#10B981' : '#EF4444';
+                        ohlcEl.innerHTML = `O: <b style="color:#FFF">${{p.open.toFixed(2)}}</b> H: <b style="color:#FFF">${{p.high.toFixed(2)}}</b> L: <b style="color:#FFF">${{p.low.toFixed(2)}}</b> C: <b style="color:${{col}}">${{p.close.toFixed(2)}}</b> (<span style="color:${{col}}">${{diff >= 0 ? '+' : ''}}${{diff}}</span>)`;
+                    }}
+                }});
 
-    parentWin.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') parentWin.location.hash = 'close';
-    });
+                const last = data.candles[data.candles.length - 1];
+                if (last && ohlcEl) {{
+                    const diff = (last.close - last.open).toFixed(2);
+                    const col = last.close >= last.open ? '#10B981' : '#EF4444';
+                    ohlcEl.innerHTML = `O: <b style="color:#FFF">${{last.open.toFixed(2)}}</b> H: <b style="color:#FFF">${{last.high.toFixed(2)}}</b> L: <b style="color:#FFF">${{last.low.toFixed(2)}}</b> C: <b style="color:${{col}}">${{last.close.toFixed(2)}}</b> (<span style="color:${{col}}">${{diff >= 0 ? '+' : ''}}${{diff}}</span>)`;
+                }}
 
-    const parentLoaded = {};
-    function mountInParent(modalId) {
-        try {
-            if (parentLoaded[modalId]) return;
-            const c = parentDoc.getElementById('container-' + modalId);
-            if (!c) return;
-            const sym = c.getAttribute('data-symbol');
-            const tf = c.getAttribute('data-tf') || '5';
-            if (!sym) return;
+                parentWin.addEventListener('resize', () => {{
+                    if (container.clientWidth && container.clientHeight) {{
+                        chart.applyOptions({{ width: container.clientWidth, height: container.clientHeight }});
+                    }}
+                }});
+            }} catch(e) {{}}
+        }}
 
-            if (!parentWin.TradingView || !parentWin.TradingView.widget) {
-                setTimeout(() => mountInParent(modalId), 150);
-                return;
-            }
+        function checkParent() {{
+            const h = parentWin.location.hash;
+            if (h && h.startsWith('#modal-chart-')) {{
+                const mId = h.substring(1);
+                renderChart(mId);
+                setTimeout(() => {{
+                    if (parentCharts[mId]) {{
+                        const c = parentDoc.getElementById('tv-chart-' + mId);
+                        if (c) parentCharts[mId].applyOptions({{ width: c.clientWidth, height: c.clientHeight }});
+                        parentCharts[mId].timeScale().fitContent();
+                    }}
+                }}, 150);
+            }}
+        }}
 
-            parentLoaded[modalId] = true;
-            const targetId = 'tv-widget-' + modalId;
-            const t = parentDoc.getElementById(targetId);
-            if (t) t.innerHTML = '';
+        parentWin.addEventListener('hashchange', checkParent);
+        parentDoc.addEventListener('click', function(e) {{
+            const a = e.target.closest ? e.target.closest('a[href^="#modal-chart-"]') : null;
+            if (a) {{
+                const href = a.getAttribute('href');
+                if (href && href.startsWith('#modal-chart-')) {{
+                    const mId = href.substring(1);
+                    renderChart(mId);
+                    setTimeout(() => {{
+                        if (parentCharts[mId]) {{
+                            const c = parentDoc.getElementById('tv-chart-' + mId);
+                            if (c) parentCharts[mId].applyOptions({{ width: c.clientWidth, height: c.clientHeight }});
+                            parentCharts[mId].timeScale().fitContent();
+                        }}
+                    }}, 150);
+                }}
+            }}
+        }}, true);
 
-            new parentWin.TradingView.widget({
-                "autosize": true,
-                "symbol": sym,
-                "tvwidgetsymbol": sym,
-                "interval": tf,
-                "timezone": "Asia/Kolkata",
-                "theme": "dark",
-                "style": "1",
-                "locale": "en",
-                "toolbar_bg": "#0B1120",
-                "enable_publishing": false,
-                "allow_symbol_change": true,
-                "container_id": targetId
-            });
-        } catch(e) {}
-    }
+        setTimeout(() => {{
+            renderChart('modal-chart-nifty');
+            renderChart('modal-chart-reliance');
+            checkParent();
+        }}, 300);
 
-    function checkParent() {
-        const h = parentWin.location.hash;
-        if (h && h.startsWith('#modal-chart-')) {
-            mountInParent(h.substring(1));
-            setTimeout(() => {
-                try { parentWin.dispatchEvent(new Event('resize')); } catch(e) {}
-            }, 150);
-        }
-    }
-
-    parentWin.addEventListener('hashchange', checkParent);
-    parentDoc.addEventListener('click', function(e) {
-        const a = e.target.closest ? e.target.closest('a[href^="#modal-chart-"]') : null;
-        if (a) {
-            const href = a.getAttribute('href');
-            if (href && href.startsWith('#modal-chart-')) {
-                mountInParent(href.substring(1));
-            }
-        }
-    }, true);
-
-    setTimeout(() => {
-        mountInParent('modal-chart-nifty');
-        mountInParent('modal-chart-reliance');
         checkParent();
-    }, 250);
-
-    checkParent();
-} catch(e) {}
+    }} catch(e) {{}}
+}})();
 </script>
 """, height=0)
 
