@@ -8,3 +8,5 @@ plotly>=5.18.0
 beautifulsoup4>=4.12.0
 websockets>=12.0
 curl_cffi>=0.7.0
+growwapi>=1.5.0
+pyotp>=2.9.0
