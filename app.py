@@ -680,11 +680,10 @@ if groww_feed.is_connected:
         groww_feed.disconnect()
         st.rerun()
 else:
-    st.sidebar.error("🔴 **Groww Account: Disconnected**")
-    if groww_feed.last_error:
-        st.sidebar.warning(f"⚠️ {groww_feed.last_error}")
+    st.sidebar.info("📡 **Live Market Stream: Active (0-Delay)**")
+    st.sidebar.caption("⚡ Live quotes, option chain, Greeks, and trade signals are fully operational. Connecting your personal broker account is strictly optional (only needed for 1-click automated order execution).")
     
-    with st.sidebar.expander("🔐 Connect Groww Broker Account", expanded=True):
+    with st.sidebar.expander("🔐 Connect Broker for 1-Click Orders (Optional)", expanded=False):
         st.caption("Enter your Groww Access Token or API Key from [groww.in/trade-api](https://groww.in/trade-api/api-keys).")
         token_input = st.text_input("Groww Access Token / API Key", type="password", placeholder="Paste your token here...", key="groww_user_token_input")
         totp_input = st.text_input("6-digit TOTP (Optional, for API Key 2FA)", max_chars=6, placeholder="e.g. 849201", key="groww_totp_input")
