@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 JOURNAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily_trade_journal.json")
-STARTING_CAPITAL = 100000.0  # Clean Starting Capital Allocation (Strictly 2 Lots Mandate)
+STARTING_CAPITAL = 66274.0  # Verified Account Cash Balance (Strictly 2 Lots Mandate)
 
 def get_default_historical_journal() -> List[Dict[str, Any]]:
     """

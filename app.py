@@ -1118,6 +1118,26 @@ contract_expiry_label = "Next Monthly Expiry"
 
 st.sidebar.caption(f"📦 Total Sizing: **500 Qty** × **{num_lots} Lots** = **{total_trading_qty} Units**")
 
+# Account Cash Balance & Margin Risk Buffer
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 💳 Account Cash & Margin Buffer")
+account_cash = st.sidebar.number_input(
+    "Live Account Cash Balance (₹)",
+    min_value=1000.0,
+    max_value=10000000.0,
+    value=66274.0,
+    step=500.0,
+    help="Current live account cash balance for margin verification and capital risk auditing."
+)
+est_capital_req = total_trading_qty * 37.65
+margin_buffer = account_cash - est_capital_req
+margin_pct = (margin_buffer / account_cash) * 100.0 if account_cash > 0 else 0.0
+
+if margin_buffer >= 0:
+    st.sidebar.success(f"🟢 **Margin Armed**: ₹{account_cash:,.2f} Available\n\n🛡️ Buffer: **+₹{margin_buffer:,.2f}** ({margin_pct:.0f}% Safety Margin)")
+else:
+    st.sidebar.error(f"🔴 **Margin Deficit**: ₹{account_cash:,.2f} Available\n\n⚠️ Shortfall: **-₹{abs(margin_buffer):,.2f}** for {num_lots} Lots")
+
 # Real-Time Scenario Simulation Hub
 st.sidebar.markdown("### ⚡ Real-Time Scenario Simulation Hub")
 sim_scenario = st.sidebar.radio(
@@ -3232,8 +3252,8 @@ if df is not None and not df.empty:
     today_strike_price = float(estimated_premium if estimated_premium > 0 else (current_option_ltp if current_option_ltp > 0 else 37.65))
     today_2lot_capital = round(2 * 500 * today_strike_price, 2)
 
-    journal_entries = TradeJournalManager.load_journal()
-    summary_kpi = TradeJournalManager.get_summary_kpi(journal_entries, today_strike_price=today_strike_price)
+    journal_entries = TradeJournalManager.load_journal(starting_cash=account_cash)
+    summary_kpi = TradeJournalManager.get_summary_kpi(journal_entries, today_strike_price=today_strike_price, starting_cash=account_cash)
 
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border: 1px solid #334155; border-radius: 12px; padding: 18px 24px; margin-top: 15px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
@@ -3246,10 +3266,17 @@ if df is not None and not df.empty:
                     Daily Systematic Execution Log • Mandate: Strictly 2 Lots (1,000 Qty) • 10 Pts Target (+₹10,000) • 9 Pts Stop Loss (-₹9,000)
                 </p>
             </div>
-            <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid #10B981; border-radius: 8px; padding: 6px 18px; text-align: right;">
-                <span style="font-size: 0.70rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">2-Lot Capital Allocation (Today)</span>
-                <div style="font-size: 1.25rem; color: #10B981; font-weight: 900;">₹{today_2lot_capital:,.2f}</div>
-                <div style="font-size: 0.68rem; color: #6EE7B7; font-weight: 600;">2 Lots (1,000 Qty) × ₹{today_strike_price:.2f} LTP</div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 6px 16px; text-align: right;">
+                    <span style="font-size: 0.70rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Account Cash Balance</span>
+                    <div style="font-size: 1.25rem; color: #38BDF8; font-weight: 900;">₹{summary_kpi['total_cash']:,.2f}</div>
+                    <div style="font-size: 0.68rem; color: #7DD3FC; font-weight: 600;">Buffer: ₹{max(0.0, summary_kpi['total_cash'] - today_2lot_capital):,.2f}</div>
+                </div>
+                <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid #10B981; border-radius: 8px; padding: 6px 18px; text-align: right;">
+                    <span style="font-size: 0.70rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">2-Lot Capital Allocation (Today)</span>
+                    <div style="font-size: 1.25rem; color: #10B981; font-weight: 900;">₹{today_2lot_capital:,.2f}</div>
+                    <div style="font-size: 0.68rem; color: #6EE7B7; font-weight: 600;">2 Lots (1,000 Qty) × ₹{today_strike_price:.2f} LTP</div>
+                </div>
             </div>
         </div>
     </div>
@@ -3346,7 +3373,7 @@ if df is not None and not df.empty:
                     "confluence_score": float(dominant_score),
                     "notes": trade_notes
                 }
-                TradeJournalManager.add_or_update_entry(new_record)
+                TradeJournalManager.add_or_update_entry(new_record, starting_cash=account_cash)
                 st.success(f"✅ Trade log for {date_formatted} ({status_choice} • 2 Lots • Capital: ₹{calc_cap_deployed:,.2f}) recorded successfully!")
                 st.rerun()
 
@@ -3443,7 +3470,7 @@ if df is not None and not df.empty:
             }
         )
     else:
-        st.info("ℹ️ **Clean Authentic Ledger Initialized (Starting Capital: ₹1,00,000.00 • Strictly 2 Lots Mandate)**. All synthetic backtest history has been wiped. Only real trades logged via the entry form above or confirmed live executions will appear here.")
+        st.info(f"ℹ️ **Clean Authentic Ledger Initialized (Starting Capital: ₹{summary_kpi['starting_capital']:,.2f} • Strictly 2 Lots Mandate)**. All synthetic backtest history has been wiped. Only real trades logged via the entry form above or confirmed live executions will appear here.")
 
 
 
