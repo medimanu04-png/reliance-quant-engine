@@ -112,10 +112,14 @@ class NSEIndiaFetcher:
         """Calculates exact count of active trading days (excluding weekends & holidays)."""
         if fo_holidays is None:
             fo_holidays = []
+        if getattr(start_dt, "tzinfo", None) is not None:
+            start_dt = start_dt.replace(tzinfo=None)
+        if getattr(end_dt, "tzinfo", None) is not None:
+            end_dt = end_dt.replace(tzinfo=None)
         cur = start_dt
         cnt = 0
         days = []
-        while cur <= end_dt:
+        while cur.date() <= end_dt.date():
             if cur.weekday() < 5:
                 s_str = cur.strftime("%d-%b-%Y")
                 if s_str not in fo_holidays:
@@ -135,6 +139,8 @@ class NSEIndiaFetcher:
         """
         if today_dt is None:
             today_dt = datetime.now(IST)
+        if getattr(today_dt, "tzinfo", None) is not None:
+            today_dt = today_dt.astimezone(IST).replace(tzinfo=None)
         if fo_holidays is None:
             fo_holidays = []
 
