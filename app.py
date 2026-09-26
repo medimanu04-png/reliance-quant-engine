@@ -451,6 +451,88 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ==============================================================================
+# MANDATORY GROWW BROKER AUTHENTICATION GATE
+# ==============================================================================
+from groww_market_feed import GrowwMarketFeed
+groww_feed = GrowwMarketFeed.get_instance()
+
+if not groww_feed.is_connected:
+    st.sidebar.markdown("### ⚡ Groww Integration (Mandatory)")
+    st.sidebar.error("🔴 **Broker: Disconnected**")
+    st.sidebar.caption("🔒 **Mandatory Link**: Direct Groww Broker API connection is mandatory. All numerical calculations, spot prices, option chain Greeks, and real-time execution signals require Groww authentication.")
+
+    st.html("""
+    <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(20, 30, 55, 0.98) 100%); border: 2px solid #EF4444; border-radius: 12px; padding: 22px 26px; box-shadow: 0 8px 32px rgba(239, 68, 68, 0.25); margin-bottom: 22px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 2.2rem;">🔒</span>
+                <div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.5px;">MANDATORY GROWW BROKER AUTHENTICATION</div>
+                    <div style="font-size: 0.84rem; color: #F87171; font-weight: 700; margin-top: 2px;">Broker Connection is Mandatory — Quant Engine is Locked</div>
+                </div>
+            </div>
+            <span style="background: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.45); padding: 5px 14px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.5px;">MANDATORY PREREQUISITE</span>
+        </div>
+        <p style="font-size: 0.88rem; color: #E2E8F0; line-height: 1.6; margin-bottom: 8px;">
+            This institutional quantitative intraday engine strictly operates with verified, live <b>Groww Broker API</b> connectivity. In accordance with strict risk mandates, <b>all numericals — Reliance spot price, Dual ATM option chain corridor, Greeks (Delta/Theta/IV), volume velocity, institutional order flow, and probability scores — are 100% dependent on your official Groww API feed</b>. Standalone simulation is disabled.
+        </p>
+        <div style="font-size: 0.78rem; color: #94A3B8; border-top: 1px solid rgba(239, 68, 68, 0.25); padding-top: 8px; margin-top: 10px;">
+            ⚡ Authenticate with your Groww API Key and TOTP below to unlock live quantitative market operations.
+        </div>
+    </div>
+    """)
+
+    with st.form("groww_mandatory_auth_form", clear_on_submit=False):
+        st.markdown("#### 🔑 Connect Your Groww Broker Account", unsafe_allow_html=True)
+        col_k, col_t = st.columns([1.6, 1.4])
+        with col_k:
+            api_key_input = st.text_input(
+                "Groww API Key / Access Token",
+                value=groww_feed.saved_api_key,
+                type="password",
+                placeholder="Paste your API Key or Token from groww.in/trade-api/api-keys",
+                help="Obtain your API Key from https://groww.in/trade-api/api-keys"
+            )
+        with col_t:
+            totp_input = st.text_input(
+                "6-Digit TOTP or TOTP Secret Key",
+                type="password",
+                placeholder="e.g. 849201 or your TOTP Secret Key",
+                help="Enter the 6-digit TOTP from your authenticator app, or paste your TOTP secret key for automatic 2FA."
+            )
+
+        auth_submitted = st.form_submit_button("🔐 Authenticate & Unlock Quantitative Engine (Mandatory)", use_container_width=True)
+        if auth_submitted:
+            if not api_key_input or not api_key_input.strip():
+                st.error("⚠️ Please enter your Groww API Key or Access Token.")
+            else:
+                with st.spinner("Validating credentials directly with Groww authentication servers..."):
+                    conn_res = groww_feed.connect(
+                        api_key=api_key_input.strip(),
+                        totp=totp_input.strip() if totp_input else None
+                    )
+                if conn_res.get("status") == "SUCCESS":
+                    st.success(f"🟢 {conn_res['message']}! Unlocking institutional quantitative engine...")
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+                elif conn_res.get("status") == "NEED_TOTP":
+                    st.warning(conn_res["message"])
+                else:
+                    st.error(conn_res["message"])
+
+    with st.expander("📖 How to obtain your Groww API Key & TOTP (30-Second Guide)", expanded=False):
+        st.markdown("""
+        1. Open [Groww Trade API Keys](https://groww.in/trade-api/api-keys) in your browser.
+        2. Click **Create API Key** (or copy your existing active API Key / Access Token).
+        3. Open your Authenticator app (Google Authenticator, Microsoft Authenticator, etc.) and check your current 6-digit code (or copy your TOTP secret key).
+        4. Paste your API Key and TOTP above, then click **Authenticate & Unlock Quantitative Engine**.
+        5. Your session will be validated directly against Groww authentication servers and stored securely for subsequent sessions.
+        """)
+
+    st.stop()
+
 # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
 active_mandate_expiry = expiry_plan["selected_expiry"]
@@ -497,7 +579,7 @@ def generate_quant_hud_html():
         <div id="quant-clock-live-date" style="font-size: 0.70rem; color: #CBD5E1; font-weight: 500; margin-top: 2px;">📅 {date_str}</div>
         <div style="margin-top: 4px;">{session_html}</div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(148, 163, 184, 0.14); font-size: 0.62rem; color: #94A3B8;">
-            <span>⚡ FEED: <b style="color: #38BDF8;">0-DELAY GROWW</b></span>
+            <span>⚡ FEED: <b style="color: #38BDF8;">DIRECT GROWW API (MANDATORY)</b></span>
             <span>📶 LATENCY: <b style="color: #34D399;">~4ms</b></span>
             <span>🛡️ DECAY: <b style="color: #FBBF24;">10D RULE</b></span>
         </div>
@@ -529,6 +611,29 @@ def generate_quant_hud_html():
     </div>
     """
 
+# Active Groww Account Profile (Mandatory Link)
+prof = groww_feed.user_profile or {}
+ucc_val = prof.get("ucc") or prof.get("client_id") or prof.get("user_id") or "Verified"
+name_val = prof.get("name") or prof.get("user_name") or prof.get("client_name") or "User"
+
+st.html(f"""
+<div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 10px #10B981; display: inline-block;"></span>
+        <span style="font-size: 0.78rem; font-weight: 800; color: #34D399; letter-spacing: 0.5px; text-transform: uppercase;">
+            GROWW BROKER: CONNECTED & VERIFIED (MANDATORY LINK ACTIVE)
+        </span>
+        <span style="color: #94A3B8; font-size: 0.74rem;">|</span>
+        <span style="font-size: 0.76rem; color: #F8FAFC;">
+            Account: <b>{ucc_val}</b> ({name_val})
+        </span>
+    </div>
+    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 600;">
+        ⚡ All Numericals Strictly Dependent on Groww API Feed
+    </div>
+</div>
+""")
+
 # Top Bar with Instant Refresh & Last Scan Time
 top_col1, top_col2 = st.columns([2.6, 1.4])
 with top_col1:
@@ -545,7 +650,7 @@ with top_col1:
             <div><b style="color: #FFFFFF;">Optimal Parameters:</b> Target = <b style="color: #34D399;">+10.0 pts (+₹10,000)</b> &nbsp;|&nbsp; Stop Loss = <b style="color: #F87171;">-9.0 pts (-₹9,000)</b> &nbsp;|&nbsp; Gate: <b style="color: #FBBF24;">≥65% Hit Prob</b> &nbsp;|&nbsp; Capital: ₹50,000</div>
             <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 3px;">⏱️ <b style="color: #CBD5E1;">Trading Window:</b> 09:15 AM – 03:10 PM IST (Strictly no new signals past 02:45 PM; Auto-square-off alert at 03:05 PM)</div>
             <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 5px; border-top: 1px solid #1E293B;">
-                📡 <b style="color: #38BDF8;">Data Sources & Live Telemetry:</b> Spot & Indices: <span style="color: #FFFFFF;">Groww API (0-Delay Real-Time Feed)</span> &bull; F&O Derivatives: <span style="color: #FFFFFF;">Groww Live Option Chain API (0-Delay)</span> &bull; Historical Candles: <span style="color: #FFFFFF;">Yahoo Finance (yfinance)</span> &bull; Quant Signals: <span style="color: #FFFFFF;">Black-Scholes & Proprietary Quant Engine</span> &bull; Macro: <span style="color: #FFFFFF;">Google News RSS & Groww MCX Telemetry</span>
+                📡 <b style="color: #38BDF8;">Data Sources & Live Telemetry:</b> Spot & Indices: <span style="color: #FFFFFF;">Groww Broker API (0-Delay Direct Stream)</span> &bull; F&O Derivatives: <span style="color: #FFFFFF;">Groww Live Option Chain API (0-Delay)</span> &bull; Technicals: <span style="color: #FFFFFF;">Quant Engine (Groww Sourced)</span> &bull; Quant Signals: <span style="color: #FFFFFF;">Black-Scholes & Proprietary Quant Engine</span> &bull; Macro: <span style="color: #FFFFFF;">Groww Live Telemetry (MCX Crude & Gold)</span>
             </div>
         </div>
     </div>
@@ -692,46 +797,12 @@ st.markdown("---")
 # ==============================================================================
 # 2. SIDEBAR - GROWW API BROKER FEED & RELIANCE SESSION CONTROL
 # ==============================================================================
-from groww_market_feed import GrowwMarketFeed
-groww_feed = GrowwMarketFeed.get_instance()
-
-st.sidebar.markdown("### ⚡ Groww Integration")
-st.sidebar.caption("📡 **Market Feeds**: Streaming live 0-delay quotes from Groww (NSE, BSE, MCX).")
-
-if groww_feed.is_connected:
-    st.sidebar.success("🟢 **Groww Broker: Connected**")
-    prof = groww_feed.user_profile or {}
-    ucc_val = prof.get("ucc") or prof.get("client_id") or "Verified"
-    name_val = prof.get("name") or prof.get("user_name") or "User"
-    st.sidebar.info(f"👤 **Account**: `{ucc_val}` ({name_val})")
-    if st.sidebar.button("Disconnect Groww Account", key="groww_disconnect_btn", width="stretch"):
-        groww_feed.disconnect()
-        st.rerun()
-else:
-    st.sidebar.info("📡 **Live Market Stream: Active (0-Delay)**")
-    st.sidebar.caption("⚡ Live quotes, option chain, Greeks, and trade signals are fully operational. Connecting your personal broker account is strictly optional (only needed for 1-click automated order execution).")
-    
-    with st.sidebar.expander("🔐 Connect Broker for 1-Click Orders (Optional)", expanded=False):
-        st.caption("Enter your Groww Access Token or API Key from [groww.in/trade-api](https://groww.in/trade-api/api-keys).")
-        token_input = st.text_input("Groww Access Token / API Key", type="password", placeholder="Paste your token here...", key="groww_user_token_input")
-        totp_input = st.text_input("6-digit TOTP (Optional, for API Key 2FA)", max_chars=6, placeholder="e.g. 849201", key="groww_totp_input")
-        
-        if st.button("🔐 Verify & Connect Token", key="groww_verify_btn", width="stretch"):
-            if token_input and token_input.strip():
-                with st.spinner("Validating token with Groww authentication servers..."):
-                    conn_res = groww_feed.connect(
-                        api_key=token_input.strip(),
-                        totp=totp_input.strip() if totp_input and totp_input.strip() else None
-                    )
-                if conn_res["status"] == "SUCCESS":
-                    st.success(conn_res["message"])
-                    st.rerun()
-                elif conn_res["status"] == "NEED_TOTP":
-                    st.warning(conn_res["message"])
-                else:
-                    st.error(conn_res["message"])
-            else:
-                st.warning("Please paste your Groww Access Token.")
+st.sidebar.markdown("### ⚡ Groww Integration (Mandatory)")
+st.sidebar.success("🟢 **Groww Broker: Connected**")
+st.sidebar.info(f"👤 **Account**: `{ucc_val}` ({name_val})\n\n📡 **Data Dependency**: 100% Direct Groww API Feed")
+if st.sidebar.button("Disconnect Groww Account", key="groww_disconnect_btn", use_container_width=True):
+    groww_feed.disconnect()
+    st.rerun()
 
 st.sidebar.markdown("---")
 # Telegram Trade Alert Integration
