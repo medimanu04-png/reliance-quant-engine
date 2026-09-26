@@ -203,7 +203,32 @@ st.markdown("""
         color: #94A3B8 !important;
     }
 
-    /* Badges */
+    /* Trade Status Cards (Institutional Obsidian Glassmorphism) */
+    .trade-status-card {
+        border-radius: 12px !important;
+        padding: 18px 22px !important;
+        margin-bottom: 16px !important;
+        box-sizing: border-box !important;
+        backdrop-filter: blur(10px) !important;
+    }
+    .status-standdown {
+        background: linear-gradient(135deg, rgba(38, 20, 26, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
+        border: 1px solid rgba(239, 68, 68, 0.35) !important;
+        border-left: 5px solid #EF4444 !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(239, 68, 68, 0.12) !important;
+    }
+    .status-tradable-bullish {
+        background: linear-gradient(135deg, rgba(6, 78, 59, 0.45) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
+        border: 1px solid rgba(16, 185, 129, 0.45) !important;
+        border-left: 5px solid #10B981 !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 24px rgba(16, 185, 129, 0.18) !important;
+    }
+    .status-tradable-bearish {
+        background: linear-gradient(135deg, rgba(127, 29, 29, 0.45) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
+        border: 1px solid rgba(239, 68, 68, 0.45) !important;
+        border-left: 5px solid #EF4444 !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 24px rgba(239, 68, 68, 0.18) !important;
+    }
     .tradable-badge {
         background: linear-gradient(135deg, #059669 0%, #10B981 100%);
         color: white;
@@ -216,15 +241,14 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
     }
     .nontradable-badge {
-        background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%);
+        background: linear-gradient(135deg, rgba(38, 20, 26, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        border-left: 5px solid #EF4444;
         color: white;
-        padding: 10px 18px;
-        border-radius: 6px;
-        font-weight: 700;
-        font-size: 1.05rem;
-        display: inline-block;
+        padding: 16px 20px;
+        border-radius: 10px;
         margin-bottom: 14px;
-        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px rgba(239, 68, 68, 0.12);
     }
     .news-card-equal {
         background: #0F172A !important;
@@ -2282,69 +2306,208 @@ if df is not None and not df.empty:
 
     if is_tradable:
         if recommended_contract_type == "CE":
-            st.markdown(f'''
-            <div class="tradable-badge">
-                <div style="font-size: 1.15rem; font-weight: 800;">🚀 TRADE STATUS: TRADABLE DAY — A+ BULLISH (CE / CALL) SETUP</div>
-                <div style="font-size: 0.90rem; font-weight: 500; margin-top: 8px; line-height: 1.5;">
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                        <span style="font-weight: 700; color: #FFFFFF;">Direction: <u>BULLISH (BUY CALL / CE)</u></span>
-                        <span style="background: rgba(0, 0, 0, 0.60); color: #34D399; padding: 3px 10px; border-radius: 5px; font-weight: 800; border: 1px solid rgba(52, 211, 153, 0.50);">
-                            🟢 Bullish (CE): {bullish_score}% (≥{MIN_HIT_PERCENTAGE:.0f}% Gate)
+            st.html(f'''
+            <div class="trade-status-card status-tradable-bullish">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; box-shadow: 0 0 12px #10B981; display: inline-block;"></span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                            🚀 TRADE STATUS: TRADABLE DAY &bull; A+ BULLISH (CE / CALL) SETUP
                         </span>
-                        <span style="background: rgba(0, 0, 0, 0.60); color: #FFFFFF; padding: 3px 10px; border-radius: 5px; font-weight: 800; border: 1px solid rgba(255, 255, 255, 0.45);">
-                            🔴 Bearish (PE): {bearish_score}%
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="background: rgba(16, 185, 129, 0.20); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.40); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
+                            ⚡ HIGH-PROBABILITY SIGNAL
                         </span>
-                        <span style="background: rgba(0, 0, 0, 0.60); color: #38BDF8; padding: 3px 10px; border-radius: 5px; font-weight: 800; border: 1px solid rgba(56, 189, 248, 0.45);">
-                            Selected Contract: RELIANCE {atm_strike} CE
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
+                            RELIANCE {atm_strike} CE
                         </span>
                     </div>
                 </div>
+
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">DIRECTIONAL CONFLUENCE</div>
+                        <div style="font-size: 1.10rem; font-weight: 900; color: #34D399; margin-top: 3px;">
+                            🟢 {bullish_score}% Bullish
+                        </div>
+                        <div style="font-size: 0.70rem; color: #6EE7B7; margin-top: 2px;">≥{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
+                    </div>
+
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
+                        <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
+                            <span style="color: #34D399;">Bullish: {bullish_score}%</span>
+                            <span style="color: #F87171;">Bearish: {bearish_score}%</span>
+                        </div>
+                        <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
+                            <div style="width: {bullish_score}%; background: #10B981;"></div>
+                            <div style="width: {bearish_score}%; background: #EF4444;"></div>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
+                            RELIANCE {atm_strike} CE
+                        </div>
+                        <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
+                    </div>
+
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
+                            +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
+                        </div>
+                        <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                    <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
+                    <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
+                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #34D399;">{bullish_score}% ≥ {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} CE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
+                    </div>
+                </div>
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
         else:
-            st.markdown(f'''
-            <div class="tradable-badge" style="background: linear-gradient(135deg, #B91C1C 0%, #EF4444 100%); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);">
-                <div style="font-size: 1.15rem; font-weight: 800;">🚀 TRADE STATUS: TRADABLE DAY — A+ BEARISH (PE / PUT) SETUP</div>
-                <div style="font-size: 0.90rem; font-weight: 500; margin-top: 8px; line-height: 1.5;">
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                        <span style="font-weight: 700; color: #FFFFFF;">Direction: <u>BEARISH (BUY PUT / PE)</u></span>
-                        <span style="background: rgba(0, 0, 0, 0.60); color: #FFFFFF; padding: 3px 10px; border-radius: 5px; font-weight: 800; border: 1px solid rgba(255, 255, 255, 0.45);">
-                            🔴 Bearish (PE): {bearish_score}% (≥{MIN_HIT_PERCENTAGE:.0f}% Gate)
+            st.html(f'''
+            <div class="trade-status-card status-tradable-bearish">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 12px #EF4444; display: inline-block;"></span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                            🚀 TRADE STATUS: TRADABLE DAY &bull; A+ BEARISH (PE / PUT) SETUP
                         </span>
-                        <span style="background: rgba(0, 0, 0, 0.60); color: #34D399; padding: 3px 10px; border-radius: 5px; font-weight: 800; border: 1px solid rgba(52, 211, 153, 0.50);">
-                            🟢 Bullish (CE): {bullish_score}%
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="background: rgba(239, 68, 68, 0.20); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.40); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
+                            ⚡ HIGH-PROBABILITY SIGNAL
                         </span>
-                        <span style="background: rgba(0, 0, 0, 0.60); color: #38BDF8; padding: 3px 10px; border-radius: 5px; font-weight: 800; border: 1px solid rgba(56, 189, 248, 0.45);">
-                            Selected Contract: RELIANCE {atm_strike} PE
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
+                            RELIANCE {atm_strike} PE
                         </span>
                     </div>
                 </div>
+
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">DIRECTIONAL CONFLUENCE</div>
+                        <div style="font-size: 1.10rem; font-weight: 900; color: #F87171; margin-top: 3px;">
+                            🔴 {bearish_score}% Bearish
+                        </div>
+                        <div style="font-size: 0.70rem; color: #FECACA; margin-top: 2px;">≥{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
+                    </div>
+
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
+                        <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
+                            <span style="color: #F87171;">Bearish: {bearish_score}%</span>
+                            <span style="color: #34D399;">Bullish: {bullish_score}%</span>
+                        </div>
+                        <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
+                            <div style="width: {bearish_score}%; background: #EF4444;"></div>
+                            <div style="width: {bullish_score}%; background: #10B981;"></div>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
+                            RELIANCE {atm_strike} PE
+                        </div>
+                        <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
+                    </div>
+
+                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
+                            +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
+                        </div>
+                        <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                    <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
+                    <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
+                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #F87171;">{bearish_score}% ≥ {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} PE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
+                    </div>
+                </div>
             </div>
-            ''', unsafe_allow_html=True)
+            ''')
     else:
         bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if bullish_score > bearish_score else (f"🔴 Mild Bearish Lean ({bearish_score}%)" if bearish_score > bullish_score else "⚪ Neutral Chop (50-50)")
-        st.markdown(f'''
-        <div class="nontradable-badge">
-            <div style="font-size: 1.15rem; font-weight: 800;">🛑 TRADE STATUS: NON-TRADABLE DAY / STAND DOWN</div>
-            <div style="font-size: 0.90rem; font-weight: 500; margin-top: 8px; line-height: 1.55;">
-                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
-                    <span style="font-weight: 700; color: #FFFFFF;">Directional Breakdown:</span>
-                    <span style="background: rgba(0, 0, 0, 0.60); color: #34D399; padding: 3px 10px; border-radius: 5px; font-weight: 800; font-size: 0.88rem; border: 1px solid rgba(52, 211, 153, 0.50); display: inline-flex; align-items: center; gap: 4px;">
-                        🟢 Bullish (Call / CE): {bullish_score}%
-                    </span>
-                    <span style="background: rgba(0, 0, 0, 0.60); color: #FFFFFF; padding: 3px 10px; border-radius: 5px; font-weight: 800; font-size: 0.88rem; border: 1px solid rgba(255, 255, 255, 0.45); display: inline-flex; align-items: center; gap: 4px;">
-                        🔴 Bearish (Put / PE): {bearish_score}%
+        st.html(f'''
+        <div class="trade-status-card status-standdown">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 12px #EF4444; display: inline-block;"></span>
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                        🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN
                     </span>
                 </div>
-                <div>
-                    <span style="color: #FEF08A; font-weight: 700;">Why Stand Down?</span> 
-                    Current prevailing bias is <span style="background: rgba(0, 0, 0, 0.45); padding: 1px 7px; border-radius: 4px; font-weight: 700; color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.35);">{bias_label}</span>, 
-                    which falls below the mandatory <b>≥ {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</b> ({dominant_score}% < {MIN_HIT_PERCENTAGE:.0f}%). 
-                    Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="background: rgba(239, 68, 68, 0.15); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
+                        🛡️ CAPITAL PRESERVATION ACTIVE
+                    </span>
+                    <span style="background: rgba(148, 163, 184, 0.12); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.25); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
+                        0 Orders Placed
+                    </span>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">PREVAILING MARKET BIAS</div>
+                    <div style="font-size: 1.02rem; font-weight: 800; color: {'#34D399' if bullish_score >= bearish_score else '#F87171'}; margin-top: 3px;">
+                        {bias_label}
+                    </div>
+                    <div style="font-size: 0.70rem; color: #94A3B8; margin-top: 2px;">Directional tendency</div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
+                    <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
+                        <span style="color: #34D399;">Bullish: {bullish_score}%</span>
+                        <span style="color: #F87171;">Bearish: {bearish_score}%</span>
+                    </div>
+                    <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
+                        <div style="width: {bullish_score}%; background: #10B981;"></div>
+                        <div style="width: {bearish_score}%; background: #EF4444;"></div>
+                    </div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">MANDATORY EXECUTION GATE</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24; margin-top: 3px;">
+                        ≥ {MIN_HIT_PERCENTAGE:.0f}% Required
+                    </div>
+                    <div style="font-size: 0.70rem; color: #F87171; margin-top: 2px;">
+                        Deficit: -{MIN_HIT_PERCENTAGE - dominant_score:.1f}% below threshold
+                    </div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CAPITAL ALLOCATION</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #38BDF8; margin-top: 3px;">
+                        100% Cash Preserved
+                    </div>
+                    <div style="font-size: 0.70rem; color: #34D399; margin-top: 2px;">
+                        Protected from chop & theta decay
+                    </div>
+                </div>
+            </div>
+
+            <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                <span style="font-size: 1.1rem; line-height: 1;">💡</span>
+                <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
+                    <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <b style="color: {'#34D399' if bullish_score >= bearish_score else '#F87171'};">{bias_label}</b>, which falls below the mandatory <b>≥ {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</b> ({dominant_score}% < {MIN_HIT_PERCENTAGE:.0f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
                 </div>
             </div>
         </div>
-        ''', unsafe_allow_html=True)
+        ''')
 
     # 4 Execution Blocks (Solid Dark High-Contrast Cards - Symmetrically Aligned)
     b1, b2, b3, b4 = st.columns(4)
