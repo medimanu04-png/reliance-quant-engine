@@ -32,6 +32,9 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Dict, Any, List, Tuple, Optional
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
 from nse_data_fetcher import NSEIndiaFetcher
 
 if sys.stdout.encoding != 'utf-8':
@@ -392,7 +395,7 @@ class UltraHighConvictionRelianceEngine:
         nse_data = NSEIndiaFetcher.get_reliance_official_data()
         expiry_date_str = nse_data.get("official_expiry", "27-OCT-2026")
         expiry_dt = datetime.strptime(expiry_date_str, "%d-%b-%Y") if "-" in expiry_date_str else datetime(2026, 10, 27)
-        today_dt = datetime.now()
+        today_dt = datetime.now(IST)
 
         current_option_ltp = low_data["call_ltp"] if atm_strike == lower_atm else high_data["call_ltp"]
         entry_premium = round(current_option_ltp + 1.20, 2)

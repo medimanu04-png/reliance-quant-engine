@@ -25,3 +25,5 @@ desktop.ini
 # Agent & Brain artifacts
 .gemini/
 .system_generated/
+
+push_to_github.bat

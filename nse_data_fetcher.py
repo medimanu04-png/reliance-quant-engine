@@ -11,6 +11,9 @@ import calendar
 from datetime import datetime, date, timezone, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 import math
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
 
 try:
     from curl_cffi import requests
@@ -58,7 +61,7 @@ class NSEIndiaFetcher:
             "source": "Groww API (0-Delay Real-Time Feed)",
             "status": "LIVE_GROWW_DIRECT",
             "market_state": "Closed",
-            "trade_date": datetime.now().strftime("%d-%b-%Y"),
+            "trade_date": datetime.now(IST).strftime("%d-%b-%Y"),
             "spot_ltp": 1226.00,
             "open": 1210.50,
             "high": 1227.40,
@@ -131,7 +134,7 @@ class NSEIndiaFetcher:
         Automatically updates dynamically every single day based on live calendar progression.
         """
         if today_dt is None:
-            today_dt = datetime.now()
+            today_dt = datetime.now(IST)
         if fo_holidays is None:
             fo_holidays = []
 
@@ -330,7 +333,7 @@ class NSEIndiaFetcher:
             
         return {
             "benchmarks": tick_data,
-            "timestamp": datetime.now().strftime("%I:%M:%S %p IST")
+            "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST")
         }
 
     @classmethod
@@ -362,7 +365,7 @@ class NSEIndiaFetcher:
                     "pcr_volume": 0.85,
                     "call_ltp": atm_contract.get("call_ltp", 37.65),
                     "put_ltp": atm_contract.get("put_ltp", 18.20),
-                    "timestamp": datetime.now().strftime("%I:%M:%S %p IST"),
+                    "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
                     "source": "Groww API (0-Delay Real-Time Feed)"
                 }
         except Exception:
@@ -391,7 +394,7 @@ class NSEIndiaFetcher:
             "put_oi_change_pct": put_oi_change,
             "pcr_oi": pcr_oi,
             "pcr_volume": pcr_vol,
-            "timestamp": datetime.now().strftime("%I:%M:%S %p IST"),
+            "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
             "source": "Groww API (0-Delay Real-Time Feed)"
         }
 
@@ -464,7 +467,7 @@ class NSEIndiaFetcher:
                         "atm_put_oi": atm_row["put_oi"],
                         "atm_call_shift": atm_row["call_oi_chg_pct"],
                         "atm_put_shift": atm_row["put_oi_chg_pct"],
-                        "timestamp": datetime.now().strftime("%I:%M:%S %p IST"),
+                        "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
                         "source": "Groww API (0-Delay Real-Time Feed)"
                     }
         except Exception:
@@ -529,7 +532,7 @@ class NSEIndiaFetcher:
             "atm_put_oi": atm_row["put_oi"],
             "atm_call_shift": atm_row["call_oi_chg_pct"],
             "atm_put_shift": atm_row["put_oi_chg_pct"],
-            "timestamp": datetime.now().strftime("%I:%M:%S %p IST"),
+            "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
             "source": "Groww API (0-Delay Real-Time Feed)"
         }
 
@@ -805,7 +808,7 @@ class NSEIndiaFetcher:
 
         return {
             "spot_tick": spot_tick,
-            "timestamp": datetime.now().strftime("%I:%M:%S %p IST"),
+            "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
             "corridor": corridor,
             "best_strike": {
                 "strike": best_k,
@@ -857,7 +860,7 @@ class NSEIndiaFetcher:
             },
             "tape": [
                 {
-                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "time": datetime.now(IST).strftime("%H:%M:%S"),
                     "symbol": f"{active_k} CE ({selected_expiry_str})",
                     "type": "BUY (Ask Hit)",
                     "qty": rng.choice([500, 1000, 1500, 2000]),
@@ -865,7 +868,7 @@ class NSEIndiaFetcher:
                     "color": "#10B981"
                 },
                 {
-                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "time": datetime.now(IST).strftime("%H:%M:%S"),
                     "symbol": f"{active_k} PE ({selected_expiry_str})",
                     "type": "SELL (Bid Hit)",
                     "qty": rng.choice([500, 1000, 1500]),
@@ -873,7 +876,7 @@ class NSEIndiaFetcher:
                     "color": "#EF4444"
                 },
                 {
-                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "time": datetime.now(IST).strftime("%H:%M:%S"),
                     "symbol": f"{active_k} CE ({selected_expiry_str})",
                     "type": "BUY (Sweep)",
                     "qty": rng.choice([500, 1000]),

@@ -15,6 +15,9 @@ import os
 import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List, Union
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
 try:
     import requests
 except ImportError:
@@ -204,7 +207,7 @@ class TelegramNotifier:
     def send_test_alert(cls, bot_token: str, chat_ids_input: Any) -> Tuple[bool, str]:
         """Sends a verification test alert to confirm bot configuration across all recipients."""
         chat_ids = cls.parse_chat_ids(chat_ids_input)
-        now_str = datetime.now().strftime("%I:%M:%S %p IST | %d-%b-%Y")
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST | %d-%b-%Y")
         recipients_str = ", ".join(chat_ids) if chat_ids else "None"
         msg = f"""
 ⚡ <b>RELIANCE QUANTITATIVE ENGINE — TELEGRAM BROADCAST CONNECTED</b> ⚡
@@ -240,7 +243,7 @@ class TelegramNotifier:
         rationale: str = ""
     ) -> str:
         """Formats an institutional grade entry alert for Telegram."""
-        now_str = datetime.now().strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         target_price = round(entry_price + target_pts, 2)
         sl_price = round(entry_price - sl_pts, 2)
@@ -291,7 +294,7 @@ class TelegramNotifier:
         rationale: str = ""
     ) -> str:
         """Formats an institutional grade ARMED PRE-ALERT for Telegram (Preparing for Breakout, DO NOT BUY YET)."""
-        now_str = datetime.now().strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         potential_gain = round(total_qty * target_pts)
         potential_loss = round(total_qty * sl_pts)

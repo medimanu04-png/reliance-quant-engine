@@ -17,6 +17,9 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from curl_cffi import requests
 from bs4 import BeautifulSoup
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +182,7 @@ class GrowwMarketFeed:
                 "api_key": self._api_key,
                 "access_token": self._access_token,
                 "totp_secret": self._totp_secret,
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(IST).isoformat()
             }
             with open(CONFIG_FILE, "w") as f:
                 json.dump(data, f, indent=2)
@@ -447,7 +450,7 @@ class GrowwMarketFeed:
             "source": "Groww Live Feed (0-Delay Direct Engine)",
             "status": "LIVE_GROWW_DIRECT",
             "market_state": "Active",
-            "trade_date": datetime.now().strftime("%d-%b-%Y"),
+            "trade_date": datetime.now(IST).strftime("%d-%b-%Y"),
             "spot_ltp": 1226.00,
             "open": 1210.50,
             "high": 1227.40,
@@ -512,7 +515,7 @@ class GrowwMarketFeed:
                     "source": "Groww Live Feed (0-Delay Direct Engine)",
                     "status": "LIVE_GROWW_DIRECT",
                     "market_state": "Active",
-                    "trade_date": datetime.now().strftime("%d-%b-%Y"),
+                    "trade_date": datetime.now(IST).strftime("%d-%b-%Y"),
                     "spot_ltp": ltp,
                     "open": open_p,
                     "high": high,

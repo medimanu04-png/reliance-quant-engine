@@ -7,6 +7,9 @@ import plotly.graph_objects as go
 from datetime import datetime, time, timezone
 import json
 import math
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
 from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL
@@ -453,7 +456,7 @@ expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
 active_mandate_expiry = expiry_plan["selected_expiry"]
 
 def generate_quant_hud_html():
-    now = datetime.now()
+    now = datetime.now(IST)
     time_hm = now.strftime("%I:%M:")
     time_sec = now.strftime("%S")
     time_ampm = now.strftime("%p")
@@ -487,17 +490,42 @@ def generate_quant_hud_html():
             <div style="font-size: 0.63rem; font-weight: 700; color: #38BDF8; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.28); padding: 1px 6px; border-radius: 4px; font-family: monospace;">IST &bull; UTC+5:30</div>
         </div>
         <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 1px;">
-            <div style="font-family: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace; font-size: 1.45rem; font-weight: 800; color: #38BDF8; letter-spacing: 1.2px; text-shadow: 0 0 14px rgba(56, 189, 248, 0.45); line-height: 1.1;">
+            <div id="quant-clock-live-time" style="font-family: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace; font-size: 1.45rem; font-weight: 800; color: #38BDF8; letter-spacing: 1.2px; text-shadow: 0 0 14px rgba(56, 189, 248, 0.45); line-height: 1.1;">
                 {time_hm}<span style="color: #F8FAFC; font-weight: 700;">{time_sec}</span> <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; margin-left: 2px;">{time_ampm}</span>
             </div>
         </div>
-        <div style="font-size: 0.70rem; color: #CBD5E1; font-weight: 500; margin-top: 2px;">📅 {date_str}</div>
+        <div id="quant-clock-live-date" style="font-size: 0.70rem; color: #CBD5E1; font-weight: 500; margin-top: 2px;">📅 {date_str}</div>
         <div style="margin-top: 4px;">{session_html}</div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(148, 163, 184, 0.14); font-size: 0.62rem; color: #94A3B8;">
             <span>⚡ FEED: <b style="color: #38BDF8;">0-DELAY GROWW</b></span>
             <span>📶 LATENCY: <b style="color: #34D399;">~4ms</b></span>
             <span>🛡️ DECAY: <b style="color: #FBBF24;">10D RULE</b></span>
         </div>
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none;" onload="
+            (function(){{
+                function tick(){{
+                    var el = document.getElementById('quant-clock-live-time');
+                    if (!el) return;
+                    var d = new Date();
+                    var utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+                    var ist = new Date(utc + (330 * 60000));
+                    var h = ist.getHours();
+                    var m = ist.getMinutes();
+                    var s = ist.getSeconds();
+                    var ampm = h >= 12 ? 'PM' : 'AM';
+                    var h12 = h % 12;
+                    h12 = h12 ? h12 : 12;
+                    var hStr = (h12 < 10 ? '0' : '') + h12;
+                    var mStr = (m < 10 ? '0' : '') + m;
+                    var sStr = (s < 10 ? '0' : '') + s;
+                    el.innerHTML = hStr + ':' + mStr + ':<span style=\'color: #F8FAFC; font-weight: 700;\'>' + sStr + '</span> <span style=\'font-size: 0.72rem; color: #94A3B8; font-weight: 700; margin-left: 2px;\'>' + ampm + '</span>';
+                }}
+                tick();
+                if (!window._quantDeskClockInterval) {{
+                    window._quantDeskClockInterval = setInterval(tick, 1000);
+                }}
+            }})();
+        "/>
     </div>
     """
 
@@ -536,11 +564,11 @@ with top_col2:
         NSEIndiaFetcher._cached_data = None
         NSEIndiaFetcher._last_fetch_time = 0
         st.session_state["just_rescanned"] = True
-        st.session_state["rescan_time"] = datetime.now().strftime('%I:%M:%S %p IST')
+        st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
         st.rerun()
     st.html(f"""
         <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px;">
-            ⏱️ Auto-rescan: 5m cycle &nbsp;|&nbsp; Last: <b style="color: #38BDF8;">{datetime.now().strftime('%I:%M:%S %p')}</b> &nbsp;|&nbsp; ⚡ <b style="color: #34D399;">~4ms</b>
+            ⏱️ Auto-rescan: 5m cycle &nbsp;|&nbsp; Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b> &nbsp;|&nbsp; ⚡ <b style="color: #34D399;">~4ms</b>
         </div>
     """)
 
@@ -1073,7 +1101,7 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
         base_p = 1226.00
 
     if df.empty or len(df) < 30:
-        dates = pd.date_range(end=datetime.now(), periods=60, freq="5min" if interval == "5m" else "15min")
+        dates = pd.date_range(end=datetime.now(IST), periods=60, freq="5min" if interval == "5m" else "15min")
         prev_p = base_p - 6.80
         t_steps = np.linspace(0, 1, 60)
         closes = prev_p + (base_p - prev_p) * (t_steps ** 1.1) + np.sin(t_steps * 14) * 0.80
@@ -1277,7 +1305,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         # Telegram Alert Dispatch (Instant on Entry Trigger or Simulation)
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
-            today_date = datetime.now().strftime("%Y-%m-%d")
+            today_date = datetime.now(IST).strftime("%Y-%m-%d")
             if sim_entry:
                 alert_sent_key = f"tg_sent_sim_entry_{sim_run_id}_{plan_strike}_{plan_contract_type}"
             else:
@@ -1299,7 +1327,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg)
                 if success:
                     st.session_state[alert_sent_key] = True
-                    st.session_state["last_tg_alert_time"] = datetime.now().strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
@@ -1397,7 +1425,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         # Telegram Alert Dispatch (Instant on ARMED State Pre-Alert or Simulation)
         tg_armed_status_html = ""
         if tg_on and tg_token and tg_chat:
-            today_date = datetime.now().strftime("%Y-%m-%d")
+            today_date = datetime.now(IST).strftime("%Y-%m-%d")
             if sim_armed:
                 armed_sent_key = f"tg_sent_sim_armed_{sim_run_id}_{plan_strike}_{plan_contract_type}"
             else:
@@ -1421,7 +1449,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, armed_msg)
                 if success:
                     st.session_state[armed_sent_key] = True
-                    st.session_state["last_tg_armed_time"] = datetime.now().strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_armed_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_armed_status"] = f"✅ {feedback} at {st.session_state['last_tg_armed_time']}"
                 else:
                     st.session_state["last_tg_armed_status"] = f"⚠️ {feedback}"
@@ -1722,7 +1750,7 @@ if df is not None and not df.empty:
     # Dynamic 10-Day Expiry Protocol Resolution
     expiry_dt = expiry_plan["selected_dt"]
     expiry_date_str = expiry_plan["selected_expiry"]
-    today_dt = expiry_plan.get("today_dt", datetime.now())
+    today_dt = expiry_plan.get("today_dt", datetime.now(IST))
 
     # Live Option Contract Volume & OI Telemetry (Center on Active Selected Strike)
     opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=is_rescan)
@@ -2584,7 +2612,7 @@ if df is not None and not df.empty:
         with st.form("daily_trade_form", clear_on_submit=False):
             f_col1, f_col2, f_col3 = st.columns([1, 1, 1.2])
             
-            today_str = datetime.now().strftime("%Y-%m-%d")
+            today_str = datetime.now(IST).strftime("%Y-%m-%d")
             entry_date = f_col1.date_input("Trade Date", value=datetime.strptime(today_str, "%Y-%m-%d"))
             date_formatted = entry_date.strftime("%Y-%m-%d")
             day_of_week = entry_date.strftime("%A")
@@ -2659,7 +2687,7 @@ if df is not None and not df.empty:
         st.download_button(
             label="📥 Export CSV",
             data=csv_bytes,
-            file_name=f"reliance_trade_journal_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"reliance_trade_journal_{datetime.now(IST).strftime('%Y%m%d')}.csv",
             mime="text/csv",
             use_container_width=True
         )
