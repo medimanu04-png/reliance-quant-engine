@@ -24,6 +24,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Universal Streamlit Width Helpers (Cleanly supports Streamlit 1.60+ width='stretch' with fallback)
+def st_button_stretch(label: str, **kwargs) -> bool:
+    try:
+        return st.button(label, width="stretch", **kwargs)
+    except TypeError:
+        return st.button(label, use_container_width=True, **kwargs)
+
+def st_sidebar_button_stretch(label: str, **kwargs) -> bool:
+    try:
+        return st.sidebar.button(label, width="stretch", **kwargs)
+    except TypeError:
+        return st.sidebar.button(label, use_container_width=True, **kwargs)
+
+def st_download_button_stretch(label: str, data, **kwargs):
+    try:
+        return st.download_button(label, data, width="stretch", **kwargs)
+    except TypeError:
+        return st.download_button(label, data, use_container_width=True, **kwargs)
+
+def st_form_submit_button_stretch(label: str, **kwargs):
+    try:
+        return st.form_submit_button(label, width="stretch", **kwargs)
+    except TypeError:
+        return st.form_submit_button(label, use_container_width=True, **kwargs)
+
+def st_dataframe_stretch(df, **kwargs):
+    try:
+        return st.dataframe(df, width="stretch", **kwargs)
+    except TypeError:
+        return st.dataframe(df, use_container_width=True, **kwargs)
+
 # Custom Institutional Styling (Single-Page App)
 st.markdown("""
 <style>
@@ -549,7 +580,7 @@ if not groww_feed.is_connected:
                 help="Enter the 6-digit TOTP from your authenticator app, or paste your TOTP secret key for automatic 2FA."
             )
 
-        auth_submitted = st.form_submit_button("🔐 Authenticate & Unlock Quantitative Engine (Mandatory)", use_container_width=True)
+        auth_submitted = st_form_submit_button_stretch("🔐 Authenticate & Unlock Quantitative Engine (Mandatory)")
         if auth_submitted:
             if not api_key_input or not api_key_input.strip():
                 st.error("⚠️ Please enter your Groww API Key or Access Token.")
@@ -585,32 +616,55 @@ expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
 active_mandate_expiry = expiry_plan["selected_expiry"]
 
 def render_quant_desk_clock():
-    html_code = """<!DOCTYPE html>
+    now = datetime.now(IST)
+    h_init = now.strftime("%I")
+    m_init = now.strftime("%M")
+    s_init = now.strftime("%S")
+    ampm_init = now.strftime("%p")
+    date_init = now.strftime("%a, %d %b %Y")
+    
+    # Pre-render initial session HTML so frame 0 has zero empty flash
+    weekday = now.weekday()
+    total_min = now.hour * 60 + now.minute
+    if weekday >= 5:
+        init_sess_html = '<span style="background: rgba(239, 68, 68, 0.18); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>WEEKEND</b> &bull; CLOSED <span style="color: #94A3B8; font-weight: normal; margin-left: 3px;">Simulation Active</span></span>'
+    elif total_min < 9 * 60:
+        init_sess_html = '<span style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #94A3B8; display: inline-block;"></span> <b>PRE-DAWN</b> &bull; OPENS 09:15 AM</span>'
+    elif total_min < 9 * 60 + 15:
+        init_sess_html = '<span style="background: rgba(251, 191, 36, 0.18); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FBBF24; display: inline-block;"></span> <b>PRE-MARKET</b> &bull; AUCTION</span>'
+    elif total_min <= 14 * 60 + 45:
+        init_sess_html = '<span style="background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.45); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 6px #10B981;"></span> <b>LIVE SESSION</b> &bull; PRIME INTRADAY</span>'
+    elif total_min <= 15 * 60 + 10:
+        init_sess_html = '<span style="background: rgba(249, 115, 22, 0.2); color: #FB923C; border: 1px solid rgba(249, 115, 22, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FB923C; display: inline-block;"></span> <b>CLOSING SQUEEZE</b> &bull; AUTO-SQ</span>'
+    else:
+        init_sess_html = '<span style="background: rgba(148, 163, 184, 0.18); color: #94A3B8; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #64748B; display: inline-block;"></span> <b>POST-MARKET</b> &bull; CLOSED</span>'
+
+    html_code = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
         background: transparent;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         color: #F8FAFC;
         overflow: hidden;
-    }
-    .quant-clock-card {
+    }}
+    .quant-clock-card {{
         background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(20, 30, 55, 0.95) 100%);
         border: 1px solid rgba(56, 189, 248, 0.35);
         border-radius: 10px;
         padding: 9px 13px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    }
-    .header-row {
+    }}
+    .header-row {{
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 3px;
-    }
-    .title {
+    }}
+    .title {{
         font-size: 0.65rem;
         font-weight: 800;
         letter-spacing: 0.8px;
@@ -619,8 +673,8 @@ def render_quant_desk_clock():
         display: flex;
         align-items: center;
         gap: 6px;
-    }
-    .pulse-dot {
+    }}
+    .pulse-dot {{
         width: 7px;
         height: 7px;
         border-radius: 50%;
@@ -628,12 +682,12 @@ def render_quant_desk_clock():
         box-shadow: 0 0 8px #10B981;
         display: inline-block;
         animation: pulse 2s infinite ease-in-out;
-    }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.4; transform: scale(0.85); }
-    }
-    .badge {
+    }}
+    @keyframes pulse {{
+        0%, 100% {{ opacity: 1; transform: scale(1); }}
+        50% {{ opacity: 0.4; transform: scale(0.85); }}
+    }}
+    .badge {{
         font-size: 0.63rem;
         font-weight: 700;
         color: #38BDF8;
@@ -642,14 +696,14 @@ def render_quant_desk_clock():
         padding: 1px 6px;
         border-radius: 4px;
         font-family: monospace;
-    }
-    .time-row {
+    }}
+    .time-row {{
         display: flex;
         align-items: baseline;
         justify-content: space-between;
         margin-top: 1px;
-    }
-    .time-digits {
+    }}
+    .time-digits {{
         font-family: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
         font-size: 1.45rem;
         font-weight: 800;
@@ -657,27 +711,29 @@ def render_quant_desk_clock():
         letter-spacing: 1.2px;
         text-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
         line-height: 1.1;
-    }
-    .time-sec {
+        font-variant-numeric: tabular-nums;
+    }}
+    .time-sec {{
         color: #F8FAFC;
         font-weight: 700;
-    }
-    .time-ampm {
+        font-variant-numeric: tabular-nums;
+    }}
+    .time-ampm {{
         font-size: 0.72rem;
         color: #94A3B8;
         font-weight: 700;
         margin-left: 2px;
-    }
-    .date-text {
+    }}
+    .date-text {{
         font-size: 0.70rem;
         color: #CBD5E1;
         font-weight: 500;
         margin-top: 2px;
-    }
-    .session-area {
+    }}
+    .session-area {{
         margin-top: 4px;
-    }
-    .footer-row {
+    }}
+    .footer-row {{
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -686,7 +742,9 @@ def render_quant_desk_clock():
         border-top: 1px solid rgba(148, 163, 184, 0.14);
         font-size: 0.62rem;
         color: #94A3B8;
-    }
+        white-space: nowrap;
+        gap: 6px;
+    }}
 </style>
 </head>
 <body>
@@ -699,10 +757,10 @@ def render_quant_desk_clock():
         <div class="badge">IST &bull; UTC+5:30</div>
     </div>
     <div class="time-row">
-        <div id="quant-clock-time" class="time-digits">--:--:<span class="time-sec">--</span> <span class="time-ampm">--</span></div>
+        <div id="quant-clock-time" class="time-digits">{h_init}:{m_init}:<span class="time-sec">{s_init}</span> <span class="time-ampm">{ampm_init}</span></div>
     </div>
-    <div id="quant-clock-date" class="date-text">📅 Loading...</div>
-    <div id="quant-clock-session" class="session-area"></div>
+    <div id="quant-clock-date" class="date-text">📅 {date_init}</div>
+    <div id="quant-clock-session" class="session-area">{init_sess_html}</div>
     <div class="footer-row">
         <span>⚡ FEED: <b style="color: #38BDF8;">DIRECT GROWW API (MANDATORY)</b></span>
         <span>📶 LATENCY: <b style="color: #34D399;">~4ms</b></span>
@@ -711,9 +769,9 @@ def render_quant_desk_clock():
 </div>
 
 <script>
-(function() {
-    function tick() {
-        try {
+(function() {{
+    function tick() {{
+        try {{
             var now = new Date();
             var utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
             var ist = new Date(utcMs + (330 * 60000));
@@ -738,45 +796,44 @@ def render_quant_desk_clock():
             var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             
             var timeEl = document.getElementById('quant-clock-time');
-            if (timeEl) {
+            if (timeEl) {{
                 timeEl.innerHTML = hStr + ':' + mStr + ':<span class="time-sec">' + sStr + '</span> <span class="time-ampm">' + ampm + '</span>';
-            }
+            }}
             
             var dateEl = document.getElementById('quant-clock-date');
-            if (dateEl) {
+            if (dateEl) {{
                 dateEl.innerHTML = '📅 ' + days[day] + ', ' + (date < 10 ? '0' : '') + date + ' ' + months[month] + ' ' + year;
-            }
+            }}
             
             var sessEl = document.getElementById('quant-clock-session');
-            if (sessEl) {
+            if (sessEl) {{
                 var totalMin = h * 60 + m;
                 var sHtml = '';
-                if (day === 0 || day === 6) {
+                if (day === 0 || day === 6) {{
                     sHtml = '<span style="background: rgba(239, 68, 68, 0.18); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>WEEKEND</b> &bull; CLOSED <span style="color: #94A3B8; font-weight: normal; margin-left: 3px;">Simulation Active</span></span>';
-                } else if (totalMin < 9 * 60) {
+                }} else if (totalMin < 9 * 60) {{
                     sHtml = '<span style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #94A3B8; display: inline-block;"></span> <b>PRE-DAWN</b> &bull; OPENS 09:15 AM</span>';
-                } else if (totalMin < 9 * 60 + 15) {
+                }} else if (totalMin < 9 * 60 + 15) {{
                     sHtml = '<span style="background: rgba(251, 191, 36, 0.18); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FBBF24; display: inline-block;"></span> <b>PRE-MARKET</b> &bull; AUCTION</span>';
-                } else if (totalMin <= 14 * 60 + 45) {
+                }} else if (totalMin <= 14 * 60 + 45) {{
                     sHtml = '<span style="background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.45); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 6px #10B981;"></span> <b>LIVE SESSION</b> &bull; PRIME INTRADAY</span>';
-                } else if (totalMin <= 15 * 60 + 10) {
+                }} else if (totalMin <= 15 * 60 + 10) {{
                     sHtml = '<span style="background: rgba(249, 115, 22, 0.2); color: #FB923C; border: 1px solid rgba(249, 115, 22, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FB923C; display: inline-block;"></span> <b>CLOSING SQUEEZE</b> &bull; AUTO-SQ</span>';
-                } else {
+                }} else {{
                     sHtml = '<span style="background: rgba(148, 163, 184, 0.18); color: #94A3B8; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #64748B; display: inline-block;"></span> <b>POST-MARKET</b> &bull; CLOSED</span>';
-                }
+                }}
                 sessEl.innerHTML = sHtml;
-            }
-        } catch(e) {
+            }}
+        }} catch(e) {{
             console.error('Clock error:', e);
-        }
-    }
-    tick();
+        }}
+    }}
     setInterval(tick, 1000);
-})();
+}})();
 </script>
 </body>
 </html>"""
-    components.html(html_code, height=138, scrolling=False)
+    components.html(html_code, height=142, scrolling=False)
 
 # Active Groww Account Profile (Mandatory Link)
 prof = groww_feed.user_profile or {}
@@ -824,10 +881,7 @@ with top_col1:
     """)
 with top_col2:
     render_quant_desk_clock()
-    try:
-        rescan_btn = st.button("🔄 Instant Market Rescan", width="stretch")
-    except TypeError:
-        rescan_btn = st.button("🔄 Instant Market Rescan", use_container_width=True)
+    rescan_btn = st_button_stretch("🔄 Instant Market Rescan")
     if rescan_btn:
         try:
             from groww_market_feed import GrowwMarketFeed
@@ -971,7 +1025,7 @@ st.markdown("---")
 st.sidebar.markdown("### ⚡ Groww Integration (Mandatory)")
 st.sidebar.success("🟢 **Groww Broker: Connected**")
 st.sidebar.info(f"👤 **Account**: `{ucc_val}` ({name_val})\n\n📡 **Data Dependency**: 100% Direct Groww API Feed")
-if st.sidebar.button("Disconnect Groww Account", key="groww_disconnect_btn", use_container_width=True):
+if st_sidebar_button_stretch("Disconnect Groww Account", key="groww_disconnect_btn"):
     groww_feed.disconnect()
     st.rerun()
 
@@ -1000,12 +1054,12 @@ with st.sidebar.expander("🔔 Telegram Notification Bot (Multi-User / Groups)",
     
     col_tgs, col_tgt = st.columns(2)
     with col_tgs:
-        if st.button("💾 Save Bot Config", use_container_width=True, key="save_tg_btn"):
+        if st_button_stretch("💾 Save Bot Config", key="save_tg_btn"):
             TelegramNotifier.save_config(tg_bot_token, tg_chat_id, tg_enabled)
             st.session_state["tg_config"] = {"bot_token": tg_bot_token, "chat_id": tg_chat_id, "enabled": tg_enabled}
             st.success(f"Config saved ({len(parsed_recipients)} recipient{'s' if len(parsed_recipients) != 1 else ''})!")
     with col_tgt:
-        if st.button("🧪 Send Test Alert", use_container_width=True, key="test_tg_btn"):
+        if st_button_stretch("🧪 Send Test Alert", key="test_tg_btn"):
             if tg_bot_token and parsed_recipients:
                 with st.spinner(f"Broadcasting test to {len(parsed_recipients)} recipient(s)..."):
                     ok, res_msg = TelegramNotifier.send_test_alert(tg_bot_token, parsed_recipients)
@@ -1096,7 +1150,7 @@ is_armed_scenario = (sim_scenario == "🟡 Trigger ARMED State (Approaching Brea
 col_sim1, col_sim2 = st.sidebar.columns(2)
 with col_sim1:
     btn_title = "🔥 Fire BUY NOW" if is_entry_scenario else ("🟡 Fire ARMED" if is_armed_scenario else "🚀 Fire Alert")
-    if st.button(btn_title, use_container_width=True, help=f"Force-triggers the active {sim_scenario} scenario and dispatches a fresh Telegram alert."):
+    if st_button_stretch(btn_title, help=f"Force-triggers the active {sim_scenario} scenario and dispatches a fresh Telegram alert."):
         st.session_state["sim_run_id"] = str(int(datetime.now().timestamp()))
         st.session_state["sim_force_fire"] = True
         st.session_state["sim_force_scenario"] = sim_scenario
@@ -1107,7 +1161,7 @@ with col_sim1:
         st.rerun()
 
 with col_sim2:
-    if st.button("🔄 Reset Alerts", use_container_width=True, help="Re-arms the alert trigger so you can test again"):
+    if st_button_stretch("🔄 Reset Alerts", help="Re-arms the alert trigger so you can test again"):
         for k in list(st.session_state.keys()):
             if k.startswith("tg_sent_"):
                 st.session_state[k] = False
@@ -1128,7 +1182,7 @@ if st.session_state.get("sim_force_fire", False):
     else:
         simulate_entry_trigger = False
         simulate_armed_state = False
-    if st.sidebar.button("🛑 Exit Simulation Mode", use_container_width=True):
+    if st_sidebar_button_stretch("🛑 Exit Simulation Mode"):
         st.session_state["sim_force_fire"] = False
         st.rerun()
 else:
@@ -1966,16 +2020,16 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         <!-- Multi-Participant Volume Ribbon -->
         <div style="margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94A3B8; margin-bottom: 4px;">
-                <span>Volume Share: <b style="color: #10B981;">🌐 FII 40.5%</b> (₹{fii['buyer_turnover_cr'] + fii['seller_turnover_cr']:,.1f} Cr)</span>
-                <span><b style="color: #38BDF8;">🏛️ DII 21.2%</b> (₹{dii['buyer_turnover_cr'] + dii['seller_turnover_cr']:,.1f} Cr)</span>
-                <span><b style="color: #C084FC;">⚡ PRO 25.8%</b> (₹{pro['buyer_turnover_cr'] + pro['seller_turnover_cr']:,.1f} Cr)</span>
-                <span><b style="color: #F87171;">👥 RETAIL 12.5%</b> (₹{ret['buyer_turnover_cr'] + ret['seller_turnover_cr']:,.1f} Cr)</span>
+                <span>Volume Share: <b style="color: #10B981;">🌐 FII {fii['share_pct']}%</b> (₹{fii['buyer_turnover_cr'] + fii['seller_turnover_cr']:,.1f} Cr)</span>
+                <span><b style="color: #38BDF8;">🏛️ DII {dii['share_pct']}%</b> (₹{dii['buyer_turnover_cr'] + dii['seller_turnover_cr']:,.1f} Cr)</span>
+                <span><b style="color: #C084FC;">⚡ PRO {pro['share_pct']}%</b> (₹{pro['buyer_turnover_cr'] + pro['seller_turnover_cr']:,.1f} Cr)</span>
+                <span><b style="color: #F87171;">👥 RETAIL {ret['share_pct']}%</b> (₹{ret['buyer_turnover_cr'] + ret['seller_turnover_cr']:,.1f} Cr)</span>
             </div>
             <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #1E293B;">
-                <div style="width: 40.5%; background: #10B981;" title="FII Volume: 40.5%"></div>
-                <div style="width: 21.2%; background: #38BDF8;" title="DII Volume: 21.2%"></div>
-                <div style="width: 25.8%; background: #C084FC;" title="PRO Volume: 25.8%"></div>
-                <div style="width: 12.5%; background: #F87171;" title="Retail Volume: 12.5%"></div>
+                <div style="width: {fii['share_pct']}%; background: #10B981;" title="FII Volume: {fii['share_pct']}%"></div>
+                <div style="width: {dii['share_pct']}%; background: #38BDF8;" title="DII Volume: {dii['share_pct']}%"></div>
+                <div style="width: {pro['share_pct']}%; background: #C084FC;" title="PRO Volume: {pro['share_pct']}%"></div>
+                <div style="width: {ret['share_pct']}%; background: #F87171;" title="Retail Volume: {ret['share_pct']}%"></div>
             </div>
         </div>
     </div>
@@ -2560,7 +2614,7 @@ if df is not None and not df.empty:
             "max": 12.0,
             "source": "Dynamic 10-Day Mandate + Black-Scholes Greeks",
             "metrics": [
-                ("Dynamic Active Contract", f"{expiry_date_str} ({dte} DTE)", "🟢 October Mandate Active"),
+                ("Dynamic Active Contract", f"{expiry_date_str} ({dte} DTE)", f"🟢 {active_mandate_expiry.split('-')[1].upper() if '-' in active_mandate_expiry else 'MONTHLY'} Mandate Active"),
                 ("Decay Avoidance Protocol", "10-Day Window Enforcement", "🟢 0-DTE Decay 100% Bypassed"),
                 ("Greeks Protection Shield", f"Delta: ~{norm_cdf_d1:.2f} | IV: 21.2%", "🟢 Theta Drag Insulated (+12)")
             ],
@@ -3270,7 +3324,7 @@ if df is not None and not df.empty:
             
             st.caption(f"💡 **2-Lot Allocation Preview**: 2 Lots × 500 Qty = **1,000 Units** | Capital Deployed: **₹{calc_cap_deployed:,.2f}**")
             
-            submit_trade = st.form_submit_button("💾 Save Daily Trade to Journal", use_container_width=True)
+            submit_trade = st_form_submit_button_stretch("💾 Save Daily Trade to Journal")
             if submit_trade:
                 new_record = {
                     "date": date_formatted,
@@ -3311,12 +3365,11 @@ if df is not None and not df.empty:
         # Prepare CSV for download
         raw_df = pd.DataFrame(journal_entries)
         csv_bytes = raw_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
+        st_download_button_stretch(
             label="📥 Export CSV",
             data=csv_bytes,
             file_name=f"reliance_trade_journal_{datetime.now(IST).strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True
+            mime="text/csv"
         )
 
     # Filter entries
@@ -3371,9 +3424,8 @@ if df is not None and not df.empty:
 
     if display_rows:
         df_display = pd.DataFrame(display_rows)
-        st.dataframe(
+        st_dataframe_stretch(
             df_display,
-            use_container_width=True,
             height=430,
             column_config={
                 "Date": st.column_config.TextColumn("Date", width="small"),
