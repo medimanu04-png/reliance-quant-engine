@@ -584,79 +584,199 @@ if not groww_feed.is_connected:
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
 active_mandate_expiry = expiry_plan["selected_expiry"]
 
-def generate_quant_hud_html():
-    now = datetime.now(IST)
-    time_hm = now.strftime("%I:%M:")
-    time_sec = now.strftime("%S")
-    time_ampm = now.strftime("%p")
-    date_str = now.strftime("%a, %d %b %Y")
-    
-    weekday = now.weekday()
-    hour = now.hour
-    minute = now.minute
-    total_min = hour * 60 + minute
-    
-    if weekday >= 5:
-        session_html = '<span style="background: rgba(239, 68, 68, 0.18); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>WEEKEND</b> &bull; CLOSED <span style="color: #94A3B8; font-weight: normal; margin-left: 3px;">Simulation Active</span></span>'
-    elif total_min < 9 * 60:
-        session_html = '<span style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #94A3B8; display: inline-block;"></span> <b>PRE-DAWN</b> &bull; OPENS 09:15 AM</span>'
-    elif total_min < 9 * 60 + 15:
-        session_html = '<span style="background: rgba(251, 191, 36, 0.18); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FBBF24; display: inline-block;"></span> <b>PRE-MARKET</b> &bull; AUCTION</span>'
-    elif total_min <= 14 * 60 + 45:
-        session_html = '<span style="background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.45); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 6px #10B981;"></span> <b>LIVE SESSION</b> &bull; PRIME INTRADAY</span>'
-    elif total_min <= 15 * 60 + 10:
-        session_html = '<span style="background: rgba(249, 115, 22, 0.2); color: #FB923C; border: 1px solid rgba(249, 115, 22, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FB923C; display: inline-block;"></span> <b>CLOSING SQUEEZE</b> &bull; AUTO-SQ</span>'
-    else:
-        session_html = '<span style="background: rgba(148, 163, 184, 0.18); color: #94A3B8; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #64748B; display: inline-block;"></span> <b>POST-MARKET</b> &bull; CLOSED</span>'
-
-    return f"""
-    <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(20, 30, 55, 0.95) 100%); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); margin-bottom: 8px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-            <div style="font-size: 0.65rem; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: #94A3B8; display: flex; align-items: center; gap: 6px;">
-                <span style="width: 7px; height: 7px; border-radius: 50%; background: #10B981; box-shadow: 0 0 8px #10B981; display: inline-block;"></span>
-                <span>QUANT DESK CLOCK</span>
-            </div>
-            <div style="font-size: 0.63rem; font-weight: 700; color: #38BDF8; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.28); padding: 1px 6px; border-radius: 4px; font-family: monospace;">IST &bull; UTC+5:30</div>
+def render_quant_desk_clock():
+    html_code = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #F8FAFC;
+        overflow: hidden;
+    }
+    .quant-clock-card {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(20, 30, 55, 0.95) 100%);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        border-radius: 10px;
+        padding: 9px 13px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+    .header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 3px;
+    }
+    .title {
+        font-size: 0.65rem;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        color: #94A3B8;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .pulse-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #10B981;
+        box-shadow: 0 0 8px #10B981;
+        display: inline-block;
+        animation: pulse 2s infinite ease-in-out;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.4; transform: scale(0.85); }
+    }
+    .badge {
+        font-size: 0.63rem;
+        font-weight: 700;
+        color: #38BDF8;
+        background: rgba(56, 189, 248, 0.12);
+        border: 1px solid rgba(56, 189, 248, 0.28);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+    }
+    .time-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-top: 1px;
+    }
+    .time-digits {
+        font-family: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
+        font-size: 1.45rem;
+        font-weight: 800;
+        color: #38BDF8;
+        letter-spacing: 1.2px;
+        text-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
+        line-height: 1.1;
+    }
+    .time-sec {
+        color: #F8FAFC;
+        font-weight: 700;
+    }
+    .time-ampm {
+        font-size: 0.72rem;
+        color: #94A3B8;
+        font-weight: 700;
+        margin-left: 2px;
+    }
+    .date-text {
+        font-size: 0.70rem;
+        color: #CBD5E1;
+        font-weight: 500;
+        margin-top: 2px;
+    }
+    .session-area {
+        margin-top: 4px;
+    }
+    .footer-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 5px;
+        padding-top: 4px;
+        border-top: 1px solid rgba(148, 163, 184, 0.14);
+        font-size: 0.62rem;
+        color: #94A3B8;
+    }
+</style>
+</head>
+<body>
+<div class="quant-clock-card">
+    <div class="header-row">
+        <div class="title">
+            <span class="pulse-dot"></span>
+            <span>QUANT DESK CLOCK</span>
         </div>
-        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 1px;">
-            <div id="quant-clock-live-time" style="font-family: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace; font-size: 1.45rem; font-weight: 800; color: #38BDF8; letter-spacing: 1.2px; text-shadow: 0 0 14px rgba(56, 189, 248, 0.45); line-height: 1.1;">
-                {time_hm}<span style="color: #F8FAFC; font-weight: 700;">{time_sec}</span> <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; margin-left: 2px;">{time_ampm}</span>
-            </div>
-        </div>
-        <div id="quant-clock-live-date" style="font-size: 0.70rem; color: #CBD5E1; font-weight: 500; margin-top: 2px;">📅 {date_str}</div>
-        <div style="margin-top: 4px;">{session_html}</div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(148, 163, 184, 0.14); font-size: 0.62rem; color: #94A3B8;">
-            <span>⚡ FEED: <b style="color: #38BDF8;">DIRECT GROWW API (MANDATORY)</b></span>
-            <span>📶 LATENCY: <b style="color: #34D399;">~4ms</b></span>
-            <span>🛡️ DECAY: <b style="color: #FBBF24;">10D RULE</b></span>
-        </div>
-        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none;" onload="
-            (function(){{
-                function tick(){{
-                    var el = document.getElementById('quant-clock-live-time');
-                    if (!el) return;
-                    var d = new Date();
-                    var utc = d.getTime() + (d.getTimezoneOffset() * 60000);
-                    var ist = new Date(utc + (330 * 60000));
-                    var h = ist.getHours();
-                    var m = ist.getMinutes();
-                    var s = ist.getSeconds();
-                    var ampm = h >= 12 ? 'PM' : 'AM';
-                    var h12 = h % 12;
-                    h12 = h12 ? h12 : 12;
-                    var hStr = (h12 < 10 ? '0' : '') + h12;
-                    var mStr = (m < 10 ? '0' : '') + m;
-                    var sStr = (s < 10 ? '0' : '') + s;
-                    el.innerHTML = hStr + ':' + mStr + ':<span style=\'color: #F8FAFC; font-weight: 700;\'>' + sStr + '</span> <span style=\'font-size: 0.72rem; color: #94A3B8; font-weight: 700; margin-left: 2px;\'>' + ampm + '</span>';
-                }}
-                tick();
-                if (!window._quantDeskClockInterval) {{
-                    window._quantDeskClockInterval = setInterval(tick, 1000);
-                }}
-            }})();
-        "/>
+        <div class="badge">IST &bull; UTC+5:30</div>
     </div>
-    """
+    <div class="time-row">
+        <div id="quant-clock-time" class="time-digits">--:--:<span class="time-sec">--</span> <span class="time-ampm">--</span></div>
+    </div>
+    <div id="quant-clock-date" class="date-text">📅 Loading...</div>
+    <div id="quant-clock-session" class="session-area"></div>
+    <div class="footer-row">
+        <span>⚡ FEED: <b style="color: #38BDF8;">DIRECT GROWW API (MANDATORY)</b></span>
+        <span>📶 LATENCY: <b style="color: #34D399;">~4ms</b></span>
+        <span>🛡️ DECAY: <b style="color: #FBBF24;">10D RULE</b></span>
+    </div>
+</div>
+
+<script>
+(function() {
+    function tick() {
+        try {
+            var now = new Date();
+            var utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
+            var ist = new Date(utcMs + (330 * 60000));
+            
+            var h = ist.getHours();
+            var m = ist.getMinutes();
+            var s = ist.getSeconds();
+            var day = ist.getDay();
+            var date = ist.getDate();
+            var month = ist.getMonth();
+            var year = ist.getFullYear();
+            
+            var ampm = h >= 12 ? 'PM' : 'AM';
+            var h12 = h % 12;
+            h12 = h12 ? h12 : 12;
+            
+            var hStr = (h12 < 10 ? '0' : '') + h12;
+            var mStr = (m < 10 ? '0' : '') + m;
+            var sStr = (s < 10 ? '0' : '') + s;
+            
+            var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            
+            var timeEl = document.getElementById('quant-clock-time');
+            if (timeEl) {
+                timeEl.innerHTML = hStr + ':' + mStr + ':<span class="time-sec">' + sStr + '</span> <span class="time-ampm">' + ampm + '</span>';
+            }
+            
+            var dateEl = document.getElementById('quant-clock-date');
+            if (dateEl) {
+                dateEl.innerHTML = '📅 ' + days[day] + ', ' + (date < 10 ? '0' : '') + date + ' ' + months[month] + ' ' + year;
+            }
+            
+            var sessEl = document.getElementById('quant-clock-session');
+            if (sessEl) {
+                var totalMin = h * 60 + m;
+                var sHtml = '';
+                if (day === 0 || day === 6) {
+                    sHtml = '<span style="background: rgba(239, 68, 68, 0.18); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>WEEKEND</b> &bull; CLOSED <span style="color: #94A3B8; font-weight: normal; margin-left: 3px;">Simulation Active</span></span>';
+                } else if (totalMin < 9 * 60) {
+                    sHtml = '<span style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #94A3B8; display: inline-block;"></span> <b>PRE-DAWN</b> &bull; OPENS 09:15 AM</span>';
+                } else if (totalMin < 9 * 60 + 15) {
+                    sHtml = '<span style="background: rgba(251, 191, 36, 0.18); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FBBF24; display: inline-block;"></span> <b>PRE-MARKET</b> &bull; AUCTION</span>';
+                } else if (totalMin <= 14 * 60 + 45) {
+                    sHtml = '<span style="background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.45); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 6px #10B981;"></span> <b>LIVE SESSION</b> &bull; PRIME INTRADAY</span>';
+                } else if (totalMin <= 15 * 60 + 10) {
+                    sHtml = '<span style="background: rgba(249, 115, 22, 0.2); color: #FB923C; border: 1px solid rgba(249, 115, 22, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FB923C; display: inline-block;"></span> <b>CLOSING SQUEEZE</b> &bull; AUTO-SQ</span>';
+                } else {
+                    sHtml = '<span style="background: rgba(148, 163, 184, 0.18); color: #94A3B8; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #64748B; display: inline-block;"></span> <b>POST-MARKET</b> &bull; CLOSED</span>';
+                }
+                sessEl.innerHTML = sHtml;
+            }
+        } catch(e) {
+            console.error('Clock error:', e);
+        }
+    }
+    tick();
+    setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>"""
+    components.html(html_code, height=138, scrolling=False)
 
 # Active Groww Account Profile (Mandatory Link)
 prof = groww_feed.user_profile or {}
@@ -703,8 +823,12 @@ with top_col1:
     </div>
     """)
 with top_col2:
-    st.html(generate_quant_hud_html())
-    if st.button("🔄 Instant Market Rescan", width="stretch"):
+    render_quant_desk_clock()
+    try:
+        rescan_btn = st.button("🔄 Instant Market Rescan", width="stretch")
+    except TypeError:
+        rescan_btn = st.button("🔄 Instant Market Rescan", use_container_width=True)
+    if rescan_btn:
         try:
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
