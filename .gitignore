@@ -27,3 +27,7 @@ desktop.ini
 .system_generated/
 
 push_to_github.bat
+
+# Sensitive config files (contain API tokens/secrets)
+groww_config.json
+telegram_config.json

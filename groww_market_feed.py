@@ -50,7 +50,10 @@ class GrowwMarketFeed:
     @classmethod
     def _get_session(cls):
         if cls._shared_session is None:
-            cls._shared_session = requests.Session(impersonate="chrome120")
+            try:
+                cls._shared_session = requests.Session(impersonate="chrome120")
+            except Exception:
+                cls._shared_session = requests.Session()
         return cls._shared_session
 
     @classmethod
@@ -61,21 +64,35 @@ class GrowwMarketFeed:
             cls._instance._cached_benchmarks = cls._instance._get_fallback_benchmarks()
             cls._instance._cached_reliance_spot = cls._instance._get_fallback_reliance_spot()
             cls._instance._cached_reliance_chain = cls._instance._get_fallback_reliance_chain()
-            cls._instance._load_saved_credentials()
-            cls._instance._start_background_stream()
+            # NON-BLOCKING: credential loading + background stream start in a separate thread
+            # so the Streamlit first frame renders instantly without waiting for Groww API calls
+            threading.Thread(target=cls._instance._deferred_startup, daemon=True, name="GrowwDeferredStartup").start()
         return cls._instance
+
+    def _deferred_startup(self):
+        """Runs credential loading and background stream startup off the main thread.
+        This ensures the Streamlit first frame renders instantly (0ms) without
+        waiting for Groww API validation calls."""
+        try:
+            # Small delay to let Streamlit Cloud WebSocket handshake complete
+            time.sleep(3)
+            self._load_saved_credentials()
+        except Exception as e:
+            logger.debug(f"Deferred credential load error: {e}")
+        self._start_background_stream()
 
     def _start_background_stream(self):
         """Starts asynchronous background worker that continuously updates Groww live feed."""
         if self._bg_active:
             return
         self._bg_active = True
-        import threading
         self._bg_thread = threading.Thread(target=self._background_worker_loop, daemon=True, name="GrowwBgStreamer")
         self._bg_thread.start()
 
     def _background_worker_loop(self):
         """Continuously refreshes benchmarks, spot, and option chain in the background with zero impact on UI."""
+        # Initial quiet window: let Streamlit Cloud fully stabilize before network I/O
+        time.sleep(5)
         last_bench_fetch = 0.0
         while self._bg_active:
             try:
