@@ -78,8 +78,8 @@ class GrowwMarketFeed:
         This ensures the Streamlit first frame renders instantly (0ms) without
         waiting for Groww API validation calls."""
         try:
-            # Small delay to let Streamlit Cloud WebSocket handshake complete
-            time.sleep(3)
+            # Quick 1-second delay so Streamlit first frame renders with zero delay
+            time.sleep(1)
             self._load_saved_credentials()
         except Exception as e:
             logger.debug(f"Deferred credential load error: {e}")
@@ -161,34 +161,94 @@ class GrowwMarketFeed:
                 "message": f"❌ Groww Token Validation Error: {err_str}"
             }
 
+    def _auto_refresh_token(self) -> bool:
+        """Automatically exchanges totp_token + live TOTP code for a fresh daily access token."""
+        if not self._totp_secret or not (self._totp_token or self._api_key):
+            return False
+        try:
+            import pyotp
+            from growwapi import GrowwAPI
+            active_token = self._totp_token or self._api_key
+            totp = pyotp.TOTP(self._totp_secret.replace(" ", "")).now()
+            new_token = GrowwAPI.get_access_token(api_key=active_token, totp=totp)
+            res = self._validate_and_initialize(new_token)
+            if res.get("status") == "SUCCESS":
+                self._access_token = new_token
+                self.save_credentials()
+                logger.info("Successfully auto-refreshed Groww access token via TOTP secret!")
+                return True
+        except Exception as e:
+            logger.warning(f"Auto-refresh via TOTP failed: {e}")
+        return False
+
     def _load_saved_credentials(self):
-        """Loads and strictly validates saved credentials from config file."""
-        if not os.path.exists(CONFIG_FILE):
+        """Loads and strictly validates saved credentials from Streamlit secrets, env vars, or local config file.
+        Automatically generates fresh TOTP codes every day using the TOTP secret key."""
+        cfg = {}
+
+        # 1. Check Streamlit Secrets (for Streamlit Cloud deployment)
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets"):
+                if "groww" in st.secrets:
+                    cfg.update(dict(st.secrets["groww"]))
+                for k in ["GROWW_TOTP_TOKEN", "GROWW_TOTP_SECRET", "GROWW_ACCESS_TOKEN", "GROWW_API_KEY", "totp_token", "totp_secret", "access_token", "api_key"]:
+                    if k in st.secrets:
+                        norm_key = k.lower().replace("groww_", "")
+                        if norm_key not in cfg:
+                            cfg[norm_key] = str(st.secrets[k]).strip()
+        except Exception as e:
+            logger.debug(f"Streamlit secrets read: {e}")
+
+        # 2. Check environment variables
+        for k in ["GROWW_TOTP_TOKEN", "GROWW_TOTP_SECRET", "GROWW_ACCESS_TOKEN", "GROWW_API_KEY"]:
+            val = os.environ.get(k)
+            if val:
+                norm_key = k.lower().replace("groww_", "")
+                if norm_key not in cfg:
+                    cfg[norm_key] = val.strip()
+
+        # 3. Check local CONFIG_FILE (groww_config.json)
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    file_cfg = json.load(f)
+                    for k, v in file_cfg.items():
+                        if k not in cfg or not cfg[k]:
+                            cfg[k] = v
+            except Exception as e:
+                logger.warning(f"Error reading {CONFIG_FILE}: {e}")
+
+        if not cfg:
             self._is_connected = False
             self._user_profile = None
             return
 
         try:
-            with open(CONFIG_FILE, "r") as f:
-                cfg = json.load(f)
-                
             token = cfg.get("access_token")
             totp_secret = cfg.get("totp_secret")
             totp_token = cfg.get("totp_token") or cfg.get("api_key")
-            
+
+            if totp_secret:
+                self._totp_secret = totp_secret
+            if totp_token:
+                self._totp_token = totp_token
+                self._api_key = totp_token
+
+            # Try existing access token first
             if token:
                 res = self._validate_and_initialize(token)
                 if res.get("status") == "SUCCESS":
-                    self._api_key = totp_token
-                    self._totp_secret = totp_secret
-                    self._totp_token = totp_token
+                    self._access_token = token
                     return
                 else:
-                    logger.info("Saved Groww token is invalid or expired. Attempting automated TOTP refresh...")
+                    logger.info("Saved Groww token is invalid or expired. Attempting automated daily TOTP exchange...")
 
             # If direct token failed or expired, auto-refresh via TOTP secret
             if totp_secret and totp_token:
-                self.connect(api_key=totp_token, totp_secret=totp_secret, save=True)
+                res = self.connect(api_key=totp_token, totp_secret=totp_secret, save=True)
+                if res.get("status") == "SUCCESS":
+                    logger.info("Groww API automated daily authentication succeeded!")
         except Exception as e:
             logger.warning(f"Could not load saved Groww credentials: {e}")
             self._is_connected = False

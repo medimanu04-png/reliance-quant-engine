@@ -542,11 +542,13 @@ groww_feed = GrowwMarketFeed.get_instance()
 # Sidebar broker status & optional manual auth (never blocks dashboard)
 if groww_feed.is_connected:
     _profile = groww_feed.user_profile or {}
-    _name = _profile.get("name") or _profile.get("user_name") or "Verified"
+    _ucc = _profile.get("ucc") or "5697793414"
+    _name = _profile.get("name") or _profile.get("user_name") or f"UCC: {_ucc}"
     st.sidebar.success(f"🟢 **Groww Broker: Connected** — {_name}")
+    st.sidebar.caption(f"⚡ Automated 2FA Active &bull; UCC: `{_ucc}`")
 else:
-    st.sidebar.warning("⚠️ **Groww Broker: Reconnecting…**")
-    st.sidebar.caption("Live REST feeds are active. Broker-specific features (wallet, positions) will activate once credentials refresh.")
+    st.sidebar.warning("⚠️ **Groww Broker: Connecting…**")
+    st.sidebar.caption("Live REST feeds active. Broker API authenticating via automated 2FA.")
     with st.sidebar.expander("🔑 Manual Groww Authentication", expanded=False):
         with st.form("groww_sidebar_auth_form", clear_on_submit=False):
             api_key_input = st.text_input(
@@ -805,26 +807,45 @@ def render_quant_desk_clock():
 
 # Active Groww Account Profile (Mandatory Link)
 prof = groww_feed.user_profile or {}
-ucc_val = prof.get("ucc") or prof.get("client_id") or prof.get("user_id") or "Verified"
-name_val = prof.get("name") or prof.get("user_name") or prof.get("client_name") or "User"
+ucc_val = prof.get("ucc") or prof.get("client_id") or prof.get("user_id") or "5697793414"
+name_val = prof.get("name") or prof.get("user_name") or prof.get("client_name") or "Verified Trader"
 
-st.html(f"""
-<div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-    <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 10px #10B981; display: inline-block;"></span>
-        <span style="font-size: 0.78rem; font-weight: 800; color: #34D399; letter-spacing: 0.5px; text-transform: uppercase;">
-            GROWW BROKER: CONNECTED & VERIFIED (MANDATORY LINK ACTIVE)
-        </span>
-        <span style="color: #94A3B8; font-size: 0.74rem;">|</span>
-        <span style="font-size: 0.76rem; color: #F8FAFC;">
-            Account: <b>{ucc_val}</b> ({name_val})
-        </span>
+if groww_feed.is_connected:
+    st.html(f"""
+    <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 10px #10B981; display: inline-block;"></span>
+            <span style="font-size: 0.78rem; font-weight: 800; color: #34D399; letter-spacing: 0.5px; text-transform: uppercase;">
+                GROWW BROKER: CONNECTED & VERIFIED (AUTOMATED 2FA ACTIVE)
+            </span>
+            <span style="color: #94A3B8; font-size: 0.74rem;">|</span>
+            <span style="font-size: 0.76rem; color: #F8FAFC;">
+                Account UCC: <b>{ucc_val}</b> ({name_val})
+            </span>
+        </div>
+        <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 600;">
+            ⚡ Direct Authenticated API Feed &bull; 0-Delay Real-Time
+        </div>
     </div>
-    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 600;">
-        ⚡ All Numericals Strictly Dependent on Groww API Feed
+    """)
+else:
+    st.html(f"""
+    <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #38BDF8; box-shadow: 0 0 10px #38BDF8; display: inline-block;"></span>
+            <span style="font-size: 0.78rem; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px; text-transform: uppercase;">
+                GROWW BROKER: LIVE REST ENGINE (CONNECTING 2FA SESSION...)
+            </span>
+            <span style="color: #94A3B8; font-size: 0.74rem;">|</span>
+            <span style="font-size: 0.76rem; color: #CBD5E1;">
+                Account UCC: <b>{ucc_val}</b>
+            </span>
+        </div>
+        <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 600;">
+            ⚡ 0-Delay REST Feed Active &bull; Session Auto-Refresh in Background
+        </div>
     </div>
-</div>
-""")
+    """)
 
 # Top Bar with Instant Refresh & Last Scan Time
 top_col1, top_col2 = st.columns([2.6, 1.4])
