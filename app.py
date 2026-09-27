@@ -1562,7 +1562,7 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
             return t.history(period="5d", interval=interval)
         with ThreadPoolExecutor(max_workers=1) as ex:
             fut = ex.submit(_get_hist)
-            df = fut.result(timeout=3.0)  # P0 Fix: 3.0s timeout prevents premature synthetic fallback
+            df = fut.result(timeout=6.0)  # Institutional: 6.0s timeout gives network buffer against rate-limits
     except Exception:
         df = pd.DataFrame()
 
@@ -1576,7 +1576,8 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     except Exception:
         base_p = 1226.00
 
-    # P0 Fix: Resilient Real Data Session Cache
+    # Resilient Real Data Session Cache
+    is_synthetic_feed = False
     if not df.empty and len(df) >= 30:
         try:
             st.session_state["cached_real_df"] = df.copy()
@@ -1586,6 +1587,7 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
         df = st.session_state["cached_real_df"].copy()
 
     if df.empty or len(df) < 30:
+        is_synthetic_feed = True
         dates = pd.date_range(end=datetime.now(IST), periods=60, freq="5min" if interval == "5m" else "15min")
         prev_p = base_p - 6.80
         t_steps = np.linspace(0, 1, 60)
@@ -1607,7 +1609,7 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
             df['High'] = df['High'] / 2.0
             df['Low'] = df['Low'] / 2.0
 
-        # P1 Fix: Live Forming Candle Synthesis with 0-Delay Groww Spot
+        # Live Forming Candle Synthesis with 0-Delay Groww Spot
         if base_p > 0 and len(df) > 0:
             df.iloc[-1, df.columns.get_loc('Close')] = base_p
             if base_p > df.iloc[-1]['High']:
@@ -1615,12 +1617,15 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
             if base_p < df.iloc[-1]['Low']:
                 df.iloc[-1, df.columns.get_loc('Low')] = base_p
 
+    st.session_state["is_synthetic_feed"] = is_synthetic_feed
+
     # All Indicators
     df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    # Higher-Timeframe (60m) Trend Invariance: 240 bars on 5m = 20-period EMA on 60m chart
-    df['HTF_EMA20'] = df['Close'].ewm(span=240, adjust=False).mean()
+    # Higher-Timeframe (60m) Trend Invariance: 240 bars on 5m, 80 bars on 15m = 20-period EMA on 60m chart
+    htf_span = 80 if interval == "15m" else 240
+    df['HTF_EMA20'] = df['Close'].ewm(span=htf_span, adjust=False).mean()
 
     bb_mid = df['Close'].rolling(20).mean()
     bb_std = df['Close'].rolling(20).std()
@@ -3734,6 +3739,12 @@ if df is not None and not df.empty:
     if is_circuit_breaker_tripped and not is_sim_active:
         is_tradable = False
 
+    # Enhancement 6: Real-Money Data Integrity Guard
+    # If historical candle feed is synthetic, kill live order generation to protect real capital
+    is_synthetic_feed = st.session_state.get("is_synthetic_feed", False)
+    if is_synthetic_feed and not is_sim_active:
+        is_tradable = False
+
     strike_badge = "🏆 Quantitative Best Strike" if is_best_strk else "Alternative ATM Strike"
     rec_instrument = f"RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str}) [{strike_badge} | Dual ATM: ₹{lower_atm} & ₹{upper_atm}] | {num_lots} Lots / {total_trading_qty} Qty | Current Price: ₹{current_option_ltp:.2f} (Spot: ₹{spot:.2f})"
 
@@ -4696,7 +4707,8 @@ if df is not None and not df.empty:
         "orb_low_vol_trap": orb_low_vol_trap,
         "costs_target": costs_target,
         "costs_sl": costs_sl,
-        "kelly_recommended_lots": kelly_recommended_lots
+        "kelly_recommended_lots": kelly_recommended_lots,
+        "is_synthetic_feed": is_synthetic_feed
     }
 
     if stream_live_1s:
