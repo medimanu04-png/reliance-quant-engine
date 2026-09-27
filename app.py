@@ -1104,6 +1104,24 @@ with st.sidebar.expander("⚙️ Optimal Strategy & Risk Parameters", expanded=T
     target_pts = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=10.0, step=0.5, help="Optimal backtested target (+10.0 pts = +₹10,000 / 2 lots)")
     sl_pts = st.number_input("Stop Loss (pts)", min_value=1.0, max_value=30.0, value=9.0, step=0.5, help="Optimal backtested stop loss (-9.0 pts = -₹9,000 / 2 lots)")
     MIN_HIT_PERCENTAGE = st.slider("Directional Gate Threshold (%)", min_value=50.0, max_value=85.0, value=60.0, step=1.0, help="Optimal execution gate (>60% filters consolidation chop while capturing high-probability directional trends)")
+    
+    # Enhancement: Max Daily Loss / Circuit Breaker Safeguard
+    max_daily_sl_allowed = st.number_input("Max Daily Stop Losses Before Auto-Lock", min_value=1, max_value=4, value=2, step=1, help="Stops trading for the day after this many stop losses (prevents revenge trading and capital erosion)")
+    if "session_sl_count" not in st.session_state:
+        st.session_state["session_sl_count"] = 0
+    
+    col_loss_stat, col_loss_rst = st.columns([2, 1])
+    with col_loss_stat:
+        st.caption(f"🛡️ Daily SL Hits: **{st.session_state['session_sl_count']} / {max_daily_sl_allowed}**")
+    with col_loss_rst:
+        if st.button("Reset SL", key="rst_sl_cnt_btn", help="Reset today's loss count"):
+            st.session_state["session_sl_count"] = 0
+            st.rerun()
+
+    is_circuit_breaker_tripped = st.session_state["session_sl_count"] >= max_daily_sl_allowed
+    if is_circuit_breaker_tripped:
+        st.error(f"🚨 **CIRCUIT BREAKER TRIPPED**: {st.session_state['session_sl_count']} SLs hit today. Live trading locked for capital defense.")
+
     st.html("""
     <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; padding: 6px 10px; font-size: 0.72rem; color: #6EE7B7; line-height: 1.4;">
         🏆 <b>#1 Optimal Execution Setup:</b><br>
@@ -1152,7 +1170,8 @@ sim_options = [
     "🛑 5. Stop Loss Hit (-9.0 pts | -₹9,000 Risk Cut)",
     "⚡ 6. Trailing SL / Half-Profit (+5.0 pts | Trail to Cost)",
     "🔒 7. Auto-Square-Off & EOD Cutoff (03:05 PM IST)",
-    "🛡️ 8. Choppiness Stand Down (CHOP > 61.8 Filter Active)"
+    "🛡️ 8. Choppiness Stand Down (CHOP > 61.8 Filter Active)",
+    "🚨 9. Max Daily Drawdown Circuit Breaker (Session Locked)"
 ]
 
 sim_scenario = st.sidebar.radio(
@@ -1184,6 +1203,7 @@ is_stop_loss_scenario = ("5. Stop Loss Hit" in sim_scenario)
 is_trailing_sl_scenario = ("6. Trailing SL" in sim_scenario)
 is_auto_sq_scenario = ("7. Auto-Square-Off" in sim_scenario)
 is_chop_scenario = ("8. Choppiness Stand Down" in sim_scenario)
+is_circuit_breaker_scenario = ("9. Max Daily Drawdown" in sim_scenario)
 
 # Dynamic Fire Button Styling & Label matching exact scenario color
 if is_entry_ce_scenario:
@@ -1210,6 +1230,9 @@ elif is_auto_sq_scenario:
 elif is_chop_scenario:
     btn_title = "🛡️ Fire Chop Stand Down"
     btn_theme = "#64748B"
+elif is_circuit_breaker_scenario:
+    btn_title = "🚨 Fire Circuit Breaker Lock"
+    btn_theme = "#E11D48"
 else:
     btn_title = "🚀 Fire Alert"
     btn_theme = "#38BDF8"
@@ -1278,6 +1301,9 @@ elif "7. Auto-Square-Off" in active_sim:
 elif "8. Choppiness Stand Down" in active_sim:
     sim_mode = "CHOP_STANDDOWN"
     st.sidebar.info("🛡️ **Live Choppiness Stand Down Simulation: Active**")
+elif "9. Max Daily Drawdown" in active_sim:
+    sim_mode = "CIRCUIT_BREAKER"
+    st.sidebar.info("🚨 **Live Circuit Breaker Lock Simulation: Active**")
 else:
     sim_mode = "LIVE"
 
@@ -2228,6 +2254,81 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         {audio_autosq_chime_js}
         """)
 
+    elif sim_mode == "CIRCUIT_BREAKER" or tp.get("is_circuit_breaker_tripped", False):
+        audio_circuit_js = f"""
+        <script>
+        (function() {{
+            const runKey = "circuit_audio_{sim_run_id}";
+            if (window.lastCircuitAudioKey !== runKey) {{
+                try {{
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') {{ ctx.resume(); }}
+                    [220, 196, 164].forEach((freq, i) => {{
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = "sawtooth";
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.2);
+                        gain.gain.setValueAtTime(0.30, ctx.currentTime + i * 0.2);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.2 + 0.35);
+                        osc.start(ctx.currentTime + i * 0.2);
+                        osc.stop(ctx.currentTime + i * 0.2 + 0.35);
+                    }});
+                    window.lastCircuitAudioKey = runKey;
+                }} catch(e) {{}}
+            }}
+        }})();
+        </script>
+        """
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(136, 19, 55, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #E11D48; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(225, 29, 72, 0.45); margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4rem;">🚨</span>
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                        MAX DAILY DRAWDOWN REACHED — SESSION LOCKED FOR CAPITAL SAFETY!
+                    </span>
+                </div>
+                <span style="background: #BE123C; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #FDA4AF;">
+                    CIRCUIT BREAKER LOCK
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #FFE4E6; font-weight: 600; margin-bottom: 12px;">
+                The daily loss limit ({tp.get('max_daily_sl_allowed', 2)} consecutive Stop Losses) has been reached. In institutional prop desks, when daily drawdown limits are hit, risk engines automatically disable order generation. No more trades allowed today.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(225, 29, 72, 0.4); border-radius: 8px; padding: 12px 16px;">
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Daily SL Hits</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #FDA4AF; margin-top: 2px;">{tp.get('session_sl_count', 2)} / {tp.get('max_daily_sl_allowed', 2)}</div>
+                    <div style="font-size: 0.72rem; color: #94A3B8;">Max Allowed Reached</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Execution Gate</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #F87171; margin-top: 2px;">LOCKED 🔒</div>
+                    <div style="font-size: 0.72rem; color: #FECACA;">Order Routing Cut</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Capital Preserved</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #34D399; margin-top: 2px;">₹{tp.get('account_cash', 66274):,.0f}</div>
+                    <div style="font-size: 0.72rem; color: #A7F3D0;">Survives to Trade Tomorrow</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Protocol Stance</div>
+                    <div style="font-size: 1.25rem; font-weight: 900; color: #FBBF24; margin-top: 2px;">STAND DOWN</div>
+                    <div style="font-size: 0.72rem; color: #FDE68A;">No Revenge Trading</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 OBSERVE MARKET (READ-ONLY) ↗
+                </a>
+            </div>
+        </div>
+        {audio_circuit_js}
+        """)
+
     elif sim_mode == "CHOP_STANDDOWN":
         # Telegram Alert Dispatch
         tg_status_html = ""
@@ -3099,13 +3200,30 @@ if df is not None and not df.empty:
     cam_breakout_bull = spot >= cam_h4
     cam_breakdown_bear = spot <= cam_l4
 
-    # Real-Time NIFTY 50 Index Beta Confluence
+    # Real-Time NIFTY 50 Index Beta Confluence & Alpha Divergence
     nifty_info = benchmarks.get("NIFTY 50", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
     nifty_pct = float(nifty_info.get("pct_change", 0.0))
     nifty_bull = nifty_pct >= 0.05
     nifty_bear = nifty_pct <= -0.05
     nifty_fighting_bull = nifty_pct < -0.30  # Counter-trend danger: Buying Call while Nifty is dumping
     nifty_fighting_bear = nifty_pct > 0.30   # Counter-trend danger: Buying Put while Nifty is surging
+
+    # Enhancement 2: Institutional Opening Range Volume (ORV) Confirmation
+    # Validates if 15m breakout is supported by real institutional volume (vol >= 1.4x SMA20)
+    vol_avg20_orb = df['Volume'].rolling(20).mean().iloc[-1] if 'Volume' in df.columns else 1.0
+    current_candle_vol = latest.get('Volume', 0)
+    orv_ratio = (current_candle_vol / vol_avg20_orb) if vol_avg20_orb > 0 else 1.0
+    is_opening_session = time(9, 15) <= current_time <= time(10, 15)
+    orb_vol_confirmed = (orv_ratio >= 1.40) or not is_opening_session
+    orb_low_vol_trap = is_opening_session and (orv_ratio < 1.0) and (orb_breakout or orb_breakdown)
+
+    # Enhancement 3: Relative Strength / Alpha Divergence vs NIFTY 50
+    # Spot vs Benchmark percentage delta: detects institutional accumulation/distribution
+    rel_pct_ref = float(nse_data.get("prev_close", 1219.20)) if nse_data else 1219.20
+    rel_change_pct = ((spot - rel_pct_ref) / rel_pct_ref) * 100.0 if rel_pct_ref > 0 else 0.0
+    alpha_spread = round(rel_change_pct - nifty_pct, 2)
+    alpha_bull_divergence = alpha_spread >= 0.30  # Reliance outperforming NIFTY significantly (Institutional Buy Absorption)
+    alpha_bear_divergence = alpha_spread <= -0.30 # Reliance underperforming NIFTY significantly (Institutional Selling)
 
     if ema_stack_bull:
         v1_bull += 5.0
@@ -3114,7 +3232,10 @@ if df is not None and not df.empty:
     if adx_trend_bull:
         v1_bull += 3.0
     if orb_breakout:
-        v1_bull += 3.0
+        if orb_vol_confirmed:
+            v1_bull += 3.0
+        else:
+            v1_bull += 1.0  # Discounted breakout credit due to sluggish volume
     if htf_bull:
         v1_bull += 2.0  # 60m Macro Trend Invariance Confirmation
     if cam_breakout_bull:
@@ -3124,6 +3245,16 @@ if df is not None and not df.empty:
     elif nifty_fighting_bull:
         v1_bull = max(0.0, v1_bull - 4.0)  # Counter-trend index drag penalty!
 
+    # Alpha Divergence Confluence / Penalty
+    if alpha_bull_divergence:
+        v1_bull += 2.5  # Institutional Relative Strength Tailwind
+    elif alpha_bear_divergence:
+        v1_bull = max(0.0, v1_bull - 2.5)  # Relative weakness drag
+
+    # Low Volume Trap Penalty
+    if orb_low_vol_trap and orb_breakout:
+        v1_bull = max(0.0, v1_bull - 3.5)
+
     if ema_stack_bear:
         v1_bear += 5.0
     if st_bearish:
@@ -3131,7 +3262,10 @@ if df is not None and not df.empty:
     if adx_trend_bear:
         v1_bear += 3.0
     if orb_breakdown:
-        v1_bear += 3.0
+        if orb_vol_confirmed:
+            v1_bear += 3.0
+        else:
+            v1_bear += 1.0
     if htf_bear:
         v1_bear += 2.0  # 60m Macro Trend Invariance Confirmation
     if cam_breakdown_bear:
@@ -3140,6 +3274,14 @@ if df is not None and not df.empty:
         v1_bear += 2.0  # NIFTY 50 Index Headwind Confluence
     elif nifty_fighting_bear:
         v1_bear = max(0.0, v1_bear - 4.0)  # Counter-trend index drag penalty!
+
+    if alpha_bear_divergence:
+        v1_bear += 2.5  # Institutional Relative Weakness Headwind
+    elif alpha_bull_divergence:
+        v1_bear = max(0.0, v1_bear - 2.5)
+
+    if orb_low_vol_trap and orb_breakdown:
+        v1_bear = max(0.0, v1_bear - 3.5)
 
     v1_bull = min(20.0, max(0.0, v1_bull))
     v1_bear = min(20.0, max(0.0, v1_bear))
@@ -3461,14 +3603,16 @@ if df is not None and not df.empty:
 
     estimated_premium = round(current_option_ltp + 1.20, 2)  # Breakout trigger level
 
-    # Enhancement 2: Dynamic ATR-Scaled Profit Target (Adapts to Daily Volatility)
-    # On low-volatility days (ATR 10-12), a static +10 target is physically unreachable.
-    # On high-volatility days (ATR 25+), +10 leaves profits on the table.
-    # Formula: Target = max(7.5, min(user_target, ATR * Delta * 0.90))
+    # Enhancement: Dynamic ATR & India VIX Scaled Profit Target
+    # Low-vol days (VIX < 12.0) -> targets scale down to 7.0-8.5 pts (fast scalps)
+    # High-vol days (VIX >= 15.0) -> targets scale up to 11.5-14.0 pts (let runners run)
     stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else 15.0
     bs_delta = norm_cdf_d1 if 'norm_cdf_d1' in dir() else 0.50
-    atr_dynamic_target = round(max(7.5, min(float(target_pts), stock_atr * bs_delta * 0.90)), 1)
-    # Use the dynamic target in live mode, but keep user's sidebar value as the ceiling
+    vix_val_current = float(benchmarks.get("INDIA VIX", {}).get("price", 13.50)) if "benchmarks" in locals() or "benchmarks" in globals() else 13.50
+    vix_scaler = max(0.80, min(1.35, vix_val_current / 13.50))
+    atr_dynamic_target = round(max(7.0, min(float(target_pts * 1.35), stock_atr * bs_delta * 0.90 * vix_scaler)), 1)
+    
+    # Use the dynamic target in live mode, but keep user's sidebar value as reference
     effective_target_pts = atr_dynamic_target if not is_sim_active else target_pts
     target_pts_display = effective_target_pts
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
@@ -3485,6 +3629,11 @@ if df is not None and not df.empty:
     capital_risk_safe = risk_pct_of_capital <= 20.0  # Institutional max: 2.5%, liberal retail: 20%
     capital_risk_warning = risk_pct_of_capital > 20.0
     capital_risk_critical = risk_pct_of_capital > 35.0
+
+    # Enhancement 5: Max Daily Drawdown Circuit Breaker Enforcement
+    # Locks execution gate if consecutive daily SL limit is exceeded
+    if is_circuit_breaker_tripped and not is_sim_active:
+        is_tradable = False
 
     strike_badge = "🏆 Quantitative Best Strike" if is_best_strk else "Alternative ATM Strike"
     rec_instrument = f"RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str}) [{strike_badge} | Dual ATM: ₹{lower_atm} & ₹{upper_atm}] | {num_lots} Lots / {total_trading_qty} Qty | Current Price: ₹{current_option_ltp:.2f} (Spot: ₹{spot:.2f})"
@@ -3587,7 +3736,11 @@ if df is not None and not df.empty:
         """)
 
     # Enhancement 2 & 3 UI: Dynamic Target & Trailing SL Strip
-    target_tag = f'<span style="background: rgba(6, 182, 212, 0.20); color: #67E8F9; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.4);">ATR-SCALED</span>' if is_target_dynamic else '<span style="background: rgba(16, 185, 129, 0.15); color: #6EE7B7; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">STATIC</span>'
+    vix_badge_text = f"VIX {vix_val_current:.1f} ({vix_scaler:.2f}×)" if 'vix_val_current' in locals() else "VIX Normal"
+    target_tag = f'<span style="background: rgba(6, 182, 212, 0.20); color: #67E8F9; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.4);">ATR & {vix_badge_text}</span>' if is_target_dynamic else '<span style="background: rgba(16, 185, 129, 0.15); color: #6EE7B7; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">STATIC</span>'
+    alpha_status_color = "#34D399" if alpha_spread >= 0.30 else ("#F87171" if alpha_spread <= -0.30 else "#94A3B8")
+    alpha_status_badge = "Strong Outperformance (Alpha Accumulation)" if alpha_spread >= 0.30 else ("Underperforming Index (Alpha Drag)" if alpha_spread <= -0.30 else "In-Line Beta")
+    
     st.html(f"""
     <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 12px;">
@@ -3609,6 +3762,13 @@ if df is not None and not df.empty:
                 <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">⚡ TRAILING SL SHIELD</span>
                 <div style="font-size: 1.10rem; font-weight: 900; color: #FBBF24;">+{trailing_activation_pts:.1f} pts → BE</div>
                 <div style="font-size: 0.68rem; color: #64748B;">Auto-trails to Break-Even at +5.0 pts gain</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="text-align: center;">
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">📊 ALPHA DIVERGENCE</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: {alpha_status_color};">{alpha_spread:+.2f}% vs NIFTY</div>
+                <div style="font-size: 0.68rem; color: #64748B;">{alpha_status_badge}</div>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
@@ -4400,7 +4560,14 @@ if df is not None and not df.empty:
         "est_entry_cost": est_entry_cost,
         # Enhancement 1: Midday Chop Zone
         "midday_penalty_active": midday_penalty_active,
-        "is_midday_chop_zone": is_midday_chop_zone
+        "is_midday_chop_zone": is_midday_chop_zone,
+        # Institutional Integrations: Circuit Breaker, Alpha Divergence, VIX Scaler
+        "is_circuit_breaker_tripped": is_circuit_breaker_tripped,
+        "session_sl_count": st.session_state.get("session_sl_count", 0),
+        "max_daily_sl_allowed": max_daily_sl_allowed,
+        "alpha_spread": alpha_spread,
+        "vix_scaler": vix_scaler,
+        "orb_low_vol_trap": orb_low_vol_trap
     }
 
     if stream_live_1s:
