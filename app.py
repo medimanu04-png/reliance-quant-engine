@@ -1476,12 +1476,35 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     vwap_std = np.sqrt((df['Volume'] * vwap_diff_sq).cumsum() / cum_vol)
     df['VWAP_Upper'] = df['VWAP'] + (1.5 * vwap_std)
     df['VWAP_Lower'] = df['VWAP'] - vwap_std
+    df['VWAP_Std'] = vwap_std.replace(0, 1.0)
+    df['VWAP_ZScore'] = ((df['Close'] - df['VWAP']) / df['VWAP_Std']).round(2)
 
     hl = df['High'] - df['Low']
     hc = (df['High'] - df['Close'].shift()).abs()
     lc = (df['Low'] - df['Close'].shift()).abs()
     tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(window=14).mean().fillna(hl)
+
+    # Wilder's 14-period Choppiness Index (Fractal Dimension: CHOP > 61.8 = Stand Down Chop; CHOP < 38.2 = Trending)
+    tr_sum14 = tr.rolling(14).sum()
+    high14_max = df['High'].rolling(14).max()
+    low14_min = df['Low'].rolling(14).min()
+    range14 = (high14_max - low14_min).replace(0, np.nan)
+    chop = 100.0 * (np.log10(tr_sum14 / range14) / np.log10(14))
+    df['CHOP'] = chop.fillna(50.0).clip(0.0, 100.0).round(1)
+
+    # Intraday On-Balance Volume (OBV) & Institutional Aggressor Flow
+    obv_sign = np.sign(df['Close'].diff()).fillna(0.0)
+    df['OBV'] = (obv_sign * df['Volume']).cumsum()
+    df['OBV_EMA20'] = df['OBV'].ewm(span=20, adjust=False).mean()
+    df['OBV_Slope'] = df['OBV'] - df['OBV_EMA20']
+
+    # 15-Minute Opening Range (ORB-15) & Prior Session High/Low Anchors
+    orb_bars = df.iloc[:3] if len(df) >= 3 else df
+    df['ORB_High'] = float(orb_bars['High'].max())
+    df['ORB_Low'] = float(orb_bars['Low'].min())
+    df['PDH'] = float(df['High'].iloc[:-1].max()) if len(df) > 1 else float(df['High'].iloc[0])
+    df['PDL'] = float(df['Low'].iloc[:-1].min()) if len(df) > 1 else float(df['Low'].iloc[0])
 
     up_move = df['High'].diff()
     down_move = -df['Low'].diff()
@@ -2300,93 +2323,194 @@ if df is not None and not df.empty:
     opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=is_rescan)
     chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=is_rescan)
 
-    # Vector 1: Trend & Structure (20 pts)
-    v1_score = 0.0
-    ema_stack = latest['EMA_9'] > latest['EMA_20'] > latest['EMA_50']
+    # Option Chain OI Walls & Telemetry
+    call_wall = float(chain_oi.get("call_wall", atm_strike + 20))
+    put_wall = float(chain_oi.get("put_wall", atm_strike - 20))
+    pcr_val = chain_oi['overall_pcr']
+
+    # Vector 1: Multi-Timeframe Trend & 15m ORB Structure (20 pts)
+    v1_bull = 0.0
+    v1_bear = 0.0
+    ema_stack_bull = latest['EMA_9'] > latest['EMA_20'] > latest['EMA_50']
+    ema_stack_bear = latest['EMA_9'] < latest['EMA_20'] < latest['EMA_50']
     st_bullish = latest['SuperTrend_Dir'] == 1
-    adx_trend = latest['ADX'] >= 28.0 and latest['PDI'] > latest['MDI']
+    st_bearish = latest['SuperTrend_Dir'] == -1
+    adx_trend_bull = latest['ADX'] >= 25.0 and latest['PDI'] > latest['MDI']
+    adx_trend_bear = latest['ADX'] >= 25.0 and latest['MDI'] > latest['PDI']
 
-    if ema_stack:
-        v1_score += 10.0
+    orb_h = float(latest.get('ORB_High', spot + 10))
+    orb_l = float(latest.get('ORB_Low', spot - 10))
+    orb_breakout = spot >= orb_h
+    orb_breakdown = spot <= orb_l
+
+    if ema_stack_bull:
+        v1_bull += 8.0
     if st_bullish:
-        v1_score += 5.0
-    if adx_trend:
-        v1_score += 5.0
+        v1_bull += 4.0
+    if adx_trend_bull:
+        v1_bull += 4.0
+    if orb_breakout:
+        v1_bull += 4.0
 
-    # Vector 2: Institutional VWAP & Overall Stock Volume (18 pts)
-    v2_score = 0.0
+    if ema_stack_bear:
+        v1_bear += 8.0
+    if st_bearish:
+        v1_bear += 4.0
+    if adx_trend_bear:
+        v1_bear += 4.0
+    if orb_breakdown:
+        v1_bear += 4.0
+
+    # Vector 2: Institutional VWAP & Order Flow (18 pts)
+    v2_bull = 0.0
+    v2_bear = 0.0
     above_vwap = spot > latest['VWAP']
     above_vwap_upper = spot >= latest['VWAP_Upper']
+    below_vwap = spot < latest['VWAP']
+    below_vwap_lower = spot <= latest['VWAP_Lower']
+    vwap_z = float(latest.get('VWAP_ZScore', 0.0))
+
     vol_avg20 = df['Volume'].rolling(20).mean().iloc[-1]
     rel_vol = latest['Volume'] / vol_avg20 if vol_avg20 > 0 else 1.5
     vol_surge = rel_vol >= 1.70
 
+    obv_slope = float(latest.get('OBV_Slope', 0.0))
+    obv_buyer_agg = obv_slope > 0
+    obv_seller_agg = obv_slope < 0
+
     if above_vwap_upper:
-        v2_score += 10.0
+        v2_bull += 8.0 if vwap_z <= 2.2 else 4.0  # Climax guard: penalize if overextended
     elif above_vwap:
-        v2_score += 5.0
-
+        v2_bull += 5.0
     if vol_surge:
-        v2_score += 8.0
+        v2_bull += 5.0
     elif rel_vol > 1.0:
-        v2_score += 4.0
+        v2_bull += 2.0
+    if obv_buyer_agg:
+        v2_bull += 5.0
 
-    # Vector 3: Short Gamma Squeeze & Multi-Strike OI Trap (20 pts)
-    v3_score = 0.0
+    if below_vwap_lower:
+        v2_bear += 8.0 if vwap_z >= -2.2 else 4.0  # Oversold climax guard
+    elif below_vwap:
+        v2_bear += 5.0
+    if vol_surge:
+        v2_bear += 5.0
+    elif rel_vol > 1.0:
+        v2_bear += 2.0
+    if obv_seller_agg:
+        v2_bear += 5.0
+
+    # Vector 3: Short Gamma Squeeze & Strike OI Walls (20 pts)
+    v3_bull = 0.0
+    v3_bear = 0.0
     call_unwinding = opt_telemetry['call_oi_change_pct'] < -10.0
     put_writing = opt_telemetry['put_oi_change_pct'] > 20.0
-    pcr_val = chain_oi['overall_pcr']
+    put_unwinding = opt_telemetry['put_oi_change_pct'] < -10.0
+    call_writing = opt_telemetry['call_oi_change_pct'] > 20.0
 
     if call_unwinding:
-        v3_score += 8.0
+        v3_bull += 8.0
     elif opt_telemetry['call_oi_change_pct'] < 0:
-        v3_score += 4.0
-
+        v3_bull += 4.0
     if put_writing:
-        v3_score += 6.0
+        v3_bull += 6.0
     elif opt_telemetry['put_oi_change_pct'] > 10.0:
-        v3_score += 3.0
-
+        v3_bull += 3.0
     if pcr_val >= 1.25:
-        v3_score += 6.0
+        v3_bull += 6.0
     elif pcr_val >= 1.05:
-        v3_score += 3.0
+        v3_bull += 3.0
+    # Call Wall proximity clamp: if spot within 2 pts of Call Wall and no covering, deduct 4 pts
+    if abs(spot - call_wall) <= 2.0 and opt_telemetry['call_oi_change_pct'] >= 0:
+        v3_bull = max(0.0, v3_bull - 4.0)
 
-    # Vector 4: Volatility & ATR Room (15 pts)
-    v4_score = 0.0
+    if put_unwinding:
+        v3_bear += 8.0
+    elif opt_telemetry['put_oi_change_pct'] < 0:
+        v3_bear += 4.0
+    if call_writing:
+        v3_bear += 6.0
+    elif opt_telemetry['call_oi_change_pct'] > 10.0:
+        v3_bear += 3.0
+    if pcr_val <= 0.85:
+        v3_bear += 6.0
+    elif pcr_val <= 0.95:
+        v3_bear += 3.0
+    # Put Wall proximity clamp: if spot within 2 pts of Put Wall and no put unwinding, deduct 4 pts
+    if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
+        v3_bear = max(0.0, v3_bear - 4.0)
+
+    # Vector 4: Volatility & Choppiness Index (CHOP) Regime (15 pts)
+    v4_bull = 0.0
+    v4_bear = 0.0
     atr_viable = latest['ATR'] >= 7.5 or (latest['ATR'] / spot) >= 0.0025
     bb_expanding = spot >= latest['BB_Upper'] * 0.998 and latest['BB_Width'] >= 1.5
+    bb_contracting_bear = spot <= latest['BB_Lower'] * 1.002 and latest['BB_Width'] >= 1.5
 
-    if atr_viable:
-        v4_score += 8.0
+    chop_val = float(latest.get('CHOP', 50.0))
+    is_trending_regime = chop_val < 45.0
+    is_choppy_regime = chop_val > 61.8
+
+    atr_pts = 8.0 if atr_viable else 4.0
+    v4_bull += atr_pts
+    v4_bear += atr_pts
+
+    if is_trending_regime:
+        v4_bull += 4.0
+        v4_bear += 4.0
+    elif not is_choppy_regime:
+        v4_bull += 2.0
+        v4_bear += 2.0
+
     if bb_expanding:
-        v4_score += 7.0
+        v4_bull += 3.0
+    if bb_contracting_bear:
+        v4_bear += 3.0
 
     # Vector 5: Zero-Divergence Momentum (15 pts)
-    v5_score = 0.0
-    rsi_sweetspot = 62.0 <= latest['RSI'] <= 76.0
-    macd_expanding = latest['MACD_Hist'] > prev['MACD_Hist'] and latest['MACD_Hist'] > 0
-    stoch_good = 60.0 <= latest['Stoch_K'] <= 85.0
+    v5_bull = 0.0
+    v5_bear = 0.0
+    rsi_sweetspot_bull = 62.0 <= latest['RSI'] <= 76.0
+    rsi_sweetspot_bear = 24.0 <= latest['RSI'] <= 38.0
+    macd_expanding_bull = latest['MACD_Hist'] > prev['MACD_Hist'] and latest['MACD_Hist'] > 0
+    macd_expanding_bear = latest['MACD_Hist'] < prev['MACD_Hist'] and latest['MACD_Hist'] < 0
+    stoch_good_bull = 60.0 <= latest['Stoch_K'] <= 85.0
+    stoch_good_bear = 15.0 <= latest['Stoch_K'] <= 40.0
 
-    if rsi_sweetspot:
-        v5_score += 6.0
+    if rsi_sweetspot_bull:
+        v5_bull += 6.0
     elif latest['RSI'] >= 55.0:
-        v5_score += 3.0
+        v5_bull += 3.0
+    if macd_expanding_bull:
+        v5_bull += 5.0
+    if stoch_good_bull:
+        v5_bull += 4.0
 
-    if macd_expanding:
-        v5_score += 5.0
-    if stoch_good:
-        v5_score += 4.0
+    if rsi_sweetspot_bear:
+        v5_bear += 6.0
+    elif latest['RSI'] <= 45.0:
+        v5_bear += 3.0
+    if macd_expanding_bear:
+        v5_bear += 5.0
+    if stoch_good_bear:
+        v5_bear += 4.0
 
     # Vector 6: Next Month Expiry & Greek Stability (12 pts)
-    v6_score = 12.0
+    v6_bull = 12.0
+    v6_bear = 12.0
 
-    # Composite Probability Score
     # Composite Probability Scores (Symmetric Dual-Directional: Bullish vs Bearish)
-    base_confluence = v1_score + v2_score + v3_score + v4_score + v5_score + v6_score
     news_modifier = (news_sentiment_score / 10.0) * 5.0
-    bullish_score = min(96.0, max(10.0, round(base_confluence + news_modifier, 1)))
-    bearish_score = round(100.0 - bullish_score, 1)
+    raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + news_modifier
+    raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear - news_modifier
+
+    bullish_score = min(96.0, max(10.0, round(raw_bullish, 1)))
+    bearish_score = min(96.0, max(10.0, round(raw_bearish, 1)))
+
+    # Fractal Choppiness Stand Down Filter: When CHOP > 61.8, clamp both scores below institutional gate
+    if is_choppy_regime:
+        bullish_score = min(bullish_score, 54.0)
+        bearish_score = min(bearish_score, 54.0)
 
     # Directional Resolution
     if bullish_score >= bearish_score:
@@ -2395,13 +2519,16 @@ if df is not None and not df.empty:
         opposing_side = "BEARISH (PUT / PE)"
         opposing_score = bearish_score
         recommended_contract_type = "CE"
+        v1_score, v2_score, v3_score, v4_score, v5_score, v6_score = v1_bull, v2_bull, v3_bull, v4_bull, v5_bull, v6_bull
     else:
         dominant_side = "BEARISH (PUT / PE)"
         dominant_score = bearish_score
         opposing_side = "BULLISH (CALL / CE)"
         opposing_score = bullish_score
         recommended_contract_type = "PE"
+        v1_score, v2_score, v3_score, v4_score, v5_score, v6_score = v1_bear, v2_bear, v3_bear, v4_bear, v5_bear, v6_bear
 
+    base_confluence = v1_score + v2_score + v3_score + v4_score + v5_score + v6_score
     total_score = dominant_score
 
     # Simulation Overrides: If user enabled entry or armed simulation, force tradable regime & high win prob
@@ -2417,13 +2544,13 @@ if df is not None and not df.empty:
         total_score = dominant_score
         if recommended_contract_type == "CE":
             bullish_score = target_sim_score
-            bearish_score = round(100.0 - target_sim_score, 1)
+            bearish_score = min(42.0, round(100.0 - target_sim_score, 1))
         else:
             bearish_score = target_sim_score
-            bullish_score = round(100.0 - target_sim_score, 1)
+            bullish_score = min(42.0, round(100.0 - target_sim_score, 1))
     else:
-        # Operational Regime Trade Gate (Trade if dominant score > MIN_HIT_PERCENTAGE and within time window)
-        is_tradable = (dominant_score > MIN_HIT_PERCENTAGE) and time_gate_allowed
+        # Operational Regime Trade Gate (Trade if dominant score > MIN_HIT_PERCENTAGE, within time window, and not in Choppiness Stand Down)
+        is_tradable = (dominant_score > MIN_HIT_PERCENTAGE) and time_gate_allowed and not is_choppy_regime
 
     # Institutional Black-Scholes Option Pricing (Calibrated to Real Market IV ~21.2% & RBI Risk-Free Rate 6.75%)
     dte = expiry_plan.get("dte", max(1, (expiry_dt.date() - today_dt.date()).days))
@@ -2492,14 +2619,17 @@ if df is not None and not df.empty:
         """)
         st.caption("📡 **Source**: Groww API (0-Delay) • Verified Real-time Feed")
 
-    col2.metric("Directional Probability", f"🟢 CE: {bullish_score}%", delta=f"🔴 PE: {bearish_score}% ({'Bullish Bias' if bullish_score >= bearish_score else 'Bearish Bias'})", help="Source: 6-Vector Quantitative Confluence Model (VWAP, SuperTrend, EMA, RSI, ATR, OI Confluence)")
+    bias_desc = "Bullish Edge" if bullish_score > bearish_score + 10 else ("Bearish Edge" if bearish_score > bullish_score + 10 else "Consolidation Chop")
+    col2.metric("Directional Probability", f"🟢 CE: {bullish_score}%", delta=f"🔴 PE: {bearish_score}% ({bias_desc})", help="Source: Enhanced 6-Vector Confluence Model (Symmetric Dual-Directional Scoring with CHOP Filter)")
     col2.caption("📡 **Source**: Quant Confluence Model")
 
-    col3.metric("RSI (14) / ADX (14)", f"{latest['RSI']:.1f} | ADX {latest['ADX']:.1f}", delta="Strong Trend" if latest['ADX'] >= 28 else "Consolidation", help="Source: Computed from Yahoo Finance 5m/15m OHLCV Candles via Technical Indicator Suite")
-    col3.caption("📡 **Source**: Yahoo Finance + TA Engine")
+    chop_status_str = "Trending" if is_trending_regime else ("Choppy Stand Down" if is_choppy_regime else "Neutral Oscillation")
+    col3.metric("RSI (14) / ADX (14)", f"{latest['RSI']:.1f} | ADX {latest['ADX']:.1f}", delta=f"CHOP: {chop_val:.1f} ({chop_status_str})", help="Source: RSI, ADX, and Wilder's Choppiness Index (CHOP > 61.8 = Stand Down)")
+    col3.caption("📡 **Source**: TA Suite + CHOP Filter")
 
-    col4.metric("ATR (14) Volatility", f"₹{latest['ATR']:.2f}", delta="Viable for +8 pts" if atr_viable else "Low Volatility", help="Source: Wilder's 14-period Average True Range computed from Yahoo Finance OHLCV")
-    col4.caption("📡 **Source**: Yahoo Finance + ATR(14)")
+    z_desc = "Optimal" if abs(vwap_z) <= 1.8 else ("Climax Overbought" if vwap_z > 2.2 else "Climax Oversold")
+    col4.metric("ATR (14) / VWAP Z", f"₹{latest['ATR']:.2f} | {vwap_z:+.2f}σ", delta=f"{z_desc} • {'Viable +10 pts' if atr_viable else 'Low Vol'}", help="Source: Wilder's 14-period ATR + VWAP Standard Deviation Z-Score")
+    col4.caption("📡 **Source**: ATR(14) + VWAP Z-Score")
 
     col5.metric("Macro & News Sentiment", f"+{news_sentiment_score:.1f}/10" if news_sentiment_score >= 0 else f"{news_sentiment_score:.1f}/10", delta="Supportive Tailwind" if news_sentiment_score > 0 else "Macro Headwind", help="Source: Google News RSS NLP Sentiment Pipeline + MCX Brent Crude Spread Model")
     col5.caption("📡 **Source**: Google News RSS + MCX Crude")
@@ -2553,29 +2683,31 @@ if df is not None and not df.empty:
 
     # Pre-computed behavioral narratives
     v1_beh = (
-        f"Triple EMA ribbon is {'bullishly stacked (9 > 20 > 50)' if ema_stack else 'consolidating'} "
+        f"Triple EMA ribbon is {'bullishly stacked (9 > 20 > 50)' if ema_stack_bull else ('bearishly stacked (9 < 20 < 50)' if ema_stack_bear else 'consolidating')} "
         f"with SuperTrend active at ₹{latest['SuperTrend']:.2f} ({'Buy Regime' if st_bullish else 'Sell Regime'}). "
-        f"ADX at {latest['ADX']:.1f} confirms {'strong directional momentum' if adx_trend else 'choppy market structure'}."
+        f"ADX at {latest['ADX']:.1f} confirms {'strong directional momentum' if (adx_trend_bull or adx_trend_bear) else 'choppy market structure'}. "
+        f"15m ORB Range sits at ₹{orb_l:.2f} - ₹{orb_h:.2f} ({'Breakout Above ORB High' if orb_breakout else ('Breakdown Below ORB Low' if orb_breakdown else 'Inside ORB Range')})."
     )
     v2_beh = (
-        f"Spot price is sustaining {spot - latest['VWAP']:+.2f} pts {'above' if above_vwap else 'below'} institutional VWAP "
-        f"with {'an aggressive 1.7x+ volume expansion' if vol_surge else f'{rel_vol:.2f}x benchmark volume'}, "
-        f"confirming {'active smart-money buyer absorption' if above_vwap else 'distribution pressure'}."
+        f"Spot price is sustaining {spot - latest['VWAP']:+.2f} pts {'above' if above_vwap else 'below'} institutional VWAP (Z-score: {vwap_z:+.2f}σ) "
+        f"with {'an aggressive 1.7x+ volume expansion' if vol_surge else f'{rel_vol:.2f}x benchmark volume'}. "
+        f"Intraday OBV flow confirms {'active smart-money buyer aggression' if obv_buyer_agg else 'distribution seller aggression'}."
     )
     call_oi_chg_val = opt_telemetry['call_oi_change_pct']
     put_oi_chg_val = opt_telemetry['put_oi_change_pct']
     call_trap_str = f"trapped and unwinding positions ({call_oi_chg_val:+.1f}%)" if call_oi_chg_val < 0 else f"adding resistance contracts ({call_oi_chg_val:+.1f}%)"
     put_trap_str = f"builds aggressive support ({put_oi_chg_val:+.1f}%)" if put_writing else f"maintains support ({put_oi_chg_val:+.1f}%)"
-    v3_beh = f"Call writers are {call_trap_str} while Put open interest {put_trap_str}. Total corridor PCR sits at {pcr_val:.2f} with Max Pain at ₹{chain_oi['max_pain']}."
+    v3_beh = f"Call writers are {call_trap_str} while Put open interest {put_trap_str}. Total corridor PCR sits at {pcr_val:.2f} with Max Pain at ₹{chain_oi['max_pain']:.0f}, Call Wall at ₹{call_wall:.0f}, and Put Wall at ₹{put_wall:.0f}."
 
     v4_beh = (
         f"Daily ATR of ₹{latest['ATR']:.2f} "
         f"{'provides full statistical room to hit the +10.0 pts target without hitting range resistance' if atr_viable else 'reflects narrow range compression'}. "
-        f"Bollinger bands show {'active breakout expansion' if bb_expanding else 'steady oscillation without overextension'}."
+        f"Choppiness Index (CHOP-14) at {chop_val:.1f} signals {'a strong directional expansion regime' if is_trending_regime else ('an extreme sideways consolidation trap (Stand Down enforced)' if is_choppy_regime else 'moderate fluctuation')}. "
+        f"Bollinger bands show {'active breakout expansion' if bb_expanding else 'steady oscillation'}."
     )
     v5_beh = (
         f"RSI at {latest['RSI']:.1f} and MACD histogram at {latest['MACD_Hist']:+.2f} reflect "
-        f"{'harmonious upward momentum with zero divergence, confirming directional expansion' if (rsi_sweetspot and macd_expanding) else 'positive directional velocity with controlled oscillator velocity'} against spot."
+        f"{'harmonious upward momentum with zero divergence, confirming directional expansion' if (rsi_sweetspot_bull and macd_expanding_bull) else ('strong downward velocity' if (rsi_sweetspot_bear and macd_expanding_bear) else 'controlled oscillator velocity')} against spot."
     )
     v6_beh = (
         f"Protocol dynamically routes execution to the {expiry_date_str} monthly cycle ({dte} DTE). "
@@ -2591,9 +2723,10 @@ if df is not None and not df.empty:
             "max": 20.0,
             "source": "Yahoo Finance 5m Candles + Vectorized TA Engine",
             "metrics": [
-                ("EMA 9 / 20 / 50 Ribbon", f"₹{latest['EMA_9']:.1f} > ₹{latest['EMA_20']:.1f} > ₹{latest['EMA_50']:.1f}" if ema_stack else f"EMA 9: ₹{latest['EMA_9']:.1f} | 20: ₹{latest['EMA_20']:.1f}", "🟢 Bullish Stack (+10)" if ema_stack else "🔴 Mixed / Tangled (0)"),
-                ("SuperTrend (10, 3)", f"₹{latest['SuperTrend']:.2f}", "🟢 Bullish Buy (+5)" if st_bullish else "🔴 Bearish Sell (0)"),
-                ("ADX (14) Trend Power", f"{latest['ADX']:.1f} (+DI: {latest['PDI']:.1f} | -DI: {latest['MDI']:.1f})", "🟢 Strong Trend (+5)" if adx_trend else "🟡 Low Velocity (0)")
+                ("EMA 9 / 20 / 50 Ribbon", f"₹{latest['EMA_9']:.1f} > ₹{latest['EMA_20']:.1f} > ₹{latest['EMA_50']:.1f}" if ema_stack_bull else (f"₹{latest['EMA_9']:.1f} < ₹{latest['EMA_20']:.1f} < ₹{latest['EMA_50']:.1f}" if ema_stack_bear else f"EMA 9: ₹{latest['EMA_9']:.1f} | 20: ₹{latest['EMA_20']:.1f}"), "🟢 Bullish Stack (+8)" if ema_stack_bull else ("🔴 Bearish Stack (+8)" if ema_stack_bear else "🟡 Mixed / Tangled (0)")),
+                ("SuperTrend (10, 3)", f"₹{latest['SuperTrend']:.2f}", "🟢 Bullish Buy (+4)" if st_bullish else "🔴 Bearish Sell (+4)"),
+                ("ADX (14) Trend Power", f"{latest['ADX']:.1f} (+DI: {latest['PDI']:.1f} | -DI: {latest['MDI']:.1f})", "🟢 Strong Trend (+4)" if (adx_trend_bull or adx_trend_bear) else "🟡 Low Velocity (0)"),
+                ("15m ORB Range & Breakout", f"H: ₹{orb_h:.1f} | L: ₹{orb_l:.1f}", "🟢 Breakout Above H (+4)" if orb_breakout else ("🔴 Breakdown Below L (+4)" if orb_breakdown else "🟡 Inside 15m Range (0)"))
             ],
             "behavior": v1_beh
         },
@@ -2606,8 +2739,9 @@ if df is not None and not df.empty:
             "source": "Groww Tick Stream + VWAP Accumulator",
             "metrics": [
                 ("Spot vs Institutional VWAP", f"Spot ₹{spot:.2f} | VWAP ₹{latest['VWAP']:.2f}", f"🟢 {spot - latest['VWAP']:+.2f} pts Above" if above_vwap else f"🔴 {spot - latest['VWAP']:+.2f} pts Below"),
-                ("VWAP Upper Band Channel", f"₹{latest['VWAP_Upper']:.2f}", "🟢 Upper Breakout (+10)" if above_vwap_upper else ("🟡 Above Mid VWAP (+5)" if above_vwap else "🔴 Below Base")),
-                ("Relative Volume (RVOL)", f"{rel_vol:.2f}x (Vol: {int(latest['Volume']):,})", "🟢 Surge ≥1.7x (+8)" if vol_surge else ("🟡 Normal >1.0x (+4)" if rel_vol > 1.0 else "🔴 Sub-1.0x"))
+                ("VWAP Z-Score Climax Guard", f"Z: {vwap_z:+.2f}σ", "🟢 Optimal Expansion" if abs(vwap_z) <= 1.8 else ("🔴 Climax Overbought" if vwap_z > 2.2 else "🔴 Climax Oversold")),
+                ("Relative Volume (RVOL)", f"{rel_vol:.2f}x (Vol: {int(latest['Volume']):,})", "🟢 Surge ≥1.7x (+5)" if vol_surge else ("🟡 Normal >1.0x (+2)" if rel_vol > 1.0 else "🔴 Sub-1.0x (0)")),
+                ("Intraday OBV Flow (EMA-20)", f"Slope: {obv_slope:+,.0f}", "🟢 Buyers Dominating (+5)" if obv_buyer_agg else "🔴 Sellers Dominating (+5)")
             ],
             "behavior": v2_beh
         },
@@ -2621,7 +2755,8 @@ if df is not None and not df.empty:
             "metrics": [
                 (f"Call OI Shift ({atm_strike} CE)", f"{opt_telemetry['call_oi_change_pct']:+.1f}% shift", "🟢 Short Covering (+8)" if call_unwinding else ("🟡 Mild Drop (+4)" if opt_telemetry['call_oi_change_pct'] < 0 else "🔴 Call Writing")),
                 (f"Put OI Shift ({atm_strike} PE)", f"{opt_telemetry['put_oi_change_pct']:+.1f}% shift", "🟢 Heavy Writing (+6)" if put_writing else ("🟡 Put Support (+3)" if opt_telemetry['put_oi_change_pct'] > 10.0 else "🔴 Low Put Buildup")),
-                ("PCR (OI) & Max Pain", f"PCR: {pcr_val:.2f} | Max Pain: ₹{chain_oi['max_pain']}", "🟢 Strong Cushion (+6)" if pcr_val >= 1.25 else ("🟡 Neutral (+3)" if pcr_val >= 1.05 else "🔴 Bearish (<1.05)"))
+                ("PCR (OI) & Max Pain", f"PCR: {pcr_val:.2f} | Max Pain: ₹{chain_oi['max_pain']:.0f}", "🟢 Strong Cushion (+6)" if pcr_val >= 1.25 else ("🟡 Neutral (+3)" if pcr_val >= 1.05 else "🔴 Bearish (<1.05)")),
+                ("Call / Put Wall Perimeter", f"Call ₹{call_wall:.0f} | Put ₹{put_wall:.0f}", "🟢 Clear Room" if (abs(spot - call_wall) > 2.0 and abs(spot - put_wall) > 2.0) else "🔴 Near Wall Clamp (-4)")
             ],
             "behavior": v3_beh
         },
@@ -2634,7 +2769,8 @@ if df is not None and not df.empty:
             "source": "Wilder's ATR (14) + Bollinger Bands Model",
             "metrics": [
                 ("ATR (14) Daily Range", f"₹{latest['ATR']:.2f} pts ({(latest['ATR']/spot)*100.0:.2f}%)", "🟢 Viable for +10 pts (+8)" if atr_viable else "🔴 Low Room (0)"),
-                ("Bollinger Bandwidth", f"{latest['BB_Width']:.2f}% width", "🟢 Band Expansion (+7)" if bb_expanding else "🟡 Moderate Bandwidth"),
+                ("Choppiness Index (CHOP-14)", f"{chop_val:.1f} (Threshold 61.8)", "🟢 Trending Expansion (+4)" if is_trending_regime else ("🛑 Choppy Stand Down (0)" if is_choppy_regime else "🟡 Neutral Oscillation (+2)")),
+                ("Bollinger Bandwidth", f"{latest['BB_Width']:.2f}% width", "🟢 Band Expansion (+3)" if bb_expanding else "🟡 Moderate Bandwidth"),
                 ("Upper / Lower Band", f"High ₹{latest['BB_Upper']:.1f} | Low ₹{latest['BB_Lower']:.1f}", "🟢 Breakout Perimeter" if spot >= latest['BB_Upper'] * 0.998 else "🟡 Inside Bands")
             ],
             "behavior": v4_beh
@@ -2647,9 +2783,9 @@ if df is not None and not df.empty:
             "max": 15.0,
             "source": "RSI (14) + MACD (12,26,9) + Stochastic TA",
             "metrics": [
-                ("RSI (14) Relative Strength", f"{latest['RSI']:.1f} (Sweet Spot: 62-76)", "🟢 Bullish Power Band (+6)" if rsi_sweetspot else ("🟡 Constructive (+3)" if latest['RSI'] >= 55.0 else "🔴 Weak Momentum")),
-                ("MACD Histogram Trend", f"{latest['MACD_Hist']:+.2f} (vs Prev: {prev['MACD_Hist']:+.2f})", "🟢 Accelerating Bull (+5)" if macd_expanding else "🔴 Decelerating (0)"),
-                ("Stochastic %K Oscillator", f"{latest['Stoch_K']:.1f} (Sweet Spot: 60-85)", "🟢 Momentum Aligned (+4)" if stoch_good else "🟡 Neutral (0)")
+                ("RSI (14) Relative Strength", f"{latest['RSI']:.1f} (Sweet Spot: 62-76)", "🟢 Bullish Power Band (+6)" if rsi_sweetspot_bull else ("🔴 Bearish Breakdown (+6)" if rsi_sweetspot_bear else ("🟡 Constructive (+3)" if latest['RSI'] >= 55.0 else "🔴 Neutral/Weak"))),
+                ("MACD Histogram Trend", f"{latest['MACD_Hist']:+.2f} (vs Prev: {prev['MACD_Hist']:+.2f})", "🟢 Accelerating Bull (+5)" if macd_expanding_bull else ("🔴 Accelerating Bear (+5)" if macd_expanding_bear else "🟡 Decelerating (0)")),
+                ("Stochastic %K Oscillator", f"{latest['Stoch_K']:.1f} (Sweet Spot: 60-85)", "🟢 Momentum Aligned (+4)" if (stoch_good_bull or stoch_good_bear) else "🟡 Neutral (0)")
             ],
             "behavior": v5_beh
         },
