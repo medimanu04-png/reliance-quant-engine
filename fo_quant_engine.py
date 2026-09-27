@@ -646,7 +646,11 @@ class UltraHighConvictionRelianceEngine:
         status_text = (
             f"TRADABLE DAY / ACTIVE {dominant_side} SETUP"
             if is_tradable
-            else ("CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)" if is_choppy_regime else "NON-TRADABLE DAY / STAND DOWN")
+            else ("CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)" if is_choppy_regime else (
+                f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Market Closed)"
+                if (total_probability >= self.trade_regime_threshold and not time_allowed)
+                else "NON-TRADABLE DAY / STAND DOWN"
+            ))
         )
 
         target_text = (

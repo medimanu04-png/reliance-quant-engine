@@ -1632,6 +1632,10 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     tg_token = tp.get("tg_bot_token", "")
     tg_chat = tp.get("tg_chat_id", "")
     tg_on = tp.get("tg_enabled", True)
+    plan_time_allowed = tp.get("time_gate_allowed", True)
+    plan_time_msg = tp.get("time_gate_msg", "Prime Execution Window")
+    plan_choppy = tp.get("is_choppy_regime", False)
+    plan_chop_val = tp.get("chop_val", 50.0)
 
     # Resolve active contract live price from sub-second stream
     if plan_strike == corridor["lower_strike"]:
@@ -1912,28 +1916,55 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
 
     else:
-        st.html(f"""
-        <div class="trigger-standdown-box">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.2rem;">🛑</span>
-                    <span style="font-size: 1.0rem; font-weight: 800; color: #F87171; letter-spacing: 0.4px;">
-                        STAND DOWN / CONSOLIDATION CHOP FILTER ACTIVE
+        hero_score_cleared = plan_score > plan_gate
+        hero_surplus = round(plan_score - plan_gate, 1)
+        hero_is_off_hours = not plan_time_allowed and not (sim_entry or sim_armed)
+
+        if hero_is_off_hours and hero_score_cleared:
+            st.html(f"""
+            <div class="trigger-armed-box" style="border: 1.5px solid #F59E0B; background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2rem;">🟡</span>
+                        <span style="font-size: 1.0rem; font-weight: 800; color: #FBBF24; letter-spacing: 0.4px;">
+                            SETUP ARMED &bull; MARKET CLOSED ({plan_time_msg})
+                        </span>
+                    </div>
+                    <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.4);">
+                        OPENS 09:15 AM IST
                     </span>
                 </div>
-                <span style="background: rgba(239, 68, 68, 0.25); color: #FCA5A5; font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">
-                    CAPITAL PROTECTION
-                </span>
+                <div style="font-size: 0.82rem; color: #E2E8F0; margin-top: 6px; line-height: 1.5;">
+                    Directional confluence is <b style="color: #34D399;">{plan_score:.1f}%</b>, which <b>clears the mandatory &gt;{plan_gate:.0f}% Institutional Execution Gate (+{hero_surplus:.1f}% surplus)</b>. However, live order routing is locked outside official NSE F&O hours (09:15 AM - 03:10 PM IST). Setup is armed and ready for the next trading session.
+                </div>
+                <div style="margin-top: 6px; border-top: 1px solid rgba(245, 158, 11, 0.25); padding-top: 5px; font-size: 0.70rem; color: #94A3B8;">
+                    📡 <b>Status:</b> Setup Validated Off-Hours &bull; Toggle 'Simulate Session Time' in sidebar to test live orders now
+                </div>
             </div>
-            <div style="font-size: 0.82rem; color: #E2E8F0; margin-top: 6px; line-height: 1.5;">
-                Directional score is <b style="color: #FFFFFF;">{plan_score:.1f}%</b>, which does not satisfy the mandatory <b style="color: #FEF08A;">&gt;{plan_gate:.0f}% Institutional Execution Gate</b>. 
-                Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent whipsaws and capital erosion during consolidation chop.
+            """)
+        else:
+            st.html(f"""
+            <div class="trigger-standdown-box">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2rem;">🛑</span>
+                        <span style="font-size: 1.0rem; font-weight: 800; color: #F87171; letter-spacing: 0.4px;">
+                            {'CONSOLIDATION CHOP FILTER ACTIVE' if plan_choppy else 'STAND DOWN / CAPITAL PRESERVATION ACTIVE'}
+                        </span>
+                    </div>
+                    <span style="background: rgba(239, 68, 68, 0.25); color: #FCA5A5; font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">
+                        CAPITAL PROTECTION
+                    </span>
+                </div>
+                <div style="font-size: 0.82rem; color: #E2E8F0; margin-top: 6px; line-height: 1.5;">
+                    Directional score is <b style="color: #FFFFFF;">{plan_score:.1f}%</b>, which does not satisfy the mandatory <b style="color: #FEF08A;">&gt;{plan_gate:.0f}% Institutional Execution Gate</b>. 
+                    Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent whipsaws and capital erosion during consolidation chop.
+                </div>
+                <div style="margin-top: 6px; border-top: 1px solid rgba(239, 68, 68, 0.25); padding-top: 5px; font-size: 0.70rem; color: #94A3B8;">
+                    📡 <b>Source:</b> Institutional Filter Gate (Multi-Vector Probability Algorithm ≤ {plan_gate:.0f}% Gate)
+                </div>
             </div>
-            <div style="margin-top: 6px; border-top: 1px solid rgba(239, 68, 68, 0.25); padding-top: 5px; font-size: 0.70rem; color: #94A3B8;">
-                📡 <b>Source:</b> Institutional Filter Gate (Multi-Vector Probability Algorithm ≤ {plan_gate:.0f}% Gate)
-            </div>
-        </div>
-        """)
+            """)
 
     # 4 Side-by-Side Dual ATM Corridor Cards
     c1, c2, c3, c4 = st.columns(4)
@@ -3107,34 +3138,108 @@ if df is not None and not df.empty:
             </div>
             ''')
     else:
-        bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if bullish_score > bearish_score else (f"🔴 Mild Bearish Lean ({bearish_score}%)" if bearish_score > bullish_score else "⚪ Neutral Chop (50-50)")
         is_bull_lean = bullish_score >= bearish_score
+        bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if is_bull_lean else f"🔴 Mild Bearish Lean ({bearish_score}%)"
         lean_color = "#34D399" if is_bull_lean else "#F87171"
         lean_border = "rgba(16, 185, 129, 0.45)" if is_bull_lean else "rgba(239, 68, 68, 0.45)"
         lean_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(6, 95, 70, 0.15) 100%)" if is_bull_lean else "linear-gradient(135deg, rgba(127, 29, 29, 0.40) 0%, rgba(153, 27, 27, 0.15) 100%)"
         lean_shadow = "0 0 16px rgba(16, 185, 129, 0.15)" if is_bull_lean else "0 0 16px rgba(239, 68, 68, 0.15)"
-        deficit_val = max(0.0, MIN_HIT_PERCENTAGE - dominant_score)
+
+        score_cleared = dominant_score > MIN_HIT_PERCENTAGE
+        gate_surplus = round(dominant_score - MIN_HIT_PERCENTAGE, 1)
+        deficit_val = max(0.0, round(MIN_HIT_PERCENTAGE - dominant_score, 1))
+
+        # Dynamic Institutional Classification of Exact Stand Down Cause
+        if is_choppy_regime:
+            stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
+            stand_down_badge = f"🛑 CONSOLIDATION CHOP FILTER ACTIVE (CHOP: {chop_val:.1f} &gt; 61.8)"
+            stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+            stand_down_sub = "Fractal dimension confirms extreme sideways consolidation &bull; Strict capital preservation enforced &bull; 0 trades permitted in chop regime"
+            gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+            gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+            gate_card_title = "CHOPPINESS FILTER"
+            gate_card_val = f"CHOP: {chop_val:.1f}"
+            gate_card_sub = "🛑 Exceeds 61.8 Threshold"
+            why_stand_down_html = f"""
+            <b style="color: #FFFFFF;">Why Stand Down?</b> The Choppiness Index (CHOP-14) is at <b>{chop_val:.1f}</b>, exceeding the <b>61.8 extreme fractal consolidation threshold</b>. In this regime, false breakout traps and rapid option theta decay occur. Capital is strictly preserved until market transitions into a directional expansion regime (CHOP &lt; 45).
+            """
+        elif not time_gate_allowed:
+            if score_cleared:
+                stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; EXECUTION LOCKED (OFF-HOURS)"
+                stand_down_badge = "🌙 SESSION CLOSED &bull; OPENS 09:15 AM IST"
+                stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(180, 83, 9, 0.35) 100%); color: #FEF08A; border: 1.5px solid rgba(245, 158, 11, 0.65); box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);"
+                stand_down_sub = f"Directional confluence cleared institutional threshold ({dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%) &bull; Live order routing locked until official NSE F&O session (09:15 AM - 03:10 PM IST)"
+                gate_card_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(15, 23, 42, 0.75) 100%)"
+                gate_card_border = "1.5px solid rgba(16, 185, 129, 0.55)"
+                gate_card_title = "MANDATORY EXECUTION GATE"
+                gate_card_val = f"🟢 Gate Cleared (+{gate_surplus:.1f}%)"
+                gate_card_sub = f"Confluence {dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}% Gate"
+                why_stand_down_html = f"""
+                <b style="color: #FFFFFF;">Why is Execution Locked?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. However, live order routing is locked because the exchange is currently <b>CLOSED</b> (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST &bull; {time_gate_msg}</b>). Institutional trading hours for Reliance F&O are strictly <b>09:15 AM to 03:10 PM IST</b> (02:45 PM cutoff). This setup is <b>ARMED</b> and ready for the next market open.<br><span style="color: #94A3B8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">💡 <b>Testing Tip:</b> To test live order execution, audio chimes, and Telegram alerts right now, select <b>'🔥 Trigger BUY NOW Entry'</b> or toggle <b>'Simulate Session Time'</b> in the left sidebar.</span>
+                """
+            else:
+                stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
+                stand_down_badge = "🌙 MARKET CLOSED & SUB-THRESHOLD"
+                stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.30) 0%, rgba(153, 27, 27, 0.40) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.60); box-shadow: 0 0 12px rgba(239, 68, 68, 0.20);"
+                stand_down_sub = f"Exchange is closed ({time_gate_msg}) and directional confluence is sub-threshold ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+                gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                gate_card_title = "MANDATORY EXECUTION GATE"
+                gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
+                gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
+                why_stand_down_html = f"""
+                <b style="color: #FFFFFF;">Why Stand Down?</b> Market is currently <b>CLOSED</b> ({time_gate_msg}) and prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Both time gate and directional criteria must be satisfied to trade.
+                """
+        elif not score_cleared:
+            stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
+            stand_down_badge = f"⚠️ SUB-THRESHOLD CONFLUENCE ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+            stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+            stand_down_sub = "Directional edge is insufficient &bull; Strict capital preservation enforced &bull; 0 trades permitted without institutional confirmation"
+            gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+            gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+            gate_card_title = "MANDATORY EXECUTION GATE"
+            gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
+            gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
+            why_stand_down_html = f"""
+            <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory <span style="background: rgba(251, 191, 36, 0.15); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.35); padding: 1px 7px; border-radius: 4px; font-weight: 800;">&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</span> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
+            """
+        else:
+            stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
+            stand_down_badge = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"
+            stand_down_badge_style = "background: rgba(239, 68, 68, 0.35); color: #FEE2E2; border: 1px solid #EF4444;"
+            stand_down_sub = "Capital preservation enforced"
+            gate_card_bg = "rgba(15, 23, 42, 0.80)"
+            gate_card_border = "1px solid rgba(255, 255, 255, 0.12)"
+            gate_card_title = "MANDATORY EXECUTION GATE"
+            gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
+            gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
+            why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Stand Down?</b> Current prevailing bias is {bias_label}. Strict capital preservation active."
+
+        dot_color = "#F59E0B" if (score_cleared and not time_gate_allowed) else "#EF4444"
+        cap_badge_title = "🛡️ PRE-SESSION LOCK (OFF-HOURS)" if (score_cleared and not time_gate_allowed) else "🛡️ CAPITAL PRESERVATION ACTIVE"
+        cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FDE68A; border: 1.5px solid rgba(245, 158, 11, 0.50);" if (score_cleared and not time_gate_allowed) else "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
+        cap_sub_desc = "🛡️ Protected off-hours &bull; Armed for open" if (score_cleared and not time_gate_allowed) else "🛡️ Protected from chop & theta decay"
 
         st.html(f'''
         <div class="trade-status-card status-standdown">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <span style="width: 12px; height: 12px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 16px #EF4444; display: inline-block;"></span>
+                    <span style="width: 12px; height: 12px; border-radius: 50%; background: {dot_color}; box-shadow: 0 0 16px {dot_color}; display: inline-block;"></span>
                     <div>
                         <div style="font-size: 1.18rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                            <span>🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN</span>
-                            <span style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); padding: 3px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 900; letter-spacing: 0.6px; box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);">
-                                STAND DOWN / CONSOLIDATION CHOP FILTER ACTIVE
+                            <span>{stand_down_status_title}</span>
+                            <span style="{stand_down_badge_style} padding: 3px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 900; letter-spacing: 0.6px;">
+                                {stand_down_badge}
                             </span>
                         </div>
-                        <div style="font-size: 0.76rem; color: #FCA5A5; font-weight: 600; margin-top: 3px;">
-                            Directional confluence is sub-threshold &bull; Strict capital preservation enforced &bull; 0 trades permitted in consolidation chop
+                        <div style="font-size: 0.76rem; color: {'#FDE68A' if (score_cleared and not time_gate_allowed) else '#FCA5A5'}; font-weight: 600; margin-top: 3px;">
+                            {stand_down_sub}
                         </div>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55); padding: 5px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 0 14px rgba(239, 68, 68, 0.25);">
-                        🛡️ CAPITAL PRESERVATION ACTIVE
+                    <span style="{cap_badge_style} padding: 5px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 0 14px rgba(0, 0, 0, 0.25);">
+                        {cap_badge_title}
                     </span>
                     <span style="background: rgba(15, 23, 42, 0.85); color: #CBD5E1; border: 1px solid rgba(255, 255, 255, 0.15); padding: 5px 12px; border-radius: 6px; font-size: 0.76rem; font-weight: 800;">
                         0 Orders Placed
@@ -3165,13 +3270,13 @@ if df is not None and not df.empty:
                     </div>
                 </div>
 
-                <div style="background: linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%); border: 1.5px solid rgba(239, 68, 68, 0.50); border-radius: 8px; padding: 12px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">MANDATORY EXECUTION GATE</div>
-                    <div style="font-size: 1.05rem; font-weight: 900; color: #FBBF24; margin-top: 4px; text-shadow: 0 0 10px rgba(251, 191, 36, 0.30);">
-                        &gt; {MIN_HIT_PERCENTAGE:.0f}% Required
+                <div style="background: {gate_card_bg}; border: {gate_card_border}; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">{gate_card_title}</div>
+                    <div style="font-size: 1.05rem; font-weight: 900; color: {'#34D399' if (score_cleared and not is_choppy_regime) else '#FBBF24'}; margin-top: 4px; text-shadow: 0 0 10px rgba(52, 211, 153, 0.30);">
+                        {gate_card_val}
                     </div>
-                    <div style="font-size: 0.72rem; color: #FCA5A5; margin-top: 3px; font-weight: 700;">
-                        Deficit: -{deficit_val:.1f}% below threshold
+                    <div style="font-size: 0.72rem; color: {'#A7F3D0' if (score_cleared and not is_choppy_regime) else '#FCA5A5'}; margin-top: 3px; font-weight: 700;">
+                        {gate_card_sub}
                     </div>
                 </div>
 
@@ -3181,15 +3286,15 @@ if df is not None and not df.empty:
                         100% Cash Preserved
                     </div>
                     <div style="font-size: 0.72rem; color: #A7F3D0; margin-top: 3px; font-weight: 600;">
-                        🛡️ Protected from chop & theta decay
+                        {cap_sub_desc}
                     </div>
                 </div>
             </div>
 
-            <div style="background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(239, 68, 68, 0.35); border-left: 4px solid #EF4444; border-radius: 8px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px;">
+            <div style="background: rgba(0, 0, 0, 0.45); border: 1px solid {'rgba(245, 158, 11, 0.45)' if (score_cleared and not time_gate_allowed) else 'rgba(239, 68, 68, 0.35)'}; border-left: 4px solid {'#F59E0B' if (score_cleared and not time_gate_allowed) else '#EF4444'}; border-radius: 8px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px;">
                 <span style="font-size: 1.25rem; line-height: 1;">💡</span>
                 <div style="font-size: 0.85rem; color: #E2E8F0; line-height: 1.6;">
-                    <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory <span style="background: rgba(251, 191, 36, 0.15); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.35); padding: 1px 7px; border-radius: 4px; font-weight: 800;">&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</span> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
+                    {why_stand_down_html}
                 </div>
             </div>
         </div>
@@ -3389,6 +3494,8 @@ if df is not None and not df.empty:
         "sim_run_id": st.session_state.get("sim_run_id", "0"),
         "time_gate_allowed": time_gate_allowed,
         "time_gate_msg": time_gate_msg,
+        "is_choppy_regime": is_choppy_regime,
+        "chop_val": chop_val,
         "estimated_premium": estimated_premium
     }
 
@@ -3455,15 +3562,23 @@ if df is not None and not df.empty:
     # ==============================================================================
     json_data = {
         "1. SCRIP NAME": "RELIANCE (NSE: RELIANCE)",
-        "2. TRADE STATUS": f"TRADABLE DAY / A+ {dominant_side} SETUP (>{MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY)" if is_tradable else f"NON-TRADABLE DAY / STAND DOWN (Dominant Bias: {dominant_side} {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)",
+        "2. TRADE STATUS": f"TRADABLE DAY / A+ {dominant_side} SETUP (>{MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY)" if is_tradable else (
+            f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% > {MIN_HIT_PERCENTAGE:.0f}% | Execution Locked: {time_gate_msg})"
+            if (score_cleared and not time_gate_allowed)
+            else f"NON-TRADABLE DAY / STAND DOWN (Dominant Bias: {dominant_side} {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+        ),
         "3. PROBABILITY SCORE & DIRECTIONAL BREAKDOWN": {
             "Bullish Probability (Call / CE)": f"{bullish_score}%",
             "Bearish Probability (Put / PE)": f"{bearish_score}%",
             "Prevailing Bias": dominant_side,
             "Execution Threshold": f">{MIN_HIT_PERCENTAGE:.0f}% required on either side",
-            "Gate Decision": "APPROVED FOR EXECUTION" if is_tradable else f"STAND DOWN (Insufficient Directional Confluence: {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+            "Gate Decision": "APPROVED FOR EXECUTION" if is_tradable else (
+                f"ARMED / PRE-MARKET READY (Confluence {dominant_score}% cleared {MIN_HIT_PERCENTAGE:.0f}% gate; awaiting market open)"
+                if (score_cleared and not time_gate_allowed)
+                else f"STAND DOWN (Insufficient Directional Confluence: {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+            )
         },
-        "4. RECOMMENDED INSTRUMENT": rec_instrument if is_tradable else f"N/A — STAND DOWN (Dominant bias {dominant_side} is {dominant_score}%, below {MIN_HIT_PERCENTAGE:.0f}% threshold)",
+        "4. RECOMMENDED INSTRUMENT": rec_instrument if (is_tradable or score_cleared) else f"N/A — STAND DOWN (Dominant bias {dominant_side} is {dominant_score}%, below {MIN_HIT_PERCENTAGE:.0f}% threshold)",
         "5. ENTRY PRICE": f"On Breakout above ₹{estimated_premium:.2f} ({recommended_contract_type} Premium)" if is_tradable else "N/A",
         "6. TARGET | STOP LOSS": f"TARGET: ₹{target_premium:.2f} (+{target_pts:.1f} pts | +₹{actual_reward:,.0f}) | STOP LOSS: ₹{sl_premium:.2f} (-{sl_pts:.1f} pts | -₹{actual_risk:,.0f})" if is_tradable else "TARGET: N/A | STOP LOSS: N/A",
         "7. RATIONALE & CONFLUENCE": {
