@@ -539,48 +539,6 @@ st.markdown("""
 from groww_market_feed import GrowwMarketFeed
 groww_feed = GrowwMarketFeed.get_instance()
 
-# Sidebar broker status & optional manual auth (never blocks dashboard)
-if groww_feed.is_connected:
-    _profile = groww_feed.user_profile or {}
-    _ucc = _profile.get("ucc") or "5697793414"
-    _name = _profile.get("name") or _profile.get("user_name") or f"UCC: {_ucc}"
-    st.sidebar.success(f"🟢 **Groww Broker: Connected** — {_name}")
-    st.sidebar.caption(f"⚡ Automated 2FA Active &bull; UCC: `{_ucc}`")
-else:
-    st.sidebar.warning("⚠️ **Groww Broker: Connecting…**")
-    st.sidebar.caption("Live REST feeds active. Broker API authenticating via automated 2FA.")
-    with st.sidebar.expander("🔑 Manual Groww Authentication", expanded=False):
-        with st.form("groww_sidebar_auth_form", clear_on_submit=False):
-            api_key_input = st.text_input(
-                "API Key / Access Token",
-                value=groww_feed.saved_api_key,
-                type="password",
-                placeholder="Paste your Groww API Key or Token",
-            )
-            totp_input = st.text_input(
-                "TOTP / Secret Key",
-                type="password",
-                placeholder="6-digit TOTP or secret key",
-            )
-            auth_submitted = st.form_submit_button("🔐 Authenticate")
-            if auth_submitted:
-                if not api_key_input or not api_key_input.strip():
-                    st.error("⚠️ Enter your API Key.")
-                else:
-                    with st.spinner("Validating with Groww…"):
-                        conn_res = groww_feed.connect(
-                            api_key=api_key_input.strip(),
-                            totp=totp_input.strip() if totp_input else None
-                        )
-                    if conn_res.get("status") == "SUCCESS":
-                        st.success(f"🟢 {conn_res['message']}")
-                        import time; time.sleep(1)
-                        st.rerun()
-                    elif conn_res.get("status") == "NEED_TOTP":
-                        st.warning(conn_res["message"])
-                    else:
-                        st.error(conn_res["message"])
-
 # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
 active_mandate_expiry = expiry_plan["selected_expiry"]
@@ -1012,37 +970,77 @@ st.markdown("---")
 # 2. SIDEBAR - GROWW API BROKER FEED & RELIANCE SESSION CONTROL
 # ==============================================================================
 st.sidebar.markdown("### ⚡ Groww Integration (Mandatory)")
-st.sidebar.success("🟢 **Groww Broker: Connected**")
-
 # Real-time broker account telemetry
 live_wallet = groww_feed.get_wallet_balance() if groww_feed.is_connected else {}
 live_pos = groww_feed.get_live_positions() if groww_feed.is_connected else {}
 net_today_pnl = live_pos.get("total_pnl", 0.0)
 pnl_sign_str = "+" if net_today_pnl >= 0 else ""
 
-st.sidebar.info(
-    f"👤 **Account**: `{ucc_val}` ({name_val})\n\n"
-    f"💳 **Broker Wallet**: `₹{live_wallet.get('clear_cash', 66274.02):,.2f}`\n\n"
-    f"📈 **Today's P&L**: `{pnl_sign_str}₹{net_today_pnl:,.2f}`\n\n"
-    f"🔒 **2FA Status**: Automated Session Active\n\n"
-    f"📡 **Data Dependency**: 100% Direct Groww API Feed"
-)
-if st_sidebar_button_stretch("Disconnect Groww Account", key="groww_disconnect_btn"):
-    groww_feed.disconnect()
-    st.rerun()
+if groww_feed.is_connected:
+    st.sidebar.success("🟢 **Groww Broker: Connected**")
+
+    st.sidebar.info(
+        f"👤 **Account**: `{ucc_val}` ({name_val})\n\n"
+        f"💳 **Broker Wallet**: `₹{live_wallet.get('clear_cash', 66274.02):,.2f}`\n\n"
+        f"📈 **Today's P&L**: `{pnl_sign_str}₹{net_today_pnl:,.2f}`\n\n"
+        f"🔒 **2FA Status**: Automated Session Active\n\n"
+        f"📡 **Data Dependency**: 100% Direct Groww API Feed"
+    )
+    if st_sidebar_button_stretch("Disconnect Groww Account", key="groww_disconnect_btn"):
+        groww_feed.disconnect()
+        st.rerun()
+else:
+    st.sidebar.warning("⚠️ **Groww Broker: Connecting…**")
+    st.sidebar.caption("Live REST feeds active. Broker API authenticating via automated 2FA.")
+    with st.sidebar.expander("🔑 Manual Groww Authentication", expanded=False):
+        with st.form("groww_sidebar_auth_form", clear_on_submit=False):
+            api_key_input = st.text_input(
+                "API Key / Access Token",
+                value=groww_feed.saved_api_key,
+                type="password",
+                placeholder="Paste your Groww API Key or Token",
+            )
+            totp_input = st.text_input(
+                "TOTP / Secret Key",
+                type="password",
+                placeholder="6-digit TOTP or secret key",
+            )
+            auth_submitted = st.form_submit_button("🔐 Authenticate")
+            if auth_submitted:
+                if not api_key_input or not api_key_input.strip():
+                    st.error("⚠️ Enter your API Key.")
+                else:
+                    with st.spinner("Validating with Groww…"):
+                        conn_res = groww_feed.connect(
+                            api_key=api_key_input.strip(),
+                            totp=totp_input.strip() if totp_input else None
+                        )
+                    if conn_res.get("status") == "SUCCESS":
+                        st.success(f"🟢 {conn_res['message']}")
+                        import time; time.sleep(1)
+                        st.rerun()
+                    elif conn_res.get("status") == "NEED_TOTP":
+                        st.warning(conn_res["message"])
+                    else:
+                        st.error(conn_res["message"])
 
 st.sidebar.markdown("---")
 # Telegram Trade Alert Integration
 # Telegram Trade Alert Integration (Multi-User & Group Broadcast)
 tg_config = TelegramNotifier.load_config()
 st.sidebar.markdown("### 📲 Telegram Trade Alerts")
-with st.sidebar.expander("🔔 Telegram Notification Bot (Multi-User / Groups)", expanded=bool(not tg_config.get("bot_token"))):
+active_recipients = TelegramNotifier.parse_chat_ids(tg_config.get("chat_id", ""))
+if tg_config.get("bot_token") and active_recipients and tg_config.get("enabled", True):
+    st.sidebar.success(f"🟢 **Alerts Active**: `{len(active_recipients)} recipient(s)`")
+    st.sidebar.caption(f"📢 Target: `{active_recipients[0]}`")
+
+with st.sidebar.expander("🔔 Telegram Bot Settings & Broadcast", expanded=False):
     st.caption("Push zero-delay trade execution alerts to your phone or trading team as soon as an entry is triggered.")
-    tg_bot_token = st.text_input("Telegram Bot Token", value=tg_config.get("bot_token", ""), type="password", placeholder="e.g. 7123456789:AAH...", key="tg_bot_token_input")
+    tg_bot_token = st.text_input("Telegram Bot Token", value=tg_config.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN), type="password", placeholder="e.g. 7123456789:AAH...", key="tg_bot_token_input")
     tg_chat_id = st.text_area(
         "Telegram Chat ID(s) [Users / Groups / Channels]",
-        value=tg_config.get("chat_id", ""),
-        placeholder="Enter Chat IDs separated by comma or new lines:\ne.g. 1227818587, 987654321, -100192837465",
+        value=tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID),
+        placeholder="Enter Chat IDs separated by comma or new lines:\ne.g. -1004390764314",
         help="Supports multiple individual users, Telegram Groups (-100...), and Channels (@channel). Separate with commas.",
         height=75,
         key="tg_chat_id_input"

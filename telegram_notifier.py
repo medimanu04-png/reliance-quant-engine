@@ -57,6 +57,11 @@ class TelegramNotifier:
         unique_ids = []
         for item in raw_list:
             cid = str(item).strip()
+            # Strip "ID:" prefix if present (e.g. "ID: -1004390764314")
+            if cid.upper().startswith("ID:"):
+                cid = cid[3:].strip()
+            elif cid.upper().startswith("ID"):
+                cid = cid[2:].strip()
             # Auto-correct Group / Supergroup IDs missing leading minus '-'
             # Telegram supergroup/channel IDs start with 100... and are 12+ digits
             if cid.isdigit() and len(cid) >= 12 and cid.startswith("100"):
@@ -67,25 +72,56 @@ class TelegramNotifier:
                 unique_ids.append(cid)
         return unique_ids
 
-    @staticmethod
-    def load_config() -> Dict[str, Any]:
-        """Loads saved Telegram credentials and preferences."""
+    DEFAULT_BOT_TOKEN = "8575235859:AAEcIQX_k-MfdvKXvHTm38no-AcC0xC_QUk"
+    DEFAULT_CHAT_ID = "-1004390764314"
+
+    @classmethod
+    def load_config(cls) -> Dict[str, Any]:
+        """Loads saved Telegram credentials and preferences with official hard-coded defaults."""
+        config = {
+            "bot_token": cls.DEFAULT_BOT_TOKEN,
+            "chat_id": cls.DEFAULT_CHAT_ID,
+            "enabled": True,
+            "sound_alerts": True
+        }
+
+        # 1. Check Streamlit Secrets (for Streamlit Cloud deployment)
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets"):
+                if "telegram" in st.secrets:
+                    config.update(dict(st.secrets["telegram"]))
+                for k in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "bot_token", "chat_id"]:
+                    if k in st.secrets:
+                        norm_key = k.lower().replace("telegram_", "")
+                        config[norm_key] = str(st.secrets[k]).strip()
+        except Exception:
+            pass
+
+        # 2. Check environment variables
+        if os.environ.get("TELEGRAM_BOT_TOKEN"):
+            config["bot_token"] = os.environ["TELEGRAM_BOT_TOKEN"].strip()
+        if os.environ.get("TELEGRAM_CHAT_ID"):
+            config["chat_id"] = os.environ["TELEGRAM_CHAT_ID"].strip()
+
+        # 3. Check local CONFIG_FILE if exists
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    # Normalize chat_id to string
-                    if "chat_id" in data and isinstance(data["chat_id"], list):
-                        data["chat_id"] = ", ".join(data["chat_id"])
-                    return data
+                    if data.get("bot_token"):
+                        config["bot_token"] = data["bot_token"].strip()
+                    if data.get("chat_id"):
+                        if isinstance(data["chat_id"], list):
+                            config["chat_id"] = ", ".join(data["chat_id"])
+                        else:
+                            config["chat_id"] = str(data["chat_id"]).strip()
+                    if "enabled" in data:
+                        config["enabled"] = bool(data["enabled"])
             except Exception:
                 pass
-        return {
-            "bot_token": "",
-            "chat_id": "",
-            "enabled": True,
-            "sound_alerts": True
-        }
+
+        return config
 
     @staticmethod
     def save_config(bot_token: str, chat_id: Union[str, List[str]], enabled: bool = True, sound_alerts: bool = True) -> bool:
