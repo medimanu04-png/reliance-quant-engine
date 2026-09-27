@@ -417,6 +417,11 @@ class TelegramNotifier:
         dir_icon = "🟢" if is_call else "🔴"
         action = "BUY CALL (CE)" if is_call else "BUY PUT (PE)"
 
+        quant_block = f"""
+🔬 <b>Institutional Quantitative Telemetry:</b>
+{rationale}
+━━━━━━━━━━━━━━━━━━━━━━━━━━""" if rationale else ""
+
         msg = f"""
 🚀 <b>TRADE ENTRY CONFIRMED — {action}</b> 🚀
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -431,7 +436,7 @@ class TelegramNotifier:
 📦 <b>Position Sizing:</b> {num_lots} Lots ({total_qty:,} Units)
 📍 <b>Reliance Spot:</b> ₹{spot:.2f}
 ⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━{quant_block}
 💡 <b>Execution Checklist:</b>
 1. Place Market BUY order for <b>{contract}</b> on Groww / broker
 2. Set GTT / Stop-loss order at <b>₹{sl_price:.2f}</b>
