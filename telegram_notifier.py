@@ -4,10 +4,11 @@ Telegram Trade Alert Module for RELIANCE Quantitative Intraday Engine
 Provides zero-delay instant push notifications to Telegram when
 trade entry triggers are confirmed, targets are hit, or SLs are reached.
 
-Supports MULTI-USER BROADCAST:
+Supports MULTI-USER BROADCAST & INTERACTIVE INLINE BUTTONS:
 - Multiple individual Telegram users (comma/space/newline separated Chat IDs)
 - Telegram Groups (Chat IDs starting with - or -100...)
 - Telegram Channels (Chat IDs or @channel usernames)
+- Interactive Action Buttons (Green BUY NOW on Groww, Yellow View Chain, Red Exit)
 """
 
 import json
@@ -15,9 +16,13 @@ import os
 import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List, Union
-import pytz
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    from datetime import timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
 
-IST = pytz.timezone("Asia/Kolkata")
 try:
     import requests
 except ImportError:
@@ -63,7 +68,6 @@ class TelegramNotifier:
             elif cid.upper().startswith("ID"):
                 cid = cid[2:].strip()
             # Auto-correct Group / Supergroup IDs missing leading minus '-'
-            # Telegram supergroup/channel IDs start with 100... and are 12+ digits
             if cid.isdigit() and len(cid) >= 12 and cid.startswith("100"):
                 cid = f"-{cid}"
             elif cid.isdigit() and len(cid) >= 12:
@@ -145,9 +149,10 @@ class TelegramNotifier:
             return False
 
     @classmethod
-    def send_single_message(cls, bot_token: str, chat_id: str, html_message: str) -> Tuple[bool, str]:
+    def send_single_message(cls, bot_token: str, chat_id: str, html_message: str, reply_markup: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         """
         Sends an HTML formatted message to a single Telegram Chat ID.
+        Supports optional reply_markup for Telegram inline action buttons.
         Returns (success: bool, status_message: str).
         """
         token = bot_token.strip()
@@ -164,6 +169,9 @@ class TelegramNotifier:
                 "parse_mode": "HTML",
                 "disable_web_page_preview": True
             }
+            if reply_markup is not None:
+                payload["reply_markup"] = reply_markup
+
             if requests is not None:
                 resp = requests.post(api_url, json=payload, timeout=8)
                 res_json = resp.json()
@@ -184,7 +192,6 @@ class TelegramNotifier:
         try:
             ok, desc = _do_send(cid)
             if not ok and "chat not found" in desc.lower():
-                # If user entered a group ID without minus sign (e.g. 1004390764314)
                 if not cid.startswith("-") and cid.isdigit():
                     for alt_id in [f"-{cid}", f"-100{cid}"]:
                         ok_alt, _ = _do_send(alt_id)
@@ -198,7 +205,7 @@ class TelegramNotifier:
             return False, f"Network error ({cid}): {str(e)}"
 
     @classmethod
-    def send_broadcast(cls, bot_token: str, chat_ids_input: Any, html_message: str) -> Tuple[bool, str]:
+    def send_broadcast(cls, bot_token: str, chat_ids_input: Any, html_message: str, reply_markup: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         """
         Broadcasts an HTML formatted alert to multiple Telegram users, groups, or channels.
         Returns (success: bool, status_summary: str).
@@ -215,7 +222,7 @@ class TelegramNotifier:
         failures = []
 
         for cid in chat_ids:
-            ok, msg = cls.send_single_message(token, cid, html_message)
+            ok, msg = cls.send_single_message(token, cid, html_message, reply_markup=reply_markup)
             if ok:
                 successes.append(cid)
             else:
@@ -233,11 +240,106 @@ class TelegramNotifier:
             return False, summary
 
     @classmethod
-    def send_message(cls, bot_token: str, chat_id: Union[str, List[str]], html_message: str) -> Tuple[bool, str]:
+    def send_message(cls, bot_token: str, chat_id: Union[str, List[str]], html_message: str, reply_markup: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         """
         Universal entry point: automatically supports both single user or multiple comma-separated users/groups.
         """
-        return cls.send_broadcast(bot_token, chat_id, html_message)
+        return cls.send_broadcast(bot_token, chat_id, html_message, reply_markup=reply_markup)
+
+    # =========================================================================
+    # INLINE KEYBOARD ACTION BUTTONS FOR TELEGRAM (GREEN / YELLOW / RED)
+    # =========================================================================
+    @staticmethod
+    def get_entry_ce_buttons(contract: str = "") -> Dict[str, Any]:
+        """Green action buttons for CALL (CE) Trade Entry confirmation."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🟢 BUY CALL (CE) ON GROWW", "url": "https://groww.in/options/reliance-industries-ltd"},
+                    {"text": "📊 OPEN RELIANCE LIVE CHART", "url": "https://groww.in/stocks/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
+    @staticmethod
+    def get_entry_pe_buttons(contract: str = "") -> Dict[str, Any]:
+        """Red/Crimson action buttons for PUT (PE) Trade Entry confirmation."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🔴 BUY PUT (PE) ON GROWW", "url": "https://groww.in/options/reliance-industries-ltd"},
+                    {"text": "📊 OPEN RELIANCE LIVE CHART", "url": "https://groww.in/stocks/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
+    @staticmethod
+    def get_armed_buttons(contract: str = "") -> Dict[str, Any]:
+        """Yellow warning buttons for ARMED state pre-alert."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🟡 VIEW OPTION CHAIN (GROWW)", "url": "https://groww.in/options/reliance-industries-ltd"},
+                    {"text": "📊 RELIANCE LIVE QUOTE", "url": "https://groww.in/stocks/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
+    @staticmethod
+    def get_target_hit_buttons() -> Dict[str, Any]:
+        """Green profit celebration buttons for Target Hit."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🎯 BOOK FULL PROFIT ON GROWW", "url": "https://groww.in/options/reliance-industries-ltd"},
+                    {"text": "📈 VIEW POSITIONS", "url": "https://groww.in/stocks/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
+    @staticmethod
+    def get_stop_loss_buttons() -> Dict[str, Any]:
+        """Red capital preservation buttons for Stop Loss."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🛑 EXIT POSITION NOW (GROWW)", "url": "https://groww.in/options/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
+    @staticmethod
+    def get_trailing_sl_buttons() -> Dict[str, Any]:
+        """Amber/Cyan buttons for Trailing Stop Loss to Cost."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "⚡ MODIFY SL ON GROWW", "url": "https://groww.in/options/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
+    @staticmethod
+    def get_auto_sq_buttons() -> Dict[str, Any]:
+        """Purple urgency buttons for EOD Auto-Square-Off."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🔒 SQUARE-OFF ON GROWW (03:05 PM)", "url": "https://groww.in/options/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
+    @staticmethod
+    def get_chop_buttons() -> Dict[str, Any]:
+        """Neutral observation buttons for Choppiness Stand Down."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🛡️ VIEW SPOT CHART (GROWW)", "url": "https://groww.in/stocks/reliance-industries-ltd"}
+                ]
+            ]
+        }
 
     @classmethod
     def send_test_alert(cls, bot_token: str, chat_ids_input: Any) -> Tuple[bool, str]:
@@ -254,16 +356,29 @@ class TelegramNotifier:
 🤖 <b>Multi-User Integration:</b> Zero-Delay Push Alerts Verified
 
 📡 You will receive instant notifications whenever:
-• 🔥 <b>Entry Trigger is Confirmed</b> (LTP breaches Breakout Level)
-• 🎯 <b>Target is Reached</b> (+10.0 pts | +₹10,000)
-• 🛑 <b>Stop Loss is Hit</b> (-9.0 pts | -₹9,000)
-• 🔒 <b>End of Day Auto-Square-Off</b> alert
+• 🟡 <b>Setup is Armed</b> (Approaching Breakout Level)
+• 🚀 <b>Entry Trigger Confirmed</b> (LTP Breaches Breakout)
+• 🎯 <b>Target is Reached</b> (+8.0 pts | +₹8,000)
+• 🛑 <b>Stop Loss is Hit</b> (-4.0 pts | -₹4,000)
+• ⚡ <b>Trailing SL Activated</b> (Move SL to Cost)
+• 🔒 <b>End of Day Auto-Square-Off</b> (03:05 PM IST)
+• 🛡️ <b>Consolidation Chop Warning</b> (CHOP > 61.8)
 
-<i>You can now minimize the browser without worrying about missing the trade entry!</i>
+<i>You can now minimize the browser without worrying about missing trade execution!</i>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-        return cls.send_broadcast(bot_token, chat_ids, msg)
+        buttons = {
+            "inline_keyboard": [
+                [
+                    {"text": "⚡ OPEN GROWW RELIANCE F&O", "url": "https://groww.in/options/reliance-industries-ltd"}
+                ]
+            ]
+        }
+        return cls.send_broadcast(bot_token, chat_ids, msg, reply_markup=buttons)
 
+    # =========================================================================
+    # ALL LIVE MARKET SCENARIO ALERT FORMATTERS
+    # =========================================================================
     @classmethod
     def format_entry_alert(
         cls,
@@ -278,7 +393,7 @@ class TelegramNotifier:
         spot: float,
         rationale: str = ""
     ) -> str:
-        """Formats an institutional grade entry alert for Telegram."""
+        """Formats an institutional grade entry alert for Telegram (supports both CE and PE)."""
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         target_price = round(entry_price + target_pts, 2)
@@ -286,8 +401,9 @@ class TelegramNotifier:
         potential_gain = round(total_qty * target_pts)
         potential_loss = round(total_qty * sl_pts)
 
-        dir_icon = "🟢" if "BULLISH" in direction.upper() or "CE" in direction.upper() else "🔴"
-        action = "BUY CALL (CE)" if "BULLISH" in direction.upper() or "CE" in direction.upper() else "BUY PUT (PE)"
+        is_call = ("BULLISH" in direction.upper() or "CE" in direction.upper())
+        dir_icon = "🟢" if is_call else "🔴"
+        action = "BUY CALL (CE)" if is_call else "BUY PUT (PE)"
 
         msg = f"""
 🚀 <b>TRADE ENTRY CONFIRMED — {action}</b> 🚀
@@ -305,10 +421,10 @@ class TelegramNotifier:
 ⏰ <b>Time:</b> {now_str}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 💡 <b>Execution Checklist:</b>
-1. Place Market/Limit order for <b>{contract}</b> on Groww/broker
-2. Set GTT/Stop-loss at ₹{sl_price:.2f}
-3. Book profit target at ₹{target_price:.2f}
-4. Hard square-off rule at 03:05 PM IST
+1. Place Market BUY order for <b>{contract}</b> on Groww / broker
+2. Set GTT / Stop-loss order at <b>₹{sl_price:.2f}</b>
+3. Set profit target order at <b>₹{target_price:.2f}</b>
+4. Mandatory square-off at <b>03:05 PM IST</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
         return msg
@@ -337,8 +453,9 @@ class TelegramNotifier:
         target_price = round(breakout_trigger + target_pts, 2)
         sl_price = max(0.05, round(breakout_trigger - sl_pts, 2))
 
-        dir_icon = "🟢" if "BULLISH" in direction.upper() or "CE" in direction.upper() else "🔴"
-        bias_label = "BULLISH CALL (CE)" if "BULLISH" in direction.upper() or "CE" in direction.upper() else "BEARISH PUT (PE)"
+        is_call = ("BULLISH" in direction.upper() or "CE" in direction.upper())
+        dir_icon = "🟢" if is_call else "🔴"
+        bias_label = "BULLISH CALL (CE)" if is_call else "BEARISH PUT (PE)"
         dist_pct = (distance_pts / current_ltp * 100.0) if current_ltp > 0 else 0.0
 
         msg = f"""
@@ -367,3 +484,188 @@ class TelegramNotifier:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
         return msg
+
+    @classmethod
+    def format_target_hit_alert(
+        cls,
+        contract: str,
+        entry_price: float = 37.65,
+        exit_price: float = 45.65,
+        profit_pts: float = 8.0,
+        direction: str = "BULLISH (CALL / CE)",
+        total_pnl: Optional[float] = None,
+        num_lots: int = 2,
+        lot_size: int = 500,
+        spot: float = 1226.40,
+        **kwargs
+    ) -> str:
+        """Formats a TARGET HIT celebration alert for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        target_pts = profit_pts or kwargs.get("target_pts", 8.0)
+        realized_pnl = total_pnl if total_pnl is not None else round(total_qty * target_pts)
+        dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"
+        return f"""
+🎯 <b>PROFIT TARGET HIT — FULL PROFIT BOOKED</b> 🎯
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏆 <b>RESULT:</b> <b>PROFIT TARGET HIT (+{target_pts:.1f} PTS)</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+{dir_icon} <b>Direction:</b> {direction}
+💰 <b>Net Realized Profit:</b> <b>+₹{realized_pnl:,.2f}</b>
+
+💵 <b>Entry Price:</b> ₹{entry_price:.2f}
+🏁 <b>Exit Price (Target):</b> <b>₹{exit_price:.2f}</b> (+{target_pts:.1f} pts)
+📦 <b>Position Sized:</b> {num_lots} Lots ({total_qty:,} Units)
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⏰ <b>Execution Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ <b>Post-Trade Mandate:</b>
+1. Full {total_qty:,} quantity squared off at target ₹{exit_price:.2f}
+2. Profit +₹{realized_pnl:,} locked in trading capital
+3. Stand down for the session — Daily Profit Target achieved!
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    @classmethod
+    def format_stop_loss_alert(
+        cls,
+        contract: str,
+        entry_price: float = 37.65,
+        sl_price: float = 33.65,
+        loss_pts: float = 4.0,
+        direction: str = "BULLISH (CALL / CE)",
+        total_loss: Optional[float] = None,
+        num_lots: int = 2,
+        lot_size: int = 500,
+        spot: float = 1226.40,
+        **kwargs
+    ) -> str:
+        """Formats a STOP LOSS risk preservation alert for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        stop_pts = loss_pts or kwargs.get("sl_pts", 4.0)
+        sl_exit_price = sl_price or kwargs.get("sl_exit_price", max(0.05, round(entry_price - stop_pts, 2)))
+        capital_loss = total_loss if total_loss is not None else round(total_qty * stop_pts)
+        dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"
+        return f"""
+🛑 <b>STOP LOSS HIT — CAPITAL PRESERVATION EXIT</b> 🛑
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ <b>RESULT:</b> <b>STOP LOSS TRIGGERED (-{stop_pts:.1f} PTS)</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+{dir_icon} <b>Direction:</b> {direction}
+⚠️ <b>Preserved Capital Risk:</b> <b>-₹{capital_loss:,.2f}</b>
+
+💵 <b>Entry Price:</b> ₹{entry_price:.2f}
+🛑 <b>SL Exit Price:</b> <b>₹{sl_exit_price:.2f}</b> (-{stop_pts:.1f} pts)
+📦 <b>Position Sized:</b> {num_lots} Lots ({total_qty:,} Units)
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⏰ <b>Exit Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 <b>Risk Discipline Protocol:</b>
+1. Position exited strictly at predetermined stop level ₹{sl_exit_price:.2f}
+2. Maximum capital risk limited strictly to ₹{capital_loss:,}
+3. 0 revenge trading — wait for fresh A+ institutional confluence
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    @classmethod
+    def format_trailing_sl_alert(
+        cls,
+        contract: str,
+        current_ltp: float = 42.65,
+        trailing_sl: float = 37.65,
+        secured_pts: float = 5.0,
+        direction: str = "BULLISH (CALL / CE)",
+        secured_pnl: Optional[float] = None,
+        entry_price: Optional[float] = None,
+        num_lots: int = 2,
+        lot_size: int = 500,
+        spot: float = 1226.40,
+        **kwargs
+    ) -> str:
+        """Formats a TRAILING STOP LOSS alert (Move SL to Cost) for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        locked_pts = secured_pts or kwargs.get("locked_pts", 5.0)
+        orig_entry = entry_price if entry_price is not None else trailing_sl
+        new_sl = trailing_sl
+        locked_pnl = secured_pnl if secured_pnl is not None else round(total_qty * locked_pts)
+        dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"
+        return f"""
+⚡ <b>TRAILING STOP LOSS — RISK-FREE TRADE SECURED</b> ⚡
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ <b>STATUS:</b> <b>SL MOVED TO COST (0 RISK ACTIVE)</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+{dir_icon} <b>Direction:</b> {direction}
+📈 <b>Running Move:</b> <b>+{locked_pts:.1f} pts in profit (+₹{locked_pnl:,})</b>
+
+💵 <b>Original Entry:</b> ₹{orig_entry:.2f}
+⚡ <b>Current Option LTP:</b> <b>₹{current_ltp:.2f}</b>
+🔒 <b>New Trailing SL:</b> <b>₹{new_sl:.2f} (Entry Price / Cost)</b>
+📦 <b>Position Sizing:</b> {num_lots} Lots ({total_qty:,} Units)
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⏰ <b>Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 <b>Trade Management:</b>
+1. Modify pending SL order to cost (₹{new_sl:.2f}) on Groww / broker
+2. Trade is now 100% RISK-FREE — Zero capital loss possible!
+3. Trail remaining quantity toward target!
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    @classmethod
+    def format_auto_square_off_alert(
+        cls,
+        contract: str,
+        current_ltp: float = 37.65,
+        reason: str = "Mandatory intraday EOD cut-off before broker auto-square-off charges at 03:15 PM",
+        num_lots: int = 2,
+        lot_size: int = 500,
+        spot: float = 1226.40,
+        **kwargs
+    ) -> str:
+        """Formats an AUTO-SQUARE-OFF EOD CUTOFF alert for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        return f"""
+🔒 <b>INTRADAY AUTO-SQUARE-OFF MANDATE (03:05 PM IST)</b> 🔒
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ <b>ACTION REQUIRED:</b> <b>CLOSE ALL OPEN F&O POSITIONS IMMEDIATELY</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+⏰ <b>Session Time:</b> <b>03:05 PM IST (EOD Cutoff)</b>
+⚡ <b>Current Option LTP:</b> ₹{current_ltp:.2f}
+📦 <b>Quantity:</b> {num_lots} Lots ({total_qty:,} Units)
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 <b>Mandatory EOD Protocol:</b>
+1. Square off all intraday MIS/Normal positions before 03:10 PM broker auto-square-off
+2. Avoid overnight gap-down / gap-up carrying risk
+3. Reason: {reason}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    @classmethod
+    def format_chop_standdown_alert(
+        cls,
+        spot: float = 1226.40,
+        chop_val: float = 64.8,
+        reason: str = "Fractal Choppiness Index (CHOP 64.8 > 61.8 Threshold)",
+        corridor_str: str = "",
+        **kwargs
+    ) -> str:
+        """Formats a CHOPPINESS STAND DOWN warning alert for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        return f"""
+🛡️ <b>CHOPPINESS REGIME DETECTED — STAND DOWN ENFORCED</b> 🛡️
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛑 <b>RULE:</b> <b>0 TRADES PERMITTED IN SIDEWAYS CHOP</b>
+📊 <b>Wilder's Choppiness Index (CHOP-14):</b> <b>{chop_val:.1f}</b> (&gt; 61.8 Threshold)
+📍 <b>Reliance Spot:</b> ₹{spot:.2f} {f'({corridor_str})' if corridor_str else ''}
+⏰ <b>Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ <b>Risk Assessment:</b>
+• Fractal consolidation indicates strong institutional absorption with no directional breakout
+• Option buying in CHOP &gt; 61.8 suffers severe theta decay and false whipsaws
+• Strict capital preservation active — engine stands down until CHOP &lt; 45
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""

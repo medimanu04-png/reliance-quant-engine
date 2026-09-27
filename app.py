@@ -1141,15 +1141,23 @@ else:
 
 # Real-Time Scenario Simulation Hub
 st.sidebar.markdown("### ⚡ Real-Time Scenario Simulation Hub")
+sim_options = [
+    "🟢 Live Market Flow",
+    "🟡 1. Setup ARMED Pre-Alert (Approaching Breakout)",
+    "🚀 2. Trade Entry Confirmed — BUY CALL (CE)",
+    "🔻 3. Trade Entry Confirmed — BUY PUT (PE)",
+    "🎯 4. Target Hit (+8.0 pts | +₹8,000 Profit Booked)",
+    "🛑 5. Stop Loss Hit (-4.0 pts | -₹4,000 Risk Cut)",
+    "⚡ 6. Trailing SL / Half-Profit (+5.0 pts | Trail to Cost)",
+    "🔒 7. Auto-Square-Off & EOD Cutoff (03:05 PM IST)",
+    "🛡️ 8. Choppiness Stand Down (CHOP > 61.8 Filter Active)"
+]
+
 sim_scenario = st.sidebar.radio(
     "Live Engine Scenario Simulator",
-    [
-        "🟢 Live Market Flow",
-        "🔥 Trigger BUY NOW Entry (Audio + Telegram)",
-        "🟡 Trigger ARMED State (Approaching Breakout)"
-    ],
+    sim_options,
     index=0,
-    help="Simulates real-time live trading scenarios on demand so you can verify the audio chime, screen alerts, and Telegram push notifications."
+    help="Simulates all real-time market scenarios on demand so you can verify screen alerts, audio chimes, and Telegram push notifications with interactive buttons."
 )
 
 # Detect scenario change to clear previous fire states and prevent cross-trigger bleeding
@@ -1164,14 +1172,62 @@ if st.session_state["prev_sim_scenario"] != sim_scenario:
         if k.startswith("tg_sent_sim_"):
             st.session_state[k] = False
 
-# Mutually exclusive flags based strictly on current radio selection
-is_entry_scenario = (sim_scenario == "🔥 Trigger BUY NOW Entry (Audio + Telegram)")
-is_armed_scenario = (sim_scenario == "🟡 Trigger ARMED State (Approaching Breakout)")
+# Resolve which scenario is currently selected
+is_live_flow = (sim_scenario == "🟢 Live Market Flow")
+is_armed_scenario = ("1. Setup ARMED" in sim_scenario)
+is_entry_ce_scenario = ("2. Trade Entry Confirmed — BUY CALL" in sim_scenario)
+is_entry_pe_scenario = ("3. Trade Entry Confirmed — BUY PUT" in sim_scenario)
+is_target_hit_scenario = ("4. Target Hit" in sim_scenario)
+is_stop_loss_scenario = ("5. Stop Loss Hit" in sim_scenario)
+is_trailing_sl_scenario = ("6. Trailing SL" in sim_scenario)
+is_auto_sq_scenario = ("7. Auto-Square-Off" in sim_scenario)
+is_chop_scenario = ("8. Choppiness Stand Down" in sim_scenario)
+
+# Dynamic Fire Button Styling & Label matching exact scenario color
+if is_entry_ce_scenario:
+    btn_title = "🟢 Fire BUY CALL (CE)"
+    btn_theme = "#10B981"
+elif is_armed_scenario:
+    btn_title = "🟡 Fire ARMED Pre-Alert"
+    btn_theme = "#F59E0B"
+elif is_entry_pe_scenario:
+    btn_title = "🔴 Fire BUY PUT (PE)"
+    btn_theme = "#EF4444"
+elif is_target_hit_scenario:
+    btn_title = "🎯 Fire Target Hit (+₹8k)"
+    btn_theme = "#06B6D4"
+elif is_stop_loss_scenario:
+    btn_title = "🛑 Fire Stop Loss (-₹4k)"
+    btn_theme = "#DC2626"
+elif is_trailing_sl_scenario:
+    btn_title = "⚡ Fire Trailing SL (+5pts)"
+    btn_theme = "#F59E0B"
+elif is_auto_sq_scenario:
+    btn_title = "🔒 Fire Auto-Square-Off"
+    btn_theme = "#8B5CF6"
+elif is_chop_scenario:
+    btn_title = "🛡️ Fire Chop Stand Down"
+    btn_theme = "#64748B"
+else:
+    btn_title = "🚀 Fire Alert"
+    btn_theme = "#38BDF8"
+
+# Sidebar dynamic button CSS with rich glow effect
+st.sidebar.html(f"""
+<style>
+div[data-testid="stSidebar"] div.stButton:first-of-type > button {{
+    background: linear-gradient(135deg, {btn_theme}e6 0%, {btn_theme}99 100%) !important;
+    border: 1.5px solid {btn_theme} !important;
+    color: #FFFFFF !important;
+    font-weight: 800 !important;
+    box-shadow: 0 0 12px {btn_theme}66 !important;
+}}
+</style>
+""")
 
 col_sim1, col_sim2 = st.sidebar.columns(2)
 with col_sim1:
-    btn_title = "🔥 Fire BUY NOW" if is_entry_scenario else ("🟡 Fire ARMED" if is_armed_scenario else "🚀 Fire Alert")
-    if st_button_stretch(btn_title, help=f"Force-triggers the active {sim_scenario} scenario and dispatches a fresh Telegram alert."):
+    if st_button_stretch(btn_title, help=f"Force-triggers the active {sim_scenario} scenario and dispatches a fresh Telegram alert with interactive action buttons."):
         st.session_state["sim_run_id"] = str(int(datetime.now().timestamp()))
         st.session_state["sim_force_fire"] = True
         st.session_state["sim_force_scenario"] = sim_scenario
@@ -1189,26 +1245,46 @@ with col_sim2:
         st.session_state["sim_force_fire"] = False
         st.sidebar.success("Alert triggers re-armed!")
 
-# Resolve final active simulation flags respecting the exact scenario selected
+# Resolve final active simulation mode respecting user selection
 if st.session_state.get("sim_force_fire", False):
     active_sim = st.session_state.get("sim_force_scenario", sim_scenario)
-    if active_sim == "🔥 Trigger BUY NOW Entry (Audio + Telegram)":
-        simulate_entry_trigger = True
-        simulate_armed_state = False
-        st.sidebar.info("🔥 **Live Entry Simulation: Active**")
-    elif active_sim == "🟡 Trigger ARMED State (Approaching Breakout)":
-        simulate_entry_trigger = False
-        simulate_armed_state = True
-        st.sidebar.info("🟡 **Live ARMED Pre-Alert Simulation: Active**")
-    else:
-        simulate_entry_trigger = False
-        simulate_armed_state = False
-    if st_sidebar_button_stretch("🛑 Exit Simulation Mode"):
-        st.session_state["sim_force_fire"] = False
-        st.rerun()
 else:
-    simulate_entry_trigger = is_entry_scenario
-    simulate_armed_state = is_armed_scenario
+    active_sim = sim_scenario
+
+# Map active_sim to a canonical simulation mode code:
+if "1. Setup ARMED" in active_sim:
+    sim_mode = "ARMED"
+    st.sidebar.info("🟡 **Live ARMED Pre-Alert Simulation: Active**")
+elif "2. Trade Entry Confirmed — BUY CALL" in active_sim:
+    sim_mode = "ENTRY_CE"
+    st.sidebar.info("🟢 **Live BUY CALL (CE) Entry Simulation: Active**")
+elif "3. Trade Entry Confirmed — BUY PUT" in active_sim:
+    sim_mode = "ENTRY_PE"
+    st.sidebar.info("🔴 **Live BUY PUT (PE) Entry Simulation: Active**")
+elif "4. Target Hit" in active_sim:
+    sim_mode = "TARGET_HIT"
+    st.sidebar.info("🎯 **Live Target Hit (+₹8,000) Simulation: Active**")
+elif "5. Stop Loss Hit" in active_sim:
+    sim_mode = "STOP_LOSS"
+    st.sidebar.info("🛑 **Live Stop Loss (-₹4,000) Simulation: Active**")
+elif "6. Trailing SL" in active_sim:
+    sim_mode = "TRAILING_SL"
+    st.sidebar.info("⚡ **Live Trailing SL (+5.0 pts) Simulation: Active**")
+elif "7. Auto-Square-Off" in active_sim:
+    sim_mode = "AUTO_SQ"
+    st.sidebar.info("🔒 **Live 03:05 PM EOD Auto-Square-Off Simulation: Active**")
+elif "8. Choppiness Stand Down" in active_sim:
+    sim_mode = "CHOP_STANDDOWN"
+    st.sidebar.info("🛡️ **Live Choppiness Stand Down Simulation: Active**")
+else:
+    sim_mode = "LIVE"
+
+if sim_mode != "LIVE" and st_sidebar_button_stretch("🛑 Exit Simulation Mode"):
+    st.session_state["sim_force_fire"] = False
+    st.rerun()
+
+simulate_entry_trigger = (sim_mode in ["ENTRY_CE", "ENTRY_PE"])
+simulate_armed_state = (sim_mode == "ARMED")
 
 st.sidebar.html("""
 <div style="margin-top: 6px; padding: 6px 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid #1E293B; border-radius: 6px; font-size: 0.72rem;">
@@ -1653,7 +1729,20 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     breakout_level = st.session_state[breakout_session_key]
 
     # Handle Simulation and Live Execution Mechanics
-    if sim_entry:
+    sim_mode = tp.get("sim_mode", "LIVE")
+    if sim_mode == "ENTRY_CE":
+        active_live_ltp = round(breakout_level + 0.35, 2)
+        gap_pts = -0.35
+        entry_confirmed = True
+    elif sim_mode == "ENTRY_PE":
+        active_live_ltp = round(breakout_level + 0.35, 2)
+        gap_pts = -0.35
+        entry_confirmed = True
+    elif sim_mode == "ARMED":
+        active_live_ltp = round(breakout_level - 0.40, 2)
+        gap_pts = 0.40
+        entry_confirmed = False
+    elif sim_entry:
         active_live_ltp = round(breakout_level + 0.35, 2)
         gap_pts = -0.35
         entry_confirmed = True
@@ -1665,7 +1754,531 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         gap_pts = round(breakout_level - active_live_ltp, 2)
         entry_confirmed = (active_live_ltp >= breakout_level) and plan_tradable
 
-    if entry_confirmed:
+    if sim_mode == "TARGET_HIT":
+        target_exit_ltp = round(active_live_ltp + 8.0, 2)
+        profit_rs = round(plan_qty * 8.0)
+        
+        # Telegram Alert Dispatch
+        tg_status_html = ""
+        if tg_on and tg_token and tg_chat:
+            alert_sent_key = f"tg_sent_sim_target_{sim_run_id}_{plan_strike}"
+            if not st.session_state.get(alert_sent_key, False):
+                alert_msg = TelegramNotifier.format_target_hit_alert(
+                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    entry_price=active_live_ltp,
+                    exit_price=target_exit_ltp,
+                    profit_pts=8.0,
+                    total_pnl=profit_rs,
+                    num_lots=plan_num_lots,
+                    lot_size=plan_lot_size,
+                    spot=spot_tick
+                )
+                buttons = TelegramNotifier.get_target_hit_buttons()
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if success:
+                    st.session_state[alert_sent_key] = True
+                    st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
+                else:
+                    st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+
+            last_status = st.session_state.get("last_tg_status", "✅ Target Hit Alert Dispatched!")
+            tg_status_html = f"""
+            <div style="background: rgba(6, 182, 212, 0.20); border: 1px solid #06B6D4; border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.76rem; color: #67E8F9; display: flex; justify-content: space-between; align-items: center;">
+                <span>📲 <b>TELEGRAM ALERT STATUS:</b> {last_status}</span>
+                <span style="color: #FFFFFF; font-weight: 700;">Check your Telegram App!</span>
+            </div>
+            """
+
+        audio_target_chime_js = f"""
+        <script>
+        (function() {{
+            const runKey = "target_audio_{sim_run_id}";
+            if (window.lastTargetAudioKey !== runKey) {{
+                try {{
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') {{ ctx.resume(); }}
+                    [587, 880, 1174].forEach((freq, i) => {{
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = "triangle";
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
+                        gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.12);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.35);
+                        osc.start(ctx.currentTime + i * 0.12);
+                        osc.stop(ctx.currentTime + i * 0.12 + 0.35);
+                    }});
+                    window.lastTargetAudioKey = runKey;
+                }} catch(e) {{}}
+            }}
+        }})();
+        </script>
+        """
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #10B981; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(16, 185, 129, 0.35); margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4rem;">🎯</span>
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                        PROFIT TARGET HIT — BOOK GAINS (+₹{profit_rs:,})!
+                    </span>
+                </div>
+                <span style="background: #059669; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #34D399; box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);">
+                    +8.0 PTS TARGET ACHIEVED
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #A7F3D0; font-weight: 600; margin-bottom: 12px;">
+                Option contract has surged to ₹{target_exit_ltp:.2f} (+8.0 pts). Disciplined institutional exit rule: lock in ₹{profit_rs:,} profit immediately on broker terminal.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 16px;">
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Closed Contract</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type}</div>
+                    <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Entry Price</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #E2E8F0; margin-top: 2px;">₹{active_live_ltp:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #94A3B8;">Executed LTP</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Exit Price</div>
+                    <div style="font-size: 1.45rem; font-weight: 900; color: #10B981; margin-top: 2px;">₹{target_exit_ltp:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 700;">+8.0 pts Gain</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Net Realized PnL</div>
+                    <div style="font-size: 1.45rem; font-weight: 900; color: #34D399; margin-top: 2px;">+₹{profit_rs:,}</div>
+                    <div style="font-size: 0.72rem; color: #A7F3D0; font-weight: 700;">{plan_num_lots} Lots ({plan_qty:,} Qty)</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #10B981; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
+                    🎯 BOOK FULL PROFIT ON GROWW ↗
+                </a>
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📈 VIEW POSITIONS ↗
+                </a>
+            </div>
+            {tg_status_html}
+        </div>
+        {audio_target_chime_js}
+        """)
+
+    elif sim_mode == "STOP_LOSS":
+        sl_exit_ltp = max(0.05, round(active_live_ltp - 4.0, 2))
+        loss_rs = round(plan_qty * 4.0)
+
+        # Telegram Alert Dispatch
+        tg_status_html = ""
+        if tg_on and tg_token and tg_chat:
+            alert_sent_key = f"tg_sent_sim_sl_{sim_run_id}_{plan_strike}"
+            if not st.session_state.get(alert_sent_key, False):
+                alert_msg = TelegramNotifier.format_stop_loss_alert(
+                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    entry_price=active_live_ltp,
+                    sl_price=sl_exit_ltp,
+                    loss_pts=4.0,
+                    total_loss=loss_rs,
+                    num_lots=plan_num_lots,
+                    lot_size=plan_lot_size,
+                    spot=spot_tick
+                )
+                buttons = TelegramNotifier.get_stop_loss_buttons()
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if success:
+                    st.session_state[alert_sent_key] = True
+                    st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
+                else:
+                    st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+
+            last_status = st.session_state.get("last_tg_status", "✅ Stop Loss Alert Dispatched!")
+            tg_status_html = f"""
+            <div style="background: rgba(239, 68, 68, 0.20); border: 1px solid #EF4444; border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.76rem; color: #FCA5A5; display: flex; justify-content: space-between; align-items: center;">
+                <span>📲 <b>TELEGRAM ALERT STATUS:</b> {last_status}</span>
+                <span style="color: #FFFFFF; font-weight: 700;">Check your Telegram App!</span>
+            </div>
+            """
+
+        audio_sl_chime_js = f"""
+        <script>
+        (function() {{
+            const runKey = "sl_audio_{sim_run_id}";
+            if (window.lastSLAudioKey !== runKey) {{
+                try {{
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') {{ ctx.resume(); }}
+                    [440, 330].forEach((freq, i) => {{
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = "sawtooth";
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15);
+                        gain.gain.setValueAtTime(0.20, ctx.currentTime + i * 0.15);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.25);
+                        osc.start(ctx.currentTime + i * 0.15);
+                        osc.stop(ctx.currentTime + i * 0.15 + 0.25);
+                    }});
+                    window.lastSLAudioKey = runKey;
+                }} catch(e) {{}}
+            }}
+        }})();
+        </script>
+        """
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(127, 29, 29, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #EF4444; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(239, 68, 68, 0.35); margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4rem;">🛑</span>
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                        STOP LOSS TRIGGERED — CAPITAL PRESERVATION CUT (-₹{loss_rs:,})!
+                    </span>
+                </div>
+                <span style="background: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #F87171; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);">
+                    -4.0 PTS STOP HIT
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #FECACA; font-weight: 600; margin-bottom: 12px;">
+                Premium reached ₹{sl_exit_ltp:.2f} (-4.0 pts). Disciplined institutional risk management: exit position now to protect trading capital.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 12px 16px;">
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Closed Contract</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type}</div>
+                    <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Entry Price</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #E2E8F0; margin-top: 2px;">₹{active_live_ltp:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #94A3B8;">Executed LTP</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Exit Price</div>
+                    <div style="font-size: 1.45rem; font-weight: 900; color: #F87171; margin-top: 2px;">₹{sl_exit_ltp:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #FCA5A5; font-weight: 700;">-4.0 pts Stop</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Net Loss Cut</div>
+                    <div style="font-size: 1.45rem; font-weight: 900; color: #EF4444; margin-top: 2px;">-₹{loss_rs:,}</div>
+                    <div style="font-size: 0.72rem; color: #FECACA; font-weight: 700;">{plan_num_lots} Lots ({plan_qty:,} Qty)</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #EF4444; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
+                    🛑 EXIT POSITION NOW ON GROWW ↗
+                </a>
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 VIEW LIVE CHART ↗
+                </a>
+            </div>
+            {tg_status_html}
+        </div>
+        {audio_sl_chime_js}
+        """)
+
+    elif sim_mode == "TRAILING_SL":
+        trail_ltp = round(active_live_ltp + 5.0, 2)
+        trail_sl = round(active_live_ltp, 2)
+        secured_pnl = round(plan_qty * 2.5)
+
+        # Telegram Alert Dispatch
+        tg_status_html = ""
+        if tg_on and tg_token and tg_chat:
+            alert_sent_key = f"tg_sent_sim_trail_{sim_run_id}_{plan_strike}"
+            if not st.session_state.get(alert_sent_key, False):
+                alert_msg = TelegramNotifier.format_trailing_sl_alert(
+                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    current_ltp=trail_ltp,
+                    trailing_sl=trail_sl,
+                    secured_pts=5.0,
+                    secured_pnl=secured_pnl,
+                    num_lots=plan_num_lots,
+                    spot=spot_tick
+                )
+                buttons = TelegramNotifier.get_trailing_sl_buttons()
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if success:
+                    st.session_state[alert_sent_key] = True
+                    st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
+                else:
+                    st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+
+            last_status = st.session_state.get("last_tg_status", "✅ Trailing SL Alert Dispatched!")
+            tg_status_html = f"""
+            <div style="background: rgba(245, 158, 11, 0.20); border: 1px solid #F59E0B; border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.76rem; color: #FDE68A; display: flex; justify-content: space-between; align-items: center;">
+                <span>📲 <b>TELEGRAM ALERT STATUS:</b> {last_status}</span>
+                <span style="color: #FFFFFF; font-weight: 700;">Check your Telegram App!</span>
+            </div>
+            """
+
+        audio_trail_chime_js = f"""
+        <script>
+        (function() {{
+            const runKey = "trail_audio_{sim_run_id}";
+            if (window.lastTrailAudioKey !== runKey) {{
+                try {{
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') {{ ctx.resume(); }}
+                    [660, 784].forEach((freq, i) => {{
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = "sine";
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.14);
+                        gain.gain.setValueAtTime(0.22, ctx.currentTime + i * 0.14);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.14 + 0.30);
+                        osc.start(ctx.currentTime + i * 0.14);
+                        osc.stop(ctx.currentTime + i * 0.14 + 0.30);
+                    }});
+                    window.lastTrailAudioKey = runKey;
+                }} catch(e) {{}}
+            }}
+        }})();
+        </script>
+        """
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(30, 58, 138, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #38BDF8; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(56, 189, 248, 0.35); margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4rem;">⚡</span>
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                        TRAILING STOP LOSS ACTIVATED — HALF PROFIT BOOKED (+₹{secured_pnl:,})!
+                    </span>
+                </div>
+                <span style="background: #0284C7; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #38BDF8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);">
+                    TRAIL SL TO COST (₹{trail_sl:.2f})
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #BAE6FD; font-weight: 600; margin-bottom: 12px;">
+                Option premium reached ₹{trail_ltp:.2f} (+5.0 pts). Rule: book 1 lot (+₹{secured_pnl:,}) and trail Stop Loss of remaining 1 lot to cost price ₹{trail_sl:.2f} for risk-free ride.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 12px 16px;">
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Active Contract</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type}</div>
+                    <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Current Premium</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #34D399; margin-top: 2px;">₹{trail_ltp:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #6EE7B7;">+5.0 pts Surge</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">New Trailing SL</div>
+                    <div style="font-size: 1.45rem; font-weight: 900; color: #FBBF24; margin-top: 2px;">₹{trail_sl:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #FDE68A; font-weight: 700;">At Cost (Risk-Free)</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Secured Profit</div>
+                    <div style="font-size: 1.45rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">+₹{secured_pnl:,}</div>
+                    <div style="font-size: 0.72rem; color: #BAE6FD; font-weight: 700;">1 Lot Locked</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #38BDF8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);">
+                    ⚡ MODIFY SL ON GROWW ↗
+                </a>
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 VIEW LIVE CHART ↗
+                </a>
+            </div>
+            {tg_status_html}
+        </div>
+        {audio_trail_chime_js}
+        """)
+
+    elif sim_mode == "AUTO_SQ":
+        # Telegram Alert Dispatch
+        tg_status_html = ""
+        if tg_on and tg_token and tg_chat:
+            alert_sent_key = f"tg_sent_sim_autosq_{sim_run_id}_{plan_strike}"
+            if not st.session_state.get(alert_sent_key, False):
+                alert_msg = TelegramNotifier.format_auto_square_off_alert(
+                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    current_ltp=active_live_ltp,
+                    reason="Mandatory intraday EOD cut-off before broker auto-square-off charges at 03:15 PM",
+                    spot=spot_tick
+                )
+                buttons = TelegramNotifier.get_auto_sq_buttons()
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if success:
+                    st.session_state[alert_sent_key] = True
+                    st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
+                else:
+                    st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+
+            last_status = st.session_state.get("last_tg_status", "✅ Auto-Square-Off Alert Dispatched!")
+            tg_status_html = f"""
+            <div style="background: rgba(139, 92, 246, 0.20); border: 1px solid #8B5CF6; border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.76rem; color: #DDD6FE; display: flex; justify-content: space-between; align-items: center;">
+                <span>📲 <b>TELEGRAM ALERT STATUS:</b> {last_status}</span>
+                <span style="color: #FFFFFF; font-weight: 700;">Check your Telegram App!</span>
+            </div>
+            """
+
+        audio_autosq_chime_js = f"""
+        <script>
+        (function() {{
+            const runKey = "autosq_audio_{sim_run_id}";
+            if (window.lastAutoSQAudioKey !== runKey) {{
+                try {{
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') {{ ctx.resume(); }}
+                    [392, 330].forEach((freq, i) => {{
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = "sine";
+                        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.2);
+                        gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.2);
+                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.2 + 0.35);
+                        osc.start(ctx.currentTime + i * 0.2);
+                        osc.stop(ctx.currentTime + i * 0.2 + 0.35);
+                    }});
+                    window.lastAutoSQAudioKey = runKey;
+                }} catch(e) {{}}
+            }}
+        }})();
+        </script>
+        """
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(88, 28, 135, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #8B5CF6; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(139, 92, 246, 0.35); margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4rem;">🔒</span>
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                        MANDATORY INTRADAY AUTO-SQUARE-OFF (03:05 PM IST)!
+                    </span>
+                </div>
+                <span style="background: #7C3AED; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #A78BFA; box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);">
+                    03:05 PM CUTOFF REACHED
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #E9D5FF; font-weight: 600; margin-bottom: 12px;">
+                Intraday market session is closing. Close all outstanding open derivative positions immediately to avoid broker auto-square-off penalty charges (₹50+GST per order at 03:15 PM).
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(139, 92, 246, 0.4); border-radius: 8px; padding: 12px 16px;">
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Engine Time</div>
+                    <div style="font-size: 1.25rem; font-weight: 900; color: #FBBF24; margin-top: 2px;">03:05 PM IST</div>
+                    <div style="font-size: 0.72rem; color: #94A3B8;">Mandatory EOD Cutoff</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Broker Auto-SQ</div>
+                    <div style="font-size: 1.25rem; font-weight: 900; color: #F87171; margin-top: 2px;">03:15 PM IST</div>
+                    <div style="font-size: 0.72rem; color: #FCA5A5;">Broker Penalty Risk</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Current Option LTP</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #FFFFFF; margin-top: 2px;">₹{active_live_ltp:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #6EE7B7;">Live Market Quote</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Action Required</div>
+                    <div style="font-size: 1.25rem; font-weight: 900; color: #C084FC; margin-top: 2px;">EXIT ALL</div>
+                    <div style="font-size: 0.72rem; color: #DDD6FE;">Square Off Positions</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #8B5CF6; box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);">
+                    🔒 SQUARE-OFF ON GROWW (03:05 PM) ↗
+                </a>
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 VIEW OPEN POSITIONS ↗
+                </a>
+            </div>
+            {tg_status_html}
+        </div>
+        {audio_autosq_chime_js}
+        """)
+
+    elif sim_mode == "CHOP_STANDDOWN":
+        # Telegram Alert Dispatch
+        tg_status_html = ""
+        if tg_on and tg_token and tg_chat:
+            alert_sent_key = f"tg_sent_sim_chop_{sim_run_id}"
+            if not st.session_state.get(alert_sent_key, False):
+                alert_msg = TelegramNotifier.format_chop_standdown_alert(
+                    spot=spot_tick,
+                    chop_val=64.8,
+                    reason="Fractal Choppiness Index (CHOP 64.8 > 61.8 Threshold)"
+                )
+                buttons = TelegramNotifier.get_chop_buttons()
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if success:
+                    st.session_state[alert_sent_key] = True
+                    st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
+                else:
+                    st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+
+            last_status = st.session_state.get("last_tg_status", "✅ Choppiness Alert Dispatched!")
+            tg_status_html = f"""
+            <div style="background: rgba(100, 116, 139, 0.20); border: 1px solid #64748B; border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.76rem; color: #CBD5E1; display: flex; justify-content: space-between; align-items: center;">
+                <span>📲 <b>TELEGRAM ALERT STATUS:</b> {last_status}</span>
+                <span style="color: #FFFFFF; font-weight: 700;">Check your Telegram App!</span>
+            </div>
+            """
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #F59E0B; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(245, 158, 11, 0.25); margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4rem;">🛡️</span>
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                        CONSOLIDATION CHOP FILTER ACTIVE — STAND DOWN (CHOP: 64.8 &gt; 61.8)!
+                    </span>
+                </div>
+                <span style="background: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #FCD34D;">
+                    CAPITAL DEFENSE MODE
+                </span>
+            </div>
+            <div style="font-size: 0.84rem; color: #FDE68A; font-weight: 600; margin-bottom: 12px;">
+                Fractal Choppiness Index is 64.8, confirming a sideways sideways churn regime. Taking either Call or Put entries here carries elevated theta decay and whipsaw risk. Capital is preserved until trend breaks out.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 12px 16px;">
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">RELIANCE Spot</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">₹{spot_tick:,.2f}</div>
+                    <div style="font-size: 0.72rem; color: #94A3B8;">Consolidation Zone</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Fractal CHOP</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #F87171; margin-top: 2px;">64.8</div>
+                    <div style="font-size: 0.72rem; color: #FCA5A5;">Threshold: &gt; 61.8</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Execution Gate</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #FBBF24; margin-top: 2px;">LOCKED 🔒</div>
+                    <div style="font-size: 0.72rem; color: #FDE68A;">No Entry Allowed</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Strategy Stance</div>
+                    <div style="font-size: 1.25rem; font-weight: 900; color: #34D399; margin-top: 2px;">PRESERVE</div>
+                    <div style="font-size: 0.72rem; color: #A7F3D0;">Zero Theta Decay</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    🛡️ VIEW SPOT CHART ON GROWW ↗
+                </a>
+            </div>
+            {tg_status_html}
+        </div>
+        """)
+
+    elif entry_confirmed:
         target_price = round(active_live_ltp + plan_target_pts, 2)
         sl_price = max(0.05, round(active_live_ltp - plan_sl_pts, 2))
         reward_rs = round(plan_qty * plan_target_pts)
@@ -1675,13 +2288,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
             today_date = datetime.now(IST).strftime("%Y-%m-%d")
-            if sim_entry:
+            if sim_entry or (sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
                 alert_sent_key = f"tg_sent_sim_entry_{sim_run_id}_{plan_strike}_{plan_contract_type}"
             else:
                 alert_sent_key = f"tg_sent_entry_{today_date}_{plan_strike}_{plan_contract_type}"
 
             if not st.session_state.get(alert_sent_key, False):
-                sim_tag = " [SIMULATED SCENARIO]" if sim_entry else ""
+                sim_tag = " [SIMULATED SCENARIO]" if (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]) else ""
                 alert_msg = TelegramNotifier.format_entry_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
                     direction=plan_dir,
@@ -1693,7 +2306,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     win_prob=plan_score,
                     spot=spot_tick
                 )
-                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg)
+                # Green buttons for CE, Red buttons for PE
+                if plan_contract_type == "CE":
+                    buttons = TelegramNotifier.get_entry_ce_buttons(f"RELIANCE {plan_strike} CE")
+                else:
+                    buttons = TelegramNotifier.get_entry_pe_buttons(f"RELIANCE {plan_strike} PE")
+
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
@@ -1709,6 +2328,9 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             """
 
+        # Chime: Ascending high-tone for CE, Descending tone for PE
+        freq_start = 880 if plan_contract_type == "CE" else 784
+        freq_end = 1760 if plan_contract_type == "CE" else 440
         audio_chime_js = f"""
         <script>
         (function() {{
@@ -1722,8 +2344,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     osc.connect(gain);
                     gain.connect(ctx.destination);
                     osc.type = "sine";
-                    osc.frequency.setValueAtTime(880, ctx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.25);
+                    osc.frequency.setValueAtTime({freq_start}, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime({freq_end}, ctx.currentTime + 0.25);
                     gain.gain.setValueAtTime(0.30, ctx.currentTime);
                     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
                     osc.start();
@@ -1735,17 +2357,47 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         </script>
         """
 
+        # Interactive UI Action Buttons (Green for CE, Red for PE)
+        if plan_contract_type == "CE":
+            entry_ui_buttons = """
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
+                    🟢 BUY CALL (CE) ON GROWW ↗
+                </a>
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 OPEN RELIANCE LIVE CHART ↗
+                </a>
+            </div>
+            """
+            theme_box_border = "#10B981"
+            header_title = "🔥 ACTIVE ENTRY TRIGGERED — BUY CALL (CE) AT MARKET!"
+            header_badge = "🟢 BUY CALL SIGNAL CONFIRMED"
+        else:
+            entry_ui_buttons = """
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #F87171; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
+                    🔴 BUY PUT (PE) ON GROWW ↗
+                </a>
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 OPEN RELIANCE LIVE CHART ↗
+                </a>
+            </div>
+            """
+            theme_box_border = "#EF4444"
+            header_title = "🔻 ACTIVE ENTRY TRIGGERED — BUY PUT (PE) AT MARKET!"
+            header_badge = "🔴 BUY PUT SIGNAL CONFIRMED"
+
         st.html(f"""
-        <div class="trigger-active-box">
+        <div class="trigger-active-box" style="border: 2px solid {theme_box_border} !important;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <span class="live-dot" style="background: #10B981; width: 14px; height: 14px;"></span>
+                    <span class="live-dot" style="background: {theme_box_border}; width: 14px; height: 14px;"></span>
                     <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px; text-transform: uppercase;">
-                        🔥 ACTIVE ENTRY TRIGGERED — BUY NOW AT MARKET!
+                        {header_title}
                     </span>
                 </div>
-                <span style="background: #059669; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #34D399; box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);">
-                    ⚡ ZERO-DELAY SIGNAL CONFIRMED
+                <span style="background: {theme_box_border}; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.4); box-shadow: 0 0 10px {theme_box_border}88;">
+                    {header_badge}
                 </span>
             </div>
             <div style="font-size: 0.84rem; color: #A7F3D0; font-weight: 600; margin-bottom: 12px;">
@@ -1782,12 +2434,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <span>Breakout Level: <b style="color: #FBBF24;">Algorithmic Pin (+1.20 pts)</b></span>
                 <span>Target/SL: <b style="color: #34D399;">Fixed 10/9 Institutional R:R</b></span>
             </div>
+            {entry_ui_buttons}
             {tg_status_html}
         </div>
         {audio_chime_js}
         """)
 
-    elif plan_tradable:
+    elif plan_tradable or (sim_mode == "ARMED"):
         dist_color = "#38BDF8" if gap_pts <= 1.0 else "#FBBF24"
         tg_badge_str = "🟢 Telegram Alerts Armed" if (tg_on and tg_token and tg_chat) else "⚪ Telegram Alerts Off"
 
@@ -1795,13 +2448,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_armed_status_html = ""
         if tg_on and tg_token and tg_chat:
             today_date = datetime.now(IST).strftime("%Y-%m-%d")
-            if sim_armed:
+            if sim_armed or (sim_mode == "ARMED"):
                 armed_sent_key = f"tg_sent_sim_armed_{sim_run_id}_{plan_strike}_{plan_contract_type}"
             else:
                 armed_sent_key = f"tg_sent_armed_{today_date}_{plan_strike}_{plan_contract_type}"
 
             if not st.session_state.get(armed_sent_key, False):
-                sim_tag = " [SIMULATED SCENARIO]" if sim_armed else ""
+                sim_tag = " [SIMULATED SCENARIO]" if (sim_armed or sim_mode == "ARMED") else ""
                 armed_msg = TelegramNotifier.format_armed_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
                     direction=plan_dir,
@@ -1815,7 +2468,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     win_prob=plan_score,
                     spot=spot_tick
                 )
-                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, armed_msg)
+                buttons = TelegramNotifier.get_armed_buttons(f"RELIANCE {plan_strike} {plan_contract_type}")
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, armed_msg, reply_markup=buttons)
                 if success:
                     st.session_state[armed_sent_key] = True
                     st.session_state["last_tg_armed_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
@@ -1909,16 +2563,23 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <span>Breakout Level: <b style="color: #FBBF24;">Algorithmic Trigger (+1.20 pts pin)</b></span>
                 <span>Target / SL: <b style="color: #34D399;">Fixed 10/9 pts R:R Rule</b></span>
             </div>
+            <div style="display: flex; gap: 12px; margin-top: 14px;">
+                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #000000; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #FCD34D; box-shadow: 0 0 14px rgba(245, 158, 11, 0.4);">
+                    🟡 VIEW OPTION CHAIN (GROWW) ↗
+                </a>
+                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 RELIANCE LIVE QUOTE ↗
+                </a>
+            </div>
             {tg_armed_status_html}
         </div>
         {audio_armed_chime_js}
         """)
 
-
     else:
         hero_score_cleared = plan_score > plan_gate
         hero_surplus = round(plan_score - plan_gate, 1)
-        hero_is_off_hours = not plan_time_allowed and not (sim_entry or sim_armed)
+        hero_is_off_hours = not plan_time_allowed and not (sim_entry or sim_armed or sim_mode != "LIVE")
 
         if hero_is_off_hours and hero_score_cleared:
             st.html(f"""
@@ -2627,23 +3288,45 @@ if df is not None and not df.empty:
     base_confluence = v1_score + v2_score + v3_score + v4_score + v5_score + v6_score
     total_score = dominant_score
 
-    # Simulation Overrides: If user enabled entry or armed simulation, force tradable regime & high win prob
+    # Simulation Overrides: If user enabled simulation, configure tradable regime and contract direction
     sim_force_fire = st.session_state.get("sim_force_fire", False)
-    is_sim_active = simulate_entry_trigger or sim_force_fire or simulate_armed_state
+    is_sim_active = (sim_mode != "LIVE") or sim_force_fire
 
     if is_sim_active:
-        time_gate_allowed = True
-        is_tradable = True
-        # Boost dominant score to be clearly above whatever gate the user set (even 82%)
-        target_sim_score = max(dominant_score, round(MIN_HIT_PERCENTAGE + 4.5, 1))
-        dominant_score = target_sim_score
-        total_score = dominant_score
-        if recommended_contract_type == "CE":
-            bullish_score = target_sim_score
-            bearish_score = min(42.0, round(100.0 - target_sim_score, 1))
-        else:
+        if sim_mode == "ENTRY_PE":
+            recommended_contract_type = "PE"
+            dominant_side = "BEARISH (PUT / PE)"
+            opposing_side = "BULLISH (CALL / CE)"
+            time_gate_allowed = True
+            is_tradable = True
+            target_sim_score = max(dominant_score, round(MIN_HIT_PERCENTAGE + 6.8, 1))
+            dominant_score = target_sim_score
             bearish_score = target_sim_score
-            bullish_score = min(42.0, round(100.0 - target_sim_score, 1))
+            bullish_score = min(36.0, round(100.0 - target_sim_score, 1))
+            total_score = dominant_score
+        elif sim_mode == "CHOP_STANDDOWN":
+            is_choppy_regime = True
+            chop_val = 64.8
+            is_tradable = False
+            dominant_score = 52.4
+            bullish_score = 52.4
+            bearish_score = 47.6
+            total_score = 52.4
+        elif sim_mode == "AUTO_SQ":
+            time_gate_allowed = False
+            time_gate_msg = "Mandatory EOD Cutoff (03:05 PM IST)"
+            is_tradable = False
+        else: # ENTRY_CE, ARMED, TARGET_HIT, STOP_LOSS, TRAILING_SL
+            recommended_contract_type = "CE"
+            dominant_side = "BULLISH (CALL / CE)"
+            opposing_side = "BEARISH (PUT / PE)"
+            time_gate_allowed = True
+            is_tradable = True
+            target_sim_score = max(dominant_score, round(MIN_HIT_PERCENTAGE + 6.5, 1))
+            dominant_score = target_sim_score
+            bullish_score = target_sim_score
+            bearish_score = min(36.0, round(100.0 - target_sim_score, 1))
+            total_score = dominant_score
     else:
         # Operational Regime Trade Gate (Trade if dominant score > MIN_HIT_PERCENTAGE, within time window, and not in Choppiness Stand Down)
         is_tradable = (dominant_score > MIN_HIT_PERCENTAGE) and time_gate_allowed and not is_choppy_regime
@@ -3491,6 +4174,7 @@ if df is not None and not df.empty:
         "tg_enabled": tg_enabled,
         "simulate_entry": simulate_entry_trigger,
         "simulate_armed": simulate_armed_state,
+        "sim_mode": sim_mode,
         "sim_run_id": st.session_state.get("sim_run_id", "0"),
         "time_gate_allowed": time_gate_allowed,
         "time_gate_msg": time_gate_msg,
