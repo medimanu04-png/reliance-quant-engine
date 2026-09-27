@@ -534,86 +534,50 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# MANDATORY GROWW BROKER AUTHENTICATION GATE
+# GROWW BROKER AUTHENTICATION (AUTOMATED — NON-BLOCKING)
 # ==============================================================================
 from groww_market_feed import GrowwMarketFeed
 groww_feed = GrowwMarketFeed.get_instance()
 
-if not groww_feed.is_connected:
-    st.sidebar.markdown("### ⚡ Groww Integration (Mandatory)")
-    st.sidebar.error("🔴 **Broker: Disconnected**")
-    st.sidebar.caption("🔒 **Mandatory Link**: Direct Groww Broker API connection is mandatory. All numerical calculations, spot prices, option chain Greeks, and real-time execution signals require Groww authentication.")
-
-    st.html("""
-    <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(20, 30, 55, 0.98) 100%); border: 2px solid #EF4444; border-radius: 12px; padding: 22px 26px; box-shadow: 0 8px 32px rgba(239, 68, 68, 0.25); margin-bottom: 22px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <span style="font-size: 2.2rem;">🔒</span>
-                <div>
-                    <div style="font-size: 1.35rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.5px;">MANDATORY GROWW BROKER AUTHENTICATION</div>
-                    <div style="font-size: 0.84rem; color: #F87171; font-weight: 700; margin-top: 2px;">Broker Connection is Mandatory — Quant Engine is Locked</div>
-                </div>
-            </div>
-            <span style="background: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.45); padding: 5px 14px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.5px;">MANDATORY PREREQUISITE</span>
-        </div>
-        <p style="font-size: 0.88rem; color: #E2E8F0; line-height: 1.6; margin-bottom: 8px;">
-            This institutional quantitative intraday engine strictly operates with verified, live <b>Groww Broker API</b> connectivity. In accordance with strict risk mandates, <b>all numericals — Reliance spot price, Dual ATM option chain corridor, Greeks (Delta/Theta/IV), volume velocity, institutional order flow, and probability scores — are 100% dependent on your official Groww API feed</b>. Standalone simulation is disabled.
-        </p>
-        <div style="font-size: 0.78rem; color: #94A3B8; border-top: 1px solid rgba(239, 68, 68, 0.25); padding-top: 8px; margin-top: 10px;">
-            ⚡ Authenticate with your Groww API Key and TOTP below to unlock live quantitative market operations.
-        </div>
-    </div>
-    """)
-
-    with st.form("groww_mandatory_auth_form", clear_on_submit=False):
-        st.markdown("#### 🔑 Connect Your Groww Broker Account", unsafe_allow_html=True)
-        col_k, col_t = st.columns([1.6, 1.4])
-        with col_k:
+# Sidebar broker status & optional manual auth (never blocks dashboard)
+if groww_feed.is_connected:
+    _profile = groww_feed.user_profile or {}
+    _name = _profile.get("name") or _profile.get("user_name") or "Verified"
+    st.sidebar.success(f"🟢 **Groww Broker: Connected** — {_name}")
+else:
+    st.sidebar.warning("⚠️ **Groww Broker: Reconnecting…**")
+    st.sidebar.caption("Live REST feeds are active. Broker-specific features (wallet, positions) will activate once credentials refresh.")
+    with st.sidebar.expander("🔑 Manual Groww Authentication", expanded=False):
+        with st.form("groww_sidebar_auth_form", clear_on_submit=False):
             api_key_input = st.text_input(
-                "Groww API Key / Access Token",
+                "API Key / Access Token",
                 value=groww_feed.saved_api_key,
                 type="password",
-                placeholder="Paste your API Key or Token from groww.in/trade-api/api-keys",
-                help="Obtain your API Key from https://groww.in/trade-api/api-keys"
+                placeholder="Paste your Groww API Key or Token",
             )
-        with col_t:
             totp_input = st.text_input(
-                "6-Digit TOTP or TOTP Secret Key",
+                "TOTP / Secret Key",
                 type="password",
-                placeholder="e.g. 849201 or your TOTP Secret Key",
-                help="Enter the 6-digit TOTP from your authenticator app, or paste your TOTP secret key for automatic 2FA."
+                placeholder="6-digit TOTP or secret key",
             )
-
-        auth_submitted = st_form_submit_button_stretch("🔐 Authenticate & Unlock Quantitative Engine (Mandatory)")
-        if auth_submitted:
-            if not api_key_input or not api_key_input.strip():
-                st.error("⚠️ Please enter your Groww API Key or Access Token.")
-            else:
-                with st.spinner("Validating credentials directly with Groww authentication servers..."):
-                    conn_res = groww_feed.connect(
-                        api_key=api_key_input.strip(),
-                        totp=totp_input.strip() if totp_input else None
-                    )
-                if conn_res.get("status") == "SUCCESS":
-                    st.success(f"🟢 {conn_res['message']}! Unlocking institutional quantitative engine...")
-                    import time
-                    time.sleep(1)
-                    st.rerun()
-                elif conn_res.get("status") == "NEED_TOTP":
-                    st.warning(conn_res["message"])
+            auth_submitted = st.form_submit_button("🔐 Authenticate")
+            if auth_submitted:
+                if not api_key_input or not api_key_input.strip():
+                    st.error("⚠️ Enter your API Key.")
                 else:
-                    st.error(conn_res["message"])
-
-    with st.expander("📖 How to obtain your Groww API Key & TOTP (30-Second Guide)", expanded=False):
-        st.markdown("""
-        1. Open [Groww Trade API Keys](https://groww.in/trade-api/api-keys) in your browser.
-        2. Click **Create API Key** (or copy your existing active API Key / Access Token).
-        3. Open your Authenticator app (Google Authenticator, Microsoft Authenticator, etc.) and check your current 6-digit code (or copy your TOTP secret key).
-        4. Paste your API Key and TOTP above, then click **Authenticate & Unlock Quantitative Engine**.
-        5. Your session will be validated directly against Groww authentication servers and stored securely for subsequent sessions.
-        """)
-
-    st.stop()
+                    with st.spinner("Validating with Groww…"):
+                        conn_res = groww_feed.connect(
+                            api_key=api_key_input.strip(),
+                            totp=totp_input.strip() if totp_input else None
+                        )
+                    if conn_res.get("status") == "SUCCESS":
+                        st.success(f"🟢 {conn_res['message']}")
+                        import time; time.sleep(1)
+                        st.rerun()
+                    elif conn_res.get("status") == "NEED_TOTP":
+                        st.warning(conn_res["message"])
+                    else:
+                        st.error(conn_res["message"])
 
 # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
