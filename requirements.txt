@@ -1,4 +1,4 @@
-streamlit>=1.35.0
+streamlit>=1.37.0
 pandas>=2.0.0
 numpy>=1.24.0
 yfinance>=0.2.38
@@ -7,6 +7,5 @@ pytz>=2024.1
 plotly>=5.18.0
 beautifulsoup4>=4.12.0
 websockets>=12.0
-curl_cffi>=0.7.0
 growwapi>=1.5.0
 pyotp>=2.9.0

@@ -16,9 +16,9 @@ import pytz
 IST = pytz.timezone("Asia/Kolkata")
 
 try:
-    from curl_cffi import requests
-except ImportError:
     import requests
+except ImportError:
+    requests = None
 
 
 class NSEIndiaFetcher:

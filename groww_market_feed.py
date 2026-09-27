@@ -18,10 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 try:
     from curl_cffi import requests
 except (ImportError, OSError):
-    try:
-        import requests
-    except ImportError:
-        requests = None
+    import requests
+
 from bs4 import BeautifulSoup
 import pytz
 
