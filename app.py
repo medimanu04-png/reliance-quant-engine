@@ -14,6 +14,59 @@ from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
 from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL
 
+class IndianFOTransactionCostEngine:
+    """
+    Institutional Transaction Cost & Statutory Tax Engine for Indian F&O.
+    Accurately computes post-tax net PnL, points drag, and statutory deductions:
+    - Brokerage: ₹20/order flat (Zerodha / Groww / AngelOne) = ₹40 round-trip
+    - STT (Securities Transaction Tax): 0.10% on option sell premium turnover (Budget 2024 revised)
+    - Exchange Turnover Charges: 0.050% on total premium turnover (NSE)
+    - SEBI Turnover Charges: ₹10 per crore (0.000001) on total turnover
+    - Stamp Duty: 0.003% on buy premium turnover
+    - GST: 18% on (Brokerage + Exchange turnover charges + SEBI charges)
+    """
+    BROKERAGE_PER_ORDER = 20.0
+    EXCHANGE_TURNOVER_PCT = 0.00050   # 0.05% on option premium turnover
+    SEBI_CHARGES_PCT = 0.000001       # ₹10 per crore
+    STAMP_DUTY_BUY_PCT = 0.00003      # 0.003% on buy turnover
+    STT_SELL_PCT = 0.00100            # 0.10% on sell turnover (Budget 2024)
+    GST_PCT = 0.18                    # 18% on brokerage & exchange fees
+
+    @classmethod
+    def calculate_round_trip(cls, buy_premium: float, sell_premium: float, qty: int) -> dict:
+        qty = max(1, int(qty))
+        buy_turnover = float(buy_premium) * qty
+        sell_turnover = float(sell_premium) * qty
+        total_turnover = buy_turnover + sell_turnover
+
+        brokerage = cls.BROKERAGE_PER_ORDER * 2.0
+        exchange_charges = total_turnover * cls.EXCHANGE_TURNOVER_PCT
+        sebi_charges = total_turnover * cls.SEBI_CHARGES_PCT
+        stamp_duty = buy_turnover * cls.STAMP_DUTY_BUY_PCT
+        stt = sell_turnover * cls.STT_SELL_PCT
+        gst = (brokerage + exchange_charges + sebi_charges) * cls.GST_PCT
+
+        total_taxes_and_charges = brokerage + exchange_charges + sebi_charges + stamp_duty + stt + gst
+        gross_pnl = sell_turnover - buy_turnover
+        net_pnl = gross_pnl - total_taxes_and_charges
+        pts_drag = total_taxes_and_charges / qty if qty > 0 else 0.0
+        gross_pts = (sell_premium - buy_premium)
+        net_pts = gross_pts - pts_drag
+
+        return {
+            "gross_pnl": round(gross_pnl, 2),
+            "net_pnl": round(net_pnl, 2),
+            "total_charges": round(total_taxes_and_charges, 2),
+            "points_drag": round(pts_drag, 2),
+            "gross_pts": round(gross_pts, 2),
+            "net_pts": round(net_pts, 2),
+            "stt": round(stt, 2),
+            "exchange_charges": round(exchange_charges, 2),
+            "brokerage": round(brokerage, 2),
+            "gst": round(gst, 2),
+            "stamp_duty": round(stamp_duty, 2)
+        }
+
 # ==============================================================================
 # 1. PAGE SETUP & INSTITUTIONAL THEME - RELIANCE EXCLUSIVE
 # ==============================================================================
@@ -1806,7 +1859,10 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     if sim_mode == "TARGET_HIT":
         sim_target_pts = plan_target_pts or 10.0
         target_exit_ltp = round(active_live_ltp + sim_target_pts, 2)
-        profit_rs = round(plan_qty * sim_target_pts)
+        costs_target_sim = IndianFOTransactionCostEngine.calculate_round_trip(active_live_ltp, target_exit_ltp, plan_qty)
+        profit_rs = round(costs_target_sim["net_pnl"])
+        gross_profit_rs = round(costs_target_sim["gross_pnl"])
+        target_tax_charges = costs_target_sim["total_charges"]
         
         # Telegram Alert Dispatch
         tg_status_html = ""
@@ -1902,7 +1958,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Net Realized PnL</div>
                     <div style="font-size: 1.45rem; font-weight: 900; color: #34D399; margin-top: 2px;">+₹{profit_rs:,}</div>
-                    <div style="font-size: 0.72rem; color: #A7F3D0; font-weight: 700;">{plan_num_lots} Lots ({plan_qty:,} Qty)</div>
+                    <div style="font-size: 0.72rem; color: #A7F3D0; font-weight: 700;">Gross +₹{gross_profit_rs:,} (Taxes ₹{target_tax_charges:.0f})</div>
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
@@ -1921,7 +1977,10 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     elif sim_mode == "STOP_LOSS":
         sim_sl_pts = plan_sl_pts or 9.0
         sl_exit_ltp = max(0.05, round(active_live_ltp - sim_sl_pts, 2))
-        loss_rs = round(plan_qty * sim_sl_pts)
+        costs_sl_sim = IndianFOTransactionCostEngine.calculate_round_trip(active_live_ltp, sl_exit_ltp, plan_qty)
+        gross_loss_rs = round(abs(costs_sl_sim["gross_pnl"]))
+        loss_rs = round(abs(costs_sl_sim["net_pnl"]))
+        sl_tax_charges = costs_sl_sim["total_charges"]
 
         # Telegram Alert Dispatch
         tg_status_html = ""
@@ -2017,7 +2076,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Net Loss Cut</div>
                     <div style="font-size: 1.45rem; font-weight: 900; color: #EF4444; margin-top: 2px;">-₹{loss_rs:,}</div>
-                    <div style="font-size: 0.72rem; color: #FECACA; font-weight: 700;">{plan_num_lots} Lots ({plan_qty:,} Qty)</div>
+                    <div style="font-size: 0.72rem; color: #FECACA; font-weight: 700;">Gross -₹{gross_loss_rs:,} (Taxes ₹{sl_tax_charges:.0f})</div>
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
@@ -2407,8 +2466,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     elif entry_confirmed:
         target_price = round(active_live_ltp + plan_target_pts, 2)
         sl_price = max(0.05, round(active_live_ltp - plan_sl_pts, 2))
-        reward_rs = round(plan_qty * plan_target_pts)
-        risk_rs = round(plan_qty * plan_sl_pts)
+        entry_target_costs = IndianFOTransactionCostEngine.calculate_round_trip(active_live_ltp, target_price, plan_qty)
+        entry_sl_costs = IndianFOTransactionCostEngine.calculate_round_trip(active_live_ltp, sl_price, plan_qty)
+        reward_rs = round(entry_target_costs["gross_pnl"])
+        net_reward_rs = round(entry_target_costs["net_pnl"])
+        target_tax_rs = round(entry_target_costs["total_charges"])
+        risk_rs = round(abs(entry_sl_costs["gross_pnl"]))
+        net_risk_rs = round(abs(entry_sl_costs["net_pnl"]))
 
         # Telegram Alert Dispatch (Instant on Entry Trigger or Simulation)
         tg_status_html = ""
@@ -2543,12 +2607,12 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">🎯 Profit Target (+{plan_target_pts:.1f} pts)</div>
                     <div style="font-size: 1.45rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">₹{target_price:.2f}</div>
-                    <div style="font-size: 0.72rem; color: #BAE6FD; font-weight: 700;">+₹{reward_rs:,} Net Profit</div>
+                    <div style="font-size: 0.72rem; color: #BAE6FD; font-weight: 700;">+₹{net_reward_rs:,} Net (Taxes ₹{target_tax_rs})</div>
                 </div>
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">🛑 Stop Loss (-{plan_sl_pts:.1f} pts)</div>
                     <div style="font-size: 1.45rem; font-weight: 900; color: #F87171; margin-top: 2px;">₹{sl_price:.2f}</div>
-                    <div style="font-size: 0.72rem; color: #FECACA; font-weight: 700;">-₹{risk_rs:,} Max Risk</div>
+                    <div style="font-size: 0.72rem; color: #FECACA; font-weight: 700;">-₹{net_risk_rs:,} Post-Tax Risk</div>
                 </div>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.78rem;">
@@ -3173,14 +3237,18 @@ if df is not None and not df.empty:
     pcr_val = chain_oi['overall_pcr']
 
     # Vector 1: Multi-Timeframe Trend, 15m ORB & NIFTY Beta Confluence (20 pts)
+    # Institutional Guard: Prevent Look-Ahead / Repainting Bias
+    # Technical indicator trend regimes (EMAs, SuperTrend, ADX) must be confirmed by the last CLOSED candle
+    closed_candle = df.iloc[-2] if len(df) >= 2 else df.iloc[-1]
+    
     v1_bull = 0.0
     v1_bear = 0.0
-    ema_stack_bull = latest['EMA_9'] > latest['EMA_20'] > latest['EMA_50']
-    ema_stack_bear = latest['EMA_9'] < latest['EMA_20'] < latest['EMA_50']
-    st_bullish = latest['SuperTrend_Dir'] == 1
-    st_bearish = latest['SuperTrend_Dir'] == -1
-    adx_trend_bull = latest['ADX'] >= 25.0 and latest['PDI'] > latest['MDI']
-    adx_trend_bear = latest['ADX'] >= 25.0 and latest['MDI'] > latest['PDI']
+    ema_stack_bull = closed_candle['EMA_9'] > closed_candle['EMA_20'] > closed_candle['EMA_50']
+    ema_stack_bear = closed_candle['EMA_9'] < closed_candle['EMA_20'] < closed_candle['EMA_50']
+    st_bullish = closed_candle['SuperTrend_Dir'] == 1
+    st_bearish = closed_candle['SuperTrend_Dir'] == -1
+    adx_trend_bull = closed_candle['ADX'] >= 25.0 and closed_candle['PDI'] > closed_candle['MDI']
+    adx_trend_bear = closed_candle['ADX'] >= 25.0 and closed_candle['MDI'] > closed_candle['PDI']
 
     orb_h = float(latest.get('ORB_High', spot + 10))
     orb_l = float(latest.get('ORB_Low', spot - 10))
@@ -3428,20 +3496,22 @@ if df is not None and not df.empty:
     v4_bear = min(15.0, max(0.0, v4_bear))
 
     # Vector 5: Zero-Divergence Momentum (15 pts)
+    # Evaluated on closed_candle to prevent within-bar repainting
     v5_bull = 0.0
     v5_bear = 0.0
-    rsi_sweetspot_bull = 62.0 <= latest['RSI'] <= 76.0
-    rsi_sweetspot_bear = 24.0 <= latest['RSI'] <= 38.0
-    macd_expanding_bull = latest['MACD_Hist'] > prev['MACD_Hist'] and latest['MACD_Hist'] > 0
-    macd_expanding_bear = latest['MACD_Hist'] < prev['MACD_Hist'] and latest['MACD_Hist'] < 0
-    stoch_good_bull = 60.0 <= latest['Stoch_K'] <= 85.0
-    stoch_good_bear = 15.0 <= latest['Stoch_K'] <= 40.0
+    rsi_sweetspot_bull = 62.0 <= closed_candle['RSI'] <= 76.0
+    rsi_sweetspot_bear = 24.0 <= closed_candle['RSI'] <= 38.0
+    macd_prev_hist = df['MACD_Hist'].iloc[-3] if len(df) >= 3 else prev['MACD_Hist']
+    macd_expanding_bull = closed_candle['MACD_Hist'] > macd_prev_hist and closed_candle['MACD_Hist'] > 0
+    macd_expanding_bear = closed_candle['MACD_Hist'] < macd_prev_hist and closed_candle['MACD_Hist'] < 0
+    stoch_good_bull = 60.0 <= closed_candle['Stoch_K'] <= 85.0
+    stoch_good_bear = 15.0 <= closed_candle['Stoch_K'] <= 40.0
 
-    # RSI Regular Divergence Detection (Check last 10 candles)
-    recent_closes = df['Close'].iloc[-12:-1] if len(df) >= 12 else df['Close']
-    recent_rsis = df['RSI'].iloc[-12:-1] if len(df) >= 12 else df['RSI']
-    bearish_rsi_div = (latest['Close'] > recent_closes.max()) and (latest['RSI'] < recent_rsis.max() - 2.5)
-    bullish_rsi_div = (latest['Close'] < recent_closes.min()) and (latest['RSI'] > recent_rsis.min() + 2.5)
+    # RSI Regular Divergence Detection (Check last 10 closed candles)
+    recent_closes = df['Close'].iloc[-12:-2] if len(df) >= 12 else df['Close'].iloc[:-1]
+    recent_rsis = df['RSI'].iloc[-12:-2] if len(df) >= 12 else df['RSI'].iloc[:-1]
+    bearish_rsi_div = (closed_candle['Close'] > recent_closes.max()) and (closed_candle['RSI'] < recent_rsis.max() - 2.5) if len(recent_closes) > 0 else False
+    bullish_rsi_div = (closed_candle['Close'] < recent_closes.min()) and (closed_candle['RSI'] > recent_rsis.min() + 2.5) if len(recent_closes) > 0 else False
 
     if rsi_sweetspot_bull:
         v5_bull += 6.0
@@ -3643,6 +3713,33 @@ if df is not None and not df.empty:
     actual_reward = total_trading_qty * effective_target_pts
     actual_risk = total_trading_qty * sl_pts
 
+    # Institutional Real-World Indian F&O Statutory Cost Calculations
+    costs_target = IndianFOTransactionCostEngine.calculate_round_trip(
+        buy_premium=estimated_premium,
+        sell_premium=target_premium,
+        qty=total_trading_qty
+    )
+    costs_sl = IndianFOTransactionCostEngine.calculate_round_trip(
+        buy_premium=estimated_premium,
+        sell_premium=sl_premium,
+        qty=total_trading_qty
+    )
+    net_actual_reward = costs_target["net_pnl"]
+    net_reward_pts = costs_target["net_pts"]
+    tax_drag_pts = costs_target["points_drag"]
+    total_tax_charges = costs_target["total_charges"]
+    net_actual_risk = abs(costs_sl["net_pnl"])
+
+    # Half-Kelly & Volatility-Constrained Position Sizing Recommendation:
+    # Kelly fraction: f* = (p * b - q) / b
+    p_win = dominant_score / 100.0
+    q_loss = 1.0 - p_win
+    b_ratio = effective_target_pts / max(1.0, sl_pts)
+    raw_kelly = (p_win * b_ratio - q_loss) / max(0.01, b_ratio)
+    half_kelly = max(0.0, raw_kelly * 0.5)
+    kelly_risk_capital = account_cash * min(0.18, half_kelly) if half_kelly > 0 else account_cash * 0.10
+    kelly_recommended_lots = max(1, min(10, int(kelly_risk_capital / max(1.0, (sl_pts * lot_size)))))
+
     # ==============================================================================
     # 6. RELIANCE DASHBOARD METRICS & TRADE STATUS
     # ==============================================================================
@@ -3745,16 +3842,16 @@ if df is not None and not df.empty:
     <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 12px;">
             <div>
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🎯 PROFIT TARGET</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: #34D399;">+{effective_target_pts:.1f} pts (+₹{round(total_trading_qty * effective_target_pts):,})</div>
-                <div style="font-size: 0.68rem; color: #64748B; margin-top: 1px;">Stock ATR: ₹{stock_atr:.2f} | Δ={bs_delta:.2f} {target_tag}</div>
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🎯 PROFIT TARGET (NET)</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: #34D399;">+{effective_target_pts:.1f} pts (+₹{net_actual_reward:,.0f} Net)</div>
+                <div style="font-size: 0.68rem; color: #64748B; margin-top: 1px;">Gross: +₹{round(actual_reward):,} | STT & Fees: -₹{total_tax_charges:,.0f} {target_tag}</div>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="text-align: center;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🛑 STOP LOSS</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{sl_pts:.1f} pts (-₹{round(total_trading_qty * sl_pts):,})</div>
-                <div style="font-size: 0.68rem; color: #64748B;">Fixed R:R = {effective_target_pts/sl_pts:.2f}x</div>
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🛑 STOP LOSS (NET)</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{sl_pts:.1f} pts (-₹{net_actual_risk:,.0f} Max)</div>
+                <div style="font-size: 0.68rem; color: #64748B;">Gross Loss: -₹{round(actual_risk):,} | R:R = {effective_target_pts/sl_pts:.2f}x</div>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
@@ -3773,9 +3870,9 @@ if df is not None and not df.empty:
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="text-align: right;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 CAPITAL AT RISK</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{risk_pct_of_capital:.1f}% of ₹{account_cash:,.0f}</div>
-                <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">{'🟢 Safe Sizing' if capital_risk_safe else ('🟡 Elevated Risk' if capital_risk_warning else '🔴 CRITICAL: Reduce Lots!')}</div>
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 KELLY SIZING</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{kelly_recommended_lots} Lots Rec ({risk_pct_of_capital:.1f}% Risk)</div>
+                <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">{'🟢 Half-Kelly Optimal' if capital_risk_safe else ('🟡 Cap at ' + str(kelly_recommended_lots) + ' Lots' if capital_risk_warning else '🔴 Overleveraged!')}</div>
             </div>
         </div>
     </div>
@@ -4567,7 +4664,10 @@ if df is not None and not df.empty:
         "max_daily_sl_allowed": max_daily_sl_allowed,
         "alpha_spread": alpha_spread,
         "vix_scaler": vix_scaler,
-        "orb_low_vol_trap": orb_low_vol_trap
+        "orb_low_vol_trap": orb_low_vol_trap,
+        "costs_target": costs_target,
+        "costs_sl": costs_sl,
+        "kelly_recommended_lots": kelly_recommended_lots
     }
 
     if stream_live_1s:
