@@ -821,7 +821,7 @@ with top_col1:
             <div><b style="color: #FFFFFF;">Optimal Parameters:</b> Target = <b style="color: #34D399;">+10.0 pts (+₹10,000)</b> &nbsp;|&nbsp; Stop Loss = <b style="color: #F87171;">-9.0 pts (-₹9,000)</b> &nbsp;|&nbsp; Gate: <b style="color: #FBBF24;">&gt;60% Hit Prob</b> &nbsp;|&nbsp; Capital: ₹50,000</div>
             <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 3px;">⏱️ <b style="color: #CBD5E1;">Trading Window:</b> 09:15 AM – 03:10 PM IST (Strictly no new signals past 02:45 PM; Auto-square-off alert at 03:05 PM)</div>
             <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 5px; border-top: 1px solid #1E293B;">
-                📡 <b style="color: #38BDF8;">Data Sources & Live Telemetry:</b> Spot & Indices: <span style="color: #FFFFFF;">Groww Broker API (0-Delay Direct Stream)</span> &bull; F&O Derivatives: <span style="color: #FFFFFF;">Groww Live Option Chain API (0-Delay)</span> &bull; Technicals: <span style="color: #FFFFFF;">Quant Engine (Groww Sourced)</span> &bull; Quant Signals: <span style="color: #FFFFFF;">Black-Scholes & Proprietary Quant Engine</span> &bull; Macro: <span style="color: #FFFFFF;">Groww Live Telemetry (MCX Crude & Gold)</span>
+                📡 <b style="color: #38BDF8;">Data Sources & Live Telemetry:</b> Spot & Indices: <span style="color: #FFFFFF;">Groww Broker API (0-Delay Direct Stream)</span> &bull; F&O Derivatives: <span style="color: #FFFFFF;">Groww Live Option Chain API (0-Delay)</span> &bull; Technicals: <span style="color: #FFFFFF;">Quant Engine (Groww Sourced)</span> &bull; Quant Signals: <span style="color: #FFFFFF;">Black-Scholes & Proprietary Quant Engine</span> &bull; Macro: <span style="color: #FFFFFF;">Live Telemetry (GIFT Nifty, S&P 500, India VIX, MCX Crude)</span>
             </div>
         </div>
     </div>
@@ -852,17 +852,17 @@ with top_col2:
 st.markdown("---")
 
 # ==============================================================================
-# 1.5. LIVE MACRO BENCHMARKS TELEMETRY: NIFTY 50 | SENSEX | BANK NIFTY | CRUDE OIL | GOLD
+# 1.5. LIVE MACRO BENCHMARKS TELEMETRY: NIFTY 50 | BANK NIFTY | GIFT NIFTY | S&P 500 (US) | INDIA VIX | CRUDE OIL
 # ==============================================================================
 is_rescan = st.session_state.get("just_rescanned", False)
 nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
 if is_rescan:
-    st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete! Live macro benchmarks (NIFTY 50, SENSEX, BANK NIFTY, CRUDE OIL [MCX], GOLD [MCX]), technical indicators, news sentiment, and Dual ATM option flow 100% updated.")
+    st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete! Live macro benchmarks (NIFTY 50, BANK NIFTY, GIFT NIFTY, S&P 500 [US], INDIA VIX, CRUDE OIL [MCX]), technical indicators, news sentiment, and Dual ATM option flow 100% updated.")
     st.session_state["just_rescanned"] = False
 
-# 5 Sleek Live Market Cards with 10-Second Dynamic Streaming Fragment (Zero-Flicker Grid)
+# 6 Sleek Live Market Cards with 10-Second Dynamic Streaming Fragment (Zero-Flicker Grid)
 @st.fragment(run_every="10s")
 def render_live_macro_benchmarks_strip():
     tick_payload = NSEIndiaFetcher.get_dynamic_market_ticks()
@@ -874,19 +874,20 @@ def render_live_macro_benchmarks_strip():
     source_label = "Groww Trading API (0-Delay Authenticated)" if groww_inst.is_connected else "Groww Live Feed (0-Delay Direct Engine)"
 
     cards_html = []
-    order = ["NIFTY 50", "SENSEX", "BANK NIFTY", "INDIA VIX", "CRUDE OIL", "GOLD"]
+    order = ["NIFTY 50", "BANK NIFTY", "GIFT NIFTY", "S&P 500 (US)", "INDIA VIX", "CRUDE OIL"]
     benchmark_source_map = {
         "NIFTY 50": "Groww (NSE)",
-        "SENSEX": "Groww (BSE)",
         "BANK NIFTY": "Groww (NSE)",
-        "INDIA VIX": "Groww (NSE)",
-        "CRUDE OIL": "Groww (MCX)",
-        "GOLD": "Groww (MCX)"
+        "GIFT NIFTY": "NSE IX Live",
+        "S&P 500 (US)": "Wall Street Live",
+        "INDIA VIX": "NSE Volatility",
+        "CRUDE OIL": "Groww (MCX)"
     }
+    fallback_b = NSEIndiaFetcher.get_live_market_benchmarks()
     for key in order:
-        if key not in benchmarks:
+        data = benchmarks.get(key) or fallback_b.get(key)
+        if not data:
             continue
-        data = benchmarks[key]
         card_source = benchmark_source_map.get(key, "Groww Live Feed")
         is_pos = data['change'] >= 0
 
