@@ -17,8 +17,11 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 try:
     from curl_cffi import requests
-except ImportError:
-    import requests
+except (ImportError, OSError):
+    try:
+        import requests
+    except ImportError:
+        requests = None
 from bs4 import BeautifulSoup
 import pytz
 
