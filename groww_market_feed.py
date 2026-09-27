@@ -497,71 +497,85 @@ class GrowwMarketFeed:
         except Exception as e:
             logger.debug(f"Groww benchmark background fetch: {e}")
 
-        # 2. Derive live GIFT NIFTY anchored to live NIFTY 50 price & carry basis
-        if "NIFTY 50" in benchmarks:
-            n_data = benchmarks["NIFTY 50"]
-            n_p = float(n_data.get("price", 23140.50))
-            n_c = float(n_data.get("change", 77.40))
-            n_pct = float(n_data.get("pct_change", 0.34))
-            benchmarks["GIFT NIFTY"] = {
-                "name": "GIFT NIFTY",
-                "symbol": "NSE IX:GIFTNIFTY",
-                "price": round(n_p + 35.0, 2),
-                "change": round(n_c + 7.5, 2),
-                "pct_change": round(n_pct + 0.03, 2),
-                "currency": "INR",
-                "prefix": "₹",
-                "unit": "pts",
-                "icon": "🌏",
-                "category": "Groww GIFT City"
-            }
+        sess = self._get_session()
 
-        # 3. Live S&P 500 (US Top Benchmark) & INDIA VIX via zero-delay fast_info
+        # 2. Fetch Live S&P 500 and GIFT NIFTY directly from Groww Global Indices API
         try:
-            import yfinance as yf
-            # US Benchmark: S&P 500
-            sp_t = yf.Ticker("^GSPC")
-            sp_fi = sp_t.fast_info
-            sp_ltp = getattr(sp_fi, 'last_price', None)
-            sp_prev = getattr(sp_fi, 'previous_close', None)
-            if sp_ltp and sp_prev:
-                sp_chg = round(sp_ltp - sp_prev, 2)
-                sp_pct = round((sp_chg / sp_prev) * 100.0, 2)
-                benchmarks["S&P 500 (US)"] = {
-                    "name": "S&P 500 (US)",
-                    "symbol": "US:SPX",
-                    "price": round(sp_ltp, 2),
-                    "change": sp_chg,
-                    "pct_change": sp_pct,
-                    "currency": "USD",
-                    "prefix": "$",
-                    "unit": "pts",
-                    "icon": "🇺🇸",
-                    "category": "Groww Wall Street"
-                }
+            r_global = sess.get("https://groww.in/indices/global-indices/sp-500", timeout=5)
+            if r_global.status_code == 200:
+                soup_g = BeautifulSoup(r_global.text, "html.parser")
+                script_g = soup_g.find("script", id="__NEXT_DATA__")
+                if script_g:
+                    props_g = json.loads(script_g.string).get("props", {}).get("pageProps", {})
+                    gid = props_g.get("globalIndicesData", {})
 
-            # India Volatility: INDIA VIX
-            vix_t = yf.Ticker("^INDIAVIX")
-            vix_fi = vix_t.fast_info
-            vix_ltp = getattr(vix_fi, 'last_price', None)
-            vix_prev = getattr(vix_fi, 'previous_close', None)
-            if vix_ltp and vix_prev:
-                vix_chg = round(vix_ltp - vix_prev, 2)
-                vix_pct = round((vix_chg / vix_prev) * 100.0, 2)
-                benchmarks["INDIA VIX"] = {
-                    "name": "INDIA VIX",
-                    "symbol": "NSE:INDIAVIX",
-                    "price": round(vix_ltp, 2),
-                    "change": vix_chg,
-                    "pct_change": vix_pct,
-                    "currency": "",
-                    "prefix": "",
-                    "unit": "pts",
-                    "icon": "⚡",
-                    "category": "Groww Volatility"
-                }
+                    # Live S&P 500 from Groww
+                    sp_price = gid.get("priceData", {})
+                    if sp_price and "value" in sp_price:
+                        benchmarks["S&P 500 (US)"] = {
+                            "name": "S&P 500 (US)",
+                            "symbol": "US:SPX",
+                            "price": round(float(sp_price.get("value", 7815.75)), 2),
+                            "change": round(float(sp_price.get("dayChange", 36.75)), 2),
+                            "pct_change": round(float(sp_price.get("dayChangePerc", 0.47)), 2),
+                            "currency": "USD",
+                            "prefix": "$",
+                            "unit": "pts",
+                            "icon": "🇺🇸",
+                            "category": "Groww Wall Street"
+                        }
+
+                    # Live GIFT NIFTY from Groww
+                    for item in gid.get("globalInstruments", []):
+                        inst_name = item.get("instrumentDetailDto", {}).get("name", "")
+                        if "GIFT NIFTY" in inst_name or "SGX NIFTY" in inst_name:
+                            lp = item.get("livePriceDto", {})
+                            if lp and "value" in lp:
+                                benchmarks["GIFT NIFTY"] = {
+                                    "name": "GIFT NIFTY",
+                                    "symbol": "NSE IX:GIFTNIFTY",
+                                    "price": round(float(lp.get("value", 23237.50)), 2),
+                                    "change": round(float(lp.get("dayChange", 49.00)), 2),
+                                    "pct_change": round(float(lp.get("dayChangePerc", 0.21)), 2),
+                                    "currency": "INR",
+                                    "prefix": "₹",
+                                    "unit": "pts",
+                                    "icon": "🌏",
+                                    "category": "Groww GIFT City"
+                                }
+                                break
         except Exception as e:
-            logger.debug(f"Live yfinance benchmark fetch error: {e}")
+            logger.debug(f"Groww global indices fetch error: {e}")
+
+        # 3. Fetch Live INDIA VIX directly from Groww Indices API
+        try:
+            r_vix = sess.get("https://groww.in/indices", timeout=5)
+            if r_vix.status_code == 200:
+                soup_v = BeautifulSoup(r_vix.text, "html.parser")
+                script_v = soup_v.find("script", id="__NEXT_DATA__")
+                if script_v:
+                    props_v = json.loads(script_v.string).get("props", {}).get("pageProps", {}).get("data", {})
+                    for item in props_v.get("aggregatedGlobalInstrumentDto", []):
+                        sym = item.get("instrumentDetailDto", {}).get("symbol", "")
+                        inst_name = item.get("instrumentDetailDto", {}).get("name", "")
+                        if sym == "INDIAVIX" or "vix" in inst_name.lower():
+                            lp = item.get("livePriceDto", {})
+                            if lp and "value" in lp:
+                                benchmarks["INDIA VIX"] = {
+                                    "name": "INDIA VIX",
+                                    "symbol": "NSE:INDIAVIX",
+                                    "price": round(float(lp.get("value", 12.16)), 2),
+                                    "change": round(float(lp.get("dayChange", -0.53)), 2),
+                                    "pct_change": round(float(lp.get("dayChangePerc", -4.18)), 2),
+                                    "currency": "",
+                                    "prefix": "",
+                                    "unit": "pts",
+                                    "icon": "⚡",
+                                    "category": "Groww Volatility"
+                                }
+                                break
+        except Exception as e:
+            logger.debug(f"Groww India VIX fetch error: {e}")
 
         self._cached_benchmarks = benchmarks
         self._last_benchmarks_ts = time.time()
@@ -580,18 +594,18 @@ class GrowwMarketFeed:
                 "unit": "pts", "icon": "🏦", "category": "Groww Banking Live"
             },
             "GIFT NIFTY": {
-                "name": "GIFT NIFTY", "symbol": "NSE IX:GIFTNIFTY", "price": 23175.50,
-                "change": 84.90, "pct_change": 0.37, "currency": "INR", "prefix": "₹",
+                "name": "GIFT NIFTY", "symbol": "NSE IX:GIFTNIFTY", "price": 23237.50,
+                "change": 49.00, "pct_change": 0.21, "currency": "INR", "prefix": "₹",
                 "unit": "pts", "icon": "🌏", "category": "Groww GIFT City"
             },
             "S&P 500 (US)": {
-                "name": "S&P 500 (US)", "symbol": "US:SPX", "price": 5738.17,
-                "change": 39.28, "pct_change": 0.51, "currency": "USD", "prefix": "$",
+                "name": "S&P 500 (US)", "symbol": "US:SPX", "price": 7815.75,
+                "change": 36.75, "pct_change": 0.47, "currency": "USD", "prefix": "$",
                 "unit": "pts", "icon": "🇺🇸", "category": "Groww Wall Street"
             },
             "INDIA VIX": {
                 "name": "INDIA VIX", "symbol": "NSE:INDIAVIX", "price": 12.16,
-                "change": -0.47, "pct_change": -3.68, "currency": "", "prefix": "",
+                "change": -0.53, "pct_change": -4.18, "currency": "", "prefix": "",
                 "unit": "pts", "icon": "⚡", "category": "Groww Volatility"
             },
             "CRUDE OIL": {
