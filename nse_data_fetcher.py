@@ -283,6 +283,18 @@ class NSEIndiaFetcher:
                 "icon": "🏦",
                 "category": "Banking Index"
             },
+            "INDIA VIX": {
+                "name": "INDIA VIX",
+                "symbol": "^INDIAVIX",
+                "price": 13.45,
+                "change": 0.15,
+                "pct_change": 1.12,
+                "currency": "",
+                "prefix": "",
+                "unit": "pts",
+                "icon": "⚡",
+                "category": "NSE Volatility"
+            },
             "CRUDE OIL": {
                 "name": "CRUDE OIL (MCX)",
                 "symbol": "MCX:CRUDEOIL",

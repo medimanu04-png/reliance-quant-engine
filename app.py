@@ -403,8 +403,8 @@ st.markdown("""
     }
     .live-benchmark-grid {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 12px;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 10px;
         width: 100%;
         margin-top: 4px;
         align-items: stretch !important;
@@ -874,11 +874,12 @@ def render_live_macro_benchmarks_strip():
     source_label = "Groww Trading API (0-Delay Authenticated)" if groww_inst.is_connected else "Groww Live Feed (0-Delay Direct Engine)"
 
     cards_html = []
-    order = ["NIFTY 50", "SENSEX", "BANK NIFTY", "CRUDE OIL", "GOLD"]
+    order = ["NIFTY 50", "SENSEX", "BANK NIFTY", "INDIA VIX", "CRUDE OIL", "GOLD"]
     benchmark_source_map = {
         "NIFTY 50": "Groww (NSE)",
         "SENSEX": "Groww (BSE)",
         "BANK NIFTY": "Groww (NSE)",
+        "INDIA VIX": "Groww (NSE)",
         "CRUDE OIL": "Groww (MCX)",
         "GOLD": "Groww (MCX)"
     }
@@ -1604,8 +1605,29 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     orb_bars = df.iloc[:3] if len(df) >= 3 else df
     df['ORB_High'] = float(orb_bars['High'].max())
     df['ORB_Low'] = float(orb_bars['Low'].min())
-    df['PDH'] = float(df['High'].iloc[:-1].max()) if len(df) > 1 else float(df['High'].iloc[0])
-    df['PDL'] = float(df['Low'].iloc[:-1].min()) if len(df) > 1 else float(df['Low'].iloc[0])
+
+    # Multi-Day Prior Day High / Low / Close & Institutional Camarilla Equation Pivots
+    unique_dates = sorted(list(set(df.index.date))) if hasattr(df.index, 'date') else []
+    if len(unique_dates) > 1:
+        prev_date = unique_dates[-2]
+        prev_day_df = df[df.index.date == prev_date]
+        pdh = float(prev_day_df['High'].max())
+        pdl = float(prev_day_df['Low'].min())
+        pdc = float(prev_day_df['Close'].iloc[-1])
+    else:
+        pdh = float(df['High'].iloc[:-1].max()) if len(df) > 1 else float(df['High'].iloc[0])
+        pdl = float(df['Low'].iloc[:-1].min()) if len(df) > 1 else float(df['Low'].iloc[0])
+        pdc = float(df['Close'].iloc[0])
+
+    df['PDH'] = pdh
+    df['PDL'] = pdl
+    df['PDC'] = pdc
+
+    cam_range = max(pdh - pdl, 6.0)
+    df['Cam_H4'] = round(pdc + (cam_range * 1.1 / 2.0), 2)  # H4: Institutional Long Breakout Level
+    df['Cam_H3'] = round(pdc + (cam_range * 1.1 / 4.0), 2)  # H3: Intraday Resistance / Target
+    df['Cam_L3'] = round(pdc - (cam_range * 1.1 / 4.0), 2)  # L3: Intraday Support / Target
+    df['Cam_L4'] = round(pdc - (cam_range * 1.1 / 2.0), 2)  # L4: Institutional Short Breakdown Level
 
     up_move = df['High'].diff()
     down_move = -df['Low'].diff()
@@ -3047,7 +3069,7 @@ if df is not None and not df.empty:
     put_wall = float(chain_oi.get("put_wall", atm_strike - 20))
     pcr_val = chain_oi['overall_pcr']
 
-    # Vector 1: Multi-Timeframe Trend & 15m ORB Structure (20 pts)
+    # Vector 1: Multi-Timeframe Trend, 15m ORB & NIFTY Beta Confluence (20 pts)
     v1_bull = 0.0
     v1_bear = 0.0
     ema_stack_bull = latest['EMA_9'] > latest['EMA_20'] > latest['EMA_50']
@@ -3067,29 +3089,60 @@ if df is not None and not df.empty:
     htf_bull = spot >= htf_ref
     htf_bear = spot <= htf_ref
 
+    # Institutional Camarilla Equation Pivots (H4 Breakout / L4 Breakdown)
+    cam_h4 = float(latest.get('Cam_H4', spot + 8.0))
+    cam_h3 = float(latest.get('Cam_H3', spot + 4.0))
+    cam_l3 = float(latest.get('Cam_L3', spot - 4.0))
+    cam_l4 = float(latest.get('Cam_L4', spot - 8.0))
+    cam_breakout_bull = spot >= cam_h4
+    cam_breakdown_bear = spot <= cam_l4
+
+    # Real-Time NIFTY 50 Index Beta Confluence
+    nifty_info = benchmarks.get("NIFTY 50", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
+    nifty_pct = float(nifty_info.get("pct_change", 0.0))
+    nifty_bull = nifty_pct >= 0.05
+    nifty_bear = nifty_pct <= -0.05
+    nifty_fighting_bull = nifty_pct < -0.30  # Counter-trend danger: Buying Call while Nifty is dumping
+    nifty_fighting_bear = nifty_pct > 0.30   # Counter-trend danger: Buying Put while Nifty is surging
+
     if ema_stack_bull:
-        v1_bull += 7.0
+        v1_bull += 5.0
     if st_bullish:
-        v1_bull += 4.0
+        v1_bull += 3.0
     if adx_trend_bull:
         v1_bull += 3.0
     if orb_breakout:
         v1_bull += 3.0
     if htf_bull:
-        v1_bull += 3.0  # 60m Macro Trend Invariance Confirmation
+        v1_bull += 2.0  # 60m Macro Trend Invariance Confirmation
+    if cam_breakout_bull:
+        v1_bull += 2.0  # Camarilla H4 Breakout
+    if nifty_bull:
+        v1_bull += 2.0  # NIFTY 50 Index Tailwind Confluence
+    elif nifty_fighting_bull:
+        v1_bull = max(0.0, v1_bull - 4.0)  # Counter-trend index drag penalty!
 
     if ema_stack_bear:
-        v1_bear += 7.0
+        v1_bear += 5.0
     if st_bearish:
-        v1_bear += 4.0
+        v1_bear += 3.0
     if adx_trend_bear:
         v1_bear += 3.0
     if orb_breakdown:
         v1_bear += 3.0
     if htf_bear:
-        v1_bear += 3.0  # 60m Macro Trend Invariance Confirmation
+        v1_bear += 2.0  # 60m Macro Trend Invariance Confirmation
+    if cam_breakdown_bear:
+        v1_bear += 2.0  # Camarilla L4 Breakdown
+    if nifty_bear:
+        v1_bear += 2.0  # NIFTY 50 Index Headwind Confluence
+    elif nifty_fighting_bear:
+        v1_bear = max(0.0, v1_bear - 4.0)  # Counter-trend index drag penalty!
 
-    # Vector 2: Institutional VWAP & Order Flow (18 pts)
+    v1_bull = min(20.0, max(0.0, v1_bull))
+    v1_bear = min(20.0, max(0.0, v1_bear))
+
+    # Vector 2: Institutional VWAP & Level-2 Order Book Imbalance (18 pts)
     v2_bull = 0.0
     v2_bear = 0.0
     above_vwap = spot > latest['VWAP']
@@ -3106,27 +3159,45 @@ if df is not None and not df.empty:
     obv_buyer_agg = obv_slope > 0
     obv_seller_agg = obv_slope < 0
 
+    # Level-2 Order Book Bid/Ask Quantity Imbalance
+    from groww_market_feed import GrowwMarketFeed
+    ob_depth = GrowwMarketFeed.get_instance().get_reliance_order_book_imbalance()
+    depth_ratio = float(ob_depth.get("imbalance_ratio", 1.0))
+    depth_buyer_agg = depth_ratio >= 1.25
+    depth_seller_agg = depth_ratio <= 0.80
+
     if above_vwap_upper:
-        v2_bull += 8.0 if vwap_z <= 2.2 else 4.0  # Climax guard: penalize if overextended
+        v2_bull += 6.0 if vwap_z <= 2.2 else 2.0  # Climax guard: penalize if overextended
     elif above_vwap:
-        v2_bull += 5.0
+        v2_bull += 4.0
     if vol_surge:
-        v2_bull += 5.0
+        v2_bull += 4.0
     elif rel_vol > 1.0:
         v2_bull += 2.0
     if obv_buyer_agg:
-        v2_bull += 5.0
+        v2_bull += 4.0
+    if depth_buyer_agg:
+        v2_bull += 4.0  # Strong limit buy order depth absorption
+    elif depth_seller_agg:
+        v2_bull = max(0.0, v2_bull - 3.0)  # Overhead ask supply overhang penalty
 
     if below_vwap_lower:
-        v2_bear += 8.0 if vwap_z >= -2.2 else 4.0  # Oversold climax guard
+        v2_bear += 6.0 if vwap_z >= -2.2 else 2.0  # Oversold climax guard
     elif below_vwap:
-        v2_bear += 5.0
+        v2_bear += 4.0
     if vol_surge:
-        v2_bear += 5.0
+        v2_bear += 4.0
     elif rel_vol > 1.0:
         v2_bear += 2.0
     if obv_seller_agg:
-        v2_bear += 5.0
+        v2_bear += 4.0
+    if depth_seller_agg:
+        v2_bear += 4.0  # Strong limit ask depth dominance
+    elif depth_buyer_agg:
+        v2_bear = max(0.0, v2_bear - 3.0)  # Bid floor absorption penalty
+
+    v2_bull = min(18.0, max(0.0, v2_bull))
+    v2_bear = min(18.0, max(0.0, v2_bear))
 
     # Vector 3: Short Gamma Squeeze & Strike OI Walls (20 pts)
     v3_bull = 0.0
@@ -3168,7 +3239,7 @@ if df is not None and not df.empty:
     if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
         v3_bear = max(0.0, v3_bear - 4.0)
 
-    # Vector 4: Volatility & Choppiness Index (CHOP) Regime (15 pts)
+    # Vector 4: Volatility, Choppiness Index (CHOP) & India VIX Regime (15 pts)
     v4_bull = 0.0
     v4_bear = 0.0
     atr_viable = latest['ATR'] >= 7.5 or (latest['ATR'] / spot) >= 0.0025
@@ -3179,7 +3250,14 @@ if df is not None and not df.empty:
     is_trending_regime = chop_val < 45.0
     is_choppy_regime = chop_val > 61.8
 
-    atr_pts = 8.0 if atr_viable else 4.0
+    # India VIX Telemetry
+    vix_data = benchmarks.get("INDIA VIX", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
+    vix_val = float(vix_data.get("price", 13.50))
+    vix_pct_chg = float(vix_data.get("pct_change", 0.0))
+    vix_stable_regime = (11.0 <= vix_val <= 20.0) and (vix_pct_chg >= -2.5)
+    vix_crush_warning = vix_pct_chg < -3.5  # Warning: Severe IV crush eating option premium
+
+    atr_pts = 7.0 if atr_viable else 3.5
     v4_bull += atr_pts
     v4_bear += atr_pts
 
@@ -3191,9 +3269,19 @@ if df is not None and not df.empty:
         v4_bear += 2.0
 
     if bb_expanding:
-        v4_bull += 3.0
+        v4_bull += 2.0
     if bb_contracting_bear:
-        v4_bear += 3.0
+        v4_bear += 2.0
+
+    if vix_stable_regime:
+        v4_bull += 2.0  # Option extrinsic value shielded
+        v4_bear += 2.0
+    elif vix_crush_warning:
+        v4_bull = max(0.0, v4_bull - 3.0)  # IV crush penalty for long options!
+        v4_bear = max(0.0, v4_bear - 3.0)
+
+    v4_bull = min(15.0, max(0.0, v4_bull))
+    v4_bear = min(15.0, max(0.0, v4_bear))
 
     # Vector 5: Zero-Divergence Momentum (15 pts)
     v5_bull = 0.0
@@ -3466,13 +3554,15 @@ if df is not None and not df.empty:
     v1_beh = (
         f"Triple EMA ribbon is {'bullishly stacked (9 > 20 > 50)' if ema_stack_bull else ('bearishly stacked (9 < 20 < 50)' if ema_stack_bear else 'consolidating')} "
         f"with SuperTrend active at ₹{latest['SuperTrend']:.2f} ({'Buy Regime' if st_bullish else 'Sell Regime'}). "
-        f"ADX at {latest['ADX']:.1f} confirms {'strong directional momentum' if (adx_trend_bull or adx_trend_bear) else 'choppy market structure'}. "
-        f"15m ORB Range sits at ₹{orb_l:.2f} - ₹{orb_h:.2f} ({'Breakout Above ORB High' if orb_breakout else ('Breakdown Below ORB Low' if orb_breakdown else 'Inside ORB Range')})."
+        f"15m ORB sits at ₹{orb_l:.2f} - ₹{orb_h:.2f} ({'Breakout Above ORB High' if orb_breakout else ('Breakdown Below ORB Low' if orb_breakdown else 'Inside 15m Range')}). "
+        f"Camarilla Pivots reflect H4 Breakout at ₹{cam_h4:.2f} and L4 Breakdown at ₹{cam_l4:.2f} (Spot is {'breaching H4 Long ceiling' if cam_breakout_bull else ('breaching L4 Short floor' if cam_breakdown_bear else 'inside value range')}). "
+        f"NIFTY 50 Index Beta is at {nifty_pct:+.2f}% ({'supporting trend' if (nifty_bull if recommended_contract_type == 'CE' else nifty_bear) else ('counter-trend drag warning' if (nifty_fighting_bull if recommended_contract_type == 'CE' else nifty_fighting_bear) else 'neutral market beta')})."
     )
     v2_beh = (
         f"Spot price is sustaining {spot - latest['VWAP']:+.2f} pts {'above' if above_vwap else 'below'} institutional VWAP (Z-score: {vwap_z:+.2f}σ) "
         f"with {'an aggressive 1.7x+ volume expansion' if vol_surge else f'{rel_vol:.2f}x benchmark volume'}. "
-        f"Intraday OBV flow confirms {'active smart-money buyer aggression' if obv_buyer_agg else 'distribution seller aggression'}."
+        f"Intraday OBV flow confirms {'active smart-money buyer aggression' if obv_buyer_agg else 'distribution seller aggression'}. "
+        f"Level-2 Order Book Imbalance ratio sits at {depth_ratio:.2f}x ({ob_depth['bias'].replace('_', ' ')}: {ob_depth['buy_qty']:,} Bids vs {ob_depth['sell_qty']:,} Asks)."
     )
     call_oi_chg_val = opt_telemetry['call_oi_change_pct']
     put_oi_chg_val = opt_telemetry['put_oi_change_pct']
@@ -3484,6 +3574,7 @@ if df is not None and not df.empty:
         f"Daily ATR of ₹{latest['ATR']:.2f} "
         f"{'provides full statistical room to hit the +10.0 pts target without hitting range resistance' if atr_viable else 'reflects narrow range compression'}. "
         f"Choppiness Index (CHOP-14) at {chop_val:.1f} signals {'a strong directional expansion regime' if is_trending_regime else ('an extreme sideways consolidation trap (Stand Down enforced)' if is_choppy_regime else 'moderate fluctuation')}. "
+        f"India VIX sits at {vix_val:.2f} ({vix_pct_chg:+.2f}%), {'preserving option extrinsic time value against volatility crush' if vix_stable_regime else ('warning of rapid implied volatility contraction' if vix_crush_warning else 'steady volatility')}. "
         f"Bollinger bands show {'active breakout expansion' if bb_expanding else 'steady oscillation'}."
     )
     v5_beh = (
@@ -3498,31 +3589,31 @@ if df is not None and not df.empty:
     vector_tiles_data = [
         {
             "num": 1,
-            "title": "Vector 1: Trend & Structure",
+            "title": "Vector 1: Trend, Structure & Beta",
             "icon": "📈",
             "score": sim_v1,
             "max": 20.0,
-            "source": "Yahoo Finance 5m Candles + Vectorized TA Engine",
+            "source": "5m Multi-EMA + Camarilla Pivots + NIFTY 50",
             "metrics": [
-                ("EMA 9 / 20 / 50 Ribbon", f"₹{latest['EMA_9']:.1f} > ₹{latest['EMA_20']:.1f} > ₹{latest['EMA_50']:.1f}" if ema_stack_bull else (f"₹{latest['EMA_9']:.1f} < ₹{latest['EMA_20']:.1f} < ₹{latest['EMA_50']:.1f}" if ema_stack_bear else f"EMA 9: ₹{latest['EMA_9']:.1f} | 20: ₹{latest['EMA_20']:.1f}"), "🟢 Bullish Stack (+8)" if ema_stack_bull else ("🔴 Bearish Stack (+8)" if ema_stack_bear else "🟡 Mixed / Tangled (0)")),
-                ("SuperTrend (10, 3)", f"₹{latest['SuperTrend']:.2f}", "🟢 Bullish Buy (+4)" if st_bullish else "🔴 Bearish Sell (+4)"),
-                ("ADX (14) Trend Power", f"{latest['ADX']:.1f} (+DI: {latest['PDI']:.1f} | -DI: {latest['MDI']:.1f})", "🟢 Strong Trend (+4)" if (adx_trend_bull or adx_trend_bear) else "🟡 Low Velocity (0)"),
-                ("15m ORB Range & Breakout", f"H: ₹{orb_h:.1f} | L: ₹{orb_l:.1f}", "🟢 Breakout Above H (+4)" if orb_breakout else ("🔴 Breakdown Below L (+4)" if orb_breakdown else "🟡 Inside 15m Range (0)"))
+                ("EMA 9 / 20 / 50 Ribbon", f"₹{latest['EMA_9']:.1f} > ₹{latest['EMA_20']:.1f} > ₹{latest['EMA_50']:.1f}" if ema_stack_bull else (f"₹{latest['EMA_9']:.1f} < ₹{latest['EMA_20']:.1f} < ₹{latest['EMA_50']:.1f}" if ema_stack_bear else f"EMA 9: ₹{latest['EMA_9']:.1f} | 20: ₹{latest['EMA_20']:.1f}"), "🟢 Bullish Stack (+5)" if ema_stack_bull else ("🔴 Bearish Stack (+5)" if ema_stack_bear else "🟡 Mixed (0)")),
+                ("SuperTrend (10, 3)", f"₹{latest['SuperTrend']:.2f}", "🟢 Bullish Buy (+3)" if st_bullish else "🔴 Bearish Sell (+3)"),
+                ("15m ORB & Camarilla H4/L4", f"ORB: ₹{orb_h:.1f} | H4: ₹{cam_h4:.1f}", "🟢 H4/ORB Long Breakout (+5)" if (orb_breakout or cam_breakout_bull) else ("🔴 L4/ORB Short Breakdown (+5)" if (orb_breakdown or cam_breakdown_bear) else "🟡 Inside Value Range (0)")),
+                ("NIFTY 50 Market Beta", f"{nifty_pct:+.2f}% ({nifty_info.get('change', 0):+.1f} pts)", "🟢 Index Tailwind (+2)" if nifty_bull else ("🔴 Index Drag (-4)" if nifty_fighting_bull else "🟡 Neutral Beta"))
             ],
             "behavior": v1_beh
         },
         {
             "num": 2,
-            "title": "Vector 2: VWAP & Volume Absorption",
+            "title": "Vector 2: VWAP & Level-2 Depth",
             "icon": "📊",
             "score": sim_v2,
             "max": 18.0,
-            "source": "Groww Tick Stream + VWAP Accumulator",
+            "source": "Groww Tick Stream + L2 Order Book Depth",
             "metrics": [
-                ("Spot vs Institutional VWAP", f"Spot ₹{spot:.2f} | VWAP ₹{latest['VWAP']:.2f}", f"🟢 {spot - latest['VWAP']:+.2f} pts Above" if above_vwap else f"🔴 {spot - latest['VWAP']:+.2f} pts Below"),
+                ("Spot vs Institutional VWAP", f"Spot ₹{spot:.2f} | VWAP ₹{latest['VWAP']:.2f}", f"🟢 {spot - latest['VWAP']:+.2f} pts Above (+4)" if above_vwap else f"🔴 {spot - latest['VWAP']:+.2f} pts Below (+4)"),
                 ("VWAP Z-Score Climax Guard", f"Z: {vwap_z:+.2f}σ", "🟢 Optimal Expansion" if abs(vwap_z) <= 1.8 else ("🔴 Climax Overbought" if vwap_z > 2.2 else "🔴 Climax Oversold")),
-                ("Relative Volume (RVOL)", f"{rel_vol:.2f}x (Vol: {int(latest['Volume']):,})", "🟢 Surge ≥1.7x (+5)" if vol_surge else ("🟡 Normal >1.0x (+2)" if rel_vol > 1.0 else "🔴 Sub-1.0x (0)")),
-                ("Intraday OBV Flow (EMA-20)", f"Slope: {obv_slope:+,.0f}", "🟢 Buyers Dominating (+5)" if obv_buyer_agg else "🔴 Sellers Dominating (+5)")
+                ("Relative Volume (RVOL)", f"{rel_vol:.2f}x (Vol: {int(latest['Volume']):,})", "🟢 Surge ≥1.7x (+4)" if vol_surge else ("🟡 Normal >1.0x (+2)" if rel_vol > 1.0 else "🔴 Sub-1.0x (0)")),
+                ("Level-2 Order Book Imbalance", f"{depth_ratio:.2f}x ({ob_depth['buy_qty']:,} vs {ob_depth['sell_qty']:,})", "🟢 Buyer Depth (+4)" if depth_buyer_agg else ("🔴 Seller Dominance (+4)" if depth_seller_agg else "🟡 Balanced Depth"))
             ],
             "behavior": v2_beh
         },
@@ -3543,16 +3634,16 @@ if df is not None and not df.empty:
         },
         {
             "num": 4,
-            "title": "Vector 4: Volatility & ATR Room",
+            "title": "Vector 4: Volatility, CHOP & India VIX",
             "icon": "🎯",
             "score": sim_v4,
             "max": 15.0,
-            "source": "Wilder's ATR (14) + Bollinger Bands Model",
+            "source": "Wilder's ATR (14) + CHOP + India VIX",
             "metrics": [
-                ("ATR (14) Daily Range", f"₹{latest['ATR']:.2f} pts ({(latest['ATR']/spot)*100.0:.2f}%)", "🟢 Viable for +10 pts (+8)" if atr_viable else "🔴 Low Room (0)"),
+                ("ATR (14) Daily Range", f"₹{latest['ATR']:.2f} pts ({(latest['ATR']/spot)*100.0:.2f}%)", "🟢 Viable for +10 pts (+7)" if atr_viable else "🔴 Low Room (0)"),
                 ("Choppiness Index (CHOP-14)", f"{chop_val:.1f} (Threshold 61.8)", "🟢 Trending Expansion (+4)" if is_trending_regime else ("🛑 Choppy Stand Down (0)" if is_choppy_regime else "🟡 Neutral Oscillation (+2)")),
-                ("Bollinger Bandwidth", f"{latest['BB_Width']:.2f}% width", "🟢 Band Expansion (+3)" if bb_expanding else "🟡 Moderate Bandwidth"),
-                ("Upper / Lower Band", f"High ₹{latest['BB_Upper']:.1f} | Low ₹{latest['BB_Lower']:.1f}", "🟢 Breakout Perimeter" if spot >= latest['BB_Upper'] * 0.998 else "🟡 Inside Bands")
+                ("India VIX Volatility Stability", f"{vix_val:.2f} pts ({vix_pct_chg:+.2f}%)", "🟢 IV Protected (+2)" if vix_stable_regime else ("🔴 IV Crush Alert (-3)" if vix_crush_warning else "🟡 Steady Volatility")),
+                ("Bollinger Band Expansion", f"Width: {latest['BB_Width']:.2f}%", "🟢 Band Expansion (+2)" if bb_expanding else "🟡 Steady Oscillation")
             ],
             "behavior": v4_beh
         },

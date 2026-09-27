@@ -337,6 +337,18 @@ class MultiIndicatorMath:
         orb_low = min(lows[:bars])
         return round(orb_high, 2), round(orb_low, 2)
 
+    @staticmethod
+    def calculate_camarilla_pivots(pdh: float, pdl: float, pdc: float) -> Tuple[float, float, float, float]:
+        """
+        Camarilla Equation Pivots: H4 (Long Breakout), H3 (Ceiling), L3 (Floor), L4 (Short Breakdown).
+        """
+        rng = max(pdh - pdl, 6.0)
+        h4 = round(pdc + (rng * 1.1 / 2.0), 2)
+        h3 = round(pdc + (rng * 1.1 / 4.0), 2)
+        l3 = round(pdc - (rng * 1.1 / 4.0), 2)
+        l4 = round(pdc - (rng * 1.1 / 2.0), 2)
+        return h4, h3, l3, l4
+
 
 
 # ============================================================================
