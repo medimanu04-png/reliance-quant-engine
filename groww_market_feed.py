@@ -15,7 +15,10 @@ import threading
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from curl_cffi import requests
+try:
+    from curl_cffi import requests
+except ImportError:
+    import requests
 from bs4 import BeautifulSoup
 import pytz
 
