@@ -3649,11 +3649,19 @@ if df is not None and not df.empty:
     alpha_bear_divergence = alpha_spread <= -0.30 # Reliance underperforming NIFTY significantly (Institutional Selling)
 
     # Enhancement: Multi-Timeframe Matrix Analysis (M15 Structural + M5 Trigger + M1 Micro-Execution)
+    # Estimate preliminary option LTP for initial micro-timing pricing
+    if live_broker_ltp > 0.0:
+        pre_option_ltp = live_broker_ltp
+    elif atm_strike == lower_atm:
+        pre_option_ltp = float(low_data.get("call_ltp", 18.50))
+    else:
+        pre_option_ltp = float(high_data.get("call_ltp", 18.50))
+
     mtf_matrix = MultiTimeframeMatrixEngine.analyze_matrix(
         df_active=df,
         spot=spot,
         active_timeframe=timeframe,
-        option_ltp=current_option_ltp,
+        option_ltp=pre_option_ltp,
         delta_val=0.52
     )
 
@@ -4117,6 +4125,13 @@ if df is not None and not df.empty:
         current_option_ltp = low_data["call_ltp"]
     else:
         current_option_ltp = high_data["call_ltp"]
+
+    # Re-calibrate M1 limit execution with final contract LTP (CE vs PE)
+    if 'mtf_matrix' in locals() and isinstance(mtf_matrix, dict) and 'm1' in mtf_matrix:
+        m1_data = mtf_matrix['m1']
+        sav = float(m1_data.get('premium_savings_pts', 0.40))
+        m1_data['rec_limit_premium_ce'] = round(max(0.50, current_option_ltp - sav), 2)
+        m1_data['rec_limit_premium_pe'] = round(max(0.50, current_option_ltp - sav), 2)
 
     estimated_premium = round(current_option_ltp + 1.20, 2)  # Breakout trigger level
 
