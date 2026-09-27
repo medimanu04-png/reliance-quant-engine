@@ -358,8 +358,8 @@ class TelegramNotifier:
 📡 You will receive instant notifications whenever:
 • 🟡 <b>Setup is Armed</b> (Approaching Breakout Level)
 • 🚀 <b>Entry Trigger Confirmed</b> (LTP Breaches Breakout)
-• 🎯 <b>Target is Reached</b> (+8.0 pts | +₹8,000)
-• 🛑 <b>Stop Loss is Hit</b> (-4.0 pts | -₹4,000)
+• 🎯 <b>Target is Reached</b> (+10.0 pts | +₹10,000)
+• 🛑 <b>Stop Loss is Hit</b> (-9.0 pts | -₹9,000)
 • ⚡ <b>Trailing SL Activated</b> (Move SL to Cost)
 • 🔒 <b>End of Day Auto-Square-Off</b> (03:05 PM IST)
 • 🛡️ <b>Consolidation Chop Warning</b> (CHOP > 61.8)
@@ -490,8 +490,8 @@ class TelegramNotifier:
         cls,
         contract: str,
         entry_price: float = 37.65,
-        exit_price: float = 45.65,
-        profit_pts: float = 8.0,
+        exit_price: float = 47.65,
+        profit_pts: float = 10.0,
         direction: str = "BULLISH (CALL / CE)",
         total_pnl: Optional[float] = None,
         num_lots: int = 2,
@@ -502,7 +502,7 @@ class TelegramNotifier:
         """Formats a TARGET HIT celebration alert for Telegram."""
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
-        target_pts = profit_pts or kwargs.get("target_pts", 8.0)
+        target_pts = profit_pts or kwargs.get("target_pts", 10.0)
         realized_pnl = total_pnl if total_pnl is not None else round(total_qty * target_pts)
         dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"
         return f"""
@@ -531,8 +531,8 @@ class TelegramNotifier:
         cls,
         contract: str,
         entry_price: float = 37.65,
-        sl_price: float = 33.65,
-        loss_pts: float = 4.0,
+        sl_price: float = 28.65,
+        loss_pts: float = 9.0,
         direction: str = "BULLISH (CALL / CE)",
         total_loss: Optional[float] = None,
         num_lots: int = 2,
@@ -543,7 +543,7 @@ class TelegramNotifier:
         """Formats a STOP LOSS risk preservation alert for Telegram."""
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
-        stop_pts = loss_pts or kwargs.get("sl_pts", 4.0)
+        stop_pts = loss_pts or kwargs.get("sl_pts", 9.0)
         sl_exit_price = sl_price or kwargs.get("sl_exit_price", max(0.05, round(entry_price - stop_pts, 2)))
         capital_loss = total_loss if total_loss is not None else round(total_qty * stop_pts)
         dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"

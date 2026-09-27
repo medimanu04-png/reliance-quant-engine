@@ -1146,8 +1146,8 @@ sim_options = [
     "🟡 1. Setup ARMED Pre-Alert (Approaching Breakout)",
     "🚀 2. Trade Entry Confirmed — BUY CALL (CE)",
     "🔻 3. Trade Entry Confirmed — BUY PUT (PE)",
-    "🎯 4. Target Hit (+8.0 pts | +₹8,000 Profit Booked)",
-    "🛑 5. Stop Loss Hit (-4.0 pts | -₹4,000 Risk Cut)",
+    "🎯 4. Target Hit (+10.0 pts | +₹10,000 Profit Booked)",
+    "🛑 5. Stop Loss Hit (-9.0 pts | -₹9,000 Risk Cut)",
     "⚡ 6. Trailing SL / Half-Profit (+5.0 pts | Trail to Cost)",
     "🔒 7. Auto-Square-Off & EOD Cutoff (03:05 PM IST)",
     "🛡️ 8. Choppiness Stand Down (CHOP > 61.8 Filter Active)"
@@ -1194,10 +1194,10 @@ elif is_entry_pe_scenario:
     btn_title = "🔴 Fire BUY PUT (PE)"
     btn_theme = "#EF4444"
 elif is_target_hit_scenario:
-    btn_title = "🎯 Fire Target Hit (+₹8k)"
+    btn_title = "🎯 Fire Target Hit (+₹10k)"
     btn_theme = "#06B6D4"
 elif is_stop_loss_scenario:
-    btn_title = "🛑 Fire Stop Loss (-₹4k)"
+    btn_title = "🛑 Fire Stop Loss (-₹9k)"
     btn_theme = "#DC2626"
 elif is_trailing_sl_scenario:
     btn_title = "⚡ Fire Trailing SL (+5pts)"
@@ -1263,10 +1263,10 @@ elif "3. Trade Entry Confirmed — BUY PUT" in active_sim:
     st.sidebar.info("🔴 **Live BUY PUT (PE) Entry Simulation: Active**")
 elif "4. Target Hit" in active_sim:
     sim_mode = "TARGET_HIT"
-    st.sidebar.info("🎯 **Live Target Hit (+₹8,000) Simulation: Active**")
+    st.sidebar.info("🎯 **Live Target Hit (+₹10,000) Simulation: Active**")
 elif "5. Stop Loss Hit" in active_sim:
     sim_mode = "STOP_LOSS"
-    st.sidebar.info("🛑 **Live Stop Loss (-₹4,000) Simulation: Active**")
+    st.sidebar.info("🛑 **Live Stop Loss (-₹9,000) Simulation: Active**")
 elif "6. Trailing SL" in active_sim:
     sim_mode = "TRAILING_SL"
     st.sidebar.info("⚡ **Live Trailing SL (+5.0 pts) Simulation: Active**")
@@ -1755,8 +1755,9 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         entry_confirmed = (active_live_ltp >= breakout_level) and plan_tradable
 
     if sim_mode == "TARGET_HIT":
-        target_exit_ltp = round(active_live_ltp + 8.0, 2)
-        profit_rs = round(plan_qty * 8.0)
+        sim_target_pts = plan_target_pts or 10.0
+        target_exit_ltp = round(active_live_ltp + sim_target_pts, 2)
+        profit_rs = round(plan_qty * sim_target_pts)
         
         # Telegram Alert Dispatch
         tg_status_html = ""
@@ -1767,7 +1768,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     entry_price=active_live_ltp,
                     exit_price=target_exit_ltp,
-                    profit_pts=8.0,
+                    profit_pts=sim_target_pts,
                     total_pnl=profit_rs,
                     num_lots=plan_num_lots,
                     lot_size=plan_lot_size,
@@ -1827,11 +1828,11 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     </span>
                 </div>
                 <span style="background: #059669; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #34D399; box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);">
-                    +8.0 PTS TARGET ACHIEVED
+                    +{sim_target_pts:.1f} PTS TARGET ACHIEVED
                 </span>
             </div>
             <div style="font-size: 0.84rem; color: #A7F3D0; font-weight: 600; margin-bottom: 12px;">
-                Option contract has surged to ₹{target_exit_ltp:.2f} (+8.0 pts). Disciplined institutional exit rule: lock in ₹{profit_rs:,} profit immediately on broker terminal.
+                Option contract has surged to ₹{target_exit_ltp:.2f} (+{sim_target_pts:.1f} pts). Disciplined institutional exit rule: lock in ₹{profit_rs:,} profit immediately on broker terminal.
             </div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 16px;">
                 <div>
@@ -1847,7 +1848,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Exit Price</div>
                     <div style="font-size: 1.45rem; font-weight: 900; color: #10B981; margin-top: 2px;">₹{target_exit_ltp:.2f}</div>
-                    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 700;">+8.0 pts Gain</div>
+                    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 700;">+{sim_target_pts:.1f} pts Gain</div>
                 </div>
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Net Realized PnL</div>
@@ -1869,8 +1870,9 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         """)
 
     elif sim_mode == "STOP_LOSS":
-        sl_exit_ltp = max(0.05, round(active_live_ltp - 4.0, 2))
-        loss_rs = round(plan_qty * 4.0)
+        sim_sl_pts = plan_sl_pts or 9.0
+        sl_exit_ltp = max(0.05, round(active_live_ltp - sim_sl_pts, 2))
+        loss_rs = round(plan_qty * sim_sl_pts)
 
         # Telegram Alert Dispatch
         tg_status_html = ""
@@ -1881,7 +1883,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     entry_price=active_live_ltp,
                     sl_price=sl_exit_ltp,
-                    loss_pts=4.0,
+                    loss_pts=sim_sl_pts,
                     total_loss=loss_rs,
                     num_lots=plan_num_lots,
                     lot_size=plan_lot_size,
@@ -1941,11 +1943,11 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     </span>
                 </div>
                 <span style="background: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #F87171; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);">
-                    -4.0 PTS STOP HIT
+                    -{sim_sl_pts:.1f} PTS STOP HIT
                 </span>
             </div>
             <div style="font-size: 0.84rem; color: #FECACA; font-weight: 600; margin-bottom: 12px;">
-                Premium reached ₹{sl_exit_ltp:.2f} (-4.0 pts). Disciplined institutional risk management: exit position now to protect trading capital.
+                Premium reached ₹{sl_exit_ltp:.2f} (-{sim_sl_pts:.1f} pts). Disciplined institutional risk management: exit position now to protect trading capital.
             </div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 12px 16px;">
                 <div>
@@ -1961,7 +1963,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Exit Price</div>
                     <div style="font-size: 1.45rem; font-weight: 900; color: #F87171; margin-top: 2px;">₹{sl_exit_ltp:.2f}</div>
-                    <div style="font-size: 0.72rem; color: #FCA5A5; font-weight: 700;">-4.0 pts Stop</div>
+                    <div style="font-size: 0.72rem; color: #FCA5A5; font-weight: 700;">-{sim_sl_pts:.1f} pts Stop</div>
                 </div>
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Net Loss Cut</div>
