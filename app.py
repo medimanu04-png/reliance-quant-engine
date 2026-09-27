@@ -1492,10 +1492,10 @@ def fetch_global_news_and_macro(force_key: str = ""):
 
     if len(news_items) < 4:
         defaults = [
-            {"title": "Reliance Industries Benefits from Domestic Energy Demand and Refined Fuel Margins", "summary": "Crude spreads remain supportive as domestic consumption in fuels and petrochemicals trends higher across major hubs.", "provider": "Institutional Desk", "date": "Live", "sentiment": "BULLISH", "url": "#"},
-            {"title": "Government Windfall Tax Relief Supports Refining Realization", "summary": "Export duty adjustments on aviation fuel and diesel bolster gross refining margins (GRM) for domestic export plants.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "BULLISH", "url": "#"},
-            {"title": "Global Energy Transition Drives Petrochemical Margin Expansion", "summary": "Specialty chemical demand recovery in European and Asian markets aids integrated petrochemical realizations.", "provider": "Energy Desk", "date": "Live", "sentiment": "BULLISH", "url": "#"},
-            {"title": "Domestic Retail & Telecom Segments Report Sustained ARPU Growth", "summary": "Consumer subscriber additions and steady 5G monetization maintain resilient non-cyclical cash flow buffers.", "provider": "Consumer Intel", "date": "Live", "sentiment": "BULLISH", "url": "#"}
+            {"title": "Reliance Industries Operational Flow & Fuel Margin Telemetry", "summary": "Domestic consumption in fuels and petrochemicals tracks historical median benchmarks across major hubs.", "provider": "Institutional Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+            {"title": "Government Energy Policy & Export Realization Monitoring", "summary": "Gross refining margins (GRM) for export plants remain aligned with regional crack spreads.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+            {"title": "Petrochemical & Polymer Realization Spread Review", "summary": "Specialty chemical demand in Asian markets continues in balanced inventory turnover bands.", "provider": "Energy Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+            {"title": "Domestic Retail & Telecom ARPU Stability Audit", "summary": "Consumer additions and steady 5G subscriber migration maintain standard operational cash flow buffers.", "provider": "Consumer Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
         ]
         for d in defaults:
             if len(news_items) >= 4:
@@ -1503,7 +1503,7 @@ def fetch_global_news_and_macro(force_key: str = ""):
             news_items.append(d)
 
     # Global Macro check (Brent Crude stability)
-    macro_score = 5.0  # Macro environment non-hostile
+    macro_score = 0.0  # Completely neutral fallback (Zero directional bias)
     total_news_sentiment = min(10.0, max(-10.0, sentiment_score + macro_score))
 
     return news_items[:4], total_news_sentiment
