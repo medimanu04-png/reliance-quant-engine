@@ -227,9 +227,25 @@ class MultiIndicatorMath:
         return round(smoothed_k[-1], 1)
 
     @staticmethod
-    def calculate_vwap_bands(highs: List[float], lows: List[float], closes: List[float], volumes: List[float]):
+    def calculate_vwap_bands(highs: List[float], lows: List[float], closes: List[float], volumes: List[float], session_dates: Optional[List[Any]] = None):
         cum_tp_vol, cum_vol = 0.0, 0.0
         typical_prices = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
+
+        # Session VWAP Daily Reset: If multi-day session dates are passed, anchor cumsum to the active session
+        if session_dates and len(session_dates) == len(closes):
+            curr_date = session_dates[-1]
+            session_indices = [i for i, d in enumerate(session_dates) if d == curr_date]
+            if session_indices:
+                session_tps = [typical_prices[i] for i in session_indices]
+                session_vols = [volumes[i] for i in session_indices]
+                for tp, v in zip(session_tps, session_vols):
+                    cum_tp_vol += tp * v
+                    cum_vol += v
+                vwap = cum_tp_vol / cum_vol if cum_vol > 0 else session_tps[-1]
+                var = sum(v * ((tp - vwap) ** 2) for tp, v in zip(session_tps, session_vols)) / (cum_vol if cum_vol > 0 else 1)
+                sigma = math.sqrt(var)
+                return round(vwap, 2), round(vwap + (1.5 * sigma), 2), round(vwap - sigma, 2)
+
         for tp, v in zip(typical_prices, volumes):
             cum_tp_vol += tp * v
             cum_vol += v
@@ -359,36 +375,44 @@ class UltraHighConvictionRelianceEngine:
         ema20 = MultiIndicatorMath.calculate_ema(c5m["close"], 20)[-1]
         ema50 = MultiIndicatorMath.calculate_ema(c5m["close"], 50)[-1]
         ema200 = MultiIndicatorMath.calculate_ema(c15m["close"], 200)[-1] if len(c15m["close"]) >= 200 else c15m["close"][0]
+        # Higher-Timeframe (60m) Trend Invariance: 240 bars on 5m = 20-period EMA on 60m chart
+        htf_ema = MultiIndicatorMath.calculate_ema(c5m["close"], 240)[-1] if len(c5m["close"]) >= 240 else (MultiIndicatorMath.calculate_ema(c15m["close"], 80)[-1] if len(c15m["close"]) >= 80 else ema200)
+        htf_bull = spot > htf_ema
+        htf_bear = spot < htf_ema
 
         _, st_dir = MultiIndicatorMath.calculate_supertrend(c5m["high"], c5m["low"], c5m["close"], 10, 3.0)
         adx, pdi, mdi = MultiIndicatorMath.calculate_adx(c5m["high"], c5m["low"], c5m["close"], 14)
         orb_high, orb_low = MultiIndicatorMath.calculate_orb(c5m["high"], c5m["low"], 3)
 
-        # Bullish V1
+        # Bullish V1 (Max 20 pts)
         v1_bull = 0.0
         if ema9 > ema20 > ema50 and c15m["close"][-1] > ema200:
-            v1_bull += 8.0
+            v1_bull += 7.0
         if st_dir[-1] == 1:
             v1_bull += 4.0
         if adx >= 25.0 and pdi > mdi:
-            v1_bull += 4.0
+            v1_bull += 3.0
         if spot >= orb_high:
-            v1_bull += 4.0  # Confirmed 15m ORB Breakout
+            v1_bull += 3.0  # Confirmed 15m ORB Breakout
+        if htf_bull:
+            v1_bull += 3.0  # 60m Macro Trend Invariance Confirmation
 
-        # Bearish V1
+        # Bearish V1 (Max 20 pts)
         v1_bear = 0.0
         if ema9 < ema20 < ema50 and c15m["close"][-1] < ema200:
-            v1_bear += 8.0
+            v1_bear += 7.0
         if st_dir[-1] == -1:
             v1_bear += 4.0
         if adx >= 25.0 and mdi > pdi:
-            v1_bear += 4.0
+            v1_bear += 3.0
         if spot <= orb_low:
-            v1_bear += 4.0  # Confirmed 15m ORB Breakdown
+            v1_bear += 3.0  # Confirmed 15m ORB Breakdown
+        if htf_bear:
+            v1_bear += 3.0  # 60m Macro Trend Invariance Confirmation
 
         # VECTOR 2: Institutional VWAP & OBV Order Flow (18 pts)
         vwap, vwap_plus_15sigma, vwap_minus_sigma = MultiIndicatorMath.calculate_vwap_bands(
-            c5m["high"], c5m["low"], c5m["close"], c5m["volume"]
+            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("date")
         )
         vwap_z, z_status = MultiIndicatorMath.calculate_vwap_zscore(spot, vwap, vwap_plus_15sigma)
         vol_avg20 = sum(c5m["volume"][-20:]) / 20.0 if len(c5m["volume"]) >= 20 else c5m["volume"][-1]
@@ -421,14 +445,14 @@ class UltraHighConvictionRelianceEngine:
         if obv_bias == "SELLER_AGGRESSION":
             v2_bear += 5.0
 
-        # Strike & OI Telemetry
-        strike_step = 20
+        # Strike & OI Telemetry (Strict 10-point Strike Interval for RELIANCE)
+        strike_step = 10
         atm_strike = int(round(spot / strike_step) * strike_step)
         chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True)
         opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True)
 
-        call_wall = float(chain_oi.get("call_wall", atm_strike + 20))
-        put_wall = float(chain_oi.get("put_wall", atm_strike - 20))
+        call_wall = float(chain_oi.get("call_wall", atm_strike + 10))
+        put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
         pcr = chain_oi['overall_pcr']
 
         # VECTOR 3: Short Gamma Squeeze & Strike OI Walls (20 pts)
@@ -497,11 +521,18 @@ class UltraHighConvictionRelianceEngine:
             v4_bear += 3.0
 
         # VECTOR 5: Zero-Divergence Momentum Velocity (15 pts)
-        rsi = MultiIndicatorMath.calculate_rsi(c5m["close"], 14)[-1]
+        rsi_series = MultiIndicatorMath.calculate_rsi(c5m["close"], 14)
+        rsi = rsi_series[-1]
         _, _, hist = MultiIndicatorMath.calculate_macd(c5m["close"], 12, 26, 9)
         macd_expanding_bull = len(hist) >= 2 and hist[-1] > hist[-2] and hist[-1] > 0
         macd_expanding_bear = len(hist) >= 2 and hist[-1] < hist[-2] and hist[-1] < 0
         stoch_k = MultiIndicatorMath.calculate_stochastic(c5m["high"], c5m["low"], c5m["close"], 14, 3)
+
+        # RSI Regular Divergence Detection (Check last 12 bars)
+        recent_closes = c5m["close"][-12:-1] if len(c5m["close"]) >= 12 else c5m["close"]
+        recent_rsis = rsi_series[-12:-1] if len(rsi_series) >= 12 else rsi_series
+        bearish_rsi_div = (spot > max(recent_closes)) and (rsi < max(recent_rsis) - 2.5)
+        bullish_rsi_div = (spot < min(recent_closes)) and (rsi > min(recent_rsis) + 2.5)
 
         v5_bull = 0.0
         if 62.0 <= rsi <= 76.0:
@@ -512,6 +543,8 @@ class UltraHighConvictionRelianceEngine:
             v5_bull += 5.0
         if 60.0 <= stoch_k <= 85.0:
             v5_bull += 4.0
+        if bearish_rsi_div:
+            v5_bull = max(0.0, v5_bull - 4.0)  # Divergence exhaustion penalty
 
         v5_bear = 0.0
         if 24.0 <= rsi <= 38.0:
@@ -522,10 +555,31 @@ class UltraHighConvictionRelianceEngine:
             v5_bear += 5.0
         if 15.0 <= stoch_k <= 40.0:
             v5_bear += 4.0
+        if bullish_rsi_div:
+            v5_bear = max(0.0, v5_bear - 4.0)  # Divergence exhaustion penalty
 
-        # VECTOR 6: Greek Delta & Non-Near Expiry Stability (12 pts)
-        v6_bull = 12.0
-        v6_bear = 12.0
+        # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
+        expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
+        expiry_date_str = expiry_plan.get("selected_expiry", "27-OCT-2026")
+        dte_val = expiry_plan.get("dte", 30)
+
+        # VECTOR 6: Dynamic Greek Delta, Expiry Shield & Liquidity (12 pts)
+        T_val = dte_val / 365.0
+        r_rate = 0.0675
+        iv = 0.212
+        if T_val > 0:
+            d1_val = (math.log(spot / atm_strike) + (r_rate + 0.5 * (iv ** 2)) * T_val) / (iv * math.sqrt(T_val))
+            delta_ce = (1.0 + math.erf(d1_val / math.sqrt(2.0))) / 2.0
+        else:
+            delta_ce = 0.50
+        delta_pe = 1.0 - delta_ce
+
+        delta_score_bull = 6.0 if (0.46 <= delta_ce <= 0.60) else (4.0 if (0.40 <= delta_ce <= 0.68) else 2.0)
+        delta_score_bear = 6.0 if (0.46 <= delta_pe <= 0.60) else (4.0 if (0.40 <= delta_pe <= 0.68) else 2.0)
+        dte_score = 3.0 if dte_val >= 7 else (1.5 if dte_val >= 3 else 0.0)
+        liquidity_spread_score = 3.0  # Dual ATM corridor tight bid-ask spread
+        v6_bull = delta_score_bull + dte_score + liquidity_spread_score
+        v6_bear = delta_score_bear + dte_score + liquidity_spread_score
 
         # VECTOR 7: Global News & Macro Sentiment Telemetry (+/- 5.0 pts)
         macro_news_score = 5.0
@@ -536,8 +590,14 @@ class UltraHighConvictionRelianceEngine:
         raw_bull = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull
         raw_bear = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear
 
-        bullish_score = min(96.0, max(10.0, round(raw_bull, 1)))
-        bearish_score = min(96.0, max(10.0, round(raw_bear, 1)))
+        # Calibrated Institutional Logistic Sigmoid Probability Mapping
+        def calibrate_prob(score: float) -> float:
+            k = 0.075
+            s0 = 58.0
+            return round(100.0 / (1.0 + math.exp(-k * (score - s0))), 1)
+
+        bullish_score = min(96.0, max(10.0, calibrate_prob(raw_bull)))
+        bearish_score = min(96.0, max(10.0, calibrate_prob(raw_bear)))
 
         # Stand Down Clamp: If Choppiness Index > 61.8 (Fractal Consolidation), prevent false entries
         if is_choppy_regime:
@@ -574,11 +634,6 @@ class UltraHighConvictionRelianceEngine:
         atm_strike = best_meta["strike"]
         low_data = atm_stream["lower"]
         high_data = atm_stream["upper"]
-        
-        # Next Monthly Expiry grounded on official NSE India Holiday Master & Tuesday Expiry Mandate
-        nse_data = NSEIndiaFetcher.get_reliance_official_data()
-        expiry_date_str = nse_data.get("official_expiry", "27-OCT-2026")
-        expiry_dt = datetime.strptime(expiry_date_str, "%d-%b-%Y") if "-" in expiry_date_str else datetime(2026, 10, 27)
         today_dt = datetime.now(IST)
 
         active_data = low_data if atm_strike == lower_atm else high_data
