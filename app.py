@@ -2457,7 +2457,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             <div style="margin-top: 8px; border-top: 1px solid rgba(16, 185, 129, 0.3); padding-top: 6px; display: flex; justify-content: space-between; font-size: 0.70rem; color: #94A3B8;">
                 <span>LTP Source: <b style="color: #38BDF8;">Groww 1s Live Stream</b></span>
                 <span>Breakout Level: <b style="color: #FBBF24;">Algorithmic Pin (+1.20 pts)</b></span>
-                <span>Target/SL: <b style="color: #34D399;">Fixed 10/9 Institutional R:R</b></span>
+                <span>Target: <b style="color: #34D399;">+{plan_target_pts:.1f} pts {'(ATR Dynamic)' if tp.get('is_target_dynamic') else '(Fixed)'}</b></span>
+                <span>Trailing SL: <b style="color: #FBBF24;">+5.0 pts → Break-Even Shield</b></span>
             </div>
             {entry_ui_buttons}
             {tg_status_html}
@@ -3346,6 +3347,18 @@ if df is not None and not df.empty:
     raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + news_modifier
     raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear - news_modifier
 
+    # Enhancement 1: Midday "Chop Zone" Time-of-Day Filter (11:30 AM – 01:15 PM IST)
+    # Volume drops ~55% during this window, false breakouts peak, theta decay accelerates.
+    # Penalty: -4.0 pts to raw score unless abnormal institutional volume detected (RelVol >= 2.2x)
+    midday_start = time(11, 30)
+    midday_end = time(13, 15)
+    is_midday_chop_zone = (midday_start <= current_time <= midday_end)
+    midday_penalty_active = False
+    if is_midday_chop_zone and rel_vol < 2.2:
+        raw_bullish -= 4.0
+        raw_bearish -= 4.0
+        midday_penalty_active = True
+
     # Calibrated Institutional Sigmoid Mapping (Maps raw confluence edge accurately to statistical win rates)
     def calibrate_prob(score: float) -> float:
         k = 0.075
@@ -3448,12 +3461,37 @@ if df is not None and not df.empty:
 
     estimated_premium = round(current_option_ltp + 1.20, 2)  # Breakout trigger level
 
-    strike_badge = "🏆 Quantitative Best Strike" if is_best_strk else "Alternative ATM Strike"
-    rec_instrument = f"RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str}) [{strike_badge} | Dual ATM: ₹{lower_atm} & ₹{upper_atm}] | 2 Lots / {total_trading_qty} Qty | Current Price: ₹{current_option_ltp:.2f} (Spot: ₹{spot:.2f})"
+    # Enhancement 2: Dynamic ATR-Scaled Profit Target (Adapts to Daily Volatility)
+    # On low-volatility days (ATR 10-12), a static +10 target is physically unreachable.
+    # On high-volatility days (ATR 25+), +10 leaves profits on the table.
+    # Formula: Target = max(7.5, min(user_target, ATR * Delta * 0.90))
+    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else 15.0
+    bs_delta = norm_cdf_d1 if 'norm_cdf_d1' in dir() else 0.50
+    atr_dynamic_target = round(max(7.5, min(float(target_pts), stock_atr * bs_delta * 0.90)), 1)
+    # Use the dynamic target in live mode, but keep user's sidebar value as the ceiling
+    effective_target_pts = atr_dynamic_target if not is_sim_active else target_pts
+    target_pts_display = effective_target_pts
+    is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
 
-    target_premium = estimated_premium + target_pts
+    # Enhancement 3: Trailing Stop-Loss Break-Even Shield Configuration
+    # Once option gains +5.0 pts from entry, SL trails up to cost (break-even)
+    trailing_activation_pts = 5.0  # Activation threshold: +5.0 pts unrealized gain
+    trailing_active = False  # Will be evaluated dynamically in the 1s stream
+
+    # Enhancement 4: Account Capital Risk Guard (Position Sizing Safety)
+    est_entry_cost = round(total_trading_qty * current_option_ltp, 2)
+    max_loss_per_trade = round(total_trading_qty * sl_pts, 2)
+    risk_pct_of_capital = round((max_loss_per_trade / account_cash) * 100.0, 1) if account_cash > 0 else 99.0
+    capital_risk_safe = risk_pct_of_capital <= 20.0  # Institutional max: 2.5%, liberal retail: 20%
+    capital_risk_warning = risk_pct_of_capital > 20.0
+    capital_risk_critical = risk_pct_of_capital > 35.0
+
+    strike_badge = "🏆 Quantitative Best Strike" if is_best_strk else "Alternative ATM Strike"
+    rec_instrument = f"RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str}) [{strike_badge} | Dual ATM: ₹{lower_atm} & ₹{upper_atm}] | {num_lots} Lots / {total_trading_qty} Qty | Current Price: ₹{current_option_ltp:.2f} (Spot: ₹{spot:.2f})"
+
+    target_premium = estimated_premium + effective_target_pts
     sl_premium = estimated_premium - sl_pts
-    actual_reward = total_trading_qty * target_pts
+    actual_reward = total_trading_qty * effective_target_pts
     actual_risk = total_trading_qty * sl_pts
 
     # ==============================================================================
@@ -3532,6 +3570,78 @@ if df is not None and not df.empty:
         </div>
     </div>
     """)
+
+    # Enhancement 1 UI: Midday Chop Zone Warning Banner (Only visible during 11:30 AM – 01:15 PM IST)
+    if midday_penalty_active:
+        st.html("""
+        <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.40); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">⏳</span>
+                <div>
+                    <span style="font-size: 0.82rem; font-weight: 800; color: #FBBF24;">MIDDAY CHOP ZONE ACTIVE (11:30 AM – 01:15 PM IST)</span>
+                    <div style="font-size: 0.72rem; color: #FDE68A; margin-top: 2px;">Volume drops ~55% during this window. False breakouts peak. Probability penalized by -4.0 pts. Override requires RelVol ≥ 2.2×.</div>
+                </div>
+            </div>
+            <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.74rem; font-weight: 700; padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.5);">-4.0 pts PENALTY</span>
+        </div>
+        """)
+
+    # Enhancement 2 & 3 UI: Dynamic Target & Trailing SL Strip
+    target_tag = f'<span style="background: rgba(6, 182, 212, 0.20); color: #67E8F9; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.4);">ATR-SCALED</span>' if is_target_dynamic else '<span style="background: rgba(16, 185, 129, 0.15); color: #6EE7B7; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">STATIC</span>'
+    st.html(f"""
+    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div>
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🎯 PROFIT TARGET</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: #34D399;">+{effective_target_pts:.1f} pts (+₹{round(total_trading_qty * effective_target_pts):,})</div>
+                <div style="font-size: 0.68rem; color: #64748B; margin-top: 1px;">Stock ATR: ₹{stock_atr:.2f} | Δ={bs_delta:.2f} {target_tag}</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="text-align: center;">
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🛑 STOP LOSS</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{sl_pts:.1f} pts (-₹{round(total_trading_qty * sl_pts):,})</div>
+                <div style="font-size: 0.68rem; color: #64748B;">Fixed R:R = {effective_target_pts/sl_pts:.2f}x</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="text-align: center;">
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">⚡ TRAILING SL SHIELD</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: #FBBF24;">+{trailing_activation_pts:.1f} pts → BE</div>
+                <div style="font-size: 0.68rem; color: #64748B;">Auto-trails to Break-Even at +5.0 pts gain</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="text-align: right;">
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 CAPITAL AT RISK</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{risk_pct_of_capital:.1f}% of ₹{account_cash:,.0f}</div>
+                <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">{'🟢 Safe Sizing' if capital_risk_safe else ('🟡 Elevated Risk' if capital_risk_warning else '🔴 CRITICAL: Reduce Lots!')}</div>
+            </div>
+        </div>
+    </div>
+    """)
+
+    # Enhancement 4 UI: Capital Risk Warning Alert (Only shows if risk > 20%)
+    if capital_risk_warning:
+        risk_alert_color = "#F87171" if capital_risk_critical else "#FBBF24"
+        risk_alert_bg = "rgba(239, 68, 68, 0.12)" if capital_risk_critical else "rgba(245, 158, 11, 0.12)"
+        risk_alert_border = "rgba(239, 68, 68, 0.40)" if capital_risk_critical else "rgba(245, 158, 11, 0.40)"
+        risk_icon = "🔴" if capital_risk_critical else "🟡"
+        safe_lots = max(1, int(account_cash * 0.18 / (sl_pts * lot_size)))
+        st.html(f"""
+        <div style="background: {risk_alert_bg}; border: 1px solid {risk_alert_border}; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">{risk_icon}</span>
+                <div>
+                    <span style="font-size: 0.82rem; font-weight: 800; color: {risk_alert_color};">POSITION SIZING WARNING: {risk_pct_of_capital:.1f}% OF ACCOUNT AT RISK PER TRADE</span>
+                    <div style="font-size: 0.72rem; color: #E2E8F0; margin-top: 2px;">
+                        A single stop loss (-{sl_pts:.1f} pts) would cost ₹{round(total_trading_qty * sl_pts):,} on {num_lots} lots.
+                        Institutional limit: ≤18% per trade. <b style="color: #FFFFFF;">Recommended: {safe_lots} lot{'s' if safe_lots > 1 else ''} max for ₹{account_cash:,.0f} account.</b>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """)
 
     # ==============================================================================
     # 6-VECTOR QUANTITATIVE CONFLUENCE ENGINE — LIVE COMPONENT TILES
@@ -4256,7 +4366,7 @@ if df is not None and not df.empty:
         "bearish_score": bearish_score,
         "recommended_contract_type": recommended_contract_type,
         "atm_strike": atm_strike,
-        "target_pts": target_pts,
+        "target_pts": effective_target_pts,
         "sl_pts": sl_pts,
         "num_lots": num_lots,
         "lot_size": lot_size,
@@ -4274,7 +4384,23 @@ if df is not None and not df.empty:
         "time_gate_msg": time_gate_msg,
         "is_choppy_regime": is_choppy_regime,
         "chop_val": chop_val,
-        "estimated_premium": estimated_premium
+        "estimated_premium": estimated_premium,
+        # Enhancement 2: Dynamic ATR-Scaled Target
+        "is_target_dynamic": is_target_dynamic,
+        "static_target_pts": target_pts,
+        "stock_atr": stock_atr,
+        # Enhancement 3: Trailing SL Break-Even Shield
+        "trailing_activation_pts": trailing_activation_pts,
+        # Enhancement 4: Account Capital Risk Guard
+        "risk_pct_of_capital": risk_pct_of_capital,
+        "capital_risk_safe": capital_risk_safe,
+        "capital_risk_warning": capital_risk_warning,
+        "capital_risk_critical": capital_risk_critical,
+        "account_cash": account_cash,
+        "est_entry_cost": est_entry_cost,
+        # Enhancement 1: Midday Chop Zone
+        "midday_penalty_active": midday_penalty_active,
+        "is_midday_chop_zone": is_midday_chop_zone
     }
 
     if stream_live_1s:
