@@ -513,7 +513,7 @@ class GrowwMarketFeed:
                 "prefix": "₹",
                 "unit": "pts",
                 "icon": "🌏",
-                "category": "GIFT City Live"
+                "category": "Groww GIFT City"
             }
 
         # 3. Live S&P 500 (US Top Benchmark) & INDIA VIX via zero-delay fast_info
@@ -537,7 +537,7 @@ class GrowwMarketFeed:
                     "prefix": "$",
                     "unit": "pts",
                     "icon": "🇺🇸",
-                    "category": "Wall Street Live"
+                    "category": "Groww Wall Street"
                 }
 
             # India Volatility: INDIA VIX
@@ -558,7 +558,7 @@ class GrowwMarketFeed:
                     "prefix": "",
                     "unit": "pts",
                     "icon": "⚡",
-                    "category": "NSE Volatility"
+                    "category": "Groww Volatility"
                 }
         except Exception as e:
             logger.debug(f"Live yfinance benchmark fetch error: {e}")
@@ -582,17 +582,17 @@ class GrowwMarketFeed:
             "GIFT NIFTY": {
                 "name": "GIFT NIFTY", "symbol": "NSE IX:GIFTNIFTY", "price": 23175.50,
                 "change": 84.90, "pct_change": 0.37, "currency": "INR", "prefix": "₹",
-                "unit": "pts", "icon": "🌏", "category": "GIFT City Live"
+                "unit": "pts", "icon": "🌏", "category": "Groww GIFT City"
             },
             "S&P 500 (US)": {
                 "name": "S&P 500 (US)", "symbol": "US:SPX", "price": 5738.17,
                 "change": 39.28, "pct_change": 0.51, "currency": "USD", "prefix": "$",
-                "unit": "pts", "icon": "🇺🇸", "category": "Wall Street Live"
+                "unit": "pts", "icon": "🇺🇸", "category": "Groww Wall Street"
             },
             "INDIA VIX": {
                 "name": "INDIA VIX", "symbol": "NSE:INDIAVIX", "price": 12.16,
                 "change": -0.47, "pct_change": -3.68, "currency": "", "prefix": "",
-                "unit": "pts", "icon": "⚡", "category": "NSE Volatility"
+                "unit": "pts", "icon": "⚡", "category": "Groww Volatility"
             },
             "CRUDE OIL": {
                 "name": "CRUDE OIL (MCX)", "symbol": "MCX:CRUDEOIL", "contract": "MCX_CRUDEOIL19OCT26FUT",

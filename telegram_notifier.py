@@ -341,6 +341,18 @@ class TelegramNotifier:
             ]
         }
 
+    @staticmethod
+    def get_circuit_breaker_buttons() -> Dict[str, Any]:
+        """Burgundy/Red lock buttons for Circuit Breaker Daily Limit alert."""
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "🚨 OBSERVE SPOT ON GROWW", "url": "https://groww.in/stocks/reliance-industries-ltd"},
+                    {"text": "📊 VIEW GROWW POSITIONS", "url": "https://groww.in/options/reliance-industries-ltd"}
+                ]
+            ]
+        }
+
     @classmethod
     def send_test_alert(cls, bot_token: str, chat_ids_input: Any) -> Tuple[bool, str]:
         """Sends a verification test alert to confirm bot configuration across all recipients."""
@@ -667,5 +679,34 @@ class TelegramNotifier:
 • Fractal consolidation indicates strong institutional absorption with no directional breakout
 • Option buying in CHOP &gt; 61.8 suffers severe theta decay and false whipsaws
 • Strict capital preservation active — engine stands down until CHOP &lt; 45
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    @classmethod
+    def format_circuit_breaker_alert(
+        cls,
+        sl_count: int = 2,
+        max_allowed: int = 2,
+        capital_preserved: float = 66274.0,
+        spot: float = 1226.40,
+        account_name: str = "Teja",
+        **kwargs
+    ) -> str:
+        """Formats a MAX DAILY DRAWDOWN CIRCUIT BREAKER LOCK alert for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        return f"""
+🚨 <b>MAX DAILY DRAWDOWN REACHED — SESSION LOCKED</b> 🚨
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛑 <b>DAILY RISK GATE:</b> <b>CIRCUIT BREAKER TRIPPED</b>
+📊 <b>Consecutive Stop Losses Hit:</b> <b>{sl_count} / {max_allowed} Max Allowed</b>
+💰 <b>Protected Account Capital:</b> ₹{capital_preserved:,.2f}
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⏰ <b>Trigger Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔒 <b>Institutional Execution Mandate:</b>
+• Daily drawdown threshold reached — order generation automatically disabled.
+• Zero new trades permitted for the remainder of today's trading session.
+• Strict capital preservation protocol active: survive to trade another day.
+• Stance: <b>STAND DOWN & NO REVENGE TRADING</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 """

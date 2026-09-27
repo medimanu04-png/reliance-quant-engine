@@ -929,12 +929,12 @@ def render_live_macro_benchmarks_strip():
     cards_html = []
     order = ["NIFTY 50", "BANK NIFTY", "GIFT NIFTY", "S&P 500 (US)", "INDIA VIX", "CRUDE OIL"]
     benchmark_source_map = {
-        "NIFTY 50": "Groww (NSE)",
-        "BANK NIFTY": "Groww (NSE)",
-        "GIFT NIFTY": "NSE IX Live",
-        "S&P 500 (US)": "Wall Street Live",
-        "INDIA VIX": "NSE Volatility",
-        "CRUDE OIL": "Groww (MCX)"
+        "NIFTY 50": "Groww API (NSE)",
+        "BANK NIFTY": "Groww API (NSE)",
+        "GIFT NIFTY": "Groww API (NSE IX)",
+        "S&P 500 (US)": "Groww API (Global)",
+        "INDIA VIX": "Groww API (NSE VIX)",
+        "CRUDE OIL": "Groww API (MCX)"
     }
     fallback_b = NSEIndiaFetcher.get_live_market_benchmarks()
     for key in order:
@@ -2314,6 +2314,34 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         """)
 
     elif sim_mode == "CIRCUIT_BREAKER" or tp.get("is_circuit_breaker_tripped", False):
+        # Telegram Alert Dispatch
+        tg_status_html = ""
+        if tg_on and tg_token and tg_chat:
+            alert_sent_key = f"tg_sent_sim_circuit_{sim_run_id}"
+            if not st.session_state.get(alert_sent_key, False):
+                alert_msg = TelegramNotifier.format_circuit_breaker_alert(
+                    sl_count=tp.get('session_sl_count', 2),
+                    max_allowed=tp.get('max_daily_sl_allowed', 2),
+                    capital_preserved=tp.get('account_cash', 66274.0),
+                    spot=spot_tick
+                )
+                buttons = TelegramNotifier.get_circuit_breaker_buttons()
+                success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if success:
+                    st.session_state[alert_sent_key] = True
+                    st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
+                else:
+                    st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+
+            last_status = st.session_state.get("last_tg_status", "✅ Circuit Breaker Alert Dispatched!")
+            tg_status_html = f"""
+            <div style="background: rgba(225, 29, 72, 0.20); border: 1px solid #E11D48; border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.76rem; color: #FDA4AF; display: flex; justify-content: space-between; align-items: center;">
+                <span>📲 <b>TELEGRAM ALERT STATUS:</b> {last_status}</span>
+                <span style="color: #FFFFFF; font-weight: 700;">Check your Telegram App!</span>
+            </div>
+            """
+
         audio_circuit_js = f"""
         <script>
         (function() {{
@@ -2384,6 +2412,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     📊 OBSERVE MARKET (READ-ONLY) ↗
                 </a>
             </div>
+            {tg_status_html}
         </div>
         {audio_circuit_js}
         """)

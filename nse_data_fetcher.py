@@ -282,7 +282,7 @@ class NSEIndiaFetcher:
                 "prefix": "₹",
                 "unit": "pts",
                 "icon": "🌏",
-                "category": "GIFT City Live"
+                "category": "Groww GIFT City"
             },
             "S&P 500 (US)": {
                 "name": "S&P 500 (US)",
@@ -294,7 +294,7 @@ class NSEIndiaFetcher:
                 "prefix": "$",
                 "unit": "pts",
                 "icon": "🇺🇸",
-                "category": "Wall Street Live"
+                "category": "Groww Wall Street"
             },
             "INDIA VIX": {
                 "name": "INDIA VIX",
@@ -306,7 +306,7 @@ class NSEIndiaFetcher:
                 "prefix": "",
                 "unit": "pts",
                 "icon": "⚡",
-                "category": "NSE Volatility"
+                "category": "Groww Volatility"
             },
             "CRUDE OIL": {
                 "name": "CRUDE OIL (MCX)",
