@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, time, timezone
+import time as time_mod
 import json
 import math
 import pytz
@@ -884,7 +885,7 @@ with top_col2:
 
     @st.fragment(run_every="5s")
     def render_auto_rescan_controller():
-        now = time.time()
+        now = time_mod.time()
         if "last_auto_rescan_ts" not in st.session_state:
             st.session_state["last_auto_rescan_ts"] = now
 
