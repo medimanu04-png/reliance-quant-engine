@@ -4665,6 +4665,8 @@ if df is not None and not df.empty:
         cards_html.append(card_str)
 
     all_vector_cards_str = "".join(cards_html)
+    raw_composite_pts = base_confluence + (news_modifier if recommended_contract_type == "CE" else -news_modifier)
+    active_conf_score = dominant_score
     st.html(f"""
     <div style="margin: 16px 0 14px 0;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
@@ -4678,7 +4680,7 @@ if df is not None and not df.empty:
                 </span>
             </div>
             <div style="font-size: 0.75rem; color: #94A3B8;">
-                Aggregated Confluence: <b style="color: #34D399; font-size: 0.85rem;">{base_confluence:.1f} / 100 pts</b> &nbsp;|&nbsp; Macro News Modifier: <b style="color: {'#34D399' if news_modifier >= 0 else '#F87171'}; font-size: 0.85rem;">{news_modifier:+.1f} pts</b> &nbsp;|&nbsp; Net Confluence: <b style="color: #FFFFFF; font-size: 0.90rem;">{bullish_score}%</b>
+                Aggregated: <b style="color: #34D399; font-size: 0.85rem;">{base_confluence:.1f} pts</b> &nbsp;|&nbsp; Macro News: <b style="color: {'#34D399' if news_modifier >= 0 else '#F87171'}; font-size: 0.85rem;">{news_modifier:+.1f} pts</b> <span style="color: #64748B;">(Raw: {raw_composite_pts:.1f} pts)</span> &nbsp;|&nbsp; Calibrated Win Rate: <b style="color: #FFFFFF; font-size: 0.90rem; cursor: help;" title="Sigmoid Calibration: Raw {raw_composite_pts:.1f} pts mapped via institutional logistic curve (58.0 pts = 50% neutral baseline) into statistical win probability">{active_conf_score}%</b>
             </div>
         </div>
         <div class="vector-grid">
