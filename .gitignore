@@ -27,6 +27,7 @@ desktop.ini
 .system_generated/
 
 push_to_github.bat
+run_app.bat
 
 # Sensitive config files (contain API tokens/secrets)
 groww_config.json
