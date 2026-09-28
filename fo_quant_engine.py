@@ -45,27 +45,27 @@ if sys.stdout.encoding != 'utf-8':
 
 
 # ============================================================================
-# 1. RISK & POSITION BUDGET (RELIANCE 2 LOTS)
+# 1. RISK & POSITION BUDGET (RELIANCE 1 LOT - STRICT <= 4% CAPITAL PRESERVATION)
 # ============================================================================
 @dataclass
 class RelianceRiskBudget:
-    total_capital: float = 50000.0
+    total_capital: float = 66274.0
     lot_size: int = 500
-    num_lots: int = 2
-    target_pts: float = 8.0
-    stop_loss_pts: float = 4.0
+    num_lots: int = 1
+    target_pts: float = 10.0
+    stop_loss_pts: float = 4.5  # Dynamic 1.5x 5m ATR (Strictly <= 4.0% of Capital)
 
     @property
     def total_quantity(self) -> int:
-        return self.lot_size * self.num_lots  # 1,000 Units
+        return self.lot_size * self.num_lots  # 500 Units
 
     @property
     def max_risk_rupees(self) -> float:
-        return self.total_quantity * self.stop_loss_pts  # Rs. 4,000.00
+        return self.total_quantity * self.stop_loss_pts  # Rs. 2,250.00 (3.4% of capital)
 
     @property
     def target_reward_rupees(self) -> float:
-        return self.total_quantity * self.target_pts  # Rs. 8,000.00
+        return self.total_quantity * self.target_pts  # Rs. 5,000.00 (1:2.22 R:R Ratio)
 
 
 # ============================================================================
@@ -651,7 +651,7 @@ class UltraHighConvictionRelianceEngine:
         active_data = low_data if atm_strike == lower_atm else high_data
         current_option_ltp = active_data["call_ltp"] if recommended_type == "CE" else active_data["put_ltp"]
         entry_premium = round(current_option_ltp + 1.20, 2)
-        contract_name = f"RELIANCE {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | 2 Lots / 1,000 Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
+        contract_name = f"RELIANCE {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | {self.risk.num_lots} Lot / {self.risk.total_quantity} Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
         tp_premium = entry_premium + self.risk.target_pts
         sl_premium = entry_premium - self.risk.stop_loss_pts
 

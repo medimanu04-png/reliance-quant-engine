@@ -1147,15 +1147,15 @@ scrip_choice = "RELIANCE"
 
 timeframe = st.sidebar.selectbox("Candle Timeframe", ["5m", "15m"], index=0)
 
-# Contract Lots Selection (Fixed to 2 Lots default for Reliance)
+# Contract Lots Selection (Institutional Capital Preservation: Default 1 Lot)
 lot_size = 500
-num_lots = st.sidebar.number_input("Number of Lots (RELIANCE: 500 Qty/Lot)", min_value=1, max_value=10, value=2, step=1)
+num_lots = st.sidebar.number_input("Number of Lots (RELIANCE: 500 Qty/Lot)", min_value=1, max_value=10, value=1, step=1)
 total_trading_qty = lot_size * num_lots
 
 # Operational Strategy & Risk Engine Parameters (Grid-Search Optimal #1 Model)
 with st.sidebar.expander("⚙️ Optimal Strategy & Risk Parameters", expanded=True):
-    target_pts = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=10.0, step=0.5, help="Optimal backtested target (+10.0 pts = +₹10,000 / 2 lots)")
-    sl_pts = st.number_input("Stop Loss (pts)", min_value=1.0, max_value=30.0, value=9.0, step=0.5, help="Optimal backtested stop loss (-9.0 pts = -₹9,000 / 2 lots)")
+    target_pts = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=10.0, step=0.5, help="Optimal backtested target (+10.0 pts = +₹5,000 / 1 lot)")
+    sl_pts = st.number_input("Stop Loss Reference Cap (pts)", min_value=1.0, max_value=30.0, value=5.0, step=0.5, help="Dynamic Stop Loss defaults to 1.5x 5m ATR, strictly capped <= 4.0% of account capital")
     MIN_HIT_PERCENTAGE = st.slider("Directional Gate Threshold (%)", min_value=50.0, max_value=85.0, value=60.0, step=1.0, help="Optimal execution gate (>60% filters consolidation chop while capturing high-probability directional trends)")
     
     # Enhancement: Max Daily Loss / Circuit Breaker Safeguard
@@ -1176,10 +1176,12 @@ with st.sidebar.expander("⚙️ Optimal Strategy & Risk Parameters", expanded=T
         st.error(f"🚨 **CIRCUIT BREAKER TRIPPED**: {st.session_state['session_sl_count']} SLs hit today. Live trading locked for capital defense.")
 
     st.html("""
-    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; padding: 6px 10px; font-size: 0.72rem; color: #6EE7B7; line-height: 1.4;">
-        🏆 <b>#1 Optimal Execution Setup:</b><br>
-        Target: <b>+10.0 pts</b> | SL: <b>-9.0 pts</b> | Gate: <b>&gt;60%</b><br>
-        Net Profit: <b>+₹107,440.00</b> (61.2% Win Rate, PF 2.46x).
+    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; padding: 6px 10px; font-size: 0.72rem; color: #6EE7B7; line-height: 1.45;">
+        🛡️ <b>Capital-Preserving Institutional Model:</b><br>
+        Sizing: <b>1 Lot (500 Qty)</b> | Risk Cap: <b>&le; 4.0% Account Cash</b><br>
+        Dynamic Stop Loss: <b>1.5× 5m ATR</b> | Target: <b>+10.0 pts</b><br>
+        IV Filter: <b>IVP &lt; 50% Clean Window</b> (Crush Lock if &gt;70%)<br>
+        Macro Gate: <b>Brent/MCX Crude O2C Margin Gate Active</b>
     </div>
     """)
 
@@ -2121,10 +2123,10 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     plan_contract_type = tp.get("recommended_contract_type", "CE")
     plan_strike = tp.get("atm_strike", corridor["lower_strike"])
     plan_target_pts = tp.get("target_pts", 10.0)
-    plan_sl_pts = tp.get("sl_pts", 9.0)
-    plan_num_lots = tp.get("num_lots", 2)
+    plan_sl_pts = tp.get("sl_pts", 4.5)
+    plan_num_lots = tp.get("num_lots", 1)
     plan_lot_size = tp.get("lot_size", 500)
-    plan_qty = tp.get("total_trading_qty", 1000)
+    plan_qty = tp.get("total_trading_qty", 500)
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
     plan_score = tp.get("dominant_score", 72.0)
     plan_gate = tp.get("min_hit_percentage", 60.0)
@@ -3631,6 +3633,14 @@ if df is not None and not df.empty:
     nifty_fighting_bull = nifty_pct < -0.30  # Counter-trend danger: Buying Call while Nifty is dumping
     nifty_fighting_bear = nifty_pct > 0.30   # Counter-trend danger: Buying Put while Nifty is surging
 
+    # Macro Factor: Brent / MCX Crude Oil Telemetry & Reliance O2C Refining Margin Alignment
+    crude_info = benchmarks.get("CRUDE OIL", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
+    crude_pct = float(crude_info.get("pct_change", 0.0))
+    crude_price = float(crude_info.get("price", 8848.0))
+    crude_dumping_severe = crude_pct <= -2.5  # Heavy crude slump damages Reliance O2C refining margin sentiment
+    crude_dumping_mild = -2.5 < crude_pct <= -1.2
+    crude_rallying = crude_pct >= 1.5
+
     # Enhancement 2: Institutional Opening Range Volume (ORV) Confirmation
     # Validates if 15m breakout is supported by real institutional volume (vol >= 1.4x SMA20)
     vol_avg20_orb = df['Volume'].rolling(20).mean().iloc[-1] if 'Volume' in df.columns else 1.0
@@ -3685,6 +3695,14 @@ if df is not None and not df.empty:
     elif nifty_fighting_bull:
         v1_bull = max(0.0, v1_bull - 4.0)  # Counter-trend index drag penalty!
 
+    # Crude Oil Refining Margin Alignment
+    if crude_rallying:
+        v1_bull += 2.0  # Crude rally fuels Reliance O2C refining tailwind
+    elif crude_dumping_severe:
+        v1_bull = max(0.0, v1_bull - 4.5)  # Severe crude dump creates heavy institutional selling pressure
+    elif crude_dumping_mild:
+        v1_bull = max(0.0, v1_bull - 2.0)
+
     # Triple-Timeframe Institutional Invariance
     if mtf_matrix["is_triple_bullish"]:
         v1_bull += 4.0  # M15 + M5 Structural Synchronization Bonus
@@ -3721,6 +3739,14 @@ if df is not None and not df.empty:
         v1_bear += 2.0  # NIFTY 50 Index Headwind Confluence
     elif nifty_fighting_bear:
         v1_bear = max(0.0, v1_bear - 4.0)  # Counter-trend index drag penalty!
+
+    # Crude Oil Sector Alignment
+    if crude_dumping_severe:
+        v1_bear += 3.5  # Downside breakdown confirmed by energy sector margin compression
+    elif crude_dumping_mild:
+        v1_bear += 1.5
+    elif crude_rallying:
+        v1_bear = max(0.0, v1_bear - 3.0)  # Crude rally acts as support for spot
 
     if mtf_matrix["is_triple_bearish"]:
         v1_bear += 4.0  # M15 + M5 Structural Synchronization Bonus
@@ -3917,12 +3943,29 @@ if df is not None and not df.empty:
     is_trending_regime = chop_val < 45.0
     is_choppy_regime = chop_val > 61.8
 
-    # India VIX Telemetry
+    # India VIX & Live Reliance ATM IV Percentile Telemetry
     vix_data = benchmarks.get("INDIA VIX", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
     vix_val = float(vix_data.get("price", 13.50))
     vix_pct_chg = float(vix_data.get("pct_change", 0.0))
     vix_stable_regime = (11.0 <= vix_val <= 20.0) and (vix_pct_chg >= -2.5)
     vix_crush_warning = vix_pct_chg < -3.5  # Warning: Severe IV crush eating option premium
+
+    # Live Reliance ATM Implied Volatility & IV Rank (IVR / IVP)
+    dte_val = expiry_plan.get("dte", 30)
+    T_val = dte_val / 365.0
+    if T_val > 0 and spot > 0 and current_option_ltp > 0:
+        # Annualized ATM IV from current option premium (Brenner-Subrahmanyam approximation)
+        approx_iv = (current_option_ltp / (spot * 0.40)) * math.sqrt(1.0 / T_val)
+        rel_iv = round(max(0.12, min(0.50, approx_iv)), 3)
+    else:
+        rel_iv = 0.212
+
+    # Reliance 1-Year Historical IV Range (NSE: min 14.5%, max 35.0%, median 20.5%)
+    iv_min = 0.145
+    iv_max = 0.350
+    iv_percentile = round(max(0.0, min(100.0, ((rel_iv - iv_min) / (iv_max - iv_min)) * 100.0)), 1)
+    iv_elevated_crush_risk = iv_percentile > 70.0  # High IV: naked options buying is statistically disadvantageous
+    iv_cheap_window = iv_percentile < 50.0  # Cheap IV: optimal statistical edge for naked options buying
 
     atr_pts = 7.0 if atr_viable else 3.5
     v4_bull += atr_pts
@@ -3946,6 +3989,14 @@ if df is not None and not df.empty:
     elif vix_crush_warning:
         v4_bull = max(0.0, v4_bull - 3.0)  # IV crush penalty for long options!
         v4_bear = max(0.0, v4_bear - 3.0)
+
+    # IV Percentile (IVP) Edge / Climax Penalty
+    if iv_cheap_window:
+        v4_bull += 2.0  # Cheap IV gives full statistical expansion room (+2.0)
+        v4_bear += 2.0
+    elif iv_elevated_crush_risk:
+        v4_bull = max(0.0, v4_bull - 4.0)  # Extreme IV crush penalty (-4.0)
+        v4_bear = max(0.0, v4_bear - 4.0)
 
     v4_bull = min(15.0, max(0.0, v4_bull))
     v4_bear = min(15.0, max(0.0, v4_bear))
@@ -4138,7 +4189,7 @@ if df is not None and not df.empty:
     # Enhancement: Dynamic ATR & India VIX Scaled Profit Target
     # Low-vol days (VIX < 12.0) -> targets scale down to 7.0-8.5 pts (fast scalps)
     # High-vol days (VIX >= 15.0) -> targets scale up to 11.5-14.0 pts (let runners run)
-    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else 15.0
+    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else 2.5
     bs_delta = norm_cdf_d1 if 'norm_cdf_d1' in dir() else 0.50
     vix_val_current = float(benchmarks.get("INDIA VIX", {}).get("price", 13.50)) if "benchmarks" in locals() or "benchmarks" in globals() else 13.50
     vix_scaler = max(0.80, min(1.35, vix_val_current / 13.50))
@@ -4149,37 +4200,52 @@ if df is not None and not df.empty:
     target_pts_display = effective_target_pts
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
 
-    # Enhancement 3: Trailing Stop-Loss Break-Even Shield Configuration
-    # Once option gains +5.0 pts from entry, SL trails up to cost (break-even)
-    trailing_activation_pts = 5.0  # Activation threshold: +5.0 pts unrealized gain
-    trailing_active = False  # Will be evaluated dynamically in the 1s stream
+    # Enhancement 2.5: Dynamic ATR(14) Stop Loss (1.5 * 5m ATR scaled to Option Premium)
+    atr_dynamic_sl = round(max(2.5, min(7.5, 1.5 * stock_atr)), 1)
+    # Institutional Risk Cap: Stop Loss strictly capped so risk <= 4.0% of account cash
+    max_sl_from_capital_cap = round((account_cash * 0.04) / max(1, total_trading_qty), 1)
+    effective_sl_pts = min(atr_dynamic_sl, max_sl_from_capital_cap) if not is_sim_active else sl_pts
+    is_sl_dynamic = not is_sim_active
 
-    # Enhancement 4: Account Capital Risk Guard (Position Sizing Safety)
+    # Enhancement 3: Trailing Stop-Loss Break-Even Shield Configuration
+    trailing_activation_pts = round(max(3.0, effective_sl_pts * 0.8), 1)
+    trailing_active = False
+
+    # Enhancement 4: Account Capital Risk Guard (Strictly <= 4.0% of Account Capital)
     est_entry_cost = round(total_trading_qty * current_option_ltp, 2)
-    max_loss_per_trade = round(total_trading_qty * sl_pts, 2)
+    max_loss_per_trade = round(total_trading_qty * effective_sl_pts, 2)
     risk_pct_of_capital = round((max_loss_per_trade / account_cash) * 100.0, 1) if account_cash > 0 else 99.0
-    capital_risk_safe = risk_pct_of_capital <= 20.0  # Institutional max: 2.5%, liberal retail: 20%
-    capital_risk_warning = risk_pct_of_capital > 20.0
-    capital_risk_critical = risk_pct_of_capital > 35.0
+    capital_risk_safe = risk_pct_of_capital <= 4.0  # Institutional standard: strictly <= 4.0%
+    capital_risk_warning = 4.0 < risk_pct_of_capital <= 6.0
+    capital_risk_critical = risk_pct_of_capital > 6.0
 
     # Enhancement 5: Max Daily Drawdown Circuit Breaker Enforcement
-    # Locks execution gate if consecutive daily SL limit is exceeded
     if is_circuit_breaker_tripped and not is_sim_active:
         is_tradable = False
 
     # Enhancement 6: Real-Money Data Integrity Guard
-    # If historical candle feed is synthetic, kill live order generation to protect real capital
     is_synthetic_feed = st.session_state.get("is_synthetic_feed", False)
     if is_synthetic_feed and not is_sim_active:
+        is_tradable = False
+
+    # Enhancement 7: Institutional Volatility Crush & Macro Crude Oil Gates
+    # Gate A: IV Percentile > 70% Stand Down (Vega exhaustion / Volatility crush risk)
+    iv_gate_failed = bool(iv_elevated_crush_risk)
+    if iv_gate_failed and not is_sim_active:
+        is_tradable = False
+
+    # Gate B: Crude Oil Dumping (<= -2.5%) Stand Down for CE (Refining margin collapse)
+    crude_gate_failed = bool(recommended_contract_type == "CE" and crude_dumping_severe)
+    if crude_gate_failed and not is_sim_active:
         is_tradable = False
 
     strike_badge = "🏆 Quantitative Best Strike" if is_best_strk else "Alternative ATM Strike"
     rec_instrument = f"RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str}) [{strike_badge} | Dual ATM: ₹{lower_atm} & ₹{upper_atm}] | {num_lots} Lots / {total_trading_qty} Qty | Current Price: ₹{current_option_ltp:.2f} (Spot: ₹{spot:.2f})"
 
     target_premium = estimated_premium + effective_target_pts
-    sl_premium = estimated_premium - sl_pts
+    sl_premium = estimated_premium - effective_sl_pts
     actual_reward = total_trading_qty * effective_target_pts
-    actual_risk = total_trading_qty * sl_pts
+    actual_risk = total_trading_qty * effective_sl_pts
 
     # Institutional Real-World Indian F&O Statutory Cost Calculations
     costs_target = IndianFOTransactionCostEngine.calculate_round_trip(
@@ -4202,11 +4268,11 @@ if df is not None and not df.empty:
     # Kelly fraction: f* = (p * b - q) / b
     p_win = dominant_score / 100.0
     q_loss = 1.0 - p_win
-    b_ratio = effective_target_pts / max(1.0, sl_pts)
+    b_ratio = effective_target_pts / max(1.0, effective_sl_pts)
     raw_kelly = (p_win * b_ratio - q_loss) / max(0.01, b_ratio)
     half_kelly = max(0.0, raw_kelly * 0.5)
-    kelly_risk_capital = account_cash * min(0.18, half_kelly) if half_kelly > 0 else account_cash * 0.10
-    kelly_recommended_lots = max(1, min(10, int(kelly_risk_capital / max(1.0, (sl_pts * lot_size)))))
+    kelly_risk_capital = account_cash * min(0.04, half_kelly) if half_kelly > 0 else account_cash * 0.04
+    kelly_recommended_lots = max(1, min(4, int(kelly_risk_capital / max(1.0, (effective_sl_pts * lot_size)))))
 
     # ==============================================================================
     # 6. RELIANCE DASHBOARD METRICS & TRADE STATUS
@@ -4318,52 +4384,76 @@ if df is not None and not df.empty:
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="text-align: center;">
                 <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🛑 STOP LOSS (NET)</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{sl_pts:.1f} pts (-₹{net_actual_risk:,.0f} Max)</div>
-                <div style="font-size: 0.68rem; color: #64748B;">Gross Loss: -₹{round(actual_risk):,} | R:R = {effective_target_pts/sl_pts:.2f}x</div>
+                <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f} Max)</div>
+                <div style="font-size: 0.68rem; color: #64748B;">Gross Loss: -₹{round(actual_risk):,} | R:R = {effective_target_pts/max(0.1, effective_sl_pts):.2f}x <span style="background: rgba(239, 68, 68, 0.18); color: #FCA5A5; padding: 1px 6px; border-radius: 3px; font-weight: 700;">1.5× ATR</span></div>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="text-align: center;">
                 <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">⚡ TRAILING SL SHIELD</span>
                 <div style="font-size: 1.10rem; font-weight: 900; color: #FBBF24;">+{trailing_activation_pts:.1f} pts → BE</div>
-                <div style="font-size: 0.68rem; color: #64748B;">Auto-trails to Break-Even at +5.0 pts gain</div>
+                <div style="font-size: 0.68rem; color: #64748B;">Auto-trails to Break-Even at +{trailing_activation_pts:.1f} pts gain</div>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="text-align: center;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">📊 ALPHA DIVERGENCE</span>
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">📊 ALPHA & CRUDE</span>
                 <div style="font-size: 1.10rem; font-weight: 900; color: {alpha_status_color};">{alpha_spread:+.2f}% vs NIFTY</div>
-                <div style="font-size: 0.68rem; color: #64748B;">{alpha_status_badge}</div>
+                <div style="font-size: 0.68rem; color: #64748B;">Crude: <b style="color: {'#34D399' if crude_pct >= 0 else '#F87171'};">{crude_pct:+.1f}%</b> ({'Refining Tailwind' if crude_pct >= 1.5 else ('O2C Margin Drag' if crude_pct <= -2.0 else 'Steady')})</div>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="text-align: right;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 KELLY SIZING</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{kelly_recommended_lots} Lots Rec ({risk_pct_of_capital:.1f}% Risk)</div>
-                <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">{'🟢 Half-Kelly Optimal' if capital_risk_safe else ('🟡 Cap at ' + str(kelly_recommended_lots) + ' Lots' if capital_risk_warning else '🔴 Overleveraged!')}</div>
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 KELLY SIZING (≤4% CAP)</span>
+                <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{kelly_recommended_lots} Lot{'s' if kelly_recommended_lots > 1 else ''} Rec ({risk_pct_of_capital:.1f}% Risk)</div>
+                <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">{'🟢 Capital Safe (≤4%)' if capital_risk_safe else ('🟡 Near 4% Cap' if capital_risk_warning else '🔴 Overleveraged!')}</div>
             </div>
         </div>
     </div>
     """)
 
-    # Enhancement 4 UI: Capital Risk Warning Alert (Only shows if risk > 20%)
+    # Capital Risk Warning Alert (Triggers if risk exceeds 4.0% institutional budget)
     if capital_risk_warning:
         risk_alert_color = "#F87171" if capital_risk_critical else "#FBBF24"
         risk_alert_bg = "rgba(239, 68, 68, 0.12)" if capital_risk_critical else "rgba(245, 158, 11, 0.12)"
         risk_alert_border = "rgba(239, 68, 68, 0.40)" if capital_risk_critical else "rgba(245, 158, 11, 0.40)"
         risk_icon = "🔴" if capital_risk_critical else "🟡"
-        safe_lots = max(1, int(account_cash * 0.18 / (sl_pts * lot_size)))
+        safe_lots = max(1, int(account_cash * 0.04 / (max(0.1, effective_sl_pts) * lot_size)))
         st.html(f"""
         <div style="background: {risk_alert_bg}; border: 1px solid {risk_alert_border}; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 1.2rem;">{risk_icon}</span>
                 <div>
-                    <span style="font-size: 0.82rem; font-weight: 800; color: {risk_alert_color};">POSITION SIZING WARNING: {risk_pct_of_capital:.1f}% OF ACCOUNT AT RISK PER TRADE</span>
+                    <span style="font-size: 0.82rem; font-weight: 800; color: {risk_alert_color};">POSITION SIZING RISK ALERT: {risk_pct_of_capital:.1f}% OF ACCOUNT AT RISK (EXCEEDS 4.0% CAP)</span>
                     <div style="font-size: 0.72rem; color: #E2E8F0; margin-top: 2px;">
-                        A single stop loss (-{sl_pts:.1f} pts) would cost ₹{round(total_trading_qty * sl_pts):,} on {num_lots} lots.
-                        Institutional limit: ≤18% per trade. <b style="color: #FFFFFF;">Recommended: {safe_lots} lot{'s' if safe_lots > 1 else ''} max for ₹{account_cash:,.0f} account.</b>
+                        A single stop loss (-{effective_sl_pts:.1f} pts) would cost ₹{round(total_trading_qty * effective_sl_pts):,} on {num_lots} lots.
+                        Strict institutional risk preservation: ≤4.0% per trade. <b style="color: #FFFFFF;">Mandatory setting: {safe_lots} lot max for ₹{account_cash:,.0f} capital.</b>
                     </div>
                 </div>
+            </div>
+        </div>
+        """)
+
+    # Execution Gate Alert 1: IV Percentile > 70% Stand Down Banner
+    if iv_gate_failed and not is_sim_active:
+        st.html(f"""
+        <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.3rem;">🛑</span>
+            <div>
+                <span style="font-weight: 800; color: #F87171; font-size: 0.85rem;">VOLATILITY CRUSH EXECUTION LOCK: IV PERCENTILE AT {iv_percentile:.1f}% (&gt; 70% THRESHOLD)</span>
+                <div style="font-size: 0.72rem; color: #FCA5A5; margin-top: 2px;">Buying naked options at peak IV is mathematically disadvantageous due to impending post-expansion vega crush. Stand down until IV drops below 50.0%.</div>
+            </div>
+        </div>
+        """)
+
+    # Execution Gate Alert 2: Crude Oil Dumping (<= -2.5%) Stand Down Banner
+    if crude_gate_failed and not is_sim_active:
+        st.html(f"""
+        <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.3rem;">🛢️</span>
+            <div>
+                <span style="font-weight: 800; color: #F87171; font-size: 0.85rem;">CRUDE OIL MACRO GATE LOCKED: MCX/BRENT CRUDE DUMPING ({crude_pct:+.2f}%)</span>
+                <div style="font-size: 0.72rem; color: #FCA5A5; margin-top: 2px;">Crude oil slump imposes acute refining margin and inventory write-down headwinds on Reliance O2C. Long CE execution locked to protect capital.</div>
             </div>
         </div>
         """)
@@ -4464,7 +4554,8 @@ if df is not None and not df.empty:
         f"M1 Scalp Micro-Timing is in {mtf_matrix['m1']['status'].replace('_', ' ')} (Optimal Limit Order saves ₹{mtf_matrix['m1']['premium_savings_pts']:.2f}/unit on option premium). "
         f"SuperTrend active at ₹{latest['SuperTrend']:.2f} ({'Buy Regime' if st_bullish else 'Sell Regime'}). "
         f"15m ORB sits at ₹{orb_l:.2f} - ₹{orb_h:.2f} ({'Breakout Above ORB High' if orb_breakout else ('Breakdown Below ORB Low' if orb_breakdown else 'Inside 15m Range')}). "
-        f"NIFTY 50 Index Beta is at {nifty_pct:+.2f}% ({'supporting trend' if (nifty_bull if recommended_contract_type == 'CE' else nifty_bear) else ('counter-trend drag warning' if (nifty_fighting_bull if recommended_contract_type == 'CE' else nifty_fighting_bear) else 'neutral market beta')})."
+        f"NIFTY 50 Index Beta is at {nifty_pct:+.2f}%. "
+        f"MCX/Brent Crude Oil is at {crude_pct:+.2f}% ({'Refining Margin Tailwind (+2.0)' if crude_rallying else ('O2C Margin Drag Warning (-4.5)' if crude_dumping_severe else 'Steady')})."
     )
     v2_beh = (
         f"Spot price is sustaining {spot - latest['VWAP']:+.2f} pts {'above' if above_vwap else 'below'} institutional Session VWAP (₹{latest['VWAP']:.2f}, Z-score: {vwap_z:+.2f}σ). "
@@ -4480,10 +4571,10 @@ if df is not None and not df.empty:
     v3_beh = f"Call writers are {call_trap_str} while Put open interest {put_trap_str}. Total corridor PCR sits at {pcr_val:.2f} with Max Pain at ₹{chain_oi['max_pain']:.0f}, Call Wall at ₹{call_wall:.0f}, and Put Wall at ₹{put_wall:.0f}."
 
     v4_beh = (
-        f"Daily ATR of ₹{latest['ATR']:.2f} "
-        f"{'provides full statistical room to hit the +10.0 pts target without hitting range resistance' if atr_viable else 'reflects narrow range compression'}. "
+        f"Daily ATR of ₹{latest['ATR']:.2f} (5m ATR ₹{stock_atr:.2f} -> Dynamic 1.5x SL: {effective_sl_pts:.1f} pts, ≤4% Account Risk). "
         f"Choppiness Index (CHOP-14) at {chop_val:.1f} signals {'a strong directional expansion regime' if is_trending_regime else ('an extreme sideways consolidation trap (Stand Down enforced)' if is_choppy_regime else 'moderate fluctuation')}. "
-        f"India VIX sits at {vix_val:.2f} ({vix_pct_chg:+.2f}%), {'preserving option extrinsic time value against volatility crush' if vix_stable_regime else ('warning of rapid implied volatility contraction' if vix_crush_warning else 'steady volatility')}. "
+        f"Reliance ATM Implied Volatility sits at {rel_iv*100.0:.1f}% (IV Percentile: {iv_percentile:.1f}%, {'🟢 Clean Buying Window (<50%)' if iv_cheap_window else ('🔴 Peak Volatility Crush Hazard (>70%)' if iv_elevated_crush_risk else '🟡 Fair Volatility')}). "
+        f"India VIX sits at {vix_val:.2f} ({vix_pct_chg:+.2f}%). "
         f"Bollinger bands show {'active breakout expansion' if bb_expanding else 'steady oscillation'}."
     )
     v5_beh = (
@@ -4506,7 +4597,7 @@ if df is not None and not df.empty:
             "metrics": [
                 ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", f"{'🟢' if mtf_matrix['m15']['is_bullish'] else ('🔴' if mtf_matrix['m15']['is_bearish'] else '🟡')} 9/20/50 EMA Stack"),
                 ("M5 Setup Confluence", f"{mtf_matrix['m5']['trigger'].replace('_', ' ')}", f"{'🟢 Aligned (+4)' if mtf_matrix['is_triple_bullish'] else ('🔴 Conflict (-4)' if mtf_matrix['is_conflict'] else '🟡 Neutral')}"),
-                ("M1 Scalp Micro-Timing", f"Limit: ₹{mtf_matrix['m1']['rec_limit_premium_ce']:.2f}", f"🟢 Save ₹{mtf_matrix['m1']['premium_savings_pts']:.2f} ({mtf_matrix['m1']['status'].replace('_', ' ')})"),
+                ("Brent / MCX Crude Telemetry", f"{crude_pct:+.2f}% (₹{crude_price:,.0f})", "🟢 O2C Tailwind (+2)" if crude_rallying else ("🔴 Severe Margin Drag (-4.5)" if crude_dumping_severe else "🟡 Steady")),
                 ("15m ORB & Camarilla H4/L4", f"ORB: ₹{orb_h:.1f} | H4: ₹{cam_h4:.1f}", "🟢 Breakout (+5)" if (orb_breakout or cam_breakout_bull) else ("🔴 Breakdown (+5)" if (orb_breakdown or cam_breakdown_bear) else "🟡 Value Range"))
             ],
             "behavior": v1_beh
@@ -4549,9 +4640,9 @@ if df is not None and not df.empty:
             "max": 15.0,
             "source": "Wilder's ATR (14) + CHOP + India VIX",
             "metrics": [
-                ("ATR (14) Daily Range", f"₹{latest['ATR']:.2f} pts ({(latest['ATR']/spot)*100.0:.2f}%)", "🟢 Viable for +10 pts (+7)" if atr_viable else "🔴 Low Room (0)"),
+                ("Reliance IV Percentile (IVP)", f"{iv_percentile:.1f}% (IV {rel_iv*100.0:.1f}%)", "🟢 Clean Buying Window (+2)" if iv_cheap_window else ("🔴 IV Crush Lock (-4)" if iv_elevated_crush_risk else "🟡 Fair Value")),
                 ("Choppiness Index (CHOP-14)", f"{chop_val:.1f} (Threshold 61.8)", "🟢 Trending Expansion (+4)" if is_trending_regime else ("🛑 Choppy Stand Down (0)" if is_choppy_regime else "🟡 Neutral Oscillation (+2)")),
-                ("India VIX Volatility Stability", f"{vix_val:.2f} pts ({vix_pct_chg:+.2f}%)", "🟢 IV Protected (+2)" if vix_stable_regime else ("🔴 IV Crush Alert (-3)" if vix_crush_warning else "🟡 Steady Volatility")),
+                ("Dynamic ATR(14) Stop Loss", f"{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f})", f"🟢 ≤4.0% Risk Cap ({risk_pct_of_capital:.1f}%)" if capital_risk_safe else "🔴 Exceeds 4% Budget"),
                 ("Bollinger Band Expansion", f"Width: {latest['BB_Width']:.2f}%", "🟢 Band Expansion (+2)" if bb_expanding else "🟡 Steady Oscillation")
             ],
             "behavior": v4_beh
@@ -5177,7 +5268,13 @@ if df is not None and not df.empty:
         "recommended_contract_type": recommended_contract_type,
         "atm_strike": atm_strike,
         "target_pts": effective_target_pts,
-        "sl_pts": sl_pts,
+        "sl_pts": effective_sl_pts,
+        "is_sl_dynamic": is_sl_dynamic,
+        "atr_dynamic_sl": atr_dynamic_sl,
+        "iv_percentile": iv_percentile,
+        "iv_gate_failed": iv_gate_failed,
+        "crude_pct": crude_pct,
+        "crude_gate_failed": crude_gate_failed,
         "num_lots": num_lots,
         "lot_size": lot_size,
         "total_trading_qty": total_trading_qty,
@@ -5236,8 +5333,10 @@ if df is not None and not df.empty:
             f"• <b>M15 Structure:</b> {mtf_matrix['m15']['regime'].replace('_', ' ')} (9/20/50 EMA stack)\n"
             f"• <b>M5 Trigger:</b> {mtf_matrix['m5']['trigger'].replace('_', ' ')}\n"
             f"• <b>M1 Limit Execution:</b> Optimal Bid ₹{mtf_matrix['m1']['rec_limit_premium_ce'] if recommended_contract_type == 'CE' else mtf_matrix['m1']['rec_limit_premium_pe']:.2f} (Saves ₹{mtf_matrix['m1']['premium_savings_pts']:.2f}/unit)\n"
-            f"• <b>CVD Aggressor Flow:</b> {cvd_val:+,.0f} contracts ({'🟢 Bullish Ask Absorption' if cvd_bull_divergence else ('🔴 Bearish Bid Distribution' if cvd_bear_divergence else 'Synchronous')})\n"
-            f"• <b>ORB-15 Anchored VWAP:</b> ₹{avwap_orb:.2f} ({'🟢 Grade A+ Retest Support Holding' if avwap_retest_support else 'Clean Anchor Hold'})"
+            f"• <b>CVD Flow:</b> {cvd_val:+,.0f} ({'🟢 Bullish Ask Absorption' if cvd_bull_divergence else ('🔴 Bearish Distribution' if cvd_bear_divergence else 'Synchronous')})\n"
+            f"• <b>IV Percentile:</b> {iv_percentile:.1f}% ({'🟢 Clean Buying Window' if iv_cheap_window else ('🔴 Peak Volatility Lock' if iv_elevated_crush_risk else 'Fair Volatility')})\n"
+            f"• <b>Brent/MCX Crude:</b> {crude_pct:+.2f}% ({'🟢 Refining Tailwind' if crude_rallying else ('🔴 Severe O2C Drag' if crude_dumping_severe else 'Steady')})\n"
+            f"• <b>Risk Sizing:</b> {num_lots} Lot ({total_trading_qty} Qty) | 1.5× ATR SL: -{effective_sl_pts:.1f} pts ({risk_pct_of_capital:.1f}% of Capital ≤ 4%)"
         )
     }
 
