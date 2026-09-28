@@ -31,3 +31,10 @@ push_to_github.bat
 # Sensitive config files (contain API tokens/secrets)
 groww_config.json
 telegram_config.json
+
+# Runtime persistent log files
+*_log.json
+
+# Scratch files
+Program_1.py
+

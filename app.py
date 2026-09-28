@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from datetime import datetime, time, timezone
 import time as time_mod
 import json
+import os
 import math
 import pytz
 
@@ -67,6 +68,100 @@ class IndianFOTransactionCostEngine:
             "gst": round(gst, 2),
             "stamp_duty": round(stamp_duty, 2)
         }
+
+BREAKOUT_TRIGGER_FILE = os.path.join(os.path.dirname(__file__), "breakout_triggers_log.json")
+
+class BreakoutTriggerManager:
+    """
+    Institutional Persistent Breakout Trigger Pinning Engine.
+    Ensures that once an entry trigger level is established for an option contract on a trading day,
+    it remains completely stationary and NEVER drifts or increases as the option price climbs,
+    even across browser page refreshes, tab reconnects, or Streamlit server reruns.
+    """
+    TRIGGER_FILE = BREAKOUT_TRIGGER_FILE
+
+    @classmethod
+    def _load_records(cls) -> dict:
+        if os.path.exists(cls.TRIGGER_FILE):
+            try:
+                with open(cls.TRIGGER_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+        return {}
+
+    @classmethod
+    def _save_records(cls, records: dict):
+        try:
+            with open(cls.TRIGGER_FILE, "w", encoding="utf-8") as f:
+                json.dump(records, f, indent=2)
+        except Exception:
+            pass
+
+    @classmethod
+    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: float = 1.20, manual_override: float = 0.0) -> float:
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        key = f"{today_str}_{strike}_{contract_type}"
+        session_key = f"breakout_level_{strike}_{contract_type}"
+
+        if manual_override > 0.0:
+            override_val = round(float(manual_override), 2)
+            st.session_state[session_key] = override_val
+            records = cls._load_records()
+            records[key] = override_val
+            cls._save_records(records)
+            return override_val
+
+        # 1. Check Streamlit session state
+        if session_key in st.session_state and isinstance(st.session_state[session_key], (int, float)) and st.session_state[session_key] > 0.0:
+            return float(st.session_state[session_key])
+
+        # 2. Check persistent disk file (guards against F5 / browser reload)
+        records = cls._load_records()
+        if key in records and isinstance(records[key], (int, float)) and records[key] > 0.0:
+            val = float(records[key])
+            st.session_state[session_key] = val
+            return val
+
+        # 3. Only pin if we have a valid market price (> 0.05)
+        if current_ltp > 0.05:
+            pinned_val = round(float(current_ltp) + float(buffer_pts), 2)
+            records[key] = pinned_val
+            cls._save_records(records)
+            st.session_state[session_key] = pinned_val
+            return pinned_val
+
+        return 0.0
+
+    @classmethod
+    def reset_trigger(cls, strike: int = None, contract_type: str = None, current_ltp: float = 0.0, buffer_pts: float = 1.20) -> float:
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        records = cls._load_records()
+        if strike and contract_type:
+            key = f"{today_str}_{strike}_{contract_type}"
+            session_key = f"breakout_level_{strike}_{contract_type}"
+            if current_ltp > 0.05:
+                new_val = round(float(current_ltp) + float(buffer_pts), 2)
+                records[key] = new_val
+                cls._save_records(records)
+                st.session_state[session_key] = new_val
+                return new_val
+            else:
+                records.pop(key, None)
+                cls._save_records(records)
+                st.session_state.pop(session_key, None)
+                return 0.0
+        else:
+            for k in list(records.keys()):
+                if k.startswith(today_str):
+                    del records[k]
+            cls._save_records(records)
+            for k in list(st.session_state.keys()):
+                if k.startswith("breakout_level_"):
+                    del st.session_state[k]
+            return 0.0
 
 # ==============================================================================
 # 1. PAGE SETUP & INSTITUTIONAL THEME - RELIANCE EXCLUSIVE
@@ -1436,6 +1531,21 @@ live_broker_ltp = st.sidebar.number_input(
     help=f"Directly matches your broker screen for active contract. Default 0.0 uses 100% automatic zero-delay Groww feed. Enter a value only if you wish to manually override."
 )
 
+# Breakout Buy Trigger Stationary Controls
+st.sidebar.markdown("### 🎯 Breakout Buy Trigger Control")
+custom_trigger_override = st.sidebar.number_input(
+    "Manual Breakout Trigger Override (₹)",
+    min_value=0.0,
+    max_value=500.0,
+    value=0.0,
+    step=0.05,
+    help="Default 0.0 uses the stationary pinned trigger (initial armed LTP + 1.20 pts) which is locked permanently across page refreshes. Enter a price here to manually fix a custom breakout trigger."
+)
+if st_sidebar_button_stretch("🔄 Re-pin Trigger to Current Market"):
+    BreakoutTriggerManager.reset_trigger()
+    st.sidebar.success("✅ Breakout trigger reset! Re-pinning on next market tick.")
+    st.rerun()
+
 # 1-Second Dynamic Streaming Control
 st.sidebar.markdown("### ⚡ Live Dynamic Streaming")
 stream_live_1s = st.sidebar.checkbox(
@@ -2225,11 +2335,16 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     if broker_call_ltp > 0.0 and plan_contract_type == "CE":
         active_live_ltp = broker_call_ltp
 
-    # Pin breakout trigger level in session state so it remains stationary
+    # Pin breakout trigger level persistently so it remains stationary across refreshes
     breakout_session_key = f"breakout_level_{plan_strike}_{plan_contract_type}"
-    if breakout_session_key not in st.session_state:
-        st.session_state[breakout_session_key] = round(active_live_ltp + 1.20, 2)
-    breakout_level = st.session_state[breakout_session_key]
+    breakout_level = BreakoutTriggerManager.get_or_set_trigger(
+        strike=plan_strike,
+        contract_type=plan_contract_type,
+        current_ltp=active_live_ltp,
+        buffer_pts=1.20,
+        manual_override=tp.get("custom_trigger_override", 0.0)
+    )
+    st.session_state[breakout_session_key] = breakout_level
 
     # Handle Simulation and Live Execution Mechanics
     sim_mode = tp.get("sim_mode", "LIVE")
@@ -3073,7 +3188,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             <div style="margin-top: 8px; border-top: 1px solid rgba(16, 185, 129, 0.3); padding-top: 6px; display: flex; justify-content: space-between; font-size: 0.70rem; color: #94A3B8;">
                 <span>LTP Source: <b style="color: #38BDF8;">Groww 1s Live Stream</b></span>
-                <span>Breakout Level: <b style="color: #FBBF24;">Algorithmic Pin (+1.20 pts)</b></span>
+                <span>Breakout Level: <b style="color: #FBBF24;">Stationary Locked Pin (₹{breakout_level:.2f})</b></span>
                 <span>Target: <b style="color: #34D399;">+{plan_target_pts:.1f} pts {'(ATR Dynamic)' if tp.get('is_target_dynamic') else '(Fixed)'}</b></span>
                 <span>Trailing SL: <b style="color: #FBBF24;">+5.0 pts → Break-Even Shield</b></span>
             </div>
@@ -3192,7 +3307,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">BREAKOUT BUY TRIGGER</div>
                     <div style="font-size: 1.35rem; font-weight: 900; color: #FBBF24; margin-top: 2px;">₹{breakout_level:.2f}</div>
-                    <div style="font-size: 0.70rem; color: #FDE68A;">Execution threshold</div>
+                    <div style="font-size: 0.70rem; color: #FDE68A;">Stationary threshold 🔒</div>
                 </div>
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">DISTANCE TO BUY</div>
@@ -3206,7 +3321,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             <div style="margin-top: 8px; border-top: 1px solid rgba(245, 158, 11, 0.25); padding-top: 6px; display: flex; justify-content: space-between; font-size: 0.70rem; color: #94A3B8;">
                 <span>Live LTP Source: <b style="color: #38BDF8;">Groww 1-Sec Stream</b></span>
-                <span>Breakout Level: <b style="color: #FBBF24;">Algorithmic Trigger (+1.20 pts pin)</b></span>
+                <span>Breakout Level: <b style="color: #FBBF24;">Stationary Locked Pin (₹{breakout_level:.2f})</b></span>
                 <span>Target / SL: <b style="color: #34D399;">Fixed 10/9 pts R:R Rule</b></span>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
@@ -5675,6 +5790,7 @@ if df is not None and not df.empty:
         "is_choppy_regime": is_choppy_regime,
         "chop_val": chop_val,
         "estimated_premium": estimated_premium,
+        "custom_trigger_override": custom_trigger_override,
         # Enhancement 2: Dynamic ATR-Scaled Target
         "is_target_dynamic": is_target_dynamic,
         "static_target_pts": target_pts,
