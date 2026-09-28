@@ -915,8 +915,8 @@ if is_rescan:
     st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete! Live macro benchmarks (NIFTY 50, BANK NIFTY, GIFT NIFTY, S&P 500 [US], INDIA VIX, CRUDE OIL [MCX]), technical indicators, news sentiment, and Dual ATM option flow 100% updated.")
     st.session_state["just_rescanned"] = False
 
-# 6 Sleek Live Market Cards with 10-Second Dynamic Streaming Fragment (Zero-Flicker Grid)
-@st.fragment(run_every="10s")
+# 6 Sleek Live Market Cards with 1-Second Dynamic Streaming Fragment (Zero-Flicker Continuous Running Numbers)
+@st.fragment(run_every="1s")
 def render_live_macro_benchmarks_strip():
     tick_payload = NSEIndiaFetcher.get_dynamic_market_ticks()
     benchmarks = tick_payload["benchmarks"]
@@ -977,8 +977,11 @@ def render_live_macro_benchmarks_strip():
                     {pts_sign}{data['pct_change']:.2f}%
                 </span>
             </div>
-            <div style="font-size: 1.55rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0; letter-spacing: -0.5px;">
-                {val_str}
+            <div style="font-size: 1.55rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0; letter-spacing: -0.5px; display: flex; align-items: baseline; justify-content: space-between;">
+                <span>{val_str}</span>
+                <span style="font-size: 0.76rem; color: {'#34D399' if data.get('tick_direction')=='UP' else '#F87171'}; font-weight: 800; background: {'rgba(16, 185, 129, 0.15)' if data.get('tick_direction')=='UP' else 'rgba(239, 68, 68, 0.15)'}; padding: 1px 6px; border-radius: 4px;">
+                    {pts_arrow} {data.get('tick_delta', 0.0):+.2f}
+                </span>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
                 <span style="color: {pts_color}; font-weight: 700; font-size: 0.86rem; letter-spacing: 0.2px;">
@@ -1009,7 +1012,7 @@ def render_live_macro_benchmarks_strip():
             </span>
         </div>
         <div style="font-size: 0.74rem; color: #94A3B8;">
-            ⏱️ Feed Time: <b style="color: #FFFFFF;">{feed_time}</b> &nbsp;|&nbsp; Source: <b style="color: #38BDF8;">{source_label}</b>
+            ⏱️ Feed Time: <b style="color: #FFFFFF;">{feed_time}</b> &nbsp;|&nbsp; Source: <b style="color: #38BDF8;">{source_label}</b> &nbsp;|&nbsp; <span style="color: #10B981; font-weight: 800;">● STREAMING (1s)</span>
         </div>
     </div>
     <div class="live-benchmark-grid">
@@ -1205,7 +1208,17 @@ account_cash = st.sidebar.number_input(
     step=500.0,
     help="Live clear cash automatically synchronized from your connected Groww account."
 )
-est_capital_req = total_trading_qty * 37.65
+gw_chain_peek = GrowwMarketFeed.get_instance().get_reliance_live_option_chain()
+peek_ltp = 40.0
+peek_spot_val = float(GrowwMarketFeed.get_instance().get_reliance_live_data().get("spot_ltp", 1210.00))
+peek_corr = NSEIndiaFetcher.get_atm_corridor(peek_spot_val)
+peek_strike = peek_corr["lower_strike"]
+if gw_chain_peek:
+    for row in gw_chain_peek:
+        if abs(row.get("strike", 0) - peek_strike) < 0.5:
+            peek_ltp = float(row.get("call_ltp", 40.0) or 40.0)
+            break
+est_capital_req = total_trading_qty * peek_ltp
 margin_buffer = account_cash - est_capital_req
 margin_pct = (margin_buffer / account_cash) * 100.0 if account_cash > 0 else 0.0
 
@@ -1382,9 +1395,9 @@ live_broker_ltp = st.sidebar.number_input(
     f"Live ATM Call LTP (₹) [Groww/Zerodha - {active_mandate_expiry}]",
     min_value=0.0,
     max_value=500.0,
-    value=37.65,
+    value=0.0,
     step=0.05,
-    help=f"Directly matches your broker screen for active contract (e.g. Groww 1220 CE ({active_mandate_expiry}) @ ₹37.65). If 0, falls back to live Groww option chain."
+    help=f"Directly matches your broker screen for active contract. Default 0.0 uses 100% automatic zero-delay Groww feed. Enter a value only if you wish to manually override."
 )
 
 # 1-Second Dynamic Streaming Control
@@ -1397,11 +1410,19 @@ stream_live_1s = st.sidebar.checkbox(
 
 # Dual ATM Corridor Strike Selection Control
 st.sidebar.markdown("### 🎯 Strike Selection Preference")
+try:
+    _gw_init_spot = float(GrowwMarketFeed.get_instance().get_reliance_live_data().get("spot_ltp", 1208.0))
+except Exception:
+    _gw_init_spot = 1208.0
+_sidebar_corridor = NSEIndiaFetcher.get_atm_corridor(_gw_init_spot)
+_sb_low_k = _sidebar_corridor["lower_strike"]
+_sb_high_k = _sidebar_corridor["upper_strike"]
+
 strike_selection_pref = st.sidebar.radio(
     "Dual ATM Corridor Strategy",
-    ["🏆 Auto-Detect Best Strike", f"Lower ATM (1220 CE - {active_mandate_expiry})", f"Upper ATM (1230 CE - {active_mandate_expiry})"],
+    ["🏆 Auto-Detect Best Strike", f"Lower ATM (₹{_sb_low_k} - {active_mandate_expiry})", f"Upper ATM (₹{_sb_high_k} - {active_mandate_expiry})"],
     index=0,
-    help=f"Both 1220 and 1230 fall in the ATM Corridor for spot ₹1,226. The algorithm dynamically recommends 1220 CE ({active_mandate_expiry}) for optimal delta and ATR fit."
+    help=f"Both ₹{_sb_low_k} and ₹{_sb_high_k} fall in the ATM Corridor for live spot ₹{_gw_init_spot:.2f}. The algorithm dynamically recommends the optimal strike based on real-time market confluence."
 )
 
 # Session Clock & Time Gates
@@ -1822,7 +1843,7 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
     return df
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=10)
 def fetch_reliance_data(interval: str, force_key: str = ""):
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     df = pd.DataFrame()
@@ -1832,19 +1853,19 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
             return t.history(period="5d", interval=interval)
         with ThreadPoolExecutor(max_workers=1) as ex:
             fut = ex.submit(_get_hist)
-            df = fut.result(timeout=6.0)  # Institutional: 6.0s timeout gives network buffer against rate-limits
+            df = fut.result(timeout=4.0)  # Low timeout prevents UI stalls
     except Exception:
         df = pd.DataFrame()
 
-    # Anchor to authentic Reliance spot price from Groww API
-    gw_spot = 1226.00
+    # Anchor directly to authentic Reliance spot price from Groww API
+    gw_spot = 1210.00
     try:
         from groww_market_feed import GrowwMarketFeed
         gw_feed_data = GrowwMarketFeed.get_instance().get_reliance_live_data()
-        gw_spot = float(gw_feed_data.get("spot_ltp", 1226.00))
-        base_p = gw_spot if (0 < gw_spot < 2000) else 1226.00
+        gw_spot = float(gw_feed_data.get("spot_ltp", 1210.00))
+        base_p = gw_spot if (0 < gw_spot < 2000) else 1210.00
     except Exception:
-        base_p = 1226.00
+        base_p = 1210.00
 
     # Resilient Real Data Session Cache
     is_synthetic_feed = False
@@ -2059,11 +2080,19 @@ df = fetch_reliance_data(timeframe)
 # 4.5. LIVE 1-SECOND DYNAMIC STREAMING FRAGMENT FOR DUAL ATM CORRIDOR
 # ==============================================================================
 def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, is_streaming: bool = True, trade_plan: dict = None):
+    tp = trade_plan or {}
+    plan_contract_type = tp.get("recommended_contract_type", "CE")
+    is_pe_dominant = (plan_contract_type == "PE")
+
+    dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+    dyn_atm = dyn_corridor["lower_strike"]
+
     stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
-        atm_strike=1220, 
+        atm_strike=dyn_atm, 
         spot=spot, 
         broker_call_ltp=broker_call_ltp,
-        selected_strike=selected_strike
+        selected_strike=selected_strike,
+        bias="BEARISH" if is_pe_dominant else "BULLISH"
     )
     corridor = stream["corridor"]
     best = stream["best_strike"]
@@ -2077,6 +2106,15 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     tape = stream.get("tape", [])
 
     status_tag = "🟢 DYNAMIC TICKING (1s)" if is_streaming else "⏸️ STREAM PAUSED"
+
+    active_side_data = high if is_pe_dominant else low
+    best_ltp = active_side_data['put_ltp'] if is_pe_dominant else active_side_data['call_ltp']
+    best_delta = active_side_data['delta_pe'] if is_pe_dominant else active_side_data['delta_ce']
+    best_spot_move = active_side_data['spot_move_needed_pe'] if is_pe_dominant else active_side_data['spot_move_needed_ce']
+    move_sign = "-" if is_pe_dominant else "+"
+    best_oi_chg = active_side_data['put_oi_change_pct'] if is_pe_dominant else active_side_data['call_oi_change_pct']
+    best_oi_narrative = "institutional put writing support" if is_pe_dominant else "trapped call unwinding momentum"
+    best_intrinsic = max(0.0, corridor['upper_strike'] - spot_tick) if is_pe_dominant else active_side_data['intrinsic_ce']
 
     # Header and Quantitatively Suggested Best Strike Banner
     st.html(f"""
@@ -2093,14 +2131,14 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
         </div>
         
-        <div style="background: #111827 !important; border: 1px solid #10B981 !important; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
+        <div style="background: #111827 !important; border: 1px solid {'#EF4444' if is_pe_dominant else '#10B981'} !important; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
             <div>
-                <span style="font-size: 0.74rem; color: #34D399; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">🏆 Quantitatively Suggested Best Strike to Trade</span>
+                <span style="font-size: 0.74rem; color: {'#F87171' if is_pe_dominant else '#34D399'}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">🏆 Quantitatively Suggested Best Strike to Trade</span>
                 <div style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; margin-top: 2px;">
-                    {best['instrument']} &nbsp;<span style="font-size: 0.80rem; background: #059669; color: #FFFFFF; padding: 2px 10px; border-radius: 4px; font-weight: 700;">Score: {best['score']}/100</span>
+                    {best['instrument']} &nbsp;<span style="font-size: 0.80rem; background: {'#DC2626' if is_pe_dominant else '#059669'}; color: #FFFFFF; padding: 2px 10px; border-radius: 4px; font-weight: 700;">Score: {best['score']}/100</span>
                 </div>
                 <div style="font-size: 0.80rem; color: #E2E8F0; margin-top: 4px;">
-                    Delta <b style="color: #38BDF8;">{low['delta_ce']}</b> requires only <b style="color: #34D399;">+{low['spot_move_needed_ce']} pts</b> spot move to hit target (within daily ATR 17.8 pts) • <b style="color: #FFFFFF;">₹{low['intrinsic_ce']:.2f}</b> intrinsic cushion • <b style="color: #34D399;">+{low['call_oi_change_pct']:.1f}%</b> trapped call unwinding
+                    Delta <b style="color: #38BDF8;">{abs(best_delta):.2f}</b> requires only <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{move_sign}{best_spot_move} pts</b> spot move to hit target (within daily ATR 17.8 pts) • <b style="color: #FFFFFF;">₹{best_intrinsic:.2f}</b> intrinsic cushion • <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{best_oi_chg:+.1f}%</b> {best_oi_narrative}
                 </div>
                 <div style="font-size: 0.69rem; color: #94A3B8; margin-top: 5px;">
                     📡 <b>Source:</b> Black-Scholes Greeks (Delta/Intrinsic) & Groww Live Option Chain (0-Delay Stream)
@@ -2108,7 +2146,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             <div style="text-align: right; min-width: 140px;">
                 <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 600;">Best Strike LTP</span>
-                <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{low['call_ltp']:.2f}</div>
+                <div style="font-size: 1.7rem; font-weight: 800; color: {'#C084FC' if is_pe_dominant else '#38BDF8'};">₹{best_ltp:.2f}</div>
                 <div style="font-size: 0.67rem; color: #64748B;">Src: Groww 0-Delay Feed</div>
             </div>
         </div>
@@ -3175,22 +3213,42 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             """)
 
+    # Dynamic styling and badges based on whether CE or PE is dominant
+    if is_pe_dominant:
+        c1_border = "1px solid #334155"
+        c1_badge = '<span style="font-size: 0.70rem; background: #1E293B; color: #94A3B8; padding: 2px 8px; border-radius: 4px; font-weight: 700;">LOWER CALL</span>'
+        c2_border = "1px solid #475569"
+        c2_badge = '<span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SUPPORT FLOOR</span>'
+        c3_border = "1px solid #334155"
+        c3_badge = '<span style="font-size: 0.70rem; background: #1E293B; color: #94A3B8; padding: 2px 8px; border-radius: 4px; font-weight: 700;">CALL RESISTANCE</span>'
+        c4_border = "2px solid #EF4444"
+        c4_badge = '<span style="font-size: 0.70rem; background: #DC2626; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 800;">🏆 BEST STRIKE (PE)</span>'
+    else:
+        c1_border = "2px solid #10B981"
+        c1_badge = '<span style="font-size: 0.70rem; background: #059669; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 800;">🏆 BEST STRIKE</span>'
+        c2_border = "1px solid #475569"
+        c2_badge = '<span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SUPPORT FLOOR</span>'
+        c3_border = "1px solid #0284C7"
+        c3_badge = '<span style="font-size: 0.70rem; background: #0C4A6E; color: #7DD3FC; border: 1px solid #0284C7; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER ATM</span>'
+        c4_border = "1px solid #475569"
+        c4_badge = '<span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER HEDGE</span>'
+
     # 4 Side-by-Side Dual ATM Corridor Cards
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
         st.html(f"""
-        <div style="background: #0F172A !important; border: 2px solid #10B981 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+        <div style="background: #0F172A !important; border: {c1_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <span style="font-size: 0.90rem; font-weight: 800; color: #34D399;">📞 {low['strike']} CE ({plan_expiry})</span>
-                <span style="font-size: 0.70rem; background: #059669; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 800;">🏆 BEST STRIKE</span>
+                {c1_badge}
             </div>
             <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{low['call_ltp']:.2f}</div>
             <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{low['delta_ce']}</b> | Intrinsic: <b style="color: #34D399;">₹{low['intrinsic_ce']:.2f}</b></div>
             <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
             <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['call_volume_cr']:,.1f} Cr</span>)</div>
             <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{low['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['call_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{low['call_oi_change_pct']:.1f}% (Squeeze Fuel)</div>
+            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: {low['call_oi_change_pct']:+.1f}% (Squeeze Fuel)</div>
             <div style="font-size: 0.74rem; color: #38BDF8; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #7DD3FC;">+{low['spot_move_needed_ce']} pts</b></div>
             <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
                 <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
@@ -3201,17 +3259,17 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
     with c2:
         st.html(f"""
-        <div style="background: #0F172A !important; border: 1px solid #475569 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+        <div style="background: #0F172A !important; border: {c2_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {low['strike']} PE ({plan_expiry})</span>
-                <span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SUPPORT FLOOR</span>
+                {c2_badge}
             </div>
             <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{low['put_ltp']:.2f}</div>
             <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{low['delta_pe']}</b> | OTM Put</div>
             <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
             <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['put_volume_cr']:,.1f} Cr</span>)</div>
             <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{low['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['put_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{low['put_oi_change_pct']:.1f}% (Put Writing)</div>
+            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: {low['put_oi_change_pct']:+.1f}% (Put Writing)</div>
             <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">Solidified Support Floor</div>
             <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
                 <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
@@ -3222,17 +3280,17 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
     with c3:
         st.html(f"""
-        <div style="background: #0F172A !important; border: 1px solid #0284C7 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+        <div style="background: #0F172A !important; border: {c3_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <span style="font-size: 0.90rem; font-weight: 800; color: #38BDF8;">📞 {high['strike']} CE ({plan_expiry})</span>
-                <span style="font-size: 0.70rem; background: #0C4A6E; color: #7DD3FC; border: 1px solid #0284C7; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER ATM</span>
+                {c3_badge}
             </div>
             <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{high['call_ltp']:.2f}</div>
             <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{high['delta_ce']}</b> | OTM Call</div>
             <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
             <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['call_volume_cr']:,.1f} Cr</span>)</div>
             <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{high['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['call_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #38BDF8; font-weight: 700; margin-top: 3px;">Shift: +{high['call_oi_change_pct']:.1f}% (Resistance)</div>
+            <div style="font-size: 0.76rem; color: #38BDF8; font-weight: 700; margin-top: 3px;">Shift: {high['call_oi_change_pct']:+.1f}% (Resistance)</div>
             <div style="font-size: 0.74rem; color: #FBBF24; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #FDE68A;">+{high['spot_move_needed_ce']} pts</b></div>
             <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
                 <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
@@ -3243,17 +3301,17 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
     with c4:
         st.html(f"""
-        <div style="background: #0F172A !important; border: 1px solid #475569 !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+        <div style="background: #0F172A !important; border: {c4_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {high['strike']} PE ({plan_expiry})</span>
-                <span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER HEDGE</span>
+                {c4_badge}
             </div>
             <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{high['put_ltp']:.2f}</div>
             <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{high['delta_pe']}</b> | ITM Put</div>
             <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
             <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['put_volume_cr']:,.1f} Cr</span>)</div>
             <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{high['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['put_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: +{high['put_oi_change_pct']:.1f}% (Writing)</div>
+            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: {high['put_oi_change_pct']:+.1f}% (Writing)</div>
             <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">In-The-Money Hedge Floor</div>
             <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
                 <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
@@ -3273,7 +3331,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     <div style="margin-top: 14px; background: #0F172A !important; border: 1px solid #334155 !important; border-radius: 8px; padding: 12px 16px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <span style="font-size: 0.78rem; font-weight: 700; color: #F8FAFC;">⚖️ DUAL ATM CORRIDOR VOLUME & FLOW BALANCE ({low['strike']} & {high['strike']} - {plan_expiry})</span>
-            <span style="font-size: 0.76rem; color: #CBD5E1;">1220 PCR: <b style="color: #10B981;">{low['pcr_oi']:.2f}</b> | 1230 PCR: <b style="color: #38BDF8;">{high['pcr_oi']:.2f}</b></span>
+            <span style="font-size: 0.76rem; color: #CBD5E1;">{low['strike']} PCR: <b style="color: #10B981;">{low['pcr_oi']:.2f}</b> | {high['strike']} PCR: <b style="color: #38BDF8;">{high['pcr_oi']:.2f}</b></span>
         </div>
         <div style="display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 6px; background: #1E293B;">
             <div style="width: {c_share}%; background: linear-gradient(90deg, #0284C7, #38BDF8);" title="Call Share: {c_share}%"></div>
@@ -3536,9 +3594,17 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 """)
 
 
-@st.fragment(run_every="3s")
+@st.fragment(run_every="1s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
-    render_atm_call_put_content(spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, is_streaming=True, trade_plan=trade_plan)
+    # Dynamically pull current real-time spot from Groww live feed on each 1-sec tick
+    try:
+        from groww_market_feed import GrowwMarketFeed
+        spot_tick_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
+        gw_spot_val = float(spot_tick_info.get("spot_ltp", spot))
+        live_spot = gw_spot_val if gw_spot_val > 0 else spot
+    except Exception:
+        live_spot = spot
+    render_atm_call_put_content(live_spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, is_streaming=True, trade_plan=trade_plan)
 
 # ==============================================================================
 if df is not None and not df.empty:
@@ -3564,13 +3630,18 @@ if df is not None and not df.empty:
     else:
         user_strike_choice = None  # Auto-Detect Best Strike
 
+    # Dynamic Pre-Bias Resolution from Live Spot vs VWAP and Previous Close
+    initial_pclose = float(nse_data.get("prev_close", 1226.00)) if nse_data else 1226.00
+    initial_vwap = float(df['VWAP'].iloc[-1]) if 'VWAP' in df.columns else initial_pclose
+    pre_bias = "BEARISH" if (spot < initial_pclose - 1.5 or (spot < initial_vwap and spot < initial_pclose)) else "BULLISH"
+
     # Dynamic Dual ATM Stream & Quantitative Best Strike Resolution
     atm_stream_eval = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
         atm_strike=lower_atm,
         spot=spot,
         broker_call_ltp=live_broker_ltp,
         selected_strike=user_strike_choice,
-        bias="BULLISH"
+        bias=pre_bias
     )
     best_strike_meta = atm_stream_eval["best_strike"]
     active_strike_meta = atm_stream_eval["active_strike"]
@@ -3708,7 +3779,8 @@ if df is not None and not df.empty:
         v1_bull += 4.0  # M15 + M5 Structural Synchronization Bonus
     elif mtf_matrix["m15"]["is_bearish"]:
         v1_bull = max(0.0, v1_bull - 4.0)  # Counter-trend higher timeframe drag penalty!
-    v1_bull += mtf_matrix["m1"]["bonus"]
+    if not mtf_matrix["m15"]["is_bearish"]:
+        v1_bull += mtf_matrix["m1"]["bonus"]
 
     # Alpha Divergence Confluence / Penalty
     if alpha_bull_divergence:
@@ -3752,7 +3824,8 @@ if df is not None and not df.empty:
         v1_bear += 4.0  # M15 + M5 Structural Synchronization Bonus
     elif mtf_matrix["m15"]["is_bullish"]:
         v1_bear = max(0.0, v1_bear - 4.0)  # Counter-trend higher timeframe drag penalty!
-    v1_bear += mtf_matrix["m1"]["bonus"]
+    if not mtf_matrix["m15"]["is_bullish"]:
+        v1_bear += mtf_matrix["m1"]["bonus"]
 
     if alpha_bear_divergence:
         v1_bear += 2.5  # Institutional Relative Weakness Headwind
@@ -3892,45 +3965,84 @@ if df is not None and not df.empty:
     v2_bull = min(18.0, max(0.0, v2_bull))
     v2_bear = min(18.0, max(0.0, v2_bear))
 
-    # Vector 3: Short Gamma Squeeze & Strike OI Walls (20 pts)
+    # Vector 3: Quantitative OI Flow, Gamma Pressure & Strike Walls (20 pts)
     v3_bull = 0.0
     v3_bear = 0.0
-    call_unwinding = opt_telemetry['call_oi_change_pct'] < -10.0
-    put_writing = opt_telemetry['put_oi_change_pct'] > 20.0
-    put_unwinding = opt_telemetry['put_oi_change_pct'] < -10.0
-    call_writing = opt_telemetry['call_oi_change_pct'] > 20.0
+    call_oi_chg = opt_telemetry['call_oi_change_pct']
+    put_oi_chg = opt_telemetry['put_oi_change_pct']
+    call_unwinding = call_oi_chg < -10.0
+    put_writing = put_oi_chg > 20.0
+    put_unwinding = put_oi_chg < -10.0
+    call_writing = call_oi_chg > 20.0
 
-    if call_unwinding:
-        v3_bull += 8.0
-    elif opt_telemetry['call_oi_change_pct'] < 0:
-        v3_bull += 4.0
-    if put_writing:
-        v3_bull += 6.0
-    elif opt_telemetry['put_oi_change_pct'] > 10.0:
-        v3_bull += 3.0
-    if pcr_val >= 1.25:
-        v3_bull += 6.0
-    elif pcr_val >= 1.05:
-        v3_bull += 3.0
-    # Call Wall proximity clamp: if spot within 2 pts of Call Wall and no covering, deduct 4 pts
-    if abs(spot - call_wall) <= 2.0 and opt_telemetry['call_oi_change_pct'] >= 0:
-        v3_bull = max(0.0, v3_bull - 4.0)
+    curr_vwap = float(latest.get('VWAP', spot))
+    is_downtrend_context = (spot < initial_pclose - 1.0) or (spot < curr_vwap - 1.0)
+    is_uptrend_context = (spot > initial_pclose + 1.0) and (spot > curr_vwap + 1.0)
 
-    if put_unwinding:
-        v3_bear += 8.0
-    elif opt_telemetry['put_oi_change_pct'] < 0:
-        v3_bear += 4.0
-    if call_writing:
-        v3_bear += 6.0
-    elif opt_telemetry['call_oi_change_pct'] > 10.0:
-        v3_bear += 3.0
-    if pcr_val <= 0.85:
-        v3_bear += 6.0
-    elif pcr_val <= 0.95:
-        v3_bear += 3.0
-    # Put Wall proximity clamp: if spot within 2 pts of Put Wall and no put unwinding, deduct 4 pts
-    if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
-        v3_bear = max(0.0, v3_bear - 4.0)
+    if is_downtrend_context:
+        # In a downtrend, Call OI dropping = Call Long Unwinding (capitulation fuel -> Bearish)
+        if call_unwinding:
+            v3_bear += 8.0
+        elif call_oi_chg < 0:
+            v3_bear += 4.0
+        # Call writing in a downtrend = active resistance ceiling
+        if call_writing:
+            v3_bear += 6.0
+        elif call_oi_chg > 10.0:
+            v3_bear += 3.0
+        # Put writing collapse or aggressive institutional put buying
+        if put_oi_chg > 15.0:
+            v3_bear += 4.0  # Institutional put buying / downside positioning
+        elif put_unwinding:
+            v3_bear += 4.0  # Put support evaporating
+        if pcr_val <= 0.90:
+            v3_bear += 5.0
+        elif pcr_val <= 1.00:
+            v3_bear += 3.0
+        # If spot breaks below Put Wall, downside accelerates
+        if spot <= put_wall:
+            v3_bear += 3.0
+    elif is_uptrend_context:
+        # In an uptrend, Call OI dropping = Short Covering / Gamma Squeeze -> Bullish
+        if call_unwinding:
+            v3_bull += 8.0
+        elif call_oi_chg < 0:
+            v3_bull += 4.0
+        # Put writing in an uptrend = solid institutional floor
+        if put_writing:
+            v3_bull += 6.0
+        elif put_oi_chg > 10.0:
+            v3_bull += 3.0
+        if pcr_val >= 1.25:
+            v3_bull += 6.0
+        elif pcr_val >= 1.05:
+            v3_bull += 3.0
+        # Call Wall proximity clamp: if spot within 2 pts of Call Wall and no covering, deduct 4 pts
+        if abs(spot - call_wall) <= 2.0 and call_oi_chg >= 0:
+            v3_bull = max(0.0, v3_bull - 4.0)
+    else:
+        # Neutral / Rangebound context: Balanced interpretation
+        if call_unwinding:
+            v3_bull += 6.0
+        elif call_oi_chg < 0:
+            v3_bull += 3.0
+        if put_writing:
+            v3_bull += 5.0
+        if call_writing:
+            v3_bear += 5.0
+        elif call_oi_chg > 10.0:
+            v3_bear += 3.0
+        if put_unwinding:
+            v3_bear += 6.0
+        elif put_oi_chg < 0:
+            v3_bear += 3.0
+        if pcr_val >= 1.25:
+            v3_bull += 4.0
+        elif pcr_val <= 0.85:
+            v3_bear += 4.0
+
+    v3_bull = min(20.0, max(0.0, v3_bull))
+    v3_bear = min(20.0, max(0.0, v3_bear))
 
     # Vector 4: Volatility, Choppiness Index (CHOP) & India VIX Regime (15 pts)
     v4_bull = 0.0
@@ -4127,6 +4239,17 @@ if df is not None and not df.empty:
             bearish_score = target_sim_score
             bullish_score = min(36.0, round(100.0 - target_sim_score, 1))
             total_score = dominant_score
+        elif sim_mode == "ENTRY_CE":
+            recommended_contract_type = "CE"
+            dominant_side = "BULLISH (CALL / CE)"
+            opposing_side = "BEARISH (PUT / PE)"
+            time_gate_allowed = True
+            is_tradable = True
+            target_sim_score = max(dominant_score, round(MIN_HIT_PERCENTAGE + 6.5, 1))
+            dominant_score = target_sim_score
+            bullish_score = target_sim_score
+            bearish_score = min(36.0, round(100.0 - target_sim_score, 1))
+            total_score = dominant_score
         elif sim_mode == "CHOP_STANDDOWN":
             is_choppy_regime = True
             chop_val = 64.8
@@ -4139,20 +4262,41 @@ if df is not None and not df.empty:
             time_gate_allowed = False
             time_gate_msg = "Mandatory EOD Cutoff (03:05 PM IST)"
             is_tradable = False
-        else: # ENTRY_CE, ARMED, TARGET_HIT, STOP_LOSS, TRAILING_SL
-            recommended_contract_type = "CE"
-            dominant_side = "BULLISH (CALL / CE)"
-            opposing_side = "BEARISH (PUT / PE)"
+        else: # ARMED, TARGET_HIT, STOP_LOSS, TRAILING_SL - preserve confluent market direction!
             time_gate_allowed = True
             is_tradable = True
             target_sim_score = max(dominant_score, round(MIN_HIT_PERCENTAGE + 6.5, 1))
             dominant_score = target_sim_score
-            bullish_score = target_sim_score
-            bearish_score = min(36.0, round(100.0 - target_sim_score, 1))
+            if recommended_contract_type == "PE":
+                bearish_score = target_sim_score
+                bullish_score = min(36.0, round(100.0 - target_sim_score, 1))
+            else:
+                bullish_score = target_sim_score
+                bearish_score = min(36.0, round(100.0 - target_sim_score, 1))
             total_score = dominant_score
     else:
         # Operational Regime Trade Gate (Trade if dominant score > MIN_HIT_PERCENTAGE, within time window, and not in Choppiness Stand Down)
         is_tradable = (dominant_score > MIN_HIT_PERCENTAGE) and time_gate_allowed and not is_choppy_regime
+
+    # Re-sync Dual ATM Stream, Active Strike & Best Strike with Final Confluent Direction
+    target_engine_bias = "BEARISH" if recommended_contract_type == "PE" else "BULLISH"
+    if target_engine_bias != pre_bias:
+        atm_stream_eval = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
+            atm_strike=lower_atm,
+            spot=spot,
+            broker_call_ltp=live_broker_ltp,
+            selected_strike=user_strike_choice,
+            bias=target_engine_bias
+        )
+        best_strike_meta = atm_stream_eval["best_strike"]
+        active_strike_meta = atm_stream_eval["active_strike"]
+        low_data = atm_stream_eval["lower"]
+        high_data = atm_stream_eval["upper"]
+        atm_strike = active_strike_meta["strike"] if isinstance(active_strike_meta, dict) else (user_strike_choice if user_strike_choice else best_strike_meta["strike"])
+        is_best_strk = (atm_strike == best_strike_meta["strike"])
+    elif user_strike_choice is None:
+        atm_strike = best_strike_meta["strike"]
+        is_best_strk = True
 
     # Institutional Black-Scholes Option Pricing (Calibrated to Real Market IV ~21.2% & RBI Risk-Free Rate 6.75%)
     dte = expiry_plan.get("dte", max(1, (expiry_dt.date() - today_dt.date()).days))
@@ -4274,144 +4418,197 @@ if df is not None and not df.empty:
     half_kelly = max(0.0, raw_kelly * 0.5)
     kelly_risk_capital = account_cash * min(0.04, half_kelly) if half_kelly > 0 else account_cash * 0.04
     kelly_recommended_lots = max(1, min(4, int(kelly_risk_capital / max(1.0, (effective_sl_pts * lot_size)))))
+    prev_close_ref = float(nse_data.get("prev_close", 1219.20) if nse_data else 1219.20)
 
     # ==============================================================================
-    # 6. RELIANCE DASHBOARD METRICS & TRADE STATUS
+    # 6. RELIANCE DASHBOARD METRICS & TRADE STATUS (1-SECOND STREAMING FRAGMENT)
     # ==============================================================================
-    col1, col2, col3, col4, col5 = st.columns(5)
-    spot_disp = spot
-    prev_close_ref = nse_data.get("prev_close", 1219.20) if nse_data else 1219.20
-    spot_diff = spot_disp - prev_close_ref
-    spot_diff_pct = (spot_diff / prev_close_ref) * 100.0 if prev_close_ref > 0 else 0.0
+    @st.fragment(run_every="1s")
+    def render_live_reliance_kpi_dashboard():
+        from groww_market_feed import GrowwMarketFeed
+        spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
+        curr_spot = float(spot_info.get("spot_ltp", 1210.00))
+        p_close = float(spot_info.get("prev_close", 1219.20))
+        s_diff = float(spot_info.get("diff", round(curr_spot - p_close, 2)))
+        s_diff_pct = float(spot_info.get("diff_pct", round((s_diff / max(1.0, p_close)) * 100.0, 2)))
+        t_dir = str(spot_info.get("tick_direction", "UP"))
+        t_delta = float(spot_info.get("tick_delta", 0.0))
+        f_time = str(spot_info.get("timestamp", datetime.now(IST).strftime("%I:%M:%S %p IST")))
 
-    with col1:
-        delta_color = "#10B981" if spot_diff >= 0 else "#EF4444"
-        delta_arrow = "↑" if spot_diff >= 0 else "↓"
-        delta_bg = "rgba(16, 185, 129, 0.16)" if spot_diff >= 0 else "rgba(239, 68, 68, 0.16)"
-        delta_border = "rgba(16, 185, 129, 0.4)" if spot_diff >= 0 else "rgba(239, 68, 68, 0.4)"
-        st.html(f"""
-        <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 12px 14px; min-height: 106px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 0.76rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">RELIANCE SPOT</span>
-                <span style="font-size: 0.66rem; background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 1px 6px; border-radius: 4px; font-weight: 700;">LIVE 0-DELAY</span>
-            </div>
-            <div style="font-size: 1.65rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.5px; margin: 2px 0;">
-                ₹{spot_disp:.2f}
-            </div>
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span style="background: {delta_bg}; color: {delta_color}; border: 1px solid {delta_border}; font-size: 0.74rem; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
-                    {delta_arrow} {spot_diff:+.2f} pts ({spot_diff_pct:+.2f}%)
-                </span>
-                <span style="font-size: 0.65rem; color: #64748B;">Groww API</span>
-            </div>
-        </div>
-        """)
-        st.caption("📡 **Source**: Groww API (0-Delay) • Verified Real-time Feed")
+        # Real-time live Groww Option Chain lookup for active strike
+        live_ce_ltp = 0.0
+        live_pe_ltp = 0.0
+        try:
+            gw_feed_inst = GrowwMarketFeed.get_instance()
+            live_gw_chain = gw_feed_inst.get_reliance_live_option_chain()
+            if live_gw_chain:
+                for row in live_gw_chain:
+                    if abs(row.get("strike", 0) - atm_strike) < 0.5:
+                        if row.get("call_ltp") and float(row["call_ltp"]) > 0:
+                            live_ce_ltp = float(row["call_ltp"])
+                        if row.get("put_ltp") and float(row["put_ltp"]) > 0:
+                            live_pe_ltp = float(row["put_ltp"])
+                        break
+        except Exception:
+            pass
 
-    bias_desc = "Bullish Edge" if bullish_score > bearish_score + 10 else ("Bearish Edge" if bearish_score > bullish_score + 10 else "Consolidation Chop")
-    col2.metric("Directional Probability", f"🟢 CE: {bullish_score}%", delta=f"🔴 PE: {bearish_score}% ({bias_desc})", help="Source: Enhanced 6-Vector Confluence Model (Symmetric Dual-Directional Scoring with CHOP Filter)")
-    col2.caption("📡 **Source**: Quant Confluence Model")
+        if live_ce_ltp <= 0.0:
+            live_ce_ltp = float(low_data['call_ltp'] if atm_strike == lower_atm else high_data['call_ltp'])
+        if live_pe_ltp <= 0.0:
+            live_pe_ltp = float(low_data['put_ltp'] if atm_strike == lower_atm else high_data['put_ltp'])
 
-    chop_status_str = "Trending" if is_trending_regime else ("Choppy Stand Down" if is_choppy_regime else "Neutral Oscillation")
-    col3.metric("RSI (14) / ADX (14)", f"{latest['RSI']:.1f} | ADX {latest['ADX']:.1f}", delta=f"CHOP: {chop_val:.1f} ({chop_status_str})", help="Source: RSI, ADX, and Wilder's Choppiness Index (CHOP > 61.8 = Stand Down)")
-    col3.caption("📡 **Source**: TA Suite + CHOP Filter")
+        # Micro-drift responsive probability that reacts dynamically to live ticks
+        spot_drift = curr_spot - spot
+        live_bullish_score = min(96.0, max(10.0, round(bullish_score + (spot_drift * 0.35), 1)))
+        live_bearish_score = min(96.0, max(10.0, round(bearish_score - (spot_drift * 0.35), 1)))
+        live_dominant_side = "BULLISH (CALL / CE)" if live_bullish_score >= live_bearish_score else "BEARISH (PUT / PE)"
 
-    z_desc = "Optimal" if abs(vwap_z) <= 1.8 else ("Climax Overbought" if vwap_z > 2.2 else "Climax Oversold")
-    col4.metric("ATR (14) / VWAP Z", f"₹{latest['ATR']:.2f} | {vwap_z:+.2f}σ", delta=f"{z_desc} • {'Viable +10 pts' if atr_viable else 'Low Vol'}", help="Source: Wilder's 14-period ATR + VWAP Standard Deviation Z-Score")
-    col4.caption("📡 **Source**: ATR(14) + VWAP Z-Score")
+        col1, col2, col3, col4, col5 = st.columns(5)
 
-    col5.metric("Macro & News Sentiment", f"+{news_sentiment_score:.1f}/10" if news_sentiment_score >= 0 else f"{news_sentiment_score:.1f}/10", delta="Supportive Tailwind" if news_sentiment_score > 0 else "Macro Headwind", help="Source: Google News RSS NLP Sentiment Pipeline + MCX Brent Crude Spread Model")
-    col5.caption("📡 **Source**: Google News RSS + MCX Crude")
+        with col1:
+            delta_color = "#10B981" if s_diff >= 0 else "#EF4444"
+            delta_arrow = "↑" if s_diff >= 0 else "↓"
+            delta_bg = "rgba(16, 185, 129, 0.16)" if s_diff >= 0 else "rgba(239, 68, 68, 0.16)"
+            delta_border = "rgba(16, 185, 129, 0.4)" if s_diff >= 0 else "rgba(239, 68, 68, 0.4)"
+            t_arrow = "▲" if t_dir == "UP" else "▼"
+            t_color = "#34D399" if t_dir == "UP" else "#F87171"
+            t_bg = "rgba(16, 185, 129, 0.15)" if t_dir == "UP" else "rgba(239, 68, 68, 0.15)"
 
-    # High-Contrast Directional Probability Meter (Both Sides Visually Explicit)
-    st.html(f"""
-    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 12px 16px; margin: 12px 0 16px 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span style="font-size: 0.84rem; font-weight: 800; color: #10B981; letter-spacing: 0.3px;">
-                🟢 BULLISH PROBABILITY (CE / CALL): {bullish_score}%
-            </span>
-            <span style="font-size: 0.74rem; background: rgba(245, 158, 11, 0.18); color: #FBBF24; padding: 2px 10px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.4);">
-                INSTITUTIONAL GATE: &gt; {MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY REQUIRED
-            </span>
-            <span style="font-size: 0.84rem; font-weight: 800; color: #EF4444; letter-spacing: 0.3px;">
-                🔴 BEARISH PROBABILITY (PE / PUT): {bearish_score}%
-            </span>
-        </div>
-        <div style="width: 100%; height: 12px; background: #1E293B; border-radius: 6px; overflow: hidden; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
-            <div style="width: {bullish_score}%; background: linear-gradient(90deg, #059669, #10B981); transition: width 0.4s ease;"></div>
-            <div style="width: {bearish_score}%; background: linear-gradient(90deg, #DC2626, #EF4444); transition: width 0.4s ease;"></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.76rem; color: #CBD5E1; margin-top: 6px;">
-            <span>Active Call Strike: <b style="color: #FFFFFF;">RELIANCE {atm_strike} CE ({expiry_date_str})</b> (LTP: <b style="color: #38BDF8;">₹{low_data['call_ltp'] if atm_strike == lower_atm else high_data['call_ltp']:.2f}</b>)</span>
-            <span>Dominant Direction: <b style="color: {'#34D399' if bullish_score >= bearish_score else '#F87171'}; font-weight: 800;">{dominant_side}</b></span>
-            <span>Active Put Strike: <b style="color: #FFFFFF;">RELIANCE {atm_strike} PE ({expiry_date_str})</b> (LTP: <b style="color: #C084FC;">₹{low_data['put_ltp'] if atm_strike == lower_atm else high_data['put_ltp']:.2f}</b>)</span>
-        </div>
-        <div style="font-size: 0.70rem; color: #64748B; text-align: right; margin-top: 6px; border-top: 1px solid #1E293B; padding-top: 4px;">
-            📡 <b>Source:</b> Proprietary 6-Vector Confluence Engine (Price Action 35%, Technical Indicators 30%, F&O OI Flow 20%, Macro 15%)
-        </div>
-    </div>
-    """)
-
-    # Enhancement 1 UI: Midday Chop Zone Warning Banner (Only visible during 11:30 AM – 01:15 PM IST)
-    if midday_penalty_active:
-        st.html("""
-        <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.40); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2rem;">⏳</span>
-                <div>
-                    <span style="font-size: 0.82rem; font-weight: 800; color: #FBBF24;">MIDDAY CHOP ZONE ACTIVE (11:30 AM – 01:15 PM IST)</span>
-                    <div style="font-size: 0.72rem; color: #FDE68A; margin-top: 2px;">Volume drops ~55% during this window. False breakouts peak. Probability penalized by -4.0 pts. Override requires RelVol ≥ 2.2×.</div>
+            st.html(f"""
+            <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 12px 14px; min-height: 106px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.76rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">RELIANCE SPOT</span>
+                    <span style="font-size: 0.66rem; background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 1px 6px; border-radius: 4px; font-weight: 700;">LIVE 0-DELAY (1s)</span>
+                </div>
+                <div style="font-size: 1.65rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.5px; margin: 2px 0; display: flex; align-items: baseline; justify-content: space-between;">
+                    <span>₹{curr_spot:.2f}</span>
+                    <span style="font-size: 0.76rem; color: {t_color}; font-weight: 800; background: {t_bg}; padding: 1px 6px; border-radius: 4px;">
+                        {t_arrow} {t_delta:+.2f}
+                    </span>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="background: {delta_bg}; color: {delta_color}; border: 1px solid {delta_border}; font-size: 0.74rem; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
+                        {delta_arrow} {s_diff:+.2f} pts ({s_diff_pct:+.2f}%)
+                    </span>
+                    <span style="font-size: 0.65rem; color: #64748B;">⏱️ {f_time}</span>
                 </div>
             </div>
-            <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.74rem; font-weight: 700; padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.5);">-4.0 pts PENALTY</span>
+            """)
+            st.caption("📡 **Source**: Groww API (0-Delay) • Continuous 1s Tick Stream")
+
+        bias_desc = "Bullish Edge" if live_bullish_score > live_bearish_score + 10 else ("Bearish Edge" if live_bearish_score > live_bullish_score + 10 else "Consolidation Chop")
+        if recommended_contract_type == "PE" or live_bearish_score > live_bullish_score:
+            primary_dir_metric = f"🔴 PE: {live_bearish_score:.1f}%"
+            secondary_dir_delta = f"🟢 CE: {live_bullish_score:.1f}% ({bias_desc})"
+        else:
+            primary_dir_metric = f"🟢 CE: {live_bullish_score:.1f}%"
+            secondary_dir_delta = f"🔴 PE: {live_bearish_score:.1f}% ({bias_desc})"
+
+        col2.metric("Directional Probability", primary_dir_metric, delta=secondary_dir_delta, help="Source: Enhanced 6-Vector Confluence Model (Symmetric Dual-Directional Scoring with CHOP Filter)")
+        col2.caption("📡 **Source**: Quant Confluence Model (1s Reactive)")
+
+        chop_status_str = "Trending" if is_trending_regime else ("Choppy Stand Down" if is_choppy_regime else "Neutral Oscillation")
+        col3.metric("RSI (14) / ADX (14)", f"{latest['RSI']:.1f} | ADX {latest['ADX']:.1f}", delta=f"CHOP: {chop_val:.1f} ({chop_status_str})", help="Source: RSI, ADX, and Wilder's Choppiness Index (CHOP > 61.8 = Stand Down)")
+        col3.caption("📡 **Source**: TA Suite + CHOP Filter")
+
+        z_desc = "Optimal" if abs(vwap_z) <= 1.8 else ("Climax Overbought" if vwap_z > 2.2 else "Climax Oversold")
+        col4.metric("ATR (14) / VWAP Z", f"₹{latest['ATR']:.2f} | {vwap_z:+.2f}σ", delta=f"{z_desc} • {'Viable +10 pts' if atr_viable else 'Low Vol'}", help="Source: Wilder's 14-period ATR + VWAP Standard Deviation Z-Score")
+        col4.caption("📡 **Source**: ATR(14) + VWAP Z-Score")
+
+        col5.metric("Macro & News Sentiment", f"+{news_sentiment_score:.1f}/10" if news_sentiment_score >= 0 else f"{news_sentiment_score:.1f}/10", delta="Supportive Tailwind" if news_sentiment_score > 0 else "Macro Headwind", help="Source: Google News RSS NLP Sentiment Pipeline + MCX Brent Crude Spread Model")
+        col5.caption("📡 **Source**: Google News RSS + MCX Crude")
+
+        # High-Contrast Directional Probability Meter (Both Sides Visually Explicit)
+        st.html(f"""
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 12px 16px; margin: 12px 0 16px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 0.84rem; font-weight: 800; color: #10B981; letter-spacing: 0.3px;">
+                    🟢 BULLISH PROBABILITY (CE / CALL): {live_bullish_score}%
+                </span>
+                <span style="font-size: 0.74rem; background: rgba(245, 158, 11, 0.18); color: #FBBF24; padding: 2px 10px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.4);">
+                    INSTITUTIONAL GATE: &gt; {MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY REQUIRED
+                </span>
+                <span style="font-size: 0.84rem; font-weight: 800; color: #EF4444; letter-spacing: 0.3px;">
+                    🔴 BEARISH PROBABILITY (PE / PUT): {live_bearish_score}%
+                </span>
+            </div>
+            <div style="width: 100%; height: 12px; background: #1E293B; border-radius: 6px; overflow: hidden; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
+                <div style="width: {live_bullish_score}%; background: linear-gradient(90deg, #059669, #10B981); transition: width 0.4s ease;"></div>
+                <div style="width: {live_bearish_score}%; background: linear-gradient(90deg, #DC2626, #EF4444); transition: width 0.4s ease;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.76rem; color: #CBD5E1; margin-top: 6px;">
+                <span>Active Call Strike: <b style="color: #FFFFFF;">RELIANCE {atm_strike} CE ({expiry_date_str})</b> (LTP: <b style="color: #38BDF8;">₹{live_ce_ltp:.2f}</b>)</span>
+                <span>Dominant Direction: <b style="color: {'#34D399' if live_bullish_score >= live_bearish_score else '#F87171'}; font-weight: 800;">{live_dominant_side}</b></span>
+                <span>Active Put Strike: <b style="color: #FFFFFF;">RELIANCE {atm_strike} PE ({expiry_date_str})</b> (LTP: <b style="color: #C084FC;">₹{live_pe_ltp:.2f}</b>)</span>
+            </div>
+            <div style="font-size: 0.70rem; color: #64748B; text-align: right; margin-top: 6px; border-top: 1px solid #1E293B; padding-top: 4px;">
+                📡 <b>Source:</b> Proprietary 6-Vector Confluence Engine (Price Action 35%, Technical Indicators 30%, F&O OI Flow 20%, Macro 15%)
+            </div>
         </div>
         """)
 
-    # Enhancement 2 & 3 UI: Dynamic Target & Trailing SL Strip
-    vix_badge_text = f"VIX {vix_val_current:.1f} ({vix_scaler:.2f}×)" if 'vix_val_current' in locals() else "VIX Normal"
-    target_tag = f'<span style="background: rgba(6, 182, 212, 0.20); color: #67E8F9; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.4);">ATR & {vix_badge_text}</span>' if is_target_dynamic else '<span style="background: rgba(16, 185, 129, 0.15); color: #6EE7B7; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">STATIC</span>'
-    alpha_status_color = "#34D399" if alpha_spread >= 0.30 else ("#F87171" if alpha_spread <= -0.30 else "#94A3B8")
-    alpha_status_badge = "Strong Outperformance (Alpha Accumulation)" if alpha_spread >= 0.30 else ("Underperforming Index (Alpha Drag)" if alpha_spread <= -0.30 else "In-Line Beta")
-    
-    st.html(f"""
-    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div>
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🎯 PROFIT TARGET (NET)</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: #34D399;">+{effective_target_pts:.1f} pts (+₹{net_actual_reward:,.0f} Net)</div>
-                <div style="font-size: 0.68rem; color: #64748B; margin-top: 1px;">Gross: +₹{round(actual_reward):,} | STT & Fees: -₹{total_tax_charges:,.0f} {target_tag}</div>
+        # Enhancement 1 UI: Midday Chop Zone Warning Banner (Only visible during 11:30 AM – 01:15 PM IST)
+        if midday_penalty_active:
+            st.html("""
+            <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.40); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2rem;">⏳</span>
+                    <div>
+                        <span style="font-size: 0.82rem; font-weight: 800; color: #FBBF24;">MIDDAY CHOP ZONE ACTIVE (11:30 AM – 01:15 PM IST)</span>
+                        <div style="font-size: 0.72rem; color: #FDE68A; margin-top: 2px;">Volume drops ~55% during this window. False breakouts peak. Probability penalized by -4.0 pts. Override requires RelVol ≥ 2.2×.</div>
+                    </div>
+                </div>
+                <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.74rem; font-weight: 700; padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.5);">-4.0 pts PENALTY</span>
+            </div>
+            """)
+
+        # Enhancement 2 & 3 UI: Dynamic Target & Trailing SL Strip
+        vix_badge_text = f"VIX {vix_val_current:.1f} ({vix_scaler:.2f}×)" if 'vix_val_current' in locals() else "VIX Normal"
+        target_tag = f'<span style="background: rgba(6, 182, 212, 0.20); color: #67E8F9; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.4);">ATR & {vix_badge_text}</span>' if is_target_dynamic else '<span style="background: rgba(16, 185, 129, 0.15); color: #6EE7B7; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">STATIC</span>'
+        alpha_status_color = "#34D399" if alpha_spread >= 0.30 else ("#F87171" if alpha_spread <= -0.30 else "#94A3B8")
+        alpha_status_badge = "Strong Outperformance (Alpha Accumulation)" if alpha_spread >= 0.30 else ("Underperforming Index (Alpha Drag)" if alpha_spread <= -0.30 else "In-Line Beta")
+
+        st.html(f"""
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div>
+                    <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🎯 PROFIT TARGET (NET)</span>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #34D399;">+{effective_target_pts:.1f} pts (+₹{net_actual_reward:,.0f} Net)</div>
+                    <div style="font-size: 0.68rem; color: #64748B; margin-top: 1px;">Gross: +₹{round(actual_reward):,} | STT & Fees: -₹{total_tax_charges:,.0f} {target_tag}</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="text-align: center;">
+                    <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🛑 STOP LOSS (NET)</span>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f} Max)</div>
+                    <div style="font-size: 0.68rem; color: #64748B;">Gross Loss: -₹{round(actual_risk):,} | R:R = {effective_target_pts/max(0.1, effective_sl_pts):.2f}x <span style="background: rgba(239, 68, 68, 0.18); color: #FCA5A5; padding: 1px 6px; border-radius: 3px; font-weight: 700;">1.5× ATR</span></div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="text-align: center;">
+                    <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">⚡ TRAILING SL SHIELD</span>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #FBBF24;">+{trailing_activation_pts:.1f} pts → BE</div>
+                    <div style="font-size: 0.68rem; color: #64748B;">Auto-trails to Break-Even at +{trailing_activation_pts:.1f} pts gain</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="text-align: center;">
+                    <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">📊 ALPHA & CRUDE</span>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: {alpha_status_color};">{alpha_spread:+.2f}% vs NIFTY</div>
+                    <div style="font-size: 0.68rem; color: #64748B;">Crude: <b style="color: {'#34D399' if crude_pct >= 0 else '#F87171'};">{crude_pct:+.1f}%</b> ({'Refining Tailwind' if crude_pct >= 1.5 else ('O2C Margin Drag' if crude_pct <= -2.0 else 'Steady')})</div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="text-align: right;">
+                    <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 KELLY SIZING (≤4% CAP)</span>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{kelly_recommended_lots} Lot{'s' if kelly_recommended_lots > 1 else ''} Rec ({risk_pct_of_capital:.1f}% Risk)</div>
+                    <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">{'🟢 Capital Safe (≤4%)' if capital_risk_safe else ('🟡 Near 4% Cap' if capital_risk_warning else '🔴 Overleveraged!')}</div>
+                </div>
             </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="text-align: center;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🛑 STOP LOSS (NET)</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f} Max)</div>
-                <div style="font-size: 0.68rem; color: #64748B;">Gross Loss: -₹{round(actual_risk):,} | R:R = {effective_target_pts/max(0.1, effective_sl_pts):.2f}x <span style="background: rgba(239, 68, 68, 0.18); color: #FCA5A5; padding: 1px 6px; border-radius: 3px; font-weight: 700;">1.5× ATR</span></div>
-            </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="text-align: center;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">⚡ TRAILING SL SHIELD</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: #FBBF24;">+{trailing_activation_pts:.1f} pts → BE</div>
-                <div style="font-size: 0.68rem; color: #64748B;">Auto-trails to Break-Even at +{trailing_activation_pts:.1f} pts gain</div>
-            </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="text-align: center;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">📊 ALPHA & CRUDE</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: {alpha_status_color};">{alpha_spread:+.2f}% vs NIFTY</div>
-                <div style="font-size: 0.68rem; color: #64748B;">Crude: <b style="color: {'#34D399' if crude_pct >= 0 else '#F87171'};">{crude_pct:+.1f}%</b> ({'Refining Tailwind' if crude_pct >= 1.5 else ('O2C Margin Drag' if crude_pct <= -2.0 else 'Steady')})</div>
-            </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="text-align: right;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 KELLY SIZING (≤4% CAP)</span>
-                <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{kelly_recommended_lots} Lot{'s' if kelly_recommended_lots > 1 else ''} Rec ({risk_pct_of_capital:.1f}% Risk)</div>
-                <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">{'🟢 Capital Safe (≤4%)' if capital_risk_safe else ('🟡 Near 4% Cap' if capital_risk_warning else '🔴 Overleveraged!')}</div>
-            </div>
-        </div>
-    </div>
-    """)
+        """)
+
+    render_live_reliance_kpi_dashboard()
 
     # Capital Risk Warning Alert (Triggers if risk exceeds 4.0% institutional budget)
     if capital_risk_warning:
@@ -5182,48 +5379,163 @@ if df is not None and not df.empty:
         render_institutional_candlestick_and_cvd_chart(df, spot, atm_strike)
 
     # Dual ATM Corridor Strike Selection Matrix & Comparison Table
-    with st.expander(f"🏆 Dual ATM Corridor Quantitative Strike Selection Matrix & Rationale ({lower_atm} CE vs {upper_atm} CE - {expiry_date_str})", expanded=True):
+    # Dual ATM Corridor Strike Selection Matrix & Comparison Table (100% Dynamic PE vs CE)
+    is_rec_pe = (recommended_contract_type == "PE")
+
+    if is_rec_pe:
+        matrix_title = f"🏆 Dual ATM Corridor Quantitative Strike Selection Matrix & Rationale ({upper_atm} PE vs {lower_atm} PE - {expiry_date_str})"
+        rec_box_border_left = "#EF4444"
+        rec_box_badge_bg = "rgba(239, 68, 68, 0.12)"
+        rec_box_badge_border = "rgba(239, 68, 68, 0.25)"
+        rec_box_badge_color = "#F87171"
+        rec_rec_bg = "background: linear-gradient(135deg, rgba(127, 29, 29, 0.5) 0%, rgba(239, 68, 68, 0.18) 100%)"
+        rec_rec_border = "#EF4444"
+        rec_rec_title_color = "#F87171"
+        rec_rec_sub_color = "#FECACA"
+        rec_inst_name = f"RELIANCE {upper_atm} PE"
+
+        # Card 1: Upper ATM PE (Near-ATM / ITM Put, Delta ~0.55) -> RANK #1 BEST STRIKE
+        k1_num = upper_atm
+        k1_label = f"🛡️ RELIANCE {upper_atm} PE ({expiry_date_str})"
+        k1_rank_title = "RANK #1 BEST STRIKE (Score: 96/100)"
+        k1_rank_bg = "#DC2626"
+        k1_rank_border = "#EF4444"
+        k1_rank_color = "#FFFFFF"
+        k1_border = "#EF4444" if atm_strike == upper_atm else "#334155"
+        k1_ltp_color = "#C084FC"
+        k1_delta_val = abs(high_data['delta_pe'])
+        k1_spot_move = high_data['spot_move_needed_pe']
+        k1_intrinsic = max(0.0, round(upper_atm - spot, 2))
+        k1_oi_chg = high_data['put_oi_change_pct']
+        k1_oi_lots = high_data['put_oi_lots']
+        k1_b1 = f'<b style="color: #FFFFFF;">Delta Efficiency ({k1_delta_val:.2f}):</b> Requires only <b style="color: #F87171;">-{k1_spot_move:.1f} pts</b> spot drop to hit +{target_pts:.1f} pts target (within daily ATR 17.8 pts).'
+        k1_b2 = f'<b style="color: #FFFFFF;">Intrinsic Buffer (₹{k1_intrinsic:.2f}):</b> In-the-money cushion protects against pure theta time decay.'
+        k1_b3 = f'<b style="color: #FFFFFF;">Downside Velocity Catalyst:</b> <b style="color: #F87171;">{k1_oi_chg:+.1f}%</b> institutional put writing support creates powerful downside acceleration.'
+
+        # Card 2: Lower ATM PE (OTM Put, Delta ~0.42) -> RANK #2 ALTERNATIVE
+        k2_num = lower_atm
+        k2_label = f"🛡️ RELIANCE {lower_atm} PE ({expiry_date_str})"
+        k2_rank_title = "RANK #2 ALTERNATIVE (Score: 78/100)"
+        k2_rank_bg = "#1E293B"
+        k2_rank_border = "#334155"
+        k2_rank_color = "#CBD5E1"
+        k2_border = "#C084FC" if atm_strike == lower_atm else "#334155"
+        k2_ltp_color = "#C084FC"
+        k2_delta_val = abs(low_data['delta_pe'])
+        k2_spot_move = low_data['spot_move_needed_pe']
+        k2_b1 = '<b style="color: #FFFFFF;">Out-Of-The-Money:</b> Cheaper premium yields higher percentage ROI on breakdown, but zero intrinsic cushion.'
+        k2_b2 = f'<b style="color: #FFFFFF;">Delta Sensitivity ({k2_delta_val:.2f}):</b> Requires larger <b style="color: #FBBF24;">-{k2_spot_move:.1f} pts</b> spot drop to hit +{target_pts:.1f} pts target (exceeds standard 15m ATR).'
+        k2_b3 = '<b style="color: #FFFFFF;">Higher Decay Vulnerability:</b> 100% extrinsic value makes it vulnerable if downward momentum stalls.'
+
+        c1_live_ltp = float(high_data['put_ltp'])
+        c2_live_ltp = float(low_data['put_ltp'])
+        try:
+            gw_chain_fresh = GrowwMarketFeed.get_instance().get_reliance_live_option_chain()
+            if gw_chain_fresh:
+                for row in gw_chain_fresh:
+                    if abs(row.get("strike", 0) - upper_atm) < 0.5 and row.get("put_ltp"):
+                        c1_live_ltp = float(row["put_ltp"])
+                    elif abs(row.get("strike", 0) - lower_atm) < 0.5 and row.get("put_ltp"):
+                        c2_live_ltp = float(row["put_ltp"])
+        except Exception:
+            pass
+    else:
+        matrix_title = f"🏆 Dual ATM Corridor Quantitative Strike Selection Matrix & Rationale ({lower_atm} CE vs {upper_atm} CE - {expiry_date_str})"
+        rec_box_border_left = "#10B981"
+        rec_box_badge_bg = "rgba(16, 185, 129, 0.12)"
+        rec_box_badge_border = "rgba(16, 185, 129, 0.25)"
+        rec_box_badge_color = "#10B981"
+        rec_rec_bg = "background: linear-gradient(135deg, rgba(6, 95, 70, 0.5) 0%, rgba(16, 185, 129, 0.18) 100%)"
+        rec_rec_border = "#10B981"
+        rec_rec_title_color = "#34D399"
+        rec_rec_sub_color = "#A7F3D0"
+        rec_inst_name = f"RELIANCE {lower_atm} CE"
+
+        # Card 1: Lower ATM CE (Near-ATM / ITM Call, Delta ~0.58) -> RANK #1 BEST STRIKE
+        k1_num = lower_atm
+        k1_label = f"📞 RELIANCE {lower_atm} CE ({expiry_date_str})"
+        k1_rank_title = "RANK #1 BEST STRIKE (Score: 96/100)"
+        k1_rank_bg = "#059669"
+        k1_rank_border = "#10B981"
+        k1_rank_color = "#FFFFFF"
+        k1_border = "#10B981" if atm_strike == lower_atm else "#334155"
+        k1_ltp_color = "#38BDF8"
+        k1_delta_val = low_data['delta_ce']
+        k1_spot_move = low_data['spot_move_needed_ce']
+        k1_intrinsic = low_data['intrinsic_ce']
+        k1_oi_chg = low_data['call_oi_change_pct']
+        k1_oi_lots = low_data['call_oi_lots']
+        k1_b1 = f'<b style="color: #FFFFFF;">Delta Efficiency ({k1_delta_val}):</b> Requires only <b style="color: #34D399;">+{k1_spot_move} pts</b> spot move to hit +{target_pts:.1f} pts target (within daily ATR 17.8 pts).'
+        k1_b2 = f'<b style="color: #FFFFFF;">Intrinsic Buffer (₹{k1_intrinsic:.2f}):</b> In-the-money cushion protects against pure theta time decay.'
+        k1_b3 = f'<b style="color: #FFFFFF;">Short Squeeze Catalyst:</b> <b style="color: #34D399;">{k1_oi_chg:+.1f}%</b> surge in {k1_oi_lots:,} lots creates explosive short-covering fuel.'
+
+        # Card 2: Upper ATM CE (OTM Call, Delta ~0.54) -> RANK #2 ALTERNATIVE
+        k2_num = upper_atm
+        k2_label = f"📞 RELIANCE {upper_atm} CE ({expiry_date_str})"
+        k2_rank_title = "RANK #2 ALTERNATIVE (Score: 78/100)"
+        k2_rank_bg = "#1E293B"
+        k2_rank_border = "#334155"
+        k2_rank_color = "#CBD5E1"
+        k2_border = "#38BDF8" if atm_strike == upper_atm else "#334155"
+        k2_ltp_color = "#38BDF8"
+        k2_delta_val = high_data['delta_ce']
+        k2_spot_move = high_data['spot_move_needed_ce']
+        k2_b1 = '<b style="color: #FFFFFF;">Out-Of-The-Money:</b> Cheaper premium yields higher percentage ROI on breakout, but zero intrinsic cushion.'
+        k2_b2 = f'<b style="color: #FFFFFF;">Delta Sensitivity ({k2_delta_val}):</b> Requires larger <b style="color: #FBBF24;">+{k2_spot_move} pts</b> spot move to hit +{target_pts:.1f} pts target (exceeds standard 15m ATR).'
+        k2_b3 = '<b style="color: #FFFFFF;">Higher Decay Vulnerability:</b> 100% extrinsic value makes it vulnerable if momentum stalls.'
+
+        c1_live_ltp = float(low_data['call_ltp'])
+        c2_live_ltp = float(high_data['call_ltp'])
+        try:
+            gw_chain_fresh = GrowwMarketFeed.get_instance().get_reliance_live_option_chain()
+            if gw_chain_fresh:
+                for row in gw_chain_fresh:
+                    if abs(row.get("strike", 0) - lower_atm) < 0.5 and row.get("call_ltp"):
+                        c1_live_ltp = float(row["call_ltp"])
+                    elif abs(row.get("strike", 0) - upper_atm) < 0.5 and row.get("call_ltp"):
+                        c2_live_ltp = float(row["call_ltp"])
+        except Exception:
+            pass
+
+    with st.expander(matrix_title, expanded=True):
         st.html(f"""
-        <div style="background: #0B1120 !important; border: 1px solid #1E293B !important; border-left: 4px solid #10B981 !important; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);">
+        <div style="background: #0B1120 !important; border: 1px solid #1E293B !important; border-left: 4px solid {rec_box_border_left} !important; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);">
             <div style="display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px;">
                 <div style="min-width: 0;">
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                        <span style="font-size: 0.72rem; color: #10B981; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; background: rgba(16, 185, 129, 0.12); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.25);">⚡ DUAL ATM CORRIDOR DEFINITION (10-PT INCREMENT)</span>
+                        <span style="font-size: 0.72rem; color: {rec_box_badge_color}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; background: {rec_box_badge_bg}; padding: 2px 8px; border-radius: 4px; border: 1px solid {rec_box_badge_border};">⚡ DUAL ATM CORRIDOR DEFINITION (10-PT INCREMENT)</span>
                     </div>
                     <div style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.5;">
                         RELIANCE Spot is at <b style="color: #38BDF8; font-weight: 800;">₹{spot:.2f}</b>, bracketed by Lower ATM <b style="color: #FFFFFF; font-weight: 700;">₹{lower_atm}</b> (<span style="color: #F87171; font-weight: 700;">-{spot - lower_atm:.2f} pts</span>) and Upper ATM <b style="color: #FFFFFF; font-weight: 700;">₹{upper_atm}</b> (<span style="color: #34D399; font-weight: 700;">+{upper_atm - spot:.2f} pts</span>). Both strikes qualify as At-The-Money under live market mechanics.
                     </div>
                 </div>
                 <div style="flex-shrink: 0;">
-                    <div style="background: linear-gradient(135deg, rgba(6, 95, 70, 0.5) 0%, rgba(16, 185, 129, 0.18) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 10px 16px; text-align: right; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25); white-space: nowrap;">
-                        <div style="font-size: 0.66rem; font-weight: 800; color: #34D399; text-transform: uppercase; letter-spacing: 0.8px;">⭐ ALGORITHMIC RECOMMENDATION</div>
-                        <div style="font-size: 0.95rem; font-weight: 800; color: #FFFFFF; margin-top: 2px; letter-spacing: 0.3px;">RELIANCE {best_strike_meta['strike']} CE <span style="font-size: 0.78rem; color: #A7F3D0; font-weight: 600;">({expiry_date_str})</span></div>
+                    <div style="{rec_rec_bg}; border: 1px solid {rec_rec_border}; border-radius: 8px; padding: 10px 16px; text-align: right; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); white-space: nowrap;">
+                        <div style="font-size: 0.66rem; font-weight: 800; color: {rec_rec_title_color}; text-transform: uppercase; letter-spacing: 0.8px;">⭐ ALGORITHMIC RECOMMENDATION</div>
+                        <div style="font-size: 0.95rem; font-weight: 800; color: #FFFFFF; margin-top: 2px; letter-spacing: 0.3px;">{rec_inst_name} <span style="font-size: 0.78rem; color: {rec_rec_sub_color}; font-weight: 600;">({expiry_date_str})</span></div>
                     </div>
                 </div>
             </div>
         </div>
         """)
 
-        border_c1 = "#10B981" if atm_strike == lower_atm else "#334155"
-        border_c2 = "#38BDF8" if atm_strike == upper_atm else "#334155"
-
         st.html(f"""
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 100%; align-items: stretch; margin-top: 4px;">
-            <!-- Card 1: Lower ATM Strike -->
-            <div style="background: #0F172A !important; border: 2px solid {border_c1} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+            <!-- Card 1: Primary ATM Strike -->
+            <div style="background: #0F172A !important; border: 2px solid {k1_border} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; min-height: 28px;">
-                        <span style="font-weight: 800; color: #34D399; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">📞 RELIANCE {lower_atm} CE ({expiry_date_str})</span>
-                        <span style="background: #059669; color: #FFFFFF; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; border: 1px solid #10B981; display: inline-flex; align-items: center;">RANK #1 BEST STRIKE (Score: 96/100)</span>
+                        <span style="font-weight: 800; color: {rec_rec_title_color}; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">{k1_label}</span>
+                        <span style="background: {k1_rank_bg}; color: {k1_rank_color}; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; border: 1px solid {k1_rank_border}; display: inline-flex; align-items: center;">{k1_rank_title}</span>
                     </div>
-                    <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
-                        ₹{low_data['call_ltp']:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
+                    <div style="font-size: 1.65rem; font-weight: 800; color: {k1_ltp_color}; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
+                        ₹{c1_live_ltp:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
                     </div>
                 </div>
                 <ul style="font-size: 0.82rem; color: #E2E8F0; margin: 0 0 0 18px; padding: 0; line-height: 1.55; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;">
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Delta Efficiency ({low_data['delta_ce']}):</b> Requires only <b style="color: #34D399;">+{low_data['spot_move_needed_ce']} pts</b> spot move to hit +{target_pts:.1f} pts target (within daily ATR 17.8 pts).</li>
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Intrinsic Buffer (₹{low_data['intrinsic_ce']:.2f}):</b> In-the-money cushion protects against pure theta time decay.</li>
-                    <li style="margin-bottom: 0;"><b style="color: #FFFFFF;">Short Squeeze Catalyst:</b> <b style="color: #34D399;">+{low_data['call_oi_change_pct']:.1f}%</b> surge in {low_data['call_oi_lots']:,} lots creates explosive short-covering fuel.</li>
+                    <li style="margin-bottom: 6px;">{k1_b1}</li>
+                    <li style="margin-bottom: 6px;">{k1_b2}</li>
+                    <li style="margin-bottom: 0;">{k1_b3}</li>
                 </ul>
                 <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
                     <span>📡 <b>Source:</b> Groww Live Option Chain (0-Delay LTP & OI) & Black-Scholes Greeks Engine</span>
@@ -5231,21 +5543,21 @@ if df is not None and not df.empty:
                 </div>
             </div>
 
-            <!-- Card 2: Upper ATM Strike -->
-            <div style="background: #0F172A !important; border: 2px solid {border_c2} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+            <!-- Card 2: Secondary Alternative Strike -->
+            <div style="background: #0F172A !important; border: 2px solid {k2_border} !important; border-radius: 8px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; min-height: 28px;">
-                        <span style="font-weight: 800; color: #38BDF8; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">📞 RELIANCE {upper_atm} CE ({expiry_date_str})</span>
-                        <span style="background: #1E293B; color: #CBD5E1; border: 1px solid #334155; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; display: inline-flex; align-items: center;">RANK #2 ALTERNATIVE (Score: 78/100)</span>
+                        <span style="font-weight: 800; color: #38BDF8; font-size: 1.05rem; display: flex; align-items: center; gap: 6px;">{k2_label}</span>
+                        <span style="background: {k2_rank_bg}; color: {k2_rank_color}; border: 1px solid {k2_rank_border}; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 800; display: inline-flex; align-items: center;">{k2_rank_title}</span>
                     </div>
-                    <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
-                        ₹{high_data['call_ltp']:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
+                    <div style="font-size: 1.65rem; font-weight: 800; color: {k2_ltp_color}; margin: 6px 0 10px 0; display: flex; align-items: baseline; gap: 6px;">
+                        ₹{c2_live_ltp:.2f} <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 500;">LTP</span>
                     </div>
                 </div>
                 <ul style="font-size: 0.82rem; color: #E2E8F0; margin: 0 0 0 18px; padding: 0; line-height: 1.55; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1;">
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Out-Of-The-Money:</b> Cheaper premium yields higher percentage ROI on breakout, but zero intrinsic cushion.</li>
-                    <li style="margin-bottom: 6px;"><b style="color: #FFFFFF;">Delta Sensitivity ({high_data['delta_ce']}):</b> Requires larger <b style="color: #FBBF24;">+{high_data['spot_move_needed_ce']} pts</b> spot move to hit +{target_pts:.1f} pts target (exceeds standard 15m ATR).</li>
-                    <li style="margin-bottom: 0;"><b style="color: #FFFFFF;">Higher Decay Vulnerability:</b> 100% extrinsic value makes it vulnerable if momentum stalls.</li>
+                    <li style="margin-bottom: 6px;">{k2_b1}</li>
+                    <li style="margin-bottom: 6px;">{k2_b2}</li>
+                    <li style="margin-bottom: 0;">{k2_b3}</li>
                 </ul>
                 <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
                     <span>📡 <b>Source:</b> Groww Live Option Chain (0-Delay LTP & OI) & Black-Scholes Greeks Engine</span>
@@ -5342,9 +5654,9 @@ if df is not None and not df.empty:
     }
 
     if stream_live_1s:
-        render_dynamic_1s_atm_feed(spot, current_option_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, trade_plan=trade_plan)
+        render_dynamic_1s_atm_feed(spot, live_broker_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, trade_plan=trade_plan)
     else:
-        render_atm_call_put_content(spot, current_option_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, is_streaming=False, trade_plan=trade_plan)
+        render_atm_call_put_content(spot, live_broker_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, is_streaming=False, trade_plan=trade_plan)
 
     # ==============================================================================
     # 7. GLOBAL NEWS & MACRO SENTIMENT TELEMETRY PANEL
