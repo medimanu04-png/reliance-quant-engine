@@ -3953,9 +3953,10 @@ if df is not None and not df.empty:
     # Live Reliance ATM Implied Volatility & IV Rank (IVR / IVP)
     dte_val = expiry_plan.get("dte", 30)
     T_val = dte_val / 365.0
-    if T_val > 0 and spot > 0 and current_option_ltp > 0:
+    ref_atm_ltp = live_broker_ltp if live_broker_ltp > 0.0 else float(low_data.get("call_ltp", 18.50) if atm_strike == lower_atm else high_data.get("call_ltp", 18.50))
+    if T_val > 0 and spot > 0 and ref_atm_ltp > 0:
         # Annualized ATM IV from current option premium (Brenner-Subrahmanyam approximation)
-        approx_iv = (current_option_ltp / (spot * 0.40)) * math.sqrt(1.0 / T_val)
+        approx_iv = (ref_atm_ltp / (spot * 0.40)) * math.sqrt(1.0 / T_val)
         rel_iv = round(max(0.12, min(0.50, approx_iv)), 3)
     else:
         rel_iv = 0.212
