@@ -881,26 +881,52 @@ with top_col1:
     """)
 with top_col2:
     render_quant_desk_clock()
-    rescan_btn = st_button_stretch("🔄 Instant Market Rescan")
-    if rescan_btn:
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            gw = GrowwMarketFeed.get_instance()
-            gw._fetch_reliance_spot_now()
-            gw._fetch_reliance_chain_now()
-            gw._execute_live_benchmark_fetch()
-        except Exception:
-            pass
-        NSEIndiaFetcher._cached_data = None
-        NSEIndiaFetcher._last_fetch_time = 0
-        st.session_state["just_rescanned"] = True
-        st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
-        st.rerun()
-    st.html(f"""
-        <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px;">
-            ⏱️ Auto-rescan: 5m cycle &nbsp;|&nbsp; Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b> &nbsp;|&nbsp; ⚡ <b style="color: #34D399;">~4ms</b>
-        </div>
-    """)
+
+    @st.fragment(run_every="5s")
+    def render_auto_rescan_controller():
+        now = time.time()
+        if "last_auto_rescan_ts" not in st.session_state:
+            st.session_state["last_auto_rescan_ts"] = now
+
+        col_rb, col_cb = st.columns([1.5, 1.0])
+        with col_rb:
+            rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key="btn_instant_rescan")
+        with col_cb:
+            auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", True), key="cb_auto_rescan_5s")
+            st.session_state["auto_rescan_active"] = auto_active
+
+        elapsed = now - st.session_state["last_auto_rescan_ts"]
+        should_auto = auto_active and (elapsed >= 4.8)
+
+        if rescan_btn or should_auto:
+            try:
+                from groww_market_feed import GrowwMarketFeed
+                gw = GrowwMarketFeed.get_instance()
+                gw._fetch_reliance_spot_now()
+                gw._fetch_reliance_chain_now()
+                gw._execute_live_benchmark_fetch()
+            except Exception:
+                pass
+            from nse_data_fetcher import NSEIndiaFetcher
+            NSEIndiaFetcher._cached_data = None
+            NSEIndiaFetcher._last_fetch_time = 0
+            st.session_state["last_auto_rescan_ts"] = now
+            st.session_state["just_rescanned"] = True
+            if rescan_btn:
+                st.session_state["manual_rescan_clicked"] = True
+            st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
+            st.rerun(scope="app")
+
+        cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
+        st.html(f"""
+            <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
+                <span>Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+                <span>⚡ <b style="color: #34D399;">~4ms</b></span>
+            </div>
+        """)
+
+    render_auto_rescan_controller()
 
 st.markdown("---")
 
@@ -908,12 +934,14 @@ st.markdown("---")
 # 1.5. LIVE MACRO BENCHMARKS TELEMETRY: NIFTY 50 | BANK NIFTY | GIFT NIFTY | S&P 500 (US) | INDIA VIX | CRUDE OIL
 # ==============================================================================
 is_rescan = st.session_state.get("just_rescanned", False)
+manual_rescan = st.session_state.get("manual_rescan_clicked", False)
 nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
-if is_rescan:
+if manual_rescan:
     st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete! Live macro benchmarks (NIFTY 50, BANK NIFTY, GIFT NIFTY, S&P 500 [US], INDIA VIX, CRUDE OIL [MCX]), technical indicators, news sentiment, and Dual ATM option flow 100% updated.")
-    st.session_state["just_rescanned"] = False
+    st.session_state["manual_rescan_clicked"] = False
+st.session_state["just_rescanned"] = False
 
 # 6 Sleek Live Market Cards with 1-Second Dynamic Streaming Fragment (Zero-Flicker Continuous Running Numbers)
 @st.fragment(run_every="1s")
@@ -1110,23 +1138,30 @@ with st.sidebar.expander("🔔 Telegram Bot Settings & Broadcast", expanded=Fals
     
     tg_enabled = st.checkbox("🔔 Enable Telegram Entry Push Alerts", value=tg_config.get("enabled", True), key="tg_enabled_cb")
     
-    col_tgs, col_tgt = st.columns(2)
+    col_tgs, col_tgt, col_tgr = st.columns(3)
     with col_tgs:
-        if st_button_stretch("💾 Save Bot Config", key="save_tg_btn"):
+        if st_button_stretch("💾 Save", key="save_tg_btn"):
             TelegramNotifier.save_config(tg_bot_token, tg_chat_id, tg_enabled)
             st.session_state["tg_config"] = {"bot_token": tg_bot_token, "chat_id": tg_chat_id, "enabled": tg_enabled}
-            st.success(f"Config saved ({len(parsed_recipients)} recipient{'s' if len(parsed_recipients) != 1 else ''})!")
+            st.success(f"Saved ({len(parsed_recipients)})!")
     with col_tgt:
-        if st_button_stretch("🧪 Send Test Alert", key="test_tg_btn"):
+        if st_button_stretch("🧪 Test", key="test_tg_btn"):
             if tg_bot_token and parsed_recipients:
-                with st.spinner(f"Broadcasting test to {len(parsed_recipients)} recipient(s)..."):
+                with st.spinner(f"Broadcasting..."):
                     ok, res_msg = TelegramNotifier.send_test_alert(tg_bot_token, parsed_recipients)
                 if ok:
                     st.success(f"✅ {res_msg}")
                 else:
                     st.error(f"❌ {res_msg}")
             else:
-                st.warning("Enter Bot Token and at least one Chat ID.")
+                st.warning("Token & Chat ID required.")
+    with col_tgr:
+        if st_button_stretch("🔄 Dedup", key="clear_tg_dedup_btn"):
+            TelegramNotifier.clear_alert_log()
+            for k in list(st.session_state.keys()):
+                if k.startswith("tg_sent_"):
+                    del st.session_state[k]
+            st.success("Dedup reset!")
 
     st.markdown("""
     <div style="font-size: 0.72rem; color: #CBD5E1; margin-top: 8px; line-height: 1.5; background: #070B14; border: 1px solid #1E293B; border-radius: 6px; padding: 8px 10px;">
@@ -2233,7 +2268,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
             alert_sent_key = f"tg_sent_sim_target_{sim_run_id}_{plan_strike}"
-            if not st.session_state.get(alert_sent_key, False):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_target_hit_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     entry_price=active_live_ltp,
@@ -2248,10 +2283,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
+                    TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+                st.session_state[alert_sent_key] = True
 
             last_status = st.session_state.get("last_tg_status", "✅ Target Hit Alert Dispatched!")
             tg_status_html = f"""
@@ -2351,7 +2389,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
             alert_sent_key = f"tg_sent_sim_sl_{sim_run_id}_{plan_strike}"
-            if not st.session_state.get(alert_sent_key, False):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_stop_loss_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     entry_price=active_live_ltp,
@@ -2366,10 +2404,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
+                    TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+                st.session_state[alert_sent_key] = True
 
             last_status = st.session_state.get("last_tg_status", "✅ Stop Loss Alert Dispatched!")
             tg_status_html = f"""
@@ -2466,7 +2507,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
             alert_sent_key = f"tg_sent_sim_trail_{sim_run_id}_{plan_strike}"
-            if not st.session_state.get(alert_sent_key, False):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_trailing_sl_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     current_ltp=trail_ltp,
@@ -2480,10 +2521,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
+                    TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+                st.session_state[alert_sent_key] = True
 
             last_status = st.session_state.get("last_tg_status", "✅ Trailing SL Alert Dispatched!")
             tg_status_html = f"""
@@ -2576,7 +2620,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
             alert_sent_key = f"tg_sent_sim_autosq_{sim_run_id}_{plan_strike}"
-            if not st.session_state.get(alert_sent_key, False):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_auto_square_off_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     current_ltp=active_live_ltp,
@@ -2587,10 +2631,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
+                    TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+                st.session_state[alert_sent_key] = True
 
             last_status = st.session_state.get("last_tg_status", "✅ Auto-Square-Off Alert Dispatched!")
             tg_status_html = f"""
@@ -2683,7 +2730,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
             alert_sent_key = f"tg_sent_sim_circuit_{sim_run_id}"
-            if not st.session_state.get(alert_sent_key, False):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_circuit_breaker_alert(
                     sl_count=tp.get('session_sl_count', 2),
                     max_allowed=tp.get('max_daily_sl_allowed', 2),
@@ -2694,10 +2741,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
+                    TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+                st.session_state[alert_sent_key] = True
 
             last_status = st.session_state.get("last_tg_status", "✅ Circuit Breaker Alert Dispatched!")
             tg_status_html = f"""
@@ -2787,7 +2837,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
             alert_sent_key = f"tg_sent_sim_chop_{sim_run_id}"
-            if not st.session_state.get(alert_sent_key, False):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_chop_standdown_alert(
                     spot=spot_tick,
                     chop_val=64.8,
@@ -2797,10 +2847,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
+                    TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+                st.session_state[alert_sent_key] = True
 
             last_status = st.session_state.get("last_tg_status", "✅ Choppiness Alert Dispatched!")
             tg_status_html = f"""
@@ -2877,7 +2930,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             else:
                 alert_sent_key = f"tg_sent_entry_{today_date}_{plan_strike}_{plan_contract_type}"
 
-            if not st.session_state.get(alert_sent_key, False):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]) else ""
                 alert_msg = TelegramNotifier.format_entry_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
@@ -2900,10 +2953,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
+                    TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+                st.session_state[alert_sent_key] = True
             
             last_status = st.session_state.get("last_tg_status", "✅ Telegram Alert Dispatched!")
             tg_status_html = f"""
@@ -3039,7 +3095,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             else:
                 armed_sent_key = f"tg_sent_armed_{today_date}_{plan_strike}_{plan_contract_type}"
 
-            if not st.session_state.get(armed_sent_key, False):
+            if not st.session_state.get(armed_sent_key, False) and not TelegramNotifier.is_alert_sent(armed_sent_key):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_armed or sim_mode == "ARMED") else ""
                 armed_msg = TelegramNotifier.format_armed_alert(
                     contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
@@ -3058,10 +3114,13 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, armed_msg, reply_markup=buttons)
                 if success:
                     st.session_state[armed_sent_key] = True
+                    TelegramNotifier.record_alert_sent(armed_sent_key)
                     st.session_state["last_tg_armed_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_armed_status"] = f"✅ {feedback} at {st.session_state['last_tg_armed_time']}"
                 else:
                     st.session_state["last_tg_armed_status"] = f"⚠️ {feedback}"
+            elif TelegramNotifier.is_alert_sent(armed_sent_key):
+                st.session_state[armed_sent_key] = True
 
             last_armed_stat = st.session_state.get("last_tg_armed_status", "✅ ARMED Pre-Alert Dispatched to Telegram!")
             tg_armed_status_html = f"""
@@ -3995,10 +4054,14 @@ if df is not None and not df.empty:
             v3_bear += 4.0  # Institutional put buying / downside positioning
         elif put_unwinding:
             v3_bear += 4.0  # Put support evaporating
-        if pcr_val <= 0.90:
-            v3_bear += 5.0
-        elif pcr_val <= 1.00:
-            v3_bear += 3.0
+        # PCR in downtrend: High PCR = heavy institutional put accumulation (bearish conviction)
+        # Low PCR = contrarian support (put floor absent, but calls dominate = potential support)
+        if pcr_val >= 1.25:
+            v3_bear += 5.0  # Heavy institutional put accumulation — strong downside conviction
+        elif pcr_val >= 1.05:
+            v3_bear += 3.0  # Moderate downside positioning
+        elif pcr_val < 0.85:
+            v3_bear = max(0.0, v3_bear - 3.0)  # Low PCR = contrarian support warning — call sellers absent
         # If spot breaks below Put Wall, downside accelerates
         if spot <= put_wall:
             v3_bear += 3.0
@@ -4013,10 +4076,13 @@ if df is not None and not df.empty:
             v3_bull += 6.0
         elif put_oi_chg > 10.0:
             v3_bull += 3.0
+        # PCR in uptrend: High PCR = strong institutional put floor (bullish), Low PCR = fragile uptrend
         if pcr_val >= 1.25:
-            v3_bull += 6.0
+            v3_bull += 6.0  # Heavy put floor — institutional upside protection
         elif pcr_val >= 1.05:
-            v3_bull += 3.0
+            v3_bull += 3.0  # Moderate floor
+        elif pcr_val < 0.85:
+            v3_bull = max(0.0, v3_bull - 3.0)  # No put floor = fragile uptrend warning
         # Call Wall proximity clamp: if spot within 2 pts of Call Wall and no covering, deduct 4 pts
         if abs(spot - call_wall) <= 2.0 and call_oi_chg >= 0:
             v3_bull = max(0.0, v3_bull - 4.0)
@@ -4191,9 +4257,12 @@ if df is not None and not df.empty:
         midday_penalty_active = True
 
     # Calibrated Institutional Sigmoid Mapping (Maps raw confluence edge accurately to statistical win rates)
+    # Recalibrated: s0=40 centers 50% at a realistic "moderate trend" raw score;
+    # k=0.12 sharpens the transition so the model decisively distinguishes strong vs weak setups.
+    # Old (k=0.075, s0=58) required 64+ raw pts to clear 60% gate — mathematically impossible on normal days.
     def calibrate_prob(score: float) -> float:
-        k = 0.075
-        s0 = 58.0
+        k = 0.12
+        s0 = 40.0
         return round(100.0 / (1.0 + math.exp(-k * (score - s0))), 1)
 
     bullish_score = min(96.0, max(10.0, calibrate_prob(raw_bullish)))

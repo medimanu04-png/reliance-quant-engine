@@ -32,10 +32,78 @@ import urllib.parse
 
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "telegram_config.json")
+ALERT_LOG_FILE = os.path.join(os.path.dirname(__file__), "telegram_alert_log.json")
 
 
 class TelegramNotifier:
     """Handles Telegram Bot communication and trade alerts for single or multiple users/groups."""
+
+    ALERT_LOG_FILE = ALERT_LOG_FILE
+    _alert_cache: Dict[str, float] = {}
+    _alert_cache_loaded: bool = False
+
+    @classmethod
+    def load_alert_log(cls) -> Dict[str, float]:
+        """Loads persistent alert dispatch records from disk, auto-pruning records older than 24 hours."""
+        now = time.time()
+        records: Dict[str, float] = {}
+        if os.path.exists(ALERT_LOG_FILE):
+            try:
+                with open(ALERT_LOG_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        records = {str(k): float(v) for k, v in data.items() if (now - float(v)) < 86400}
+            except Exception:
+                records = {}
+        cls._alert_cache = records
+        cls._alert_cache_loaded = True
+        return records
+
+    @classmethod
+    def save_alert_log(cls, records: Dict[str, float]) -> None:
+        """Saves persistent alert dispatch records to disk."""
+        try:
+            with open(ALERT_LOG_FILE, "w", encoding="utf-8") as f:
+                json.dump(records, f, indent=2)
+        except Exception:
+            pass
+
+    @classmethod
+    def is_alert_sent(cls, alert_key: str, cooldown_seconds: int = 14400) -> bool:
+        """
+        Checks if an alert key has already been dispatched today / within cooldown.
+        Survives browser tab refreshes, Streamlit reruns, and multi-session instances.
+        """
+        if not cls._alert_cache_loaded:
+            cls.load_alert_log()
+        now = time.time()
+        last_ts = cls._alert_cache.get(alert_key)
+        if last_ts is None:
+            return False
+        return (now - last_ts) < cooldown_seconds
+
+    @classmethod
+    def record_alert_sent(cls, alert_key: str) -> None:
+        """
+        Records that an alert key has been successfully dispatched.
+        Persists to both memory cache and disk immediately.
+        """
+        if not cls._alert_cache_loaded:
+            cls.load_alert_log()
+        now = time.time()
+        cls._alert_cache[alert_key] = now
+        cls.save_alert_log(cls._alert_cache)
+
+    @classmethod
+    def clear_alert_log(cls) -> None:
+        """Clears all logged alert keys (useful for manual reset or daily purge)."""
+        cls._alert_cache = {}
+        cls._alert_cache_loaded = True
+        try:
+            if os.path.exists(ALERT_LOG_FILE):
+                os.remove(ALERT_LOG_FILE)
+        except Exception:
+            pass
 
     @staticmethod
     def parse_chat_ids(chat_ids_input: Any) -> List[str]:
