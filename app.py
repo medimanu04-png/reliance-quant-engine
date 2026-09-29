@@ -3967,6 +3967,19 @@ if df is not None and not df.empty:
     elif nifty_fighting_bull:
         v1_bull = max(0.0, v1_bull - 4.0)  # Counter-trend index drag penalty!
 
+    # Toby Crabel NR7 & Inside Bar Volatility Contraction Pattern
+    try:
+        from fo_quant_engine import MultiIndicatorMath
+        is_nr7, is_inside_bar, contraction_pattern = MultiIndicatorMath.calculate_nr7_inside_bar(
+            df['High'].tolist(), df['Low'].tolist(), df['Close'].tolist()
+        )
+    except Exception:
+        is_nr7, is_inside_bar, contraction_pattern = False, False, "STANDARD_EXPANSION"
+
+    if is_nr7 or is_inside_bar:
+        v1_bull += 2.0  # Coiled spring breakout boost
+        v1_bear += 2.0
+
     # NIFTY 50 Advance-Decline Market Breadth
     try:
         from groww_market_feed import GrowwMarketFeed
@@ -4190,6 +4203,20 @@ if df is not None and not df.empty:
     elif rel_vol > 1.0:
         v2_bull += 1.5
 
+    # VWAP Momentum Slope Derivative (d(VWAP)/dt)
+    try:
+        from fo_quant_engine import MultiIndicatorMath
+        delta_vwap_val, vwap_slope_regime = MultiIndicatorMath.calculate_vwap_slope(
+            df['High'].tolist(), df['Low'].tolist(), df['Close'].tolist(), df['Volume'].tolist(), lookback_bars=3
+        )
+    except Exception:
+        delta_vwap_val, vwap_slope_regime = 0.0, "FLAT_VWAP_NEUTRAL"
+
+    if vwap_slope_regime == "RISING_VWAP_INSTITUTIONAL_ACCUMULATION":
+        v2_bull += 2.5
+    elif vwap_slope_regime == "FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION":
+        v2_bull = max(0.0, v2_bull - 3.5)  # Falling VWAP trap penalty
+
     # VWAP Multi-Sigma Climax Extension Guard
     if vwap_z > 2.2:
         v2_bull = max(0.0, v2_bull - 3.5)  # Climax Overbought (+2.2σ): Do NOT chase calls at extreme extension
@@ -4241,6 +4268,11 @@ if df is not None and not df.empty:
         v2_bear += 3.0
     elif rel_vol > 1.0:
         v2_bear += 1.5
+
+    if vwap_slope_regime == "FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION":
+        v2_bear += 2.5
+    elif vwap_slope_regime == "RISING_VWAP_INSTITUTIONAL_ACCUMULATION":
+        v2_bear = max(0.0, v2_bear - 3.5)  # Rising VWAP trap penalty
 
     # VWAP Multi-Sigma Climax Extension Guard
     if vwap_z < -2.2:
@@ -4436,6 +4468,20 @@ if df is not None and not df.empty:
     elif not is_choppy_regime:
         v4_bull += 2.0
         v4_bear += 2.0
+
+    # Hurst Exponent (H) via Rescaled Range (R/S) Analysis
+    try:
+        from fo_quant_engine import MultiIndicatorMath
+        hurst_val, hurst_regime = MultiIndicatorMath.calculate_hurst_exponent(df['Close'].tolist(), max_lags=20)
+    except Exception:
+        hurst_val, hurst_regime = 0.52, "RANDOM_WALK"
+
+    if hurst_regime == "TRENDING_PERSISTENCE":
+        v4_bull += 2.0
+        v4_bear += 2.0
+    elif hurst_regime == "ANTI_PERSISTENT_MEAN_REVERTING":
+        v4_bull = max(0.0, v4_bull - 3.5)
+        v4_bear = max(0.0, v4_bear - 3.5)
 
     if bb_expanding:
         v4_bull += 2.0
@@ -4718,8 +4764,12 @@ if df is not None and not df.empty:
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
     is_sl_dynamic = not is_sim_active
 
-    # Enhancement 3: Trailing Stop-Loss Break-Even Shield Configuration
-    trailing_activation_pts = round(max(3.0, effective_sl_pts * 0.8), 1)
+    # Enhancement 3: Tiered Trailing Stop-Loss & Breakeven Escalator
+    breakeven_trigger_price = round(estimated_premium + 3.5, 2)
+    breakeven_sl = round(estimated_premium + 0.10, 2)
+    lock_profit_trigger_price = round(estimated_premium + 5.5, 2)
+    lock_profit_sl = round(estimated_premium + 3.00, 2)
+    trailing_activation_pts = 3.5
     trailing_active = False
 
     # Enhancement 4: Account Capital Risk Guard (Strictly <= 4.0% of Account Capital)

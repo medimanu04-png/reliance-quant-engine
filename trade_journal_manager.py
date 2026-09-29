@@ -1610,15 +1610,32 @@ class SequentialTradeEngine:
             except Exception:
                 pass
 
-        # Update high-water mark & Trailing SL (lock 50% gains above +5 pts)
+        # Update high-water mark & Tiered Breakeven Escalator
         if current_ltp > active.get("highest_price", actual_entry):
             active["highest_price"] = round(current_ltp, 2)
-            profit_pts = current_ltp - actual_entry
-            if profit_pts >= 5.0:
-                # Trail SL to entry + 50% of peak gain
-                new_trail = round(actual_entry + (profit_pts * 0.5), 2)
-                if new_trail > active.get("trailing_sl", sl):
-                    active["trailing_sl"] = new_trail
+        
+        profit_pts = round(current_ltp - actual_entry, 2)
+        peak_profit_pts = round(float(active.get("highest_price", actual_entry)) - actual_entry, 2)
+
+        # Milestone 1: At +3.5 pts peak gain -> Move SL to Cost/Breakeven (entry + 0.10 pt buffer)
+        if peak_profit_pts >= 3.5:
+            be_sl = round(actual_entry + 0.10, 2)
+            if be_sl > active.get("trailing_sl", sl):
+                active["trailing_sl"] = be_sl
+                active["breakeven_activated"] = True
+
+        # Milestone 2: At +5.5 pts peak gain -> Lock in +3.0 pts guaranteed profit
+        if peak_profit_pts >= 5.5:
+            lock_sl = round(actual_entry + 3.0, 2)
+            if lock_sl > active.get("trailing_sl", sl):
+                active["trailing_sl"] = lock_sl
+                active["profit_lock_activated"] = True
+
+        # Milestone 3: Dynamic trailing for explosive expansion (> +6.5 pts peak gain)
+        if peak_profit_pts >= 6.5:
+            exp_sl = round(actual_entry + (peak_profit_pts * 0.65), 2)
+            if exp_sl > active.get("trailing_sl", sl):
+                active["trailing_sl"] = exp_sl
 
         effective_sl = max(sl, active.get("trailing_sl", sl))
         unrealized_pnl = round((current_ltp - actual_entry) * qty, 2)

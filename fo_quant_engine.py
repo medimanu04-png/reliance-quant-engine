@@ -450,6 +450,186 @@ class MultiIndicatorMath:
             return 0.05, "NORMAL_LIQUIDITY"
 
     @staticmethod
+    def calculate_vwap_slope(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        lookback_bars: int = 3
+    ) -> Tuple[float, str]:
+        """
+        VWAP Momentum Slope Derivative (d(VWAP)/dt).
+        Measures whether the institutional benchmark volume-weighted price is tilting upward, downward, or flat.
+        - delta_vwap >= +0.15 pts -> RISING_VWAP_INSTITUTIONAL_ACCUMULATION
+        - delta_vwap <= -0.15 pts -> FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION
+        - -0.15 < delta_vwap < +0.15 -> FLAT_VWAP_NEUTRAL
+        """
+        if not closes or not volumes or len(closes) < lookback_bars + 1:
+            return 0.0, "FLAT_VWAP_NEUTRAL"
+
+        typical_prices = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
+        
+        # Current cumulative VWAP
+        cum_tp_curr = sum(tp * v for tp, v in zip(typical_prices, volumes))
+        cum_v_curr = sum(volumes)
+        curr_vwap = cum_tp_curr / cum_v_curr if cum_v_curr > 0 else typical_prices[-1]
+
+        # Prior cumulative VWAP (lookback_bars ago)
+        hist_tp = typical_prices[:-lookback_bars]
+        hist_v = volumes[:-lookback_bars]
+        cum_tp_hist = sum(tp * v for tp, v in zip(hist_tp, hist_v))
+        cum_v_hist = sum(hist_v)
+        prev_vwap = cum_tp_hist / cum_v_hist if cum_v_hist > 0 else hist_tp[-1]
+
+        delta_vwap = round(curr_vwap - prev_vwap, 2)
+        if delta_vwap >= 0.15:
+            regime = "RISING_VWAP_INSTITUTIONAL_ACCUMULATION"
+        elif delta_vwap <= -0.15:
+            regime = "FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION"
+        else:
+            regime = "FLAT_VWAP_NEUTRAL"
+
+        return delta_vwap, regime
+
+    @staticmethod
+    def calculate_hurst_exponent(closes: List[float], max_lags: int = 20) -> Tuple[float, str]:
+        """
+        Hurst Exponent (H) via Rescaled Range (R/S) Analysis.
+        Classifies time series memory and regime persistence:
+        - H >= 0.55: Persistent / Trending (Momentum breakouts have high probability of continuation)
+        - 0.45 <= H < 0.55: Random Walk / Brownian Motion (Efficiency/Noise)
+        - H < 0.45: Anti-Persistent / Mean-Reverting (Chop / False Breakout Trap for option buyers)
+        """
+        n = len(closes)
+        if n < 25:
+            return 0.52, "RANDOM_WALK"
+
+        try:
+            returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, n) if closes[i - 1] > 0]
+            if len(returns) < 20:
+                return 0.52, "RANDOM_WALK"
+
+            lags = [l for l in [6, 10, 14, 18] if l <= len(returns) // 2]
+            if not lags:
+                lags = [6, max(7, len(returns) // 2)]
+
+            rs_vals = []
+            for lag in lags:
+                num_subsets = len(returns) // lag
+                sub_rs = []
+                for s in range(num_subsets):
+                    subset = returns[s * lag : (s + 1) * lag]
+                    m = sum(subset) / float(lag)
+                    devs = [x - m for x in subset]
+                    cum_devs = []
+                    acc = 0.0
+                    for d in devs:
+                        acc += d
+                        cum_devs.append(acc)
+                    r = max(cum_devs) - min(cum_devs)
+                    variance = sum(d ** 2 for d in devs) / float(lag)
+                    sd = math.sqrt(variance) if variance > 0 else 1e-5
+                    sub_rs.append(r / sd if sd > 0 else 1.0)
+                if sub_rs:
+                    rs_vals.append((math.log(lag), math.log(sum(sub_rs) / float(len(sub_rs)))))
+
+            if len(rs_vals) < 2:
+                return 0.53, "TRENDING_PERSISTENCE"
+
+            x_vals = [pt[0] for pt in rs_vals]
+            y_vals = [pt[1] for pt in rs_vals]
+            x_mean = sum(x_vals) / len(x_vals)
+            y_mean = sum(y_vals) / len(y_vals)
+            denom = sum((x - x_mean) ** 2 for x in x_vals)
+            numer = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_vals, y_vals))
+            h = numer / denom if denom != 0 else 0.50
+            h = round(min(0.95, max(0.15, h)), 2)
+
+            if h >= 0.55:
+                regime = "TRENDING_PERSISTENCE"
+            elif h <= 0.44:
+                regime = "ANTI_PERSISTENT_MEAN_REVERTING"
+            else:
+                regime = "RANDOM_WALK"
+
+            return h, regime
+        except Exception:
+            return 0.52, "RANDOM_WALK"
+
+    @staticmethod
+    def calculate_nr7_inside_bar(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float]
+    ) -> Tuple[bool, bool, str]:
+        """
+        Toby Crabel Volatility Contraction Pattern:
+        - NR7: Narrowest Range in 7 periods (volatility compression cycle).
+        - Inside Bar: High <= Prev High and Low >= Prev Low.
+        When price breaks out from an NR7 or Inside Bar, directional expansion follow-through is significantly higher.
+        Returns: (is_nr7, is_inside_bar, pattern_name)
+        """
+        if len(highs) < 8:
+            return False, False, "STANDARD_EXPANSION"
+
+        ranges = [h - l for h, l in zip(highs, lows)]
+        prev_range = ranges[-2]
+        prior_6_ranges = ranges[-8:-2]
+
+        is_nr7 = prev_range < min(prior_6_ranges) if prior_6_ranges else False
+        is_inside_bar = (highs[-2] <= highs[-3]) and (lows[-2] >= lows[-3]) if len(highs) >= 4 else False
+
+        if is_nr7 and is_inside_bar:
+            pattern = "NR7_INSIDE_BAR_DUAL_CONTRACTION"
+        elif is_nr7:
+            pattern = "NR7_VOLATILITY_COMPRESSION"
+        elif is_inside_bar:
+            pattern = "INSIDE_BAR_COMPRESSION"
+        else:
+            pattern = "STANDARD_EXPANSION"
+
+        return is_nr7, is_inside_bar, pattern
+
+    @staticmethod
+    def calculate_theta_decay_velocity(
+        spot: float,
+        strike: float,
+        iv: float,
+        dte: float,
+        contract_type: str = "CE",
+        r: float = 0.0675
+    ) -> Tuple[float, float, str]:
+        """
+        Black-Scholes-Merton Theta Decay Velocity & Charm.
+        Returns: (theta_per_day, theta_per_hour, decay_severity)
+        - theta_per_hour: Expected option premium loss purely from time passage per 60 minutes.
+        """
+        try:
+            T = max(0.5, dte) / 365.0
+            sigma = max(0.08, iv if iv < 1.0 else iv / 100.0)
+            
+            d1 = (math.log(spot / strike) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+            d2 = d1 - sigma * math.sqrt(T)
+
+            phi_d1 = math.exp(-0.5 * d1 ** 2) / math.sqrt(2.0 * math.pi)
+
+            # BSM Theta for Call
+            theta_call_annual = -(spot * phi_d1 * sigma) / (2.0 * math.sqrt(T)) - r * strike * math.exp(-r * T) * (0.5 * (1.0 + math.erf(d2 / math.sqrt(2.0))))
+            theta_per_day = round(abs(theta_call_annual / 365.0), 2)
+            theta_per_hour = round(theta_per_day / 6.25, 2)
+
+            if theta_per_hour >= 0.40:
+                severity = "HIGH_THETA_EROSION"
+            elif theta_per_hour >= 0.22:
+                severity = "MODERATE_THETA_EROSION"
+            else:
+                severity = "LOW_THETA_EROSION"
+
+            return theta_per_day, theta_per_hour, severity
+        except Exception:
+            return 0.85, 0.14, "LOW_THETA_EROSION"
+
+    @staticmethod
     def calculate_kama(
         closes: List[float],
         period: int = 10,
@@ -1448,11 +1628,22 @@ class UltraHighConvictionRelianceEngine:
         elif ker_val < 0.20:
             v1_bear = max(0.0, v1_bear - 1.5)  # Consolidation whipsaw drag
 
+        # Toby Crabel NR7 & Inside Bar Volatility Contraction Pattern
+        is_nr7, is_inside_bar, contraction_pattern = MultiIndicatorMath.calculate_nr7_inside_bar(
+            c5m["high"], c5m["low"], c5m["close"]
+        )
+        if is_nr7 or is_inside_bar:
+            v1_bull += 2.0  # Coiled spring breakout boost
+            v1_bear += 2.0
+
         # VECTOR 2: Institutional VWAP, OBV, CVD, RVOL & Volume Profile (POC) Order Flow (18 pts)
         vwap, vwap_plus_15sigma, vwap_minus_sigma = MultiIndicatorMath.calculate_vwap_bands(
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("date")
         )
         vwap_z, z_status = MultiIndicatorMath.calculate_vwap_zscore(spot, vwap, vwap_plus_15sigma)
+        delta_vwap, vwap_slope_regime = MultiIndicatorMath.calculate_vwap_slope(
+            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], lookback_bars=3
+        )
         vol_avg20 = sum(c5m["volume"][-20:]) / 20.0 if len(c5m["volume"]) >= 20 else c5m["volume"][-1]
         rvol, vol_zscore, rvol_regime = MultiIndicatorMath.calculate_rvol_zscore(c5m["volume"], 20)
         vol_surge = (c5m["volume"][-1] >= 1.65 * vol_avg20) or (vol_zscore >= 1.75)
@@ -1470,6 +1661,10 @@ class UltraHighConvictionRelianceEngine:
             v2_bull += 7.0 if vwap_z <= 2.2 else 3.0  # Climax guard: penalize if overextended
         elif spot > vwap:
             v2_bull += 4.0
+        if vwap_slope_regime == "RISING_VWAP_INSTITUTIONAL_ACCUMULATION":
+            v2_bull += 2.5  # Institutional buyer slope confirmation
+        elif vwap_slope_regime == "FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION":
+            v2_bull = max(0.0, v2_bull - 3.5)  # Falling VWAP trap penalty
         if rvol_regime == "INSTITUTIONAL_VOLUME_EXPANSION":
             v2_bull += 4.5
         elif vol_surge:
@@ -1491,6 +1686,10 @@ class UltraHighConvictionRelianceEngine:
             v2_bear += 7.0 if vwap_z >= -2.2 else 3.0  # Oversold climax guard
         elif spot < vwap:
             v2_bear += 4.0
+        if vwap_slope_regime == "FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION":
+            v2_bear += 2.5  # Institutional seller slope confirmation
+        elif vwap_slope_regime == "RISING_VWAP_INSTITUTIONAL_ACCUMULATION":
+            v2_bear = max(0.0, v2_bear - 3.5)  # Rising VWAP trap penalty
         if rvol_regime == "INSTITUTIONAL_VOLUME_EXPANSION":
             v2_bear += 4.5
         elif vol_surge:
@@ -1720,6 +1919,15 @@ class UltraHighConvictionRelianceEngine:
             v4_bull = max(0.0, v4_bull - 2.0)
             v4_bear = max(0.0, v4_bear - 2.0)
 
+        # Hurst Exponent (H) for Trend Memory vs Anti-Persistent Mean Reversion
+        hurst_val, hurst_regime = MultiIndicatorMath.calculate_hurst_exponent(c5m["close"], max_lags=20)
+        if hurst_regime == "TRENDING_PERSISTENCE":
+            v4_bull += 2.0
+            v4_bear += 2.0
+        elif hurst_regime == "ANTI_PERSISTENT_MEAN_REVERTING":
+            v4_bull = max(0.0, v4_bull - 3.5)  # Penalize mean-reverting chop regimes
+            v4_bear = max(0.0, v4_bear - 3.5)
+
         if spot >= bb_upper[-1] * 0.999 and bb_width[-1] >= 1.5:
             v4_bull += 1.0
         if spot <= bb_lower[-1] * 1.001 and bb_width[-1] >= 1.5:
@@ -1809,6 +2017,14 @@ class UltraHighConvictionRelianceEngine:
         elif 20.0 <= iv_percentile <= 65.0:
             v6_bull += 1.0
             v6_bear += 1.0
+
+        # Black-Scholes-Merton Theta Decay Velocity & Charm
+        theta_day, theta_hr, theta_severity = MultiIndicatorMath.calculate_theta_decay_velocity(
+            spot, atm_strike, iv, dte_val, contract_type="CE"
+        )
+        if theta_severity == "HIGH_THETA_EROSION":
+            v6_bull = max(0.0, v6_bull - 2.0)
+            v6_bear = max(0.0, v6_bear - 2.0)
 
         # VECTOR 7: Multi-Asset Sectoral Alignment & NIFTY 50 Relative Strength Telemetry (+/- 5.0 pts)
         nifty_pct = 0.0
@@ -2008,10 +2224,17 @@ class UltraHighConvictionRelianceEngine:
         rr_ratio = self.risk.target_pts / self.risk.stop_loss_pts if self.risk.stop_loss_pts > 0 else 2.22
         expected_value_r = round(((dominant_win_exp / 100.0) * rr_ratio) - ((100.0 - dominant_win_exp) / 100.0), 2)
 
+        # Tiered Automated Trailing Breakeven Escalator Guidelines
+        breakeven_trigger_price = round(entry_premium + 3.5, 2)
+        lock_profit_trigger_price = round(entry_premium + 5.5, 2)
+        breakeven_sl = round(entry_premium + 0.10, 2)
+        lock_profit_sl = round(entry_premium + 3.00, 2)
+
         target_text = (
             f"TARGET: Rs. {tp_premium:.2f} (+{self.risk.target_pts:.1f} pts | Gross +Rs. {self.risk.target_reward_rupees:,.0f} | Net ~Rs. {self.risk.net_target_reward_rupees:,.0f}) | "
             f"STOP LOSS: Rs. {sl_premium:.2f} (-{self.risk.stop_loss_pts:.1f} pts | Gross -Rs. {self.risk.max_risk_rupees:,.0f} | Net ~Rs. {self.risk.net_max_risk_rupees:,.0f}) "
-            f"[Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f} | SL Order: Trigger {sl_premium:.2f} / Limit {sl_limit_collar:.2f} (Exit at Market if breached!)]"
+            f"[Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f} | SL Order: Trigger {sl_premium:.2f} / Limit {sl_limit_collar:.2f}] "
+            f"🛡️ [Breakeven Escalator: 1) At +3.5 pts (Rs. {breakeven_trigger_price:.2f}) -> Move SL to Cost Rs. {breakeven_sl:.2f} (Risk-Free!) | 2) At +5.5 pts (Rs. {lock_profit_trigger_price:.2f}) -> Lock SL to Rs. {lock_profit_sl:.2f} (+Rs. 750 profit)]"
             if is_tradable
             else "TARGET: N/A | STOP LOSS: N/A"
         )
@@ -2024,11 +2247,11 @@ class UltraHighConvictionRelianceEngine:
             "5. ENTRY PRICE": f"On Breakout above Rs. {entry_premium:.2f} (SL-LMT Limit Cap: Rs. {limit_entry_premium:.2f})" if is_tradable else "N/A",
             "6. TARGET | STOP LOSS": target_text,
             "7. RATIONALE & CONFLUENCE": {
-                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. AVWAP Extremes: {avwap_stance} (HOD AVWAP Rs. {avwap_hod:.2f} | LOD AVWAP Rs. {avwap_lod:.2f}). Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. Micro-Price OBI: {obi:+.3f} [{obi_bias}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}) | VPIN: {vpin_val:.3f} [{vpin_regime}].",
-                "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
-                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). TTM Squeeze: {squeeze_state} (Ratio: {squeeze_ratio:.2f} | Mom: {squeeze_mom:+.2f}). RV/IV Spread: {rv_iv_spread:+.1f}% [{vol_edge}]. ATR(14)={atr_15m:.2f} pts | Parkinson RV={parkinson_vol:.1f}% | IVP={iv_percentile:.1f}% [{iv_regime}] | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
+                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. VWAP Slope: {delta_vwap:+.2f} pts [{vwap_slope_regime}]. AVWAP Extremes: {avwap_stance} (HOD AVWAP Rs. {avwap_hod:.2f} | LOD AVWAP Rs. {avwap_lod:.2f}). Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. Micro-Price OBI: {obi:+.3f} [{obi_bias}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}) | VPIN: {vpin_val:.3f} [{vpin_regime}].",
+                "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). Contraction Pattern: {contraction_pattern}. 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
+                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). Hurst Exponent: H={hurst_val:.2f} [{hurst_regime}]. TTM Squeeze: {squeeze_state} (Ratio: {squeeze_ratio:.2f} | Mom: {squeeze_mom:+.2f}). RV/IV Spread: {rv_iv_spread:+.1f}% [{vol_edge}]. ATR(14)={atr_15m:.2f} pts | Parkinson RV={parkinson_vol:.1f}% | IVP={iv_percentile:.1f}% [{iv_regime}] | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
                 "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stochastic %K={stoch_k:.1f}.",
-                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. OI Velocity: Call {call_vel:+.1f}%/5m [{call_vel_regime}] | Put {put_vel:+.1f}%/5m [{put_vel_regime}]. NIFTY 50: {nifty_pct:+.2f}% | NIFTY ENERGY: {energy_pct:+.2f}% [{sec_regime}] | Alpha Spread: {alpha_spread:+.2f}% [{rs_bias}]. Bid-Ask Spread: Rs. {opt_spread:.2f}."
+                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. OI Velocity: Call {call_vel:+.1f}%/5m [{call_vel_regime}] | Put {put_vel:+.1f}%/5m [{put_vel_regime}]. Theta Decay: -Rs. {theta_hr:.2f}/hr [{theta_severity}]. NIFTY 50: {nifty_pct:+.2f}% | NIFTY ENERGY: {energy_pct:+.2f}% [{sec_regime}] | Alpha Spread: {alpha_spread:+.2f}% [{rs_bias}]. Bid-Ask Spread: Rs. {opt_spread:.2f}."
             },
             "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else "NONE — Stand down (Conditions do not satisfy A+ threshold)",
             "dominant_score": dominant_score,
@@ -2086,7 +2309,21 @@ class UltraHighConvictionRelianceEngine:
             "orb_low": orb_low,
             "vwap": vwap,
             "vwap_plus_15sigma": vwap_plus_15sigma,
-            "vwap_minus_sigma": vwap_minus_sigma
+            "vwap_minus_sigma": vwap_minus_sigma,
+            "delta_vwap": delta_vwap,
+            "vwap_slope_regime": vwap_slope_regime,
+            "hurst_exponent": hurst_val,
+            "hurst_regime": hurst_regime,
+            "is_nr7": is_nr7,
+            "is_inside_bar": is_inside_bar,
+            "contraction_pattern": contraction_pattern,
+            "theta_per_day": theta_day,
+            "theta_per_hour": theta_hr,
+            "theta_severity": theta_severity,
+            "breakeven_trigger_price": breakeven_trigger_price,
+            "lock_profit_trigger_price": lock_profit_trigger_price,
+            "breakeven_sl": breakeven_sl,
+            "lock_profit_sl": lock_profit_sl
         }
 
 

@@ -482,29 +482,65 @@ class RelianceQuantAlertDaemon:
                 except Exception as e:
                     logger.debug(f"Git auto-sync error on trade closure: {e}")
 
-            # Trailing SL Trigger Alert
-            if cur_trade_ltp > active_trade.get("highest_price", act_entry):
-                if unreal_pts >= 5.0:
-                    new_trail = round(act_entry + (unreal_pts * 0.5), 2)
-                    trail_alert_key = f"tg_sent_trail_{today_date}_{trade_num}_{round(new_trail, 1)}"
-                    if tg_enabled and not TelegramNotifier.is_alert_sent(trail_alert_key):
-                        trail_msg = TelegramNotifier.format_trailing_sl_alert(
-                            contract=inst_sym,
-                            current_ltp=cur_trade_ltp,
-                            trailing_sl=new_trail,
-                            secured_pts=5.0,
-                            direction=active_trade.get("direction", "BULLISH (CALL / CE)"),
-                            secured_pnl=round(unreal_pts * trade_qty),
-                            entry_price=act_entry,
-                            num_lots=trade_num_lots,
-                            lot_size=trade_lot_size,
-                            spot=spot
-                        )
-                        buttons = TelegramNotifier.get_trailing_sl_buttons()
-                        ok, fb = TelegramNotifier.send_message(bot_token, chat_id, trail_msg, reply_markup=buttons)
-                        if ok:
-                            TelegramNotifier.record_alert_sent(trail_alert_key)
-                            logger.info(f"📲 Telegram Trailing SL Alert dispatched: {fb}")
+            # Tiered Breakeven Escalator Telegram Alerts
+            # Milestone 1: At +3.5 pts -> Move SL to Cost (Risk-Free Breakeven Alert)
+            if unreal_pts >= 3.5:
+                be_alert_key = f"tg_sent_be_{today_date}_{trade_num}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(be_alert_key):
+                    be_msg = TelegramNotifier.format_breakeven_alert(
+                        contract=inst_sym,
+                        current_ltp=cur_trade_ltp,
+                        entry_price=act_entry,
+                        num_lots=trade_num_lots,
+                        lot_size=trade_lot_size,
+                        spot=spot
+                    )
+                    buttons = TelegramNotifier.get_trailing_sl_buttons()
+                    ok, fb = TelegramNotifier.send_message(bot_token, chat_id, be_msg, reply_markup=buttons)
+                    if ok:
+                        TelegramNotifier.record_alert_sent(be_alert_key)
+                        logger.info(f"🛡️ Telegram Breakeven Escalator Alert dispatched: {fb}")
+
+            # Milestone 2: At +5.5 pts -> Lock +3.0 pts Profit Alert
+            if unreal_pts >= 5.5:
+                lock_alert_key = f"tg_sent_lock_{today_date}_{trade_num}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(lock_alert_key):
+                    lock_msg = TelegramNotifier.format_profit_lock_alert(
+                        contract=inst_sym,
+                        current_ltp=cur_trade_ltp,
+                        entry_price=act_entry,
+                        num_lots=trade_num_lots,
+                        lot_size=trade_lot_size,
+                        spot=spot
+                    )
+                    buttons = TelegramNotifier.get_trailing_sl_buttons()
+                    ok, fb = TelegramNotifier.send_message(bot_token, chat_id, lock_msg, reply_markup=buttons)
+                    if ok:
+                        TelegramNotifier.record_alert_sent(lock_alert_key)
+                        logger.info(f"🔒 Telegram Profit Lock Alert dispatched: {fb}")
+
+            # Milestone 3: Higher trailing alert for explosive runners (> 6.5 pts)
+            if cur_trade_ltp > active_trade.get("highest_price", act_entry) and unreal_pts >= 6.5:
+                new_trail = round(act_entry + (unreal_pts * 0.65), 2)
+                trail_alert_key = f"tg_sent_trail_{today_date}_{trade_num}_{round(new_trail, 1)}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(trail_alert_key):
+                    trail_msg = TelegramNotifier.format_trailing_sl_alert(
+                        contract=inst_sym,
+                        current_ltp=cur_trade_ltp,
+                        trailing_sl=new_trail,
+                        secured_pts=round(new_trail - act_entry, 1),
+                        direction=active_trade.get("direction", "BULLISH (CALL / CE)"),
+                        secured_pnl=round((new_trail - act_entry) * trade_qty),
+                        entry_price=act_entry,
+                        num_lots=trade_num_lots,
+                        lot_size=trade_lot_size,
+                        spot=spot
+                    )
+                    buttons = TelegramNotifier.get_trailing_sl_buttons()
+                    ok, fb = TelegramNotifier.send_message(bot_token, chat_id, trail_msg, reply_markup=buttons)
+                    if ok:
+                        TelegramNotifier.record_alert_sent(trail_alert_key)
+                        logger.info(f"📲 Telegram Trailing SL Alert dispatched: {fb}")
 
             # Target Hit Check
             if cur_trade_ltp >= target_p:

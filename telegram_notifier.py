@@ -720,6 +720,84 @@ class TelegramNotifier:
 """
 
     @classmethod
+    def format_breakeven_alert(
+        cls,
+        contract: str,
+        current_ltp: float,
+        entry_price: float,
+        num_lots: int = 1,
+        lot_size: int = 250,
+        spot: float = 1226.40,
+        **kwargs
+    ) -> str:
+        """Formats a BREAKEVEN ALERT (+3.5 pts reached, SL moved to Cost) for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        be_sl = round(entry_price + 0.10, 2)
+        gain_pts = round(current_ltp - entry_price, 2)
+        gain_rs = round(gain_pts * total_qty)
+        return f"""
+🛡️ <b>BREAKEVEN ESCALATOR ACTIVATED — RISK-FREE TRADE</b> 🛡️
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ <b>STATUS:</b> <b>MOVE STOP-LOSS TO ENTRY / COST (0 RISK ACTIVE)</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+📈 <b>Running Move:</b> <b>+{gain_pts:.2f} pts in profit (+₹{gain_rs:,})</b>
+
+💵 <b>Original Entry:</b> ₹{entry_price:.2f}
+⚡ <b>Current Option LTP:</b> <b>₹{current_ltp:.2f}</b>
+🔒 <b>New Trailing Stop-Loss:</b> <b>₹{be_sl:.2f} (Entry Price / Cost)</b>
+📦 <b>Position Sizing:</b> {num_lots} Lot ({total_qty:,} Units)
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⏰ <b>Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 <b>Mandatory Trade Management:</b>
+1. Open your <b>Groww / Broker</b> Orders tab immediately
+2. Modify your pending SL order trigger from initial SL to <b>₹{be_sl:.2f}</b>
+3. Your trade is now <b>100% RISK-FREE</b> — No loss of capital possible!
+4. Let the position run towards final target!
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    @classmethod
+    def format_profit_lock_alert(
+        cls,
+        contract: str,
+        current_ltp: float,
+        entry_price: float,
+        num_lots: int = 1,
+        lot_size: int = 250,
+        spot: float = 1226.40,
+        **kwargs
+    ) -> str:
+        """Formats a PROFIT LOCK ALERT (+5.5 pts reached, lock +3.0 pts profit) for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        lock_sl = round(entry_price + 3.0, 2)
+        locked_pnl = round(3.0 * total_qty)
+        gain_pts = round(current_ltp - entry_price, 2)
+        return f"""
+🔒 <b>PROFIT LOCK ESCALATOR ACTIVATED (+3.0 PTS GUARANTEED)</b> 🔒
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏆 <b>STATUS:</b> <b>GUARANTEED PROFIT LOCKED IN CAPITAL</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+📈 <b>Running Move:</b> <b>+{gain_pts:.2f} pts in profit</b>
+
+💵 <b>Original Entry:</b> ₹{entry_price:.2f}
+⚡ <b>Current Option LTP:</b> <b>₹{current_ltp:.2f}</b>
+🔒 <b>New Locked SL:</b> <b>₹{lock_sl:.2f} (+3.0 pts guaranteed profit)</b>
+💰 <b>Guaranteed Minimum Profit:</b> <b>+₹{locked_pnl:,.2f}</b>
+📦 <b>Position Sizing:</b> {num_lots} Lot ({total_qty:,} Units)
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⏰ <b>Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 <b>Action Required:</b>
+1. Modify your pending SL order on Groww to <b>₹{lock_sl:.2f}</b>
+2. Even on an instant market reversal, you walk away with +₹{locked_pnl:,} profit!
+3. Target limit remains active for full profit exit!
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    @classmethod
     def format_auto_square_off_alert(
         cls,
         contract: str,
