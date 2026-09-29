@@ -40,7 +40,7 @@ if not os.path.exists(SCREENSHOTS_DIR):
 # 1. SIGNAL TRACKER (TRADE GIVEN LOG)
 # ==============================================================================
 class SignalTracker:
-    """Persists and retrieves the daily quant trade recommendations and given triggers."""
+    """Persists and retrieves quant trade recommendations and given triggers."""
 
     @classmethod
     def get_all_signals(cls) -> Dict[str, Any]:
@@ -55,23 +55,97 @@ class SignalTracker:
         return {}
 
     @classmethod
-    def get_signal(cls, date_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_signal(cls, date_str: Optional[str] = None, symbol: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not date_str:
             date_str = datetime.now(IST).strftime("%Y-%m-%d")
         signals = cls.get_all_signals()
+        if symbol:
+            key = f"{date_str}_{symbol}"
+            if key in signals:
+                return signals[key]
         return signals.get(date_str)
+
+    @classmethod
+    def find_matching_signal(cls, symbol: str, actual_entry_time: str = None, date_str: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Finds the exact signal recommendation corresponding to this executed trade:
+        1. Must match contract symbol, strike, and type (CE/PE)
+        2. Signal given time must be <= actual entry time
+        """
+        if not date_str:
+            date_str = datetime.now(IST).strftime("%Y-%m-%d")
+        signals = cls.get_all_signals()
+
+        # Try exact key first
+        exact_key = f"{date_str}_{symbol}"
+        if exact_key in signals:
+            return signals[exact_key]
+
+        # Search all signals on this date
+        candidates = []
+        for k, s in signals.items():
+            if not isinstance(s, dict):
+                continue
+            if s.get("date") != date_str:
+                continue
+            sig_sym = s.get("symbol", "")
+            strike_str = str(s.get("strike", ""))
+            ctype = str(s.get("contract_type", ""))
+            
+            # Match on symbol or (strike in symbol and ctype in symbol)
+            if sig_sym == symbol or (strike_str in symbol and ctype in symbol):
+                sig_time = s.get("trade_given_time", "")
+                candidates.append((sig_time, s))
+
+        if candidates:
+            candidates.sort(key=lambda x: x[0])
+            # Filter for signals given BEFORE or AT actual entry time
+            if actual_entry_time:
+                valid = []
+                for stime, s in candidates:
+                    try:
+                        t_sig = datetime.strptime(stime.replace(" IST", "").strip(), "%I:%M:%S %p").time()
+                        t_act = datetime.strptime(actual_entry_time.replace(" IST", "").strip(), "%I:%M:%S %p").time()
+                        if t_sig <= t_act:
+                            valid.append((stime, s))
+                    except Exception:
+                        valid.append((stime, s))
+                if valid:
+                    return valid[-1][1] # most recent signal prior to entry
+            return candidates[0][1]
+
+        # Fallback to legacy date_str if contract type and strike match
+        legacy = signals.get(date_str)
+        if legacy and isinstance(legacy, dict):
+            leg_strike = str(legacy.get("strike", ""))
+            leg_type = str(legacy.get("contract_type", ""))
+            if (leg_strike in symbol and leg_type in symbol) or legacy.get("symbol") == symbol:
+                return legacy
+
+        return None
 
     @classmethod
     def save_signal(cls, signal: Dict[str, Any]):
         date_str = signal.get("date") or datetime.now(IST).strftime("%Y-%m-%d")
+        symbol = signal.get("symbol") or "RELIANCE"
+        key = f"{date_str}_{symbol}"
         signals = cls.get_all_signals()
-        # Preserve original morning trade_given_time if already logged today
-        if date_str in signals and signals[date_str].get("trade_given_time"):
-            signal["trade_given_time"] = signals[date_str]["trade_given_time"]
+
+        # Preserve original morning trade_given_time & parameters if this specific contract was already recorded
+        if key in signals:
+            existing = signals[key]
+            signal["trade_given_time"] = existing.get("trade_given_time", signal.get("trade_given_time"))
+            signal["suggested_entry"] = existing.get("suggested_entry", signal.get("suggested_entry"))
+            signal["suggested_exit"] = existing.get("suggested_exit", signal.get("suggested_exit"))
+            signal["suggested_sl"] = existing.get("suggested_sl", signal.get("suggested_sl"))
         elif not signal.get("trade_given_time"):
             signal["trade_given_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
 
-        signals[date_str] = signal
+        signals[key] = signal
+        # Only set as default date signal if date_str is empty or matches contract
+        if date_str not in signals or signals[date_str].get("symbol") == symbol:
+            signals[date_str] = signal
+
         try:
             with open(SIGNALS_FILE, "w", encoding="utf-8") as f:
                 json.dump(signals, f, indent=2)
@@ -318,31 +392,44 @@ class TradeJournalManager:
                     actual_exit_time_str = raw_exit_t
 
             is_reliance = "RELIANCE" in sym.upper()
-            
-            if is_reliance and signal:
-                trade_given_time = signal.get("trade_given_time", "09:15:00 AM IST")
-                sugg_contract = signal.get("full_contract") or f"RELIANCE {signal.get('strike', 1200)} {signal.get('contract_type', 'PE')} ({signal.get('expiry', '27-OCT-2026')})"
-                sugg_entry = float(signal.get("suggested_entry", entry_p))
-                sugg_exit = float(signal.get("suggested_exit", round(sugg_entry + 10.0, 2)))
-                sugg_sl = float(signal.get("suggested_sl", round(max(0.05, sugg_entry - 4.5), 2)))
-                confluence = float(signal.get("confluence_score", 78.5))
-                trade_type = f"BUY {signal.get('contract_type', 'PE')}"
-            else:
-                trade_given_time = actual_entry_time_str or "09:15:00 AM IST"
-                sugg_contract = sym
-                sugg_entry = entry_p
-                sugg_exit = round(entry_p + 10.0, 2)
-                sugg_sl = round(max(0.05, entry_p - 4.5), 2)
-                confluence = 70.0
-                trade_type = "BUY CE" if "CE" in sym else ("BUY PE" if "PE" in sym else "BUY")
-
-            entry_slippage = round(entry_p - sugg_entry, 2)
-            cap_deployed = round(entry_p * qty, 2)
-            
             composite_key = f"{today_str}_{sym}"
             existing = existing_map.get(composite_key, {})
             existing_screenshot = existing.get("screenshot", "")
             existing_notes = existing.get("notes", "")
+
+            # Strict Rule: If this trade was ALREADY cross-verified and stored in journal, KEEP ITS ORIGINAL GIVEN DETAILS!
+            # Never overwrite a completed morning trade with an afternoon scan or different strike!
+            if existing and existing.get("suggested_entry") is not None and existing.get("trade_given_time"):
+                trade_given_time = existing["trade_given_time"]
+                sugg_contract = existing.get("suggested_contract") or existing.get("instrument") or sym
+                sugg_entry = float(existing["suggested_entry"])
+                sugg_exit = float(existing.get("suggested_exit", round(sugg_entry + 10.0, 2)))
+                sugg_sl = float(existing.get("suggested_sl", round(max(0.05, sugg_entry - 4.5), 2)))
+                confluence = float(existing.get("confluence_score", 78.5))
+                trade_type = existing.get("type", "BUY PE" if "PE" in sym else "BUY CE")
+            else:
+                # Find matching signal recommendation that was issued BEFORE this trade's entry time
+                matched_signal = SignalTracker.find_matching_signal(symbol=sym, actual_entry_time=actual_entry_time_str, date_str=today_str)
+                if matched_signal:
+                    trade_given_time = matched_signal.get("trade_given_time", actual_entry_time_str)
+                    sugg_contract = matched_signal.get("full_contract") or f"RELIANCE {matched_signal.get('strike', 1200)} {matched_signal.get('contract_type', 'PE')} ({matched_signal.get('expiry', '27-OCT-2026')})"
+                    sugg_entry = float(matched_signal.get("suggested_entry", entry_p))
+                    sugg_exit = float(matched_signal.get("suggested_exit", round(sugg_entry + 10.0, 2)))
+                    sugg_sl = float(matched_signal.get("suggested_sl", round(max(0.05, sugg_entry - 4.5), 2)))
+                    confluence = float(matched_signal.get("confluence_score", 78.5))
+                    trade_type = f"BUY {matched_signal.get('contract_type', 'PE' if 'PE' in sym else 'CE')}"
+                else:
+                    # No model recommendation preceded this execution -> Discretionary / User execution
+                    trade_given_time = actual_entry_time_str or "09:15:00 AM IST"
+                    sugg_contract = sym
+                    sugg_entry = entry_p
+                    sugg_exit = round(entry_p + 10.0, 2)
+                    sugg_sl = round(max(0.05, entry_p - 4.5), 2)
+                    confluence = 70.0
+                    trade_type = "BUY CE" if "CE" in sym else ("BUY PE" if "PE" in sym else "BUY")
+
+            entry_slippage = round(entry_p - sugg_entry, 2)
+            cap_deployed = round(entry_p * qty, 2)
 
             # Formulate audit verification note
             if not existing_notes:

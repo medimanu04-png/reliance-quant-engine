@@ -5319,6 +5319,82 @@ if df is not None and not df.empty:
                 </div>
             </div>
             ''')
+
+        # ======================================================================
+        # IMMEDIATE GROWW EXECUTION CROSS-VERIFICATION
+        # Cross-verify immediately whether the user has taken the suggested entry on Groww
+        # ======================================================================
+        target_contract_sym = f"RELIANCE26OCT{atm_strike}{recommended_contract_type}"
+        is_order_filled_groww = False
+        matching_gw_fill = None
+
+        if groww_feed.is_connected:
+            try:
+                gw_today_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                for ex_tr in gw_today_trades:
+                    sym_ex = ex_tr.get("symbol", "")
+                    if target_contract_sym in sym_ex or (str(atm_strike) in sym_ex and recommended_contract_type in sym_ex):
+                        is_order_filled_groww = True
+                        matching_gw_fill = ex_tr
+                        break
+            except Exception:
+                pass
+
+        if is_order_filled_groww and matching_gw_fill:
+            fill_p = float(matching_gw_fill.get("entry_price", 0.0))
+            fill_t = matching_gw_fill.get("entry_time", "")
+            slip_pts = round(fill_p - estimated_premium, 2)
+            slip_color = "#10B981" if slip_pts <= 0 else "#F59E0B"
+            slip_sign = "+" if slip_pts > 0 else ""
+            pos_is_closed = matching_gw_fill.get("is_closed", False)
+            pnl_val = float(matching_gw_fill.get("realised_pnl", 0.0))
+            pnl_str = f" • Realized P&L: {'+' if pnl_val >= 0 else ''}₹{pnl_val:,.2f}" if pos_is_closed else ""
+
+            st.html(f'''
+            <div style="background: rgba(16, 185, 129, 0.12); border: 2px solid #10B981; border-radius: 10px; padding: 14px 18px; margin-top: 10px; margin-bottom: 12px; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.25);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2rem;">🟢</span>
+                        <div>
+                            <span style="font-size: 0.90rem; font-weight: 900; color: #34D399; letter-spacing: 0.4px;">
+                                GROWW EXECUTION VERIFIED: YOU HAVE TAKEN THIS SUGGESTED ENTRY ON GROWW
+                            </span>
+                            <div style="font-size: 0.78rem; color: #CBD5E1; margin-top: 2px;">
+                                <b>Broker Fill:</b> ₹{fill_p:.2f} @ {fill_t} | <b>Suggested Entry:</b> ₹{estimated_premium:.2f} | <b>Execution Slippage:</b> <b style="color: {slip_color};">{slip_sign}{slip_pts:.2f} pts</b>{pnl_str}
+                            </div>
+                        </div>
+                    </div>
+                    <span style="background: rgba(16, 185, 129, 0.25); color: #6EE7B7; font-size: 0.74rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #10B981;">
+                        {'CLOSED & AUDITED' if pos_is_closed else 'ACTIVE MONITORING (IN-TRADE)'}
+                    </span>
+                </div>
+            </div>
+            ''')
+        else:
+            st.html(f'''
+            <div style="background: rgba(245, 158, 11, 0.12); border: 2px solid #F59E0B; border-radius: 10px; padding: 14px 18px; margin-top: 10px; margin-bottom: 12px; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.20);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2rem;">🟡</span>
+                        <div>
+                            <span style="font-size: 0.90rem; font-weight: 900; color: #FBBF24; letter-spacing: 0.4px;">
+                                GROWW EXECUTION CHECK: ENTRY PENDING / WAITING FOR BROKER FILL
+                            </span>
+                            <div style="font-size: 0.80rem; color: #FDE68A; margin-top: 3px;">
+                                <b>Suggested Entry Trigger:</b> ₹{estimated_premium:.2f} on <b>RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str})</b><br>
+                                📡 <i>Groww API Audit: No order fill detected yet for {target_contract_sym} on your Groww account.</i>
+                            </div>
+                            <div style="font-size: 0.82rem; font-weight: 800; color: #FFFFFF; margin-top: 4px;">
+                                👉 Did your order fill on Groww at ₹{estimated_premium:.2f}? (Waiting for broker confirmation...)
+                            </div>
+                        </div>
+                    </div>
+                    <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.74rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #F59E0B;">
+                        ENTRY PENDING
+                    </span>
+                </div>
+            </div>
+            ''')
     else:
         is_bull_lean = bullish_score >= bearish_score
         bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if is_bull_lean else f"🔴 Mild Bearish Lean ({bearish_score}%)"
