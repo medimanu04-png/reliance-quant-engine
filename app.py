@@ -4604,10 +4604,12 @@ if df is not None and not df.empty:
     vix_scaler = max(0.85, min(1.30, vix_val_current / 13.50))
 
     volatility_adapted_sl = round(min(5.0, max(3.5, bs_delta * stock_atr * 0.85)), 1)
+    atr_dynamic_sl = volatility_adapted_sl
     max_sl_from_capital_cap = round((account_cash * 0.04) / max(1, total_trading_qty), 1)
     effective_sl_pts = min(volatility_adapted_sl, max_sl_from_capital_cap) if not is_sim_active else sl_pts
 
     volatility_adapted_target = round(min(14.0, max(8.0, effective_sl_pts * 2.2 * vix_scaler)), 1)
+    atr_dynamic_target = volatility_adapted_target
     effective_target_pts = volatility_adapted_target if not is_sim_active else target_pts
     target_pts_display = effective_target_pts
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
