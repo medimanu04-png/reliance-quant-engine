@@ -1217,7 +1217,7 @@ class GrowwMarketFeed:
             logger.warning(f"Failed to fetch Groww orders: {e}")
             return {"status": "ERROR", "orders": []}
 
-    def get_executed_trades_today(self) -> List[Dict[str, Any]]:
+    def get_executed_trades_today(self, symbol_filter: Optional[str] = "RELIANCE") -> List[Dict[str, Any]]:
         """
         Extracts round-trip and open F&O trades executed today on Groww.
         Cross-correlates /order/list and /positions/user to reconstruct:
@@ -1227,6 +1227,7 @@ class GrowwMarketFeed:
           - quantity & lots
           - realized P&L
           - trade status (COMPLETED / OPEN)
+        Filters strictly by symbol_filter (defaults to 'RELIANCE').
         """
         if not self._is_connected or not self._groww_api:
             return []
@@ -1248,6 +1249,8 @@ class GrowwMarketFeed:
             executed_trades = []
             for p in positions:
                 sym = p.get("trading_symbol", "")
+                if symbol_filter and symbol_filter.upper() not in sym.upper():
+                    continue
                 qty = int(p.get("quantity", 0))
                 credit_qty = int(p.get("credit_quantity", 0))
                 debit_qty = int(p.get("debit_quantity", 0))

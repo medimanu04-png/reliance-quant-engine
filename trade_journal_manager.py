@@ -172,8 +172,13 @@ class TradeJournalManager:
             with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
-                if len(data) > 0:
-                    return recalculate_journal(data, starting_cash)
+                # Filter strictly for RELIANCE trades
+                reliance_entries = [
+                    e for e in data 
+                    if "RELIANCE" in str(e.get("trading_symbol", "")).upper() or "RELIANCE" in str(e.get("instrument", "")).upper()
+                ]
+                if len(reliance_entries) > 0:
+                    return recalculate_journal(reliance_entries, starting_cash)
                 else:
                     return []
             else:
@@ -284,7 +289,7 @@ class TradeJournalManager:
 
         for gt in groww_executed_trades:
             sym = gt.get("symbol", "")
-            if not sym:
+            if not sym or "RELIANCE" not in sym.upper():
                 continue
 
             entry_p = float(gt.get("entry_price", 0.0))
@@ -400,7 +405,10 @@ class TradeJournalManager:
             }
             existing_map[composite_key] = record
 
-        all_updated = list(existing_map.values())
+        all_updated = [
+            e for e in existing_map.values()
+            if "RELIANCE" in str(e.get("trading_symbol", "")).upper() or "RELIANCE" in str(e.get("instrument", "")).upper()
+        ]
         recalculated = recalculate_journal(all_updated, starting_cash)
         cls.save_journal(recalculated)
         return recalculated

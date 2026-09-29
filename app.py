@@ -6069,11 +6069,11 @@ if df is not None and not df.empty:
     today_strike_price = float(estimated_premium if estimated_premium > 0 else (current_option_ltp if current_option_ltp > 0 else 37.65))
     today_2lot_capital = round(2 * 500 * today_strike_price, 2)
 
-    # 1. Automatic Groww Execution Cross-Verification
+    # 1. Automatic Groww Execution Cross-Verification (Strictly RELIANCE)
     # If Groww is connected, fetch executed orders & positions directly from broker and cross-verify with model recommendations
     if groww_feed.is_connected:
         try:
-            gw_executed = groww_feed.get_executed_trades_today()
+            gw_executed = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
             if gw_executed:
                 TradeJournalManager.sync_groww_trades(
                     groww_executed_trades=gw_executed,
@@ -6094,10 +6094,10 @@ if df is not None and not df.empty:
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                 <div>
                     <h2 style="margin: 0; font-size: 1.35rem; color: #FFFFFF; font-weight: 800; display: flex; align-items: center; gap: 10px;">
-                        📒 Automated Daily Trade Cross-Verification & Execution Ledger
+                        📒 RELIANCE Daily Trade Cross-Verification & Execution Ledger
                     </h2>
                     <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.82rem;">
-                        Cross-Verifying <b>Trade Given (Model Recommendation)</b> ⇄ <b>Trade Taken in Groww</b> • Strictly Real Executed Broker Orders
+                        Cross-Verifying <b>Trade Given (Model Recommendation)</b> ⇄ <b>Trade Taken in Groww</b> • Strictly RELIANCE Executed Broker Orders
                     </p>
                 </div>
             </div>
@@ -6105,19 +6105,19 @@ if df is not None and not df.empty:
         """, unsafe_allow_html=True)
     with sec9_col2:
         st.write("") # spacing
-        if st.button("🤖 Auto-Verify & Sync Groww", use_container_width=True, help="Cross-verifies today's orders & positions from Groww API against model recommendations"):
-            with st.spinner("Connecting to Groww broker API & extracting fills..."):
-                gw_trades = groww_feed.get_executed_trades_today()
+        if st.button("🤖 Auto-Verify & Sync Groww", use_container_width=True, help="Cross-verifies today's RELIANCE orders & positions from Groww API against model recommendations"):
+            with st.spinner("Connecting to Groww broker API & extracting RELIANCE fills..."):
+                gw_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
                 if gw_trades:
                     synced = TradeJournalManager.sync_groww_trades(
                         groww_executed_trades=gw_trades,
                         active_signal=SignalTracker.get_signal(),
                         starting_cash=account_cash
                     )
-                    st.success(f"✅ Verified {len(synced)} Groww executed trades!")
+                    st.success(f"✅ Verified {len(synced)} RELIANCE executed trades!")
                     st.rerun()
                 else:
-                    st.info("ℹ️ No executed trades found today in Groww account.")
+                    st.info("ℹ️ No executed RELIANCE trades found today in Groww account.")
 
     # Executive KPI Metric Grid
     st.markdown(f"""
