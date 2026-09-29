@@ -289,10 +289,11 @@ class RelianceQuantAlertDaemon:
         low_data = telemetry["lower"]
         high_data = telemetry["upper"]
 
-        # 3. Candles & Confluence Evaluation
-        candles = RelianceCandleFetcher.get_5m_candles(spot)
+        # 3. Candles & Confluence Evaluation (Multi-Timeframe 5m & 15m)
+        candles_5m = RelianceCandleFetcher.get_5m_candles(spot)
+        candles_15m = RelianceCandleFetcher.get_15m_candles(spot)
         curr_time = now_dt.time()
-        confluence_eval = self.quant_engine.evaluate_90plus_confluence(curr_time, candles, candles)
+        confluence_eval = self.quant_engine.evaluate_90plus_confluence(curr_time, candles_5m, candles_15m)
 
         prob_str = confluence_eval.get("3. PROBABILITY SCORE", "")
         status_text = confluence_eval.get("2. TRADE STATUS", "")

@@ -50,7 +50,7 @@ if sys.stdout.encoding != 'utf-8':
 @dataclass
 class RelianceRiskBudget:
     total_capital: float = 73643.72
-    lot_size: int = 500  # Revised standard contract lot size for RELIANCE post-bonus
+    lot_size: int = 250  # Standardized 1 lot = 250 units for strict institutional capital preservation
     num_lots: int = 1    # Strictly 1 lot for institutional capital preservation (<= 4.0% risk cap)
     target_pts: float = 6.5
     stop_loss_pts: float = 3.2
@@ -355,16 +355,54 @@ class MultiIndicatorMath:
         return round(z, 2), status
 
     @staticmethod
-    def calculate_orb(highs: List[float], lows: List[float], num_bars: int = 3) -> Tuple[float, float]:
+    def calculate_orb(highs: List[float], lows: List[float], num_bars: int = 3, session_dates: Optional[List[Any]] = None) -> Tuple[float, float]:
         """
         15-minute Opening Range Breakout (ORB-15) High & Low (first 3 bars of 5m session).
+        Anchored to today's active session when session_dates are present.
         """
+        if not highs or not lows:
+            return 0.0, 0.0
+        if session_dates and len(session_dates) == len(highs):
+            curr_date = session_dates[-1]
+            session_indices = [i for i, d in enumerate(session_dates) if d == curr_date]
+            if session_indices:
+                today_highs = [highs[i] for i in session_indices]
+                today_lows = [lows[i] for i in session_indices]
+                bars = min(num_bars, len(today_highs))
+                return round(max(today_highs[:bars]), 2), round(min(today_lows[:bars]), 2)
         bars = min(num_bars, len(highs))
         if bars <= 0:
             return 0.0, 0.0
         orb_high = max(highs[:bars])
         orb_low = min(lows[:bars])
         return round(orb_high, 2), round(orb_low, 2)
+
+    @staticmethod
+    def calculate_corwin_schultz_spread(highs: List[float], lows: List[float]) -> Tuple[float, str]:
+        """
+        Corwin-Schultz (2012, Journal of Finance) High-Low Bid-Ask Spread Estimator.
+        Derived from consecutive high-to-low ranges to measure underlying liquidity / effective spread.
+        Spread > 0.18% indicates dealer spread widening / low liquidity risk.
+        """
+        if len(highs) < 2 or len(lows) < 2:
+            return 0.05, "NORMAL_LIQUIDITY"
+        try:
+            h1, l1 = highs[-2], lows[-2]
+            h2, l2 = highs[-1], lows[-1]
+            if l1 <= 0 or l2 <= 0 or h1 <= 0 or h2 <= 0:
+                return 0.05, "NORMAL_LIQUIDITY"
+            beta = (math.log(h1 / l1) ** 2) + (math.log(h2 / l2) ** 2)
+            gamma = (math.log(max(h1, h2) / min(l1, l2))) ** 2
+            den = 3.0 - (2.0 * math.sqrt(2.0))
+            alpha = (math.sqrt(2.0 * beta) - math.sqrt(beta)) / den - math.sqrt(gamma / den)
+            if alpha < 0:
+                alpha = 0.0
+            spread = 2.0 * (math.exp(alpha) - 1.0) / (1.0 + math.exp(alpha))
+            spread_pct = round(max(0.0, spread) * 100.0, 3)
+            regime = "WIDE_SPREAD_ILLIQUID" if spread > 0.0018 else ("TIGHT_LIQUID" if spread < 0.0008 else "NORMAL_LIQUIDITY")
+            return spread_pct, regime
+        except Exception:
+            return 0.05, "NORMAL_LIQUIDITY"
 
     @staticmethod
     def calculate_camarilla_pivots(pdh: float, pdl: float, pdc: float) -> Tuple[float, float, float, float]:
@@ -1199,7 +1237,7 @@ class UltraHighConvictionRelianceEngine:
 
         _, st_dir = MultiIndicatorMath.calculate_supertrend(c5m["high"], c5m["low"], c5m["close"], 10, 3.0)
         adx, pdi, mdi = MultiIndicatorMath.calculate_adx(c5m["high"], c5m["low"], c5m["close"], 14)
-        orb_high, orb_low = MultiIndicatorMath.calculate_orb(c5m["high"], c5m["low"], 3)
+        orb_high, orb_low = MultiIndicatorMath.calculate_orb(c5m["high"], c5m["low"], 3, c5m.get("date"))
 
         # Bullish V1 (Max 20 pts)
         v1_bull = 0.0
@@ -1317,6 +1355,12 @@ class UltraHighConvictionRelianceEngine:
         # Stand down if option bid-ask spread > 0.35 pts (prevents spread slippage losses on 1 lot)
         opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
         spread_stand_down = (opt_spread > 0.35) and not is_synthetic_feed
+
+        # Corwin-Schultz (2012) High-Low Effective Spread Estimator
+        cs_spread_pct, cs_regime = MultiIndicatorMath.calculate_corwin_schultz_spread(c5m["high"], c5m["low"])
+        if cs_regime == "WIDE_SPREAD_ILLIQUID":
+            v2_bull = max(0.0, v2_bull - 2.0)
+            v2_bear = max(0.0, v2_bear - 2.0)
 
         call_wall = float(chain_oi.get("call_wall", atm_strike + 10))
         put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
