@@ -6771,6 +6771,7 @@ if df is not None and not df.empty:
             column_config={
                 "Trade #": st.column_config.TextColumn("Trade #", width="small"),
                 "Instrument": st.column_config.TextColumn("Instrument", width="medium"),
+                "Confluence": st.column_config.TextColumn("Confluence", width="small"),
                 "Planned Entry": st.column_config.TextColumn("Planned Entry", width="small"),
                 "Actual Groww Entry": st.column_config.TextColumn("Actual Groww Entry", width="medium"),
                 "Executed (Yes/No)": st.column_config.TextColumn("Executed (Yes/No)", width="small"),
@@ -6849,11 +6850,30 @@ if df is not None and not df.empty:
 
             has_ss = "✅ Attached" if (r.get("screenshot") or r.get("screenshot_data_uri")) else "❌ None"
 
+            # Confluence Score at Signal Generation
+            conf_val = r.get("confluence_score")
+            if (conf_val is None or conf_val == 0) and r.get("symbol"):
+                sym_clean = r.get("symbol", "")
+                for j in journal_entries:
+                    if j.get("date") == r.get("date") and (j.get("trading_symbol") == sym_clean or sym_clean in str(j.get("instrument", ""))):
+                        if j.get("confluence_score"):
+                            conf_val = j.get("confluence_score")
+                            break
+            if conf_val is not None:
+                try:
+                    c_f = float(conf_val)
+                    conf_str = f"{c_f:.1f}%" if c_f > 0 else "—"
+                except Exception:
+                    conf_str = f"{conf_val}%"
+            else:
+                conf_str = "—"
+
             shadow_table_rows.append({
                 "Date": r.get("date"),
                 "Timestamp": r.get("timestamp"),
                 "Symbol": r.get("symbol"),
                 "Action": r.get("action", "BUY"),
+                "Confluence Score": conf_str,
                 "Planned Entry": f"₹{float(r.get('entry', 0.0)):.2f}",
                 "Target": f"₹{float(r.get('target', 0.0)):.2f} (+{r.get('target_pts', 10.0)})",
                 "SL": f"₹{float(r.get('sl', 0.0)):.2f} (-{r.get('sl_pts', 4.5)})",
@@ -6879,6 +6899,7 @@ if df is not None and not df.empty:
                     "Timestamp": st.column_config.TextColumn("Time Given", width="small"),
                     "Symbol": st.column_config.TextColumn("Contract", width="medium"),
                     "Action": st.column_config.TextColumn("Action", width="small"),
+                    "Confluence Score": st.column_config.TextColumn("Confluence Score", width="small"),
                     "Planned Entry": st.column_config.TextColumn("Entry", width="small"),
                     "Target": st.column_config.TextColumn("Target", width="small"),
                     "SL": st.column_config.TextColumn("SL", width="small"),

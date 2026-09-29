@@ -1737,9 +1737,13 @@ class SequentialTradeEngine:
             pnl_val = float(tr.get("realised_pnl", tr.get("total_profit", 0.0)))
             pnl_str = f"{'+' if pnl_val >= 0 else ''}₹{pnl_val:,.2f}"
 
+            conf_val = tr.get("confluence_score")
+            conf_str = f"{float(conf_val):.1f}%" if conf_val is not None else "—"
+
             rows.append({
                 "Trade #": f"Trade {i}",
                 "Instrument": tr.get("instrument") or tr.get("trading_symbol") or f"RELIANCE {tr.get('suggested_contract')}",
+                "Confluence": conf_str,
                 "Planned Entry": f"₹{float(tr.get('suggested_entry', 0.0)):.2f}",
                 "Actual Groww Entry": f"₹{float(tr.get('actual_entry_price', tr.get('entry_price', 0.0))):.2f}",
                 "Executed (Yes/No)": "Yes",
@@ -1763,10 +1767,13 @@ class SequentialTradeEngine:
                 unreal = float(active.get("unrealized_pnl", 0.0))
                 pnl_lbl = f"{'+' if unreal >= 0 else ''}₹{unreal:,.2f} (Live)"
                 executed_lbl = "Yes"
+                conf_act = active.get("confluence_score") or active.get("confluence") or 75.0
+                conf_act_str = f"{float(conf_act):.1f}%"
 
                 rows.append({
                     "Trade #": f"Trade {t_idx}",
                     "Instrument": active.get("instrument", active.get("contract", "")),
+                    "Confluence": conf_act_str,
                     "Planned Entry": f"₹{float(active.get('planned_entry', 0.0)):.2f}",
                     "Actual Groww Entry": act_entry,
                     "Executed (Yes/No)": executed_lbl,
