@@ -1096,10 +1096,18 @@ class UltraHighConvictionRelianceEngine:
         raw_bull = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull
         raw_bear = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear
 
+        # Midday "Lunch Lull" Time-of-Day Filter (11:30 AM – 01:15 PM IST)
+        # Low institutional liquidity and spread widening peak during midday; penalize raw score unless volume surge
+        is_midday_lull = time(11, 30) <= current_time <= time(13, 15)
+        if is_midday_lull and not vol_surge:
+            raw_bull = max(0.0, raw_bull - 3.5)
+            raw_bear = max(0.0, raw_bear - 3.5)
+
         # Calibrated Institutional Logistic Sigmoid Probability Mapping
+        # Calibrated: s0=42.0 centers 50% on moderate trend; k=0.10 sharpens discrimination between genuine A+ vs chop
         def calibrate_prob(score: float) -> float:
-            k = 0.075
-            s0 = 58.0
+            k = 0.10
+            s0 = 42.0
             return round(100.0 / (1.0 + math.exp(-k * (score - s0))), 1)
 
         bullish_score = min(96.0, max(10.0, calibrate_prob(raw_bull)))
