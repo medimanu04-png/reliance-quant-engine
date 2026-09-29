@@ -5803,7 +5803,24 @@ if df is not None and not df.empty:
 
         else:
             is_bull_lean = bullish_score >= bearish_score
-            bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if is_bull_lean else f"🔴 Mild Bearish Lean ({bearish_score}%)"
+            dominant_pct = bullish_score if is_bull_lean else bearish_score
+
+            if dominant_pct >= 90.0:
+                tier_str = "Ultra-High Conviction"
+                sub_label = "Institutional Squeeze & Trend Invariance"
+            elif dominant_pct >= 75.0:
+                tier_str = "High-Conviction"
+                sub_label = "Confirmed Directional Expansion"
+            elif dominant_pct >= 60.0:
+                tier_str = "Moderate"
+                sub_label = "Directional Bias Approaching Gate"
+            else:
+                tier_str = "Mild Lean"
+                sub_label = "Sub-threshold Directional Drift"
+
+            direction_word = "Bullish" if is_bull_lean else "Bearish"
+            icon = "🟢" if is_bull_lean else "🔴"
+            bias_label = f"{icon} {tier_str} {direction_word} ({dominant_pct}%)"
             lean_color = "#34D399" if is_bull_lean else "#F87171"
             lean_border = "rgba(16, 185, 129, 0.45)" if is_bull_lean else "rgba(239, 68, 68, 0.45)"
             lean_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(6, 95, 70, 0.15) 100%)" if is_bull_lean else "linear-gradient(135deg, rgba(127, 29, 29, 0.40) 0%, rgba(153, 27, 27, 0.15) 100%)"
@@ -5918,7 +5935,7 @@ if df is not None and not df.empty:
                             {bias_label}
                         </div>
                         <div style="font-size: 0.72rem; color: #CBD5E1; margin-top: 3px;">
-                            {'Directional bullish lean' if is_bull_lean else 'Directional bearish lean'}
+                            {sub_label}
                         </div>
                     </div>
 
