@@ -1,17 +1,28 @@
 {
-  "current_state": "IDLE / SCANNING",
-  "active_trade": null,
-  "last_closed_trade": {
-    "trade_num": 1,
+  "current_state": "IN-TRADE (ACTIVE MONITORING)",
+  "active_trade": {
+    "trade_num": 2,
+    "contract": "RELIANCE26OCT1200PE",
     "instrument": "RELIANCE 1200 PE (27-OCT-2026)",
-    "planned_entry": 29.25,
-    "actual_entry": 29.38,
+    "planned_entry": 29.8,
+    "actual_entry": 29.85,
+    "actual_entry_time": "12:45:00 PM IST",
     "executed": "Yes",
-    "sl": 24.75,
-    "target": 39.25,
-    "status": "Target Hit",
-    "pnl": "+\u20b96,375.00"
+    "sl": 27.35,
+    "target": 36.85,
+    "direction": "BUY PE",
+    "expiry": "27-OCT-2026",
+    "qty": 1000,
+    "num_lots": 2,
+    "confluence": 83.5,
+    "highest_price": 29.85,
+    "trailing_sl": 27.35,
+    "status": "Open",
+    "proposed_at": "12:45:00 PM IST",
+    "current_ltp": 28.7,
+    "unrealized_pnl": -1150.0
   },
+  "last_closed_trade": null,
   "today_trade_count": 1,
-  "updated_at": "2026-09-29 11:52:32 AM IST"
+  "updated_at": "2026-09-29 01:17:41 PM IST"
 }

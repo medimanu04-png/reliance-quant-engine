@@ -2393,6 +2393,14 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         gap_pts = round(breakout_level - active_live_ltp, 2)
         entry_confirmed = (active_live_ltp >= breakout_level) and plan_tradable
 
+    active_seq_state = SequentialTradeEngine.get_state()
+    active_trade_obj = active_seq_state.get("active_trade")
+    is_live_trade_running = (
+        active_seq_state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE
+        and active_trade_obj is not None
+        and sim_mode == "LIVE"
+    )
+
     if sim_mode == "TARGET_HIT":
         sim_target_pts = plan_target_pts or 10.0
         target_exit_ltp = round(active_live_ltp + sim_target_pts, 2)
@@ -3047,6 +3055,179 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         </div>
         """)
 
+    elif is_live_trade_running:
+        act_entry = float(active_trade_obj.get("actual_entry", active_trade_obj.get("planned_entry", active_live_ltp)))
+        act_target = float(active_trade_obj.get("target", act_entry + plan_target_pts))
+        act_sl = float(active_trade_obj.get("sl", act_entry - plan_sl_pts))
+        act_trail_sl = float(active_trade_obj.get("trailing_sl", act_sl))
+        effective_sl = max(act_sl, act_trail_sl)
+        act_qty = int(active_trade_obj.get("qty", plan_qty))
+        act_lots = int(active_trade_obj.get("num_lots", plan_num_lots))
+        act_inst = active_trade_obj.get("instrument", f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry})")
+        act_trade_num = active_trade_obj.get("trade_num", 1)
+
+        active_track_ltp = active_live_ltp
+        unreal_pts = round(active_track_ltp - act_entry, 2)
+        unreal_pnl = round(unreal_pts * act_qty, 2)
+        pnl_col = "#10B981" if unreal_pnl >= 0 else "#EF4444"
+        pnl_sign = "+" if unreal_pnl >= 0 else ""
+        pts_sign = "+" if unreal_pts >= 0 else ""
+
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw_inst = GrowwMarketFeed.get_instance()
+        except Exception:
+            gw_inst = None
+
+        trade_update = SequentialTradeEngine.update_active_trade(
+            current_ltp=active_track_ltp,
+            groww_feed=gw_inst,
+            starting_cash=STARTING_CAPITAL
+        )
+
+        today_date = datetime.now(IST).strftime("%Y-%m-%d")
+
+        if active_track_ltp >= act_target or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") == "Target Hit"):
+            target_alert_key = f"tg_sent_target_{today_date}_{act_trade_num}_{plan_strike}"
+            if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(target_alert_key):
+                profit_rs = round(unreal_pnl)
+                alert_msg = TelegramNotifier.format_target_hit_alert(
+                    contract=act_inst,
+                    entry_price=act_entry,
+                    exit_price=active_track_ltp,
+                    profit_pts=round(active_track_ltp - act_entry, 2),
+                    total_pnl=profit_rs,
+                    num_lots=act_lots,
+                    lot_size=500,
+                    spot=spot_tick
+                )
+                buttons = TelegramNotifier.get_target_hit_buttons()
+                TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                TelegramNotifier.record_alert_sent(target_alert_key)
+
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #10B981; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(16, 185, 129, 0.35); margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.4rem;">🎯</span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                            PROFIT TARGET HIT — BOOK GAINS ({pnl_sign}₹{unreal_pnl:,.2f})!
+                        </span>
+                    </div>
+                    <span style="background: #059669; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #34D399;">
+                        TARGET ACHIEVED
+                    </span>
+                </div>
+                <div style="font-size: 0.84rem; color: #A7F3D0; font-weight: 600; margin-bottom: 12px;">
+                    Trade #{act_trade_num} reached target price ₹{act_target:.2f} (Current LTP: ₹{active_track_ltp:.2f}). Book profits now on broker terminal.
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 14px;">
+                    <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
+                        🎯 BOOK FULL PROFIT ON GROWW ↗
+                    </a>
+                </div>
+            </div>
+            """)
+
+        elif active_track_ltp <= effective_sl or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") == "SL Hit"):
+            sl_alert_key = f"tg_sent_sl_{today_date}_{act_trade_num}_{plan_strike}"
+            if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(sl_alert_key):
+                loss_rs = abs(round(unreal_pnl))
+                alert_msg = TelegramNotifier.format_stop_loss_alert(
+                    contract=act_inst,
+                    entry_price=act_entry,
+                    sl_price=active_track_ltp,
+                    loss_pts=round(act_entry - active_track_ltp, 2),
+                    total_loss=loss_rs,
+                    num_lots=act_lots,
+                    lot_size=500,
+                    spot=spot_tick
+                )
+                buttons = TelegramNotifier.get_stop_loss_buttons()
+                TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                TelegramNotifier.record_alert_sent(sl_alert_key)
+
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(127, 29, 29, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #EF4444; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(239, 68, 68, 0.35); margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.4rem;">🛑</span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                            STOP LOSS TRIGGERED — PRESERVE CAPITAL ({pnl_sign}₹{unreal_pnl:,.2f})!
+                        </span>
+                    </div>
+                    <span style="background: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #F87171;">
+                        STOP LOSS EXIT
+                    </span>
+                </div>
+                <div style="font-size: 0.84rem; color: #FECACA; font-weight: 600; margin-bottom: 12px;">
+                    Trade #{act_trade_num} hit protective stop loss ₹{effective_sl:.2f} (Current LTP: ₹{active_track_ltp:.2f}). Cut risk immediately.
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 14px;">
+                    <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
+                        🛑 EXIT POSITION ON GROWW ↗
+                    </a>
+                </div>
+            </div>
+            """)
+
+        else:
+            dist_to_tgt = round(act_target - active_track_ltp, 2)
+            dist_to_sl = round(active_track_ltp - effective_sl, 2)
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.55) 0%, rgba(15, 23, 42, 0.95) 100%); border: 2.5px solid #10B981 !important; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 0 25px rgba(16, 185, 129, 0.25);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="live-dot" style="background: #10B981; width: 14px; height: 14px;"></span>
+                        <span style="font-size: 1.18rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                            🟢 IN-TRADE (ACTIVE MONITORING) • TRADE #{act_trade_num}: {act_inst}
+                        </span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="background: rgba(16, 185, 129, 0.25); color: #6EE7B7; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #10B981;">
+                            POSITION LOCKED IN
+                        </span>
+                        <span style="background: rgba(15, 23, 42, 0.9); color: {pnl_col}; font-size: 0.92rem; font-weight: 900; padding: 4px 14px; border-radius: 6px; border: 1px solid #334155;">
+                            Live P&L: {pnl_sign}₹{unreal_pnl:,.2f}
+                        </span>
+                    </div>
+                </div>
+                <div style="font-size: 0.84rem; color: #6EE7B7; font-weight: 600; margin-bottom: 12px;">
+                    Trade #{act_trade_num} is actively running! Tracking every 1-second tick to conclusion (+{plan_target_pts:.1f} pts Target or -{plan_sl_pts:.1f} pts Stop Loss). Will not revert to armed.
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.50); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 16px;">
+                    <div>
+                        <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Executed Entry</div>
+                        <div style="font-size: 1.35rem; font-weight: 900; color: #FBBF24; margin-top: 2px;">₹{act_entry:.2f}</div>
+                        <div style="font-size: 0.72rem; color: #CBD5E1;">Filled on Breakout</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Current Live LTP</div>
+                        <div style="font-size: 1.45rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">₹{active_track_ltp:.2f}</div>
+                        <div style="font-size: 0.72rem; color: {pnl_col}; font-weight: 700;">{pts_sign}{unreal_pts:.2f} pts from Entry</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Target (+{plan_target_pts:.1f} pts)</div>
+                        <div style="font-size: 1.45rem; font-weight: 900; color: #10B981; margin-top: 2px;">₹{act_target:.2f}</div>
+                        <div style="font-size: 0.72rem; color: #A7F3D0;">{dist_to_tgt:.2f} pts away</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Stop Loss (-{plan_sl_pts:.1f} pts)</div>
+                        <div style="font-size: 1.45rem; font-weight: 900; color: #F87171; margin-top: 2px;">₹{effective_sl:.2f}</div>
+                        <div style="font-size: 0.72rem; color: #FECACA;">Buffer: {dist_to_sl:.2f} pts</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 14px;">
+                    <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399;">
+                        🟢 VIEW POSITION ON GROWW ↗
+                    </a>
+                    <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                        📊 OPEN RELIANCE LIVE CHART ↗
+                    </a>
+                </div>
+            </div>
+            """)
+
     elif entry_confirmed:
         target_price = round(active_live_ltp + plan_target_pts, 2)
         sl_price = max(0.05, round(active_live_ltp - plan_sl_pts, 2))
@@ -3057,6 +3238,23 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         target_tax_rs = round(entry_target_costs["total_charges"])
         risk_rs = round(abs(entry_sl_costs["gross_pnl"]))
         net_risk_rs = round(abs(entry_sl_costs["net_pnl"]))
+
+        # Immediate Zero-Delay Sequential State Transition
+        seq_now = SequentialTradeEngine.get_state()
+        if seq_now.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
+            SequentialTradeEngine.enter_trade_direct(
+                contract=f"RELIANCE26OCT{plan_strike}{plan_contract_type}",
+                instrument=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry})",
+                entry_price=active_live_ltp,
+                sl=sl_price,
+                target=target_price,
+                direction=plan_dir,
+                expiry=plan_expiry,
+                confluence=plan_score,
+                qty=plan_qty,
+                num_lots=plan_num_lots
+            )
+            st.session_state["just_entered_trade"] = True
 
         # Telegram Alert Dispatch (Instant on Entry Trigger or Simulation)
         tg_status_html = ""
@@ -6146,8 +6344,8 @@ if df is not None and not df.empty:
     }
 
     # Automatically persist Quant Engine trade recommendation for daily Groww cross-verification
-    # STRICT SEQUENTIAL RULE: Only record signal when engine is IDLE / SCANNING (zero parallel signals)
-    if is_tradable and recommended_contract_type and current_seq_state == SequentialTradeEngine.STATE_IDLE:
+    # STRICT SEQUENTIAL RULE: Only record signal when engine is IDLE or PREVIOUS TRADE CLOSED (zero parallel signals)
+    if is_tradable and recommended_contract_type and current_seq_state in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED]:
         try:
             sig_dict = {
                 "date": datetime.now(IST).strftime("%Y-%m-%d"),
