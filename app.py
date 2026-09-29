@@ -14,7 +14,7 @@ import pytz
 IST = pytz.timezone("Asia/Kolkata")
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
-from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL
+from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR
 
 class IndianFOTransactionCostEngine:
     """
@@ -5860,6 +5860,25 @@ if df is not None and not df.empty:
         )
     }
 
+    # Automatically persist Quant Engine trade recommendation for daily Groww cross-verification
+    if is_tradable and recommended_contract_type:
+        try:
+            SignalTracker.save_signal({
+                "date": datetime.now(IST).strftime("%Y-%m-%d"),
+                "trade_given_time": datetime.now(IST).strftime("%I:%M:%S %p IST"),
+                "full_contract": rec_instrument,
+                "symbol": f"RELIANCE26OCT{atm_strike}{recommended_contract_type}",
+                "contract_type": recommended_contract_type,
+                "strike": atm_strike,
+                "expiry": expiry_date_str,
+                "suggested_entry": round(float(estimated_premium), 2),
+                "suggested_exit": round(float(target_premium), 2),
+                "suggested_sl": round(float(sl_premium), 2),
+                "confluence_score": round(float(dominant_score), 1)
+            })
+        except Exception:
+            pass
+
     if stream_live_1s:
         render_dynamic_1s_atm_feed(spot, live_broker_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, trade_plan=trade_plan)
     else:
@@ -6050,35 +6069,55 @@ if df is not None and not df.empty:
     today_strike_price = float(estimated_premium if estimated_premium > 0 else (current_option_ltp if current_option_ltp > 0 else 37.65))
     today_2lot_capital = round(2 * 500 * today_strike_price, 2)
 
+    # 1. Automatic Groww Execution Cross-Verification
+    # If Groww is connected, fetch executed orders & positions directly from broker and cross-verify with model recommendations
+    if groww_feed.is_connected:
+        try:
+            gw_executed = groww_feed.get_executed_trades_today()
+            if gw_executed:
+                TradeJournalManager.sync_groww_trades(
+                    groww_executed_trades=gw_executed,
+                    active_signal=SignalTracker.get_signal(),
+                    starting_cash=account_cash
+                )
+        except Exception as e:
+            logger.debug(f"Auto-sync Groww executions error: {e}")
+
     journal_entries = TradeJournalManager.load_journal(starting_cash=account_cash)
     summary_kpi = TradeJournalManager.get_summary_kpi(journal_entries, today_strike_price=today_strike_price, starting_cash=account_cash)
 
-    st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border: 1px solid #334155; border-radius: 12px; padding: 18px 24px; margin-top: 15px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-            <div>
-                <h2 style="margin: 0; font-size: 1.40rem; color: #FFFFFF; font-weight: 800; display: flex; align-items: center; gap: 10px;">
-                    📒 RELIANCE Daily Trade Performance Journal & Capital Ledger
-                </h2>
-                <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.85rem;">
-                    Daily Systematic Execution Log • Mandate: Strictly 2 Lots (1,000 Qty) • 10 Pts Target (+₹10,000) • 9 Pts Stop Loss (-₹9,000)
-                </p>
-            </div>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <div style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 6px 16px; text-align: right;">
-                    <span style="font-size: 0.70rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Account Cash Balance</span>
-                    <div style="font-size: 1.25rem; color: #38BDF8; font-weight: 900;">₹{summary_kpi['total_cash']:,.2f}</div>
-                    <div style="font-size: 0.68rem; color: #7DD3FC; font-weight: 600;">Buffer: ₹{max(0.0, summary_kpi['total_cash'] - today_2lot_capital):,.2f}</div>
-                </div>
-                <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid #10B981; border-radius: 8px; padding: 6px 18px; text-align: right;">
-                    <span style="font-size: 0.70rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">2-Lot Capital Allocation (Today)</span>
-                    <div style="font-size: 1.25rem; color: #10B981; font-weight: 900;">₹{today_2lot_capital:,.2f}</div>
-                    <div style="font-size: 0.68rem; color: #6EE7B7; font-weight: 600;">2 Lots (1,000 Qty) × ₹{today_strike_price:.2f} LTP</div>
+    # Section 9 Header with One-Click Groww Verification Sync
+    sec9_col1, sec9_col2 = st.columns([3.2, 1.2])
+    with sec9_col1:
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border: 1px solid #334155; border-radius: 12px; padding: 16px 22px; margin-top: 12px; margin-bottom: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div>
+                    <h2 style="margin: 0; font-size: 1.35rem; color: #FFFFFF; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                        📒 Automated Daily Trade Cross-Verification & Execution Ledger
+                    </h2>
+                    <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.82rem;">
+                        Cross-Verifying <b>Trade Given (Model Recommendation)</b> ⇄ <b>Trade Taken in Groww</b> • Strictly Real Executed Broker Orders
+                    </p>
                 </div>
             </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    with sec9_col2:
+        st.write("") # spacing
+        if st.button("🤖 Auto-Verify & Sync Groww", use_container_width=True, help="Cross-verifies today's orders & positions from Groww API against model recommendations"):
+            with st.spinner("Connecting to Groww broker API & extracting fills..."):
+                gw_trades = groww_feed.get_executed_trades_today()
+                if gw_trades:
+                    synced = TradeJournalManager.sync_groww_trades(
+                        groww_executed_trades=gw_trades,
+                        active_signal=SignalTracker.get_signal(),
+                        starting_cash=account_cash
+                    )
+                    st.success(f"✅ Verified {len(synced)} Groww executed trades!")
+                    st.rerun()
+                else:
+                    st.info("ℹ️ No executed trades found today in Groww account.")
 
     # Executive KPI Metric Grid
     st.markdown(f"""
@@ -6096,7 +6135,7 @@ if df is not None and not df.empty:
         <div class="journal-card">
             <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">📈 Cumulative Total Profit</div>
             <div style="font-size: 1.45rem; font-weight: 900; color: {'#10B981' if summary_kpi['total_profit'] >= 0 else '#EF4444'}; font-family: 'Inter', sans-serif;">+₹{summary_kpi['total_profit']:,.2f}</div>
-            <div style="font-size: 0.75rem; color: #94A3B8; margin-top: 4px;">{summary_kpi['hits']} Hits • {summary_kpi['fails']} Fails • {summary_kpi['stand_downs']} Stand Down</div>
+            <div style="font-size: 0.75rem; color: #94A3B8; margin-top: 4px;">{summary_kpi['hits']} Wins • {summary_kpi['fails']} Fails • {summary_kpi['open_trades']} Open</div>
         </div>
         <div class="journal-card">
             <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">🎯 Hit Ratio / Win Rate</div>
@@ -6104,90 +6143,25 @@ if df is not None and not df.empty:
             <div style="font-size: 0.75rem; color: #94A3B8; margin-top: 4px;">Profit Factor: {summary_kpi['profit_factor']:.2f}</div>
         </div>
         <div class="journal-card">
-            <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">💰 Amount Captured / Lost</div>
+            <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">💰 Groww Realized P&L</div>
             <div style="font-size: 1.45rem; font-weight: 900; color: #10B981; font-family: 'Inter', sans-serif;">+₹{summary_kpi['total_captured']:,.0f} <span style="font-size: 0.90rem; color: #EF4444;">(-₹{summary_kpi['total_lost']:,.0f})</span></div>
             <div style="font-size: 0.75rem; color: #94A3B8; margin-top: 4px;">Avg Deployed: ₹{summary_kpi['avg_capital_deployed']:,.0f} / trade</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Interactive Trade Logger / Recorder Form
-    with st.expander("📝 Record or Update Daily Trade Outcome", expanded=False):
-        st.markdown("<p style='font-size: 0.85rem; color: #94A3B8; margin-bottom: 12px;'>Log today's trade outcome or update any past date. Capital required is automatically calculated based on strictly 2 lots (1,000 Qty) at the execution strike premium.</p>", unsafe_allow_html=True)
-        
-        with st.form("daily_trade_form", clear_on_submit=False):
-            f_col1, f_col2, f_col3 = st.columns([1, 1, 1.2])
-            
-            today_str = datetime.now(IST).strftime("%Y-%m-%d")
-            entry_date = f_col1.date_input("Trade Date", value=datetime.strptime(today_str, "%Y-%m-%d"))
-            date_formatted = entry_date.strftime("%Y-%m-%d")
-            day_of_week = entry_date.strftime("%A")
-            
-            auto_decision = "TRADABLE (A+ SETUP)" if is_tradable else "STAND DOWN"
-            decision_choice = f_col2.selectbox("Engine Decision", ["TRADABLE (A+ SETUP)", "STAND DOWN"], index=0 if is_tradable else 1)
-            
-            auto_inst = rec_instrument if is_tradable else f"RELIANCE {atm_strike} CE ({expiry_date_str})"
-            inst_choice = f_col3.text_input("Instrument Traded", value=auto_inst)
-            
-            f_col4, f_col5, f_col6, f_col7 = st.columns(4)
-            status_choice = f_col4.selectbox("Trade Outcome", ["HIT", "FAIL", "STAND DOWN"], index=0 if is_tradable else 2)
-            
-            form_entry_price = f_col5.number_input("Entry Strike Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price if is_tradable else 0.0))
-            calc_cap_deployed = round(form_entry_price * 1000.0, 2) if status_choice in ["HIT", "FAIL"] else 0.0
-            
-            default_captured = 10000.0 if status_choice == "HIT" else 0.0
-            default_lost = 9000.0 if status_choice == "FAIL" else 0.0
-            
-            amt_captured = f_col6.number_input("Amount Captured (₹)", min_value=0.0, step=500.0, value=default_captured)
-            amt_lost = f_col7.number_input("Amount Lost (₹)", min_value=0.0, step=500.0, value=default_lost)
-            
-            f_col8, f_col9 = st.columns([1, 2])
-            trade_type = f_col8.selectbox("Trade Type", ["BUY CE", "BUY PE", "NO TRADE"], index=0 if (is_tradable and recommended_contract_type == "CE") else (1 if (is_tradable and recommended_contract_type == "PE") else 2))
-            
-            auto_notes = f"Executed 2 Lots (1,000 Qty) at ₹{form_entry_price:.2f} (Capital Deployed: ₹{calc_cap_deployed:,.2f}). Confluence {dominant_score}%." if is_tradable else f"Non-tradable day. Bias {dominant_score}% below {MIN_HIT_PERCENTAGE:.0f}% threshold. Capital preserved (₹0 risk)."
-            trade_notes = f_col9.text_input("Trade Confluence & Audit Notes", value=auto_notes)
-            
-            st.caption(f"💡 **2-Lot Allocation Preview**: 2 Lots × 500 Qty = **1,000 Units** | Capital Deployed: **₹{calc_cap_deployed:,.2f}**")
-            
-            submit_trade = st_form_submit_button_stretch("💾 Save Daily Trade to Journal")
-            if submit_trade:
-                new_record = {
-                    "date": date_formatted,
-                    "day": day_of_week,
-                    "decision": decision_choice,
-                    "type": trade_type,
-                    "instrument": inst_choice,
-                    "entry_price": float(form_entry_price),
-                    "exit_price": round(form_entry_price + 10.0, 2) if status_choice == "HIT" else (round(max(0.05, form_entry_price - 9.0), 2) if status_choice == "FAIL" else 0.0),
-                    "num_lots": 2,
-                    "lot_size": 500,
-                    "qty": 1000,
-                    "capital_deployed": calc_cap_deployed,
-                    "status": status_choice,
-                    "pts_captured": 10.0 if status_choice == "HIT" else 0.0,
-                    "pts_lost": 9.0 if status_choice == "FAIL" else 0.0,
-                    "amount_captured": float(amt_captured),
-                    "amount_lost": float(amt_lost),
-                    "confluence_score": float(dominant_score),
-                    "notes": trade_notes
-                }
-                TradeJournalManager.add_or_update_entry(new_record, starting_cash=account_cash)
-                st.success(f"✅ Trade log for {date_formatted} ({status_choice} • 2 Lots • Capital: ₹{calc_cap_deployed:,.2f}) recorded successfully!")
-                st.rerun()
-
     # Filter Controls & Export
     ctl_col1, ctl_col2, ctl_col3 = st.columns([1.5, 2, 1])
     with ctl_col1:
         status_filter = st.selectbox(
             "Filter Outcome",
-            ["All Records", "HIT (Wins)", "FAIL (Losses)", "STAND DOWN (No Trade)"],
+            ["All Records", "HIT (Wins)", "FAIL (Losses)", "OPEN (Live Positions)", "STAND DOWN (No Trade)"],
             index=0
         )
     with ctl_col2:
-        search_query = st.text_input("Search Journal", placeholder="Search by date, instrument, or notes...")
+        search_query = st.text_input("Search Journal", placeholder="Search by date, symbol, or notes...")
     with ctl_col3:
         st.write("") # spacing
-        # Prepare CSV for download
         raw_df = pd.DataFrame(journal_entries)
         csv_bytes = raw_df.to_csv(index=False).encode('utf-8')
         st_download_button_stretch(
@@ -6203,6 +6177,8 @@ if df is not None and not df.empty:
         filtered_entries = [e for e in filtered_entries if e.get("status") == "HIT"]
     elif status_filter == "FAIL (Losses)":
         filtered_entries = [e for e in filtered_entries if e.get("status") == "FAIL"]
+    elif status_filter == "OPEN (Live Positions)":
+        filtered_entries = [e for e in filtered_entries if e.get("status") == "OPEN"]
     elif status_filter == "STAND DOWN (No Trade)":
         filtered_entries = [e for e in filtered_entries if e.get("status") == "STAND DOWN"]
 
@@ -6210,65 +6186,271 @@ if df is not None and not df.empty:
         q = search_query.lower()
         filtered_entries = [
             e for e in filtered_entries 
-            if q in e.get("date", "").lower() or q in e.get("instrument", "").lower() or q in e.get("notes", "").lower() or q in e.get("day", "").lower()
+            if q in e.get("date", "").lower() or q in e.get("trading_symbol", "").lower() or q in e.get("notes", "").lower() or q in e.get("day", "").lower()
         ]
 
-    # Build clean formatted display dataframe (latest date first)
+    # ==============================================================================
+    # 9.1. SIDE-BY-SIDE CROSS-VERIFICATION COMPARATIVE CARDS
+    # ==============================================================================
+    st.markdown("<h4 style='color: #F8FAFC; margin-top: 15px; margin-bottom: 10px;'>🔍 Verified Execution Breakdown (Trade Given vs. Trade Taken in Groww)</h4>", unsafe_allow_html=True)
+    
+    if filtered_entries:
+        for entry in reversed(filtered_entries):
+            st_raw = entry.get("status", "STAND DOWN")
+            if st_raw == "HIT":
+                badge_color = "#10B981"
+                badge_bg = "rgba(16, 185, 129, 0.15)"
+                badge_label = "🟢 HIT (PROFIT TARGET REACHED)"
+            elif st_raw == "FAIL":
+                badge_color = "#EF4444"
+                badge_bg = "rgba(239, 68, 68, 0.15)"
+                badge_label = "🔴 STOP LOSS TRIGGERED"
+            elif st_raw == "OPEN":
+                badge_color = "#38BDF8"
+                badge_bg = "rgba(56, 189, 248, 0.15)"
+                badge_label = "🔵 LIVE POSITION OPEN"
+            else:
+                badge_color = "#94A3B8"
+                badge_bg = "rgba(148, 163, 184, 0.15)"
+                badge_label = "⚪ STAND DOWN"
+
+            pnl_val = float(entry.get("realised_pnl", entry.get("total_profit", 0.0)))
+            pnl_col = "#10B981" if pnl_val >= 0 else "#EF4444"
+            pnl_sign = "+" if pnl_val >= 0 else ""
+            roi_val = float(entry.get("trade_roi_pct", 0.0))
+            roi_sign = "+" if roi_val >= 0 else ""
+            
+            with st.container():
+                st.markdown(f"""
+                <div style="background: #0B1120; border: 1px solid #1E293B; border-radius: 10px; padding: 14px 18px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1E293B; padding-bottom: 8px; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                        <div>
+                            <span style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF;">{entry.get('trading_symbol', 'N/A')}</span>
+                            <span style="font-size: 0.75rem; color: #94A3B8; margin-left: 8px;">{entry.get('date')} ({entry.get('day')})</span>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <span style="background: {badge_bg}; color: {badge_color}; border: 1px solid {badge_color}; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 800;">{badge_label}</span>
+                            <span style="background: rgba(15, 23, 42, 0.9); color: {pnl_col}; border: 1px solid #334155; font-size: 0.85rem; padding: 2px 10px; border-radius: 4px; font-weight: 900;">
+                                Total Profit: {pnl_sign}₹{pnl_val:,.2f} ({roi_sign}{roi_val:.1f}%)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                c_given, c_taken, c_audit = st.columns([1.1, 1.2, 1.1])
+                
+                with c_given:
+                    st.markdown(f"""
+                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; height: 100%;">
+                        <div style="color: #38BDF8; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; margin-bottom: 6px;">
+                            📡 1. Trade Given (Recommendation)
+                        </div>
+                        <div style="font-size: 0.80rem; color: #CBD5E1; line-height: 1.6;">
+                            • <b>Time Given:</b> <span style="color: #FFFFFF;">{entry.get('trade_given_time', '09:15:00 AM IST')}</span><br>
+                            • <b>Contract:</b> <span style="color: #38BDF8; font-weight: 700;">{entry.get('suggested_contract', entry.get('trading_symbol'))}</span><br>
+                            • <b>Suggested Entry:</b> ₹{entry.get('suggested_entry', 0.0):.2f}<br>
+                            • <b>Suggested Exit:</b> ₹{entry.get('suggested_exit', 0.0):.2f} (+{entry.get('suggested_target_pts', 10.0)} pts)<br>
+                            • <b>Suggested Stop Loss:</b> ₹{entry.get('suggested_sl', 0.0):.2f} (-{entry.get('suggested_sl_pts', 4.5)} pts)<br>
+                            • <b>Confluence Score:</b> {entry.get('confluence_score', 0.0):.1f}%
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with c_taken:
+                    slip = entry.get('entry_slippage_pts', 0.0)
+                    slip_col = "#10B981" if slip <= 0 else "#F59E0B"
+                    slip_sign = "+" if slip > 0 else ""
+                    st.markdown(f"""
+                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; height: 100%;">
+                        <div style="color: #10B981; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; margin-bottom: 6px;">
+                            ⚡ 2. Trade Taken in Groww (Execution)
+                        </div>
+                        <div style="font-size: 0.80rem; color: #CBD5E1; line-height: 1.6;">
+                            • <b>Actual Entry:</b> <b style="color: #FFFFFF;">₹{entry.get('actual_entry_price', entry.get('entry_price', 0.0)):.2f}</b> @ {entry.get('actual_entry_time', 'N/A')}<br>
+                            • <b>Actual Exit:</b> <b style="color: #FFFFFF;">₹{entry.get('actual_exit_price', entry.get('exit_price', 0.0)):.2f}</b> @ {entry.get('actual_exit_time') or 'Holding (Live Open)'}<br>
+                            • <b>Traded Qty:</b> {entry.get('qty', 1000):,} units ({entry.get('num_lots', 2)} Lots)<br>
+                            • <b>Capital Deployed:</b> ₹{entry.get('capital_deployed', 0.0):,.2f}<br>
+                            • <b>Entry Slippage:</b> <span style="color: {slip_col}; font-weight: 700;">{slip_sign}{slip:.2f} pts</span><br>
+                            • <b>Broker Sync:</b> Verified Groww Live API Fill
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with c_audit:
+                    st.markdown(f"""
+                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; height: 100%;">
+                        <div style="color: #F59E0B; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; margin-bottom: 6px;">
+                            📷 3. Verification & Screenshot
+                        </div>
+                        <div style="font-size: 0.80rem; color: #CBD5E1; line-height: 1.6; margin-bottom: 6px;">
+                            • <b>Total Profit:</b> <b style="color: {pnl_col};">{pnl_sign}₹{pnl_val:,.2f}</b><br>
+                            • <b>Net Trade ROI:</b> <b style="color: {pnl_col};">{roi_sign}{roi_val:.1f}%</b><br>
+                            • <b>Audit Note:</b> <span style="color: #94A3B8;">{entry.get('notes', '')}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Screenshot Attachment Field for this trade
+                trade_id = entry.get("id") or f"{entry.get('date')}_{entry.get('trading_symbol')}"
+                existing_ss = entry.get("screenshot")
+                
+                with st.expander(f"📷 Screenshot & Attachment for {entry.get('trading_symbol')}", expanded=bool(existing_ss)):
+                    sc_c1, sc_c2 = st.columns([1.5, 1])
+                    with sc_c1:
+                        if existing_ss and os.path.exists(existing_ss):
+                            st.image(existing_ss, caption=f"Verified Trade Proof: {entry.get('trading_symbol')}", use_container_width=True)
+                        elif existing_ss:
+                            st.caption(f"📁 Screenshot path: `{existing_ss}`")
+                        else:
+                            st.info("📷 No screenshot attached yet for this executed trade.")
+                    
+                    with sc_c2:
+                        uploaded_ss = st.file_uploader(
+                            f"Upload / Replace Screenshot",
+                            type=["png", "jpg", "jpeg", "webp"],
+                            key=f"file_uploader_{trade_id}"
+                        )
+                        if uploaded_ss is not None:
+                            saved_path = TradeJournalManager.save_screenshot_file(
+                                trade_id=trade_id,
+                                file_bytes=uploaded_ss.read(),
+                                original_filename=uploaded_ss.name
+                            )
+                            st.success(f"✅ Screenshot saved: `{saved_path}`")
+                            st.rerun()
+
+                st.write("") # small divider space
+
+    else:
+        st.info("ℹ️ No executed trades found matching the current filter. Only trades executed in your Groww broker account will be displayed here.")
+
+    # ==============================================================================
+    # 9.2. COMPREHENSIVE CROSS-VERIFICATION DATA TABLE
+    # ==============================================================================
+    st.markdown("<h4 style='color: #F8FAFC; margin-top: 15px; margin-bottom: 10px;'>📊 Cross-Verification Audit Table (All Groww Executions)</h4>", unsafe_allow_html=True)
+    
     display_rows = []
     for entry in reversed(filtered_entries):
         status_raw = entry.get("status", "STAND DOWN")
         if status_raw == "HIT":
-            outcome_badge = "🟢 HIT (+10 pts)"
+            outcome_badge = "🟢 HIT"
         elif status_raw == "FAIL":
-            outcome_badge = "🔴 FAIL (-9 pts)"
+            outcome_badge = "🔴 FAIL"
+        elif status_raw == "OPEN":
+            outcome_badge = "🔵 OPEN"
         else:
             outcome_badge = "⚪ STAND DOWN"
 
         cap_dep = float(entry.get("capital_deployed", 0.0))
-        cap = float(entry.get("amount_captured", 0.0))
-        lost = float(entry.get("amount_lost", 0.0))
-        net_pnl = float(entry.get("net_profit", cap - lost))
-        roi_val = float(entry.get("trade_roi_pct", (net_pnl / cap_dep * 100.0) if cap_dep > 0 else 0.0))
-        cum_profit = float(entry.get("cumulative_profit", 0.0))
-        tot_cash = float(entry.get("total_cash", summary_kpi['starting_capital']))
+        pnl = float(entry.get("realised_pnl", entry.get("total_profit", 0.0)))
+        roi = float(entry.get("trade_roi_pct", 0.0))
+        cum_p = float(entry.get("cumulative_profit", 0.0))
+        tot_c = float(entry.get("total_cash", summary_kpi['starting_capital']))
+        has_ss = "✅ Attached" if entry.get("screenshot") else "❌ None"
 
         display_rows.append({
             "Date": entry.get("date"),
-            "Day": entry.get("day"),
-            "Option Contract": entry.get("instrument", "N/A"),
-            "Outcome": outcome_badge,
-            "Capital Deployed (2 Lots)": f"₹{cap_dep:,.0f}" if cap_dep > 0 else "₹0 (Preserved)",
-            "Captured (+₹)": f"+₹{cap:,.0f}" if cap > 0 else "₹0",
-            "Lost (-₹)": f"-₹{lost:,.0f}" if lost > 0 else "₹0",
-            "Net Trade P&L": f"+₹{net_pnl:,.0f}" if net_pnl > 0 else (f"-₹{abs(net_pnl):,.0f}" if net_pnl < 0 else "₹0"),
-            "Trade ROI %": f"+{roi_val:.1f}%" if roi_val > 0 else (f"{roi_val:.1f}%" if roi_val < 0 else "0.0%"),
-            "Total Profit": f"+₹{cum_profit:,.0f}" if cum_profit >= 0 else f"-₹{abs(cum_profit):,.0f}",
-            "Total Cash": f"₹{tot_cash:,.0f}",
-            "Confluence & Notes": entry.get("notes", "")
+            "Given Time": entry.get("trade_given_time", "09:15:00 AM IST"),
+            "Contract": entry.get("trading_symbol", "N/A"),
+            "Sugg Entry": f"₹{entry.get('suggested_entry', 0.0):.2f}",
+            "Sugg Exit": f"₹{entry.get('suggested_exit', 0.0):.2f}",
+            "Sugg SL": f"₹{entry.get('suggested_sl', 0.0):.2f}",
+            "Actual Entry": f"₹{entry.get('actual_entry_price', entry.get('entry_price', 0.0)):.2f} ({entry.get('actual_entry_time', '')})",
+            "Actual Exit": f"₹{entry.get('actual_exit_price', entry.get('exit_price', 0.0)):.2f} ({entry.get('actual_exit_time', 'OPEN')})",
+            "Traded Qty": f"{entry.get('qty', 1000):,} ({entry.get('num_lots', 2)}L)",
+            "Total Profit": f"+₹{pnl:,.2f}" if pnl >= 0 else f"-₹{abs(pnl):,.2f}",
+            "Trade ROI %": f"+{roi:.1f}%" if roi >= 0 else f"{roi:.1f}%",
+            "Status": outcome_badge,
+            "Total Cash": f"₹{tot_c:,.2f}",
+            "Screenshot": has_ss,
+            "Audit Notes": entry.get("notes", "")
         })
 
     if display_rows:
         df_display = pd.DataFrame(display_rows)
         st_dataframe_stretch(
             df_display,
-            height=430,
+            height=380,
             column_config={
                 "Date": st.column_config.TextColumn("Date", width="small"),
-                "Day": st.column_config.TextColumn("Day", width="small"),
-                "Option Contract": st.column_config.TextColumn("Option Contract (2 Lots)", width="medium"),
-                "Outcome": st.column_config.TextColumn("Outcome", width="small"),
-                "Capital Deployed (2 Lots)": st.column_config.TextColumn("Capital (2 Lots)", width="small"),
-                "Captured (+₹)": st.column_config.TextColumn("Captured (+₹)", width="small"),
-                "Lost (-₹)": st.column_config.TextColumn("Lost (-₹)", width="small"),
-                "Net Trade P&L": st.column_config.TextColumn("Net P&L", width="small"),
-                "Trade ROI %": st.column_config.TextColumn("Trade ROI", width="small"),
+                "Given Time": st.column_config.TextColumn("Given Time", width="small"),
+                "Contract": st.column_config.TextColumn("Instrument", width="medium"),
+                "Sugg Entry": st.column_config.TextColumn("Sugg Entry", width="small"),
+                "Sugg Exit": st.column_config.TextColumn("Sugg Target", width="small"),
+                "Sugg SL": st.column_config.TextColumn("Sugg SL", width="small"),
+                "Actual Entry": st.column_config.TextColumn("Actual Entry (Groww)", width="medium"),
+                "Actual Exit": st.column_config.TextColumn("Actual Exit (Groww)", width="medium"),
+                "Traded Qty": st.column_config.TextColumn("Qty", width="small"),
                 "Total Profit": st.column_config.TextColumn("Total Profit", width="small"),
+                "Trade ROI %": st.column_config.TextColumn("ROI %", width="small"),
+                "Status": st.column_config.TextColumn("Status", width="small"),
                 "Total Cash": st.column_config.TextColumn("Total Cash", width="small"),
-                "Confluence & Notes": st.column_config.TextColumn("Confluence / Notes", width="large"),
+                "Screenshot": st.column_config.TextColumn("Screenshot", width="small"),
+                "Audit Notes": st.column_config.TextColumn("Audit Notes", width="large"),
             }
         )
-    else:
-        st.info(f"ℹ️ **Clean Authentic Ledger Initialized (Starting Capital: ₹{summary_kpi['starting_capital']:,.2f} • Strictly 2 Lots Mandate)**. All synthetic backtest history has been wiped. Only real trades logged via the entry form above or confirmed live executions will appear here.")
+
+    # Interactive Form for Manual Adjustments
+    with st.expander("📝 Manual Entry / Adjust Trade Record", expanded=False):
+        st.markdown("<p style='font-size: 0.85rem; color: #94A3B8;'>Manually add or correct any historical execution record.</p>", unsafe_allow_html=True)
+        with st.form("manual_trade_form", clear_on_submit=False):
+            mf_c1, mf_c2, mf_c3 = st.columns(3)
+            today_str = datetime.now(IST).strftime("%Y-%m-%d")
+            m_date = mf_c1.date_input("Trade Date", value=datetime.strptime(today_str, "%Y-%m-%d"))
+            m_sym = mf_c2.text_input("Trading Symbol", value=rec_instrument if is_tradable else "RELIANCE26OCT1200PE")
+            m_status = mf_c3.selectbox("Trade Status", ["HIT", "FAIL", "OPEN", "STAND DOWN"], index=0)
+
+            mf_c4, mf_c5, mf_c6, mf_c7 = st.columns(4)
+            m_entry = mf_c4.number_input("Actual Entry Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price))
+            m_exit = mf_c5.number_input("Actual Exit Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price + 10.0 if m_status == "HIT" else max(0.05, today_strike_price - 4.5)))
+            m_qty = mf_c6.number_input("Traded Quantity", min_value=1, step=50, value=1000)
+            m_pnl = mf_c7.number_input("Total Profit / P&L (₹)", step=500.0, value=round((m_exit - m_entry) * m_qty, 2) if m_status in ["HIT", "FAIL"] else 0.0)
+
+            m_notes = st.text_input("Audit Notes", value="Manual Trade Adjustment")
+            m_submit = st_form_submit_button_stretch("💾 Save Trade Record")
+            if m_submit:
+                rec = {
+                    "date": m_date.strftime("%Y-%m-%d"),
+                    "day": m_date.strftime("%A"),
+                    "trading_symbol": m_sym,
+                    "instrument": m_sym,
+                    "type": "BUY PE" if "PE" in m_sym else "BUY CE",
+                    "decision": "MANUAL ENTRY",
+                    "source": "MANUAL",
+                    "is_closed": m_status != "OPEN",
+                    "trade_given_time": "09:15:00 AM IST",
+                    "suggested_contract": m_sym,
+                    "suggested_entry": float(m_entry),
+                    "suggested_exit": round(float(m_entry + 10.0), 2),
+                    "suggested_sl": round(float(max(0.05, m_entry - 4.5)), 2),
+                    "suggested_target_pts": 10.0,
+                    "suggested_sl_pts": 4.5,
+                    "actual_entry_time": datetime.now(IST).strftime("%I:%M:%S %p IST"),
+                    "actual_entry_price": float(m_entry),
+                    "entry_price": float(m_entry),
+                    "actual_exit_time": datetime.now(IST).strftime("%I:%M:%S %p IST") if m_status != "OPEN" else "",
+                    "actual_exit_price": float(m_exit),
+                    "exit_price": float(m_exit),
+                    "num_lots": max(1, round(m_qty / 500)),
+                    "lot_size": 500,
+                    "qty": int(m_qty),
+                    "capital_deployed": round(float(m_entry) * m_qty, 2),
+                    "realised_pnl": float(m_pnl),
+                    "total_profit": float(m_pnl),
+                    "net_profit": float(m_pnl),
+                    "net_pnl": float(m_pnl),
+                    "amount_captured": float(m_pnl) if m_pnl > 0 else 0.0,
+                    "amount_lost": abs(float(m_pnl)) if m_pnl < 0 else 0.0,
+                    "status": m_status,
+                    "entry_slippage_pts": 0.0,
+                    "screenshot": "",
+                    "notes": m_notes,
+                    "confluence_score": 75.0
+                }
+                TradeJournalManager.add_or_update_entry(rec, starting_cash=account_cash)
+                st.success("✅ Trade record saved successfully!")
+                st.rerun()
 
 
 

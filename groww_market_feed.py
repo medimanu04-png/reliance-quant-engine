@@ -1217,6 +1217,84 @@ class GrowwMarketFeed:
             logger.warning(f"Failed to fetch Groww orders: {e}")
             return {"status": "ERROR", "orders": []}
 
+    def get_executed_trades_today(self) -> List[Dict[str, Any]]:
+        """
+        Extracts round-trip and open F&O trades executed today on Groww.
+        Cross-correlates /order/list and /positions/user to reconstruct:
+          - symbol / instrument
+          - entry price & entry timestamp
+          - exit price & exit timestamp
+          - quantity & lots
+          - realized P&L
+          - trade status (COMPLETED / OPEN)
+        """
+        if not self._is_connected or not self._groww_api:
+            return []
+
+        try:
+            # 1. Fetch positions
+            pos_res = self._groww_api.get_positions_for_user(timeout=5)
+            positions = pos_res.get("positions", []) if isinstance(pos_res, dict) else (pos_res if isinstance(pos_res, list) else [])
+            
+            # 2. Fetch orders
+            order_res = self._groww_api.get_order_list(segment="FNO", timeout=5)
+            orders = order_res.get("order_list", []) if isinstance(order_res, dict) else (order_res if isinstance(order_res, list) else [])
+            if not orders:
+                order_res = self._groww_api.get_order_list(timeout=5)
+                orders = order_res.get("order_list", []) if isinstance(order_res, dict) else (order_res if isinstance(order_res, list) else [])
+
+            executed_orders = [o for o in orders if str(o.get("order_status", "")).upper() == "EXECUTED"]
+            
+            executed_trades = []
+            for p in positions:
+                sym = p.get("trading_symbol", "")
+                qty = int(p.get("quantity", 0))
+                credit_qty = int(p.get("credit_quantity", 0))
+                debit_qty = int(p.get("debit_quantity", 0))
+                credit_price = float(p.get("credit_price", 0.0))
+                debit_price = float(p.get("debit_price", 0.0))
+                realised_pnl = float(p.get("realised_pnl", 0.0))
+                
+                sym_orders = [o for o in executed_orders if o.get("trading_symbol") == sym]
+                if not sym_orders and credit_qty == 0 and debit_qty == 0:
+                    continue
+                    
+                buy_orders = [o for o in sym_orders if str(o.get("transaction_type", "")).upper() == "BUY"]
+                sell_orders = [o for o in sym_orders if str(o.get("transaction_type", "")).upper() == "SELL"]
+                buy_orders.sort(key=lambda x: x.get("created_at", ""))
+                sell_orders.sort(key=lambda x: x.get("created_at", ""))
+                
+                entry_time = buy_orders[0].get("created_at", "") if buy_orders else ""
+                exit_time = sell_orders[-1].get("created_at", "") if sell_orders else ""
+                
+                entry_price = credit_price if credit_price > 0 else (float(buy_orders[0].get("average_fill_price", 0.0)) if buy_orders else 0.0)
+                exit_price = debit_price if debit_price > 0 else (float(sell_orders[-1].get("average_fill_price", 0.0)) if sell_orders else 0.0)
+                
+                traded_qty = max(credit_qty, debit_qty)
+                if traded_qty == 0 and sym_orders:
+                    traded_qty = sum(int(o.get("filled_quantity", 0)) for o in buy_orders) or sum(int(o.get("filled_quantity", 0)) for o in sell_orders)
+
+                is_closed = (qty == 0 and (credit_qty > 0 or len(sell_orders) > 0))
+                
+                executed_trades.append({
+                    "symbol": sym,
+                    "is_closed": is_closed,
+                    "entry_time": entry_time,
+                    "exit_time": exit_time,
+                    "entry_price": round(entry_price, 2),
+                    "exit_price": round(exit_price, 2),
+                    "qty": traded_qty,
+                    "realised_pnl": round(realised_pnl, 2),
+                    "buy_orders_count": len(buy_orders),
+                    "sell_orders_count": len(sell_orders)
+                })
+
+            return executed_trades
+        except Exception as e:
+            logger.warning(f"Error extracting executed trades from Groww: {e}")
+            return []
+
+
     def get_reliance_order_book_imbalance(self) -> Dict[str, Any]:
         """
         Calculates Level-2 Order Book Bid/Ask Quantity Imbalance from Groww live quote.
