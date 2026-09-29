@@ -310,29 +310,49 @@ class TradeJournalManager:
         return []
 
     @classmethod
-    def update_screenshot(cls, trade_id: str, screenshot_path: str, starting_cash: float = None) -> List[Dict[str, Any]]:
-        """Updates the screenshot path for a specific trade entry."""
+    def update_screenshot(cls, trade_id: str, screenshot_path: str, data_uri: str = "", starting_cash: float = None) -> List[Dict[str, Any]]:
+        """Updates the screenshot path for a specific trade entry across both journal and shadow logs."""
         if starting_cash is None:
             starting_cash = STARTING_CAPITAL
         entries = cls.load_journal(starting_cash)
+        clean_id = trade_id.replace(":", "_").replace("/", "_").replace("\\", "_")
         for e in entries:
-            if e.get("id") == trade_id or e.get("trading_symbol") == trade_id:
+            e_id = e.get("id", "")
+            e_sym = e.get("trading_symbol", "")
+            if e_id == trade_id or e_sym == trade_id or clean_id in e_id or e_sym in clean_id:
                 e["screenshot"] = screenshot_path
+                if data_uri:
+                    e["screenshot_data_uri"] = data_uri
                 break
         cls.save_journal(entries)
+        
+        # Also update in ShadowMonitoringEngine if available
+        try:
+            ShadowMonitoringEngine.update_screenshot(trade_id, screenshot_path, data_uri=data_uri)
+        except Exception:
+            pass
         return entries
 
     @classmethod
     def save_screenshot_file(cls, trade_id: str, file_bytes: bytes, original_filename: str) -> str:
         """Saves an uploaded screenshot image file locally and returns its relative path."""
+        if not file_bytes or len(file_bytes) == 0:
+            return ""
+        import base64
         ext = os.path.splitext(original_filename)[1] or ".png"
-        clean_id = trade_id.replace(":", "_").replace("/", "_")
+        clean_id = trade_id.replace(":", "_").replace("/", "_").replace("\\", "_")
         filename = f"{clean_id}{ext}"
         target_path = os.path.join(SCREENSHOTS_DIR, filename)
         with open(target_path, "wb") as f:
             f.write(file_bytes)
         rel_path = os.path.join("screenshots", filename)
-        cls.update_screenshot(trade_id, rel_path)
+        
+        # Generate base64 data URI as permanent resilient fallback
+        mime = "image/png" if ext.lower() == ".png" else ("image/jpeg" if ext.lower() in [".jpg", ".jpeg"] else "image/webp")
+        b64_str = base64.b64encode(file_bytes).decode("utf-8")
+        data_uri = f"data:{mime};base64,{b64_str}"
+        
+        cls.update_screenshot(trade_id, rel_path, data_uri=data_uri)
         return rel_path
 
     @classmethod
@@ -550,7 +570,428 @@ class TradeJournalManager:
 
 
 # ==============================================================================
-# 4. STRICT SEQUENTIAL TRADING ASSISTANT ENGINE
+# 4. AUTOMATED SHADOW MONITORING & SIGNAL LOGGING ENGINE (GROWW API INTEGRATION)
+# ==============================================================================
+SHADOW_SIGNALS_FILE = os.path.join(BASE_DIR, "shadow_signals_log.json")
+
+class ShadowMonitoringEngine:
+    """
+    Automated Daily Signal Logging, Shadow Monitoring & Calendar History Engine:
+    1. Daily Signal Logging:
+       - Records every signal generated: Timestamp, Date, Symbol, Action, Suggested Entry, SL, Target.
+       - Tracks user execution flag: user_executed = True / False.
+    2. Automated Shadow Monitoring (Groww API Integration):
+       - Fetches live tick data from Groww API post-signal.
+       - Monitors ALL suggested trades until 3:30 PM (market close), regardless of user execution.
+       - Tracks price extremes: Highest Price Reached & Lowest Price Reached post-entry.
+       - Records definitive outcome: Target Hit, Stop-Loss Hit, or EOD Exit.
+    3. Calendar View / Date-wise Navigation:
+       - Interactive date picker / calendar selector.
+       - Date-specific log table, metrics, and KPI audit ledger.
+    """
+    @classmethod
+    def load_records(cls) -> List[Dict[str, Any]]:
+        if os.path.exists(SHADOW_SIGNALS_FILE):
+            try:
+                with open(SHADOW_SIGNALS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        return data
+            except Exception as e:
+                logger.debug(f"Error loading shadow signals log: {e}")
+        return cls._bootstrap_from_existing()
+
+    @classmethod
+    def save_records(cls, records: List[Dict[str, Any]]):
+        try:
+            with open(SHADOW_SIGNALS_FILE, "w", encoding="utf-8") as f:
+                json.dump(records, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not persist shadow signals: {e}")
+
+    @classmethod
+    def _bootstrap_from_existing(cls) -> List[Dict[str, Any]]:
+        """Bootstraps initial shadow records from daily_trade_journal.json and daily_signals_log.json."""
+        records = []
+        # 1. From daily_trade_journal.json
+        if os.path.exists(JOURNAL_FILE):
+            try:
+                with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
+                    j_data = json.load(f)
+                    if isinstance(j_data, list):
+                        for j in j_data:
+                            sym = j.get("trading_symbol", "")
+                            sugg_e = float(j.get("suggested_entry", j.get("entry_price", 30.0)))
+                            sugg_t = float(j.get("suggested_exit", sugg_e + 10.0))
+                            sugg_sl = float(j.get("suggested_sl", max(0.05, sugg_e - 4.5)))
+                            act_e = float(j.get("actual_entry_price", sugg_e))
+                            act_x = float(j.get("actual_exit_price", sugg_t))
+                            high_p = max(sugg_e, act_e, act_x, sugg_t)
+                            low_p = min(sugg_e, act_e, act_x, sugg_sl)
+                            status_raw = j.get("status", "HIT")
+                            outcome = "Target Hit" if status_raw == "HIT" else ("Stop-Loss Hit" if status_raw == "FAIL" else "Active Monitoring")
+                            rec = {
+                                "id": j.get("id") or f"SIG-{j.get('date', '2026-09-29').replace('-', '')}-01-{sym}",
+                                "timestamp": j.get("trade_given_time", "09:15:00 AM IST"),
+                                "date": j.get("date", "2026-09-29"),
+                                "symbol": sym,
+                                "instrument": j.get("instrument") or j.get("suggested_contract") or sym,
+                                "action": j.get("type", "BUY PE" if "PE" in sym else "BUY CE"),
+                                "entry": sugg_e,
+                                "target": sugg_t,
+                                "sl": sugg_sl,
+                                "target_pts": round(sugg_t - sugg_e, 2),
+                                "sl_pts": round(sugg_e - sugg_sl, 2),
+                                "user_executed": True,
+                                "actual_entry_price": act_e,
+                                "actual_entry_time": j.get("actual_entry_time", ""),
+                                "actual_exit_price": act_x,
+                                "actual_exit_time": j.get("actual_exit_time", ""),
+                                "realised_pnl": float(j.get("realised_pnl", 0.0)),
+                                "screenshot": j.get("screenshot", ""),
+                                "screenshot_data_uri": j.get("screenshot_data_uri", ""),
+                                "shadow_status": outcome,
+                                "highest_price_reached": high_p,
+                                "lowest_price_reached": low_p,
+                                "current_price": act_x,
+                                "exit_price": act_x,
+                                "exit_time": j.get("actual_exit_time", ""),
+                                "shadow_pts": round(sugg_t - sugg_e, 2) if outcome == "Target Hit" else round(sugg_sl - sugg_e, 2),
+                                "shadow_pnl": float(j.get("realised_pnl", 0.0)),
+                                "confluence_score": float(j.get("confluence_score", 78.5)),
+                                "notes": j.get("notes", "")
+                            }
+                            records.append(rec)
+            except Exception as e:
+                logger.debug(f"Bootstrap journal error: {e}")
+
+        # 2. From daily_signals_log.json for signals not yet in journal
+        if os.path.exists(SIGNALS_FILE):
+            try:
+                with open(SIGNALS_FILE, "r", encoding="utf-8") as f:
+                    s_data = json.load(f)
+                    if isinstance(s_data, dict):
+                        existing_syms = {r.get("symbol") for r in records}
+                        for k, s in s_data.items():
+                            if not isinstance(s, dict):
+                                continue
+                            sym = s.get("symbol", "")
+                            if not sym or sym in existing_syms:
+                                continue
+                            sugg_e = float(s.get("suggested_entry", 35.0))
+                            sugg_t = float(s.get("suggested_exit", sugg_e + 10.0))
+                            sugg_sl = float(s.get("suggested_sl", max(0.05, sugg_e - 4.5)))
+                            rec = {
+                                "id": f"SIG-{s.get('date', '2026-09-29').replace('-', '')}-02-{sym}",
+                                "timestamp": s.get("trade_given_time", "11:52:32 AM IST"),
+                                "date": s.get("date", "2026-09-29"),
+                                "symbol": sym,
+                                "instrument": s.get("full_contract") or sym,
+                                "action": f"BUY {s.get('contract_type', 'CE')}",
+                                "entry": sugg_e,
+                                "target": sugg_t,
+                                "sl": sugg_sl,
+                                "target_pts": round(sugg_t - sugg_e, 2),
+                                "sl_pts": round(sugg_e - sugg_sl, 2),
+                                "user_executed": False,
+                                "actual_entry_price": None,
+                                "actual_entry_time": "",
+                                "actual_exit_price": None,
+                                "actual_exit_time": "",
+                                "realised_pnl": 0.0,
+                                "screenshot": "",
+                                "screenshot_data_uri": "",
+                                "shadow_status": "Active Monitoring",
+                                "highest_price_reached": sugg_e,
+                                "lowest_price_reached": sugg_e,
+                                "current_price": sugg_e,
+                                "exit_price": None,
+                                "exit_time": "",
+                                "shadow_pts": 0.0,
+                                "shadow_pnl": 0.0,
+                                "confluence_score": float(s.get("confluence_score", 82.0)),
+                                "notes": "Shadow tracking active until 3:30 PM market close."
+                            }
+                            records.append(rec)
+            except Exception as e:
+                logger.debug(f"Bootstrap signals error: {e}")
+
+        cls.save_records(records)
+        return records
+
+    @classmethod
+    def log_signal(
+        cls,
+        symbol: str,
+        action: str,
+        entry: float,
+        target: float,
+        sl: float,
+        date_str: Optional[str] = None,
+        time_str: Optional[str] = None,
+        instrument: Optional[str] = None,
+        confluence_score: float = 78.0,
+        user_executed: bool = False
+    ) -> Dict[str, Any]:
+        """Records every signal generated (Timestamp, Symbol, Action, Entry, SL, Target)."""
+        date_str = date_str or datetime.now(IST).strftime("%Y-%m-%d")
+        time_str = time_str or datetime.now(IST).strftime("%I:%M:%S %p IST")
+        records = cls.load_records()
+        
+        # Check if record for this date and symbol already exists
+        for r in records:
+            if r.get("date") == date_str and r.get("symbol") == symbol:
+                return r
+
+        clean_sym = symbol.replace(" ", "_")
+        time_tag = time_str.replace(":", "").replace(" ", "").replace("IST", "")[:6]
+        rec = {
+            "id": f"SIG-{date_str.replace('-', '')}-{time_tag}-{clean_sym}",
+            "timestamp": time_str,
+            "date": date_str,
+            "symbol": symbol,
+            "instrument": instrument or symbol,
+            "action": action,
+            "entry": round(float(entry), 2),
+            "target": round(float(target), 2),
+            "sl": round(float(sl), 2),
+            "target_pts": round(float(target) - float(entry), 2),
+            "sl_pts": round(float(entry) - float(sl), 2),
+            "user_executed": bool(user_executed),
+            "actual_entry_price": None,
+            "actual_entry_time": "",
+            "actual_exit_price": None,
+            "actual_exit_time": "",
+            "realised_pnl": 0.0,
+            "screenshot": "",
+            "screenshot_data_uri": "",
+            "shadow_status": "Active Monitoring",
+            "highest_price_reached": round(float(entry), 2),
+            "lowest_price_reached": round(float(entry), 2),
+            "current_price": round(float(entry), 2),
+            "exit_price": None,
+            "exit_time": "",
+            "shadow_pts": 0.0,
+            "shadow_pnl": 0.0,
+            "confluence_score": round(float(confluence_score), 1),
+            "notes": "Automated Shadow Monitoring active until 3:30 PM (Groww API Integration)"
+        }
+        records.append(rec)
+        cls.save_records(records)
+        return rec
+
+    @classmethod
+    def update_shadow_monitoring(cls, groww_feed=None) -> List[Dict[str, Any]]:
+        """
+        Automated Shadow Monitoring (Groww API Integration):
+        - Fetches tick/candle data from Groww API post-signal.
+        - Monitors all suggested trades until 3:30 PM (market close), regardless of user execution.
+        - Logs price extremes: Highest Price Reached & Lowest Price Reached post-entry.
+        - Records outcome: Target Hit, Stop-Loss Hit, or EOD Exit.
+        - Cross-verifies executed broker fills with Groww to update user_executed.
+        """
+        records = cls.load_records()
+        if not records:
+            return []
+
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        now_dt = datetime.now(IST)
+        now_time = now_dt.time()
+        from datetime import time as time_type
+        market_close = time_type(15, 30, 0)
+
+        # 1. Check Groww broker executions for user_executed flag
+        executed_map = {}
+        if groww_feed and getattr(groww_feed, "is_connected", False):
+            try:
+                gw_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                for gt in gw_trades:
+                    sym = gt.get("symbol", "")
+                    executed_map[sym] = gt
+            except Exception as e:
+                logger.debug(f"Shadow check executed trades error: {e}")
+
+        updated_any = False
+        for rec in records:
+            if rec.get("date") != today_str:
+                continue
+
+            sym = rec.get("symbol", "")
+            entry = float(rec.get("entry", 30.0))
+            target = float(rec.get("target", entry + 10.0))
+            sl = float(rec.get("sl", entry - 4.5))
+
+            # Auto-check user execution on Groww
+            for ex_sym, ex_tr in executed_map.items():
+                if sym in ex_sym or ex_sym in sym:
+                    if not rec.get("user_executed"):
+                        rec["user_executed"] = True
+                        updated_any = True
+                    rec["actual_entry_price"] = float(ex_tr.get("entry_price", entry))
+                    rec["actual_entry_time"] = ex_tr.get("entry_time", "")
+                    if ex_tr.get("is_closed"):
+                        rec["actual_exit_price"] = float(ex_tr.get("exit_price", entry))
+                        rec["actual_exit_time"] = ex_tr.get("exit_time", "")
+                        rec["realised_pnl"] = float(ex_tr.get("realised_pnl", 0.0))
+                        updated_any = True
+
+            # Shadow Price Action Monitoring
+            status = rec.get("shadow_status", "Active Monitoring")
+            if status == "Active Monitoring":
+                live_price = None
+                if groww_feed:
+                    try:
+                        live_price = groww_feed.get_option_contract_ltp(sym)
+                    except Exception:
+                        live_price = None
+
+                if live_price is not None and live_price > 0:
+                    live_p = float(live_price)
+                    high_p = max(float(rec.get("highest_price_reached", entry)), live_p)
+                    low_p = min(float(rec.get("lowest_price_reached", entry)), live_p)
+                    rec["highest_price_reached"] = round(high_p, 2)
+                    rec["lowest_price_reached"] = round(low_p, 2)
+                    rec["current_price"] = round(live_p, 2)
+                    updated_any = True
+
+                    # Check Target Hit
+                    if live_p >= target:
+                        rec["shadow_status"] = "Target Hit"
+                        rec["exit_price"] = round(target, 2)
+                        rec["exit_time"] = now_dt.strftime("%I:%M:%S %p IST")
+                        rec["shadow_pts"] = round(target - entry, 2)
+                        rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                        updated_any = True
+                    # Check Stop-Loss Hit
+                    elif live_p <= sl:
+                        rec["shadow_status"] = "Stop-Loss Hit"
+                        rec["exit_price"] = round(sl, 2)
+                        rec["exit_time"] = now_dt.strftime("%I:%M:%S %p IST")
+                        rec["shadow_pts"] = round(sl - entry, 2)
+                        rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                        updated_any = True
+                    # Check EOD Exit (at 3:30 PM)
+                    elif now_time >= market_close:
+                        rec["shadow_status"] = "EOD Exit"
+                        rec["exit_price"] = round(live_p, 2)
+                        rec["exit_time"] = "03:30:00 PM IST"
+                        rec["shadow_pts"] = round(live_p - entry, 2)
+                        rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                        updated_any = True
+                    else:
+                        cur_pts = round(live_p - entry, 2)
+                        rec["shadow_pts"] = cur_pts
+                        rec["shadow_pnl"] = round(cur_pts * 1000, 2)
+
+                elif now_time >= market_close:
+                    rec["shadow_status"] = "EOD Exit"
+                    rec["exit_price"] = float(rec.get("current_price", entry))
+                    rec["exit_time"] = "03:30:00 PM IST"
+                    rec["shadow_pts"] = round(rec["exit_price"] - entry, 2)
+                    rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                    updated_any = True
+
+        if updated_any:
+            cls.save_records(records)
+
+        return records
+
+    @classmethod
+    def record_user_execution(cls, symbol: str, actual_price: float, actual_time: str):
+        """Flags that user executed this signal on Groww."""
+        records = cls.load_records()
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        for r in records:
+            if r.get("date") == today_str and (symbol in r.get("symbol", "") or r.get("symbol", "") in symbol):
+                r["user_executed"] = True
+                r["actual_entry_price"] = round(float(actual_price), 2)
+                r["actual_entry_time"] = actual_time
+                break
+        cls.save_records(records)
+
+    @classmethod
+    def record_trade_close(cls, symbol: str, exit_price: float, exit_time: str, outcome: str, realised_pnl: float):
+        """Records closure of a trade."""
+        records = cls.load_records()
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        for r in records:
+            if r.get("date") == today_str and (symbol in r.get("symbol", "") or r.get("symbol", "") in symbol):
+                r["actual_exit_price"] = round(float(exit_price), 2)
+                r["actual_exit_time"] = exit_time
+                r["realised_pnl"] = round(float(realised_pnl), 2)
+                if outcome:
+                    r["shadow_status"] = outcome
+                break
+        cls.save_records(records)
+
+    @classmethod
+    def update_screenshot(cls, trade_id: str, screenshot_path: str, data_uri: str = ""):
+        records = cls.load_records()
+        clean_id = trade_id.replace(":", "_").replace("/", "_").replace("\\", "_")
+        for r in records:
+            r_id = r.get("id", "")
+            r_sym = r.get("symbol", "")
+            if r_id == trade_id or r_sym == trade_id or clean_id in r_id or r_sym in clean_id:
+                r["screenshot"] = screenshot_path
+                if data_uri:
+                    r["screenshot_data_uri"] = data_uri
+                break
+        cls.save_records(records)
+
+    @classmethod
+    def get_available_dates(cls) -> List[str]:
+        records = cls.load_records()
+        dates = sorted(list({r.get("date") for r in records if r.get("date")}), reverse=True)
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        if today not in dates:
+            dates.insert(0, today)
+        return dates
+
+    @classmethod
+    def get_records_by_date(cls, selected_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        records = cls.load_records()
+        if not selected_date or selected_date.upper() == "ALL":
+            return sorted(records, key=lambda x: (x.get("date", ""), x.get("timestamp", "")), reverse=True)
+        return sorted(
+            [r for r in records if r.get("date") == selected_date],
+            key=lambda x: x.get("timestamp", ""),
+            reverse=True
+        )
+
+    @classmethod
+    def get_shadow_kpi(cls, records: List[Dict[str, Any]]) -> Dict[str, Any]:
+        total_signals = len(records)
+        executed_records = [r for r in records if r.get("user_executed")]
+        executed_count = len(executed_records)
+        executed_pct = round((executed_count / total_signals * 100.0), 1) if total_signals > 0 else 0.0
+
+        target_hits = len([r for r in records if r.get("shadow_status") == "Target Hit"])
+        sl_hits = len([r for r in records if r.get("shadow_status") == "Stop-Loss Hit"])
+        eod_exits = len([r for r in records if r.get("shadow_status") == "EOD Exit"])
+        active_count = len([r for r in records if r.get("shadow_status") == "Active Monitoring"])
+
+        shadow_total_pnl = sum(float(r.get("shadow_pnl", 0.0)) for r in records)
+        groww_realised_pnl = sum(float(r.get("realised_pnl", 0.0)) for r in records)
+        
+        closed_signals = target_hits + sl_hits
+        win_rate = round((target_hits / closed_signals * 100.0), 1) if closed_signals > 0 else 0.0
+
+        return {
+            "total_signals": total_signals,
+            "user_executed_count": executed_count,
+            "user_executed_pct": executed_pct,
+            "target_hits": target_hits,
+            "sl_hits": sl_hits,
+            "eod_exits": eod_exits,
+            "active_count": active_count,
+            "shadow_total_pnl": round(shadow_total_pnl, 2),
+            "groww_realised_pnl": round(groww_realised_pnl, 2),
+            "win_rate": win_rate
+        }
+
+
+# ==============================================================================
+# 5. STRICT SEQUENTIAL TRADING ASSISTANT ENGINE
 # ==============================================================================
 SEQUENTIAL_STATE_FILE = os.path.join(BASE_DIR, "sequential_trade_state.json")
 
