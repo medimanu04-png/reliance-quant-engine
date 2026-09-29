@@ -450,6 +450,121 @@ class MultiIndicatorMath:
         return round(net_gex, 2), regime
 
     @staticmethod
+    def calculate_gamma_flip_level(spot: float, chain: List[Dict[str, Any]]) -> Tuple[float, float, str]:
+        """
+        SpotGamma-style Dealer Net Gamma Exposure (GEX) and Gamma Flip Level (Zero-GEX Boundary).
+        Finds the exact price where cumulative dealer gamma exposure crosses from negative to positive.
+        Returns: (net_gex, gamma_flip_strike, regime)
+        """
+        if not chain or not spot:
+            return 0.0, spot, "BALANCED_GAMMA"
+
+        strikes_gex = []
+        net_gex = 0.0
+        for row in chain:
+            strike = float(row.get("strike", spot))
+            call_oi = float(row.get("call_oi", 0))
+            put_oi = float(row.get("put_oi", 0))
+            gamma_proxy = math.exp(-0.5 * ((spot - strike) / 15.0) ** 2) / 15.0
+            gex_strike = (call_oi - put_oi) * gamma_proxy * (spot ** 2) / 1e7
+            net_gex += gex_strike
+            strikes_gex.append((strike, gex_strike))
+
+        strikes_gex.sort(key=lambda x: x[0])
+        cum_gex = 0.0
+        flip_strike = spot
+        prev_cum = 0.0
+        for s, g in strikes_gex:
+            prev_cum = cum_gex
+            cum_gex += g
+            if (prev_cum < 0 and cum_gex >= 0) or (prev_cum >= 0 and cum_gex < 0):
+                flip_strike = s
+                break
+
+        if spot < flip_strike:
+            regime = "NEGATIVE_GAMMA_VOLATILITY_EXPANSION"
+        elif spot > flip_strike:
+            regime = "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION"
+        else:
+            regime = "AT_GAMMA_FLIP_BOUNDARY"
+
+        return round(net_gex, 2), round(flip_strike, 1), regime
+
+    @staticmethod
+    def calculate_kyles_lambda(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        period: int = 20
+    ) -> Tuple[float, float, str]:
+        """
+        Kyle's Lambda (Illiquidity / Price Impact Factor).
+        Lambda = |Delta P| / Volume
+        Measures price displacement per unit volume.
+        High Lambda on breakout = Liquidity Vacuum / Low Volume Trap.
+        Low Lambda with heavy volume = Institutional Absorption.
+        Returns: (current_lambda, avg_lambda, regime)
+        """
+        if not closes or not volumes or len(closes) < 3:
+            return 0.0, 0.0, "NORMAL_LIQUIDITY"
+
+        lambdas = []
+        for i in range(1, len(closes)):
+            dp = abs(closes[i] - closes[i - 1])
+            vol = max(1.0, volumes[i])
+            lambdas.append((dp / vol) * 1e5)
+
+        curr_l = lambdas[-1]
+        avg_l = sum(lambdas[-period:]) / min(len(lambdas), period) if lambdas else curr_l
+        ratio = curr_l / max(0.01, avg_l)
+
+        if ratio >= 2.2:
+            regime = "LIQUIDITY_VACUUM_TRAP"
+        elif ratio <= 0.60:
+            regime = "INSTITUTIONAL_VOLUME_ABSORPTION"
+        else:
+            regime = "NORMAL_LIQUIDITY"
+
+        return round(curr_l, 4), round(avg_l, 4), regime
+
+    @staticmethod
+    def calculate_vwap_multisigma_bands(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float]
+    ) -> Dict[str, float]:
+        """
+        Volume-at-Price Standard Deviation Bands: VWAP +/- 1.0sigma, 2.0sigma, 3.0sigma.
+        Returns: dict of bands and z-score
+        """
+        if not closes or not volumes:
+            s = closes[-1] if closes else 1210.0
+            return {"vwap": s, "upper_1s": s+2, "lower_1s": s-2, "upper_2s": s+4, "lower_2s": s-4, "upper_3s": s+6, "lower_3s": s-6, "z_score": 0.0}
+
+        typical_prices = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
+        cum_tp_vol = sum(tp * v for tp, v in zip(typical_prices, volumes))
+        cum_vol = sum(volumes)
+        vwap = cum_tp_vol / cum_vol if cum_vol > 0 else typical_prices[-1]
+        var = sum(v * ((tp - vwap) ** 2) for tp, v in zip(typical_prices, volumes)) / (cum_vol if cum_vol > 0 else 1)
+        sigma = math.sqrt(var) if var > 0 else 1.0
+
+        spot = closes[-1]
+        z = (spot - vwap) / sigma if sigma > 0 else 0.0
+        return {
+            "vwap": round(vwap, 2),
+            "upper_1s": round(vwap + sigma, 2),
+            "lower_1s": round(vwap - sigma, 2),
+            "upper_2s": round(vwap + 2.0 * sigma, 2),
+            "lower_2s": round(vwap - 2.0 * sigma, 2),
+            "upper_3s": round(vwap + 3.0 * sigma, 2),
+            "lower_3s": round(vwap - 3.0 * sigma, 2),
+            "sigma": round(sigma, 2),
+            "z_score": round(z, 2)
+        }
+
+    @staticmethod
     def calculate_volume_profile_poc(
         highs: List[float],
         lows: List[float],

@@ -3946,6 +3946,24 @@ if df is not None and not df.empty:
     elif nifty_fighting_bull:
         v1_bull = max(0.0, v1_bull - 4.0)  # Counter-trend index drag penalty!
 
+    # NIFTY 50 Advance-Decline Market Breadth
+    try:
+        from groww_market_feed import GrowwMarketFeed
+        gw_feed_inst = GrowwMarketFeed.get_instance()
+        market_breadth = gw_feed_inst.get_nifty_market_breadth()
+        n_advances = int(market_breadth.get("advances", 25))
+        n_declines = int(market_breadth.get("declines", 25))
+    except Exception:
+        n_advances = 26
+        n_declines = 24
+    breadth_bullish = n_advances >= 32
+    breadth_bearish = n_declines >= 35
+
+    if breadth_bullish:
+        v1_bull += 2.0  # Strong broad-market basket buying tailwind
+    elif breadth_bearish:
+        v1_bull = max(0.0, v1_bull - 3.0)  # Broad market selling drag penalty
+
     # NIFTY Energy Sector Alignment
     energy_data = benchmarks.get("NIFTY ENERGY", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
     energy_pct = float(energy_data.get("pct_change", 0.35))
@@ -4001,6 +4019,11 @@ if df is not None and not df.empty:
         v1_bear += 2.0  # NIFTY 50 Index Headwind Confluence
     elif nifty_fighting_bear:
         v1_bear = max(0.0, v1_bear - 4.0)  # Counter-trend index drag penalty!
+
+    if breadth_bearish:
+        v1_bear += 2.0  # Broad market distribution tailwind
+    elif breadth_bullish:
+        v1_bear = max(0.0, v1_bear - 2.5)
 
     if energy_sector_bear:
         v1_bear += 1.5  # NIFTY Energy Sector Breakdown
@@ -4123,14 +4146,40 @@ if df is not None and not df.empty:
         if spot <= avwap_hod and df['High'].iloc[-1] >= avwap_hod - 0.60:
             avwap_hod_resistance = True
 
+    # Kyle's Lambda (Price Displacement per Unit Volume)
+    if len(df) >= 5 and 'Close' in df.columns and 'Volume' in df.columns:
+        recent_dps = df['Close'].diff().abs().iloc[-20:].dropna()
+        recent_vols = df['Volume'].iloc[-20:].replace(0, 1)
+        recent_lambdas = (recent_dps / recent_vols) * 1e5
+        curr_lambda = float(recent_lambdas.iloc[-1]) if not recent_lambdas.empty else 1.0
+        avg_lambda = float(recent_lambdas.mean()) if not recent_lambdas.empty else curr_lambda
+        lambda_ratio = curr_lambda / max(0.01, avg_lambda)
+        is_liquidity_vacuum = lambda_ratio >= 2.2  # Price moved on thin air -> fakeout trap!
+        is_volume_absorption = lambda_ratio <= 0.60 # Heavy volume absorbing price -> real institutions!
+    else:
+        is_liquidity_vacuum = False
+        is_volume_absorption = False
+
     if above_vwap_upper:
-        v2_bull += 5.0 if vwap_z <= 2.2 else 2.0  # Climax guard: penalize if overextended
+        v2_bull += 5.0 if vwap_z <= 2.2 else 1.0  # Climax guard: penalize if overextended
     elif above_vwap:
         v2_bull += 3.0
     if vol_surge:
         v2_bull += 3.0
     elif rel_vol > 1.0:
         v2_bull += 1.5
+
+    # VWAP Multi-Sigma Climax Extension Guard
+    if vwap_z > 2.2:
+        v2_bull = max(0.0, v2_bull - 3.5)  # Climax Overbought (+2.2σ): Do NOT chase calls at extreme extension
+    elif 0.5 <= vwap_z <= 1.8:
+        v2_bull += 2.0  # Optimal institutional trend expansion corridor
+
+    # Kyle's Lambda Liquidity Factor
+    if is_liquidity_vacuum:
+        v2_bull = max(0.0, v2_bull - 3.0)  # Low volume displacement trap
+    elif is_volume_absorption:
+        v2_bull += 2.0  # Thick institutional liquidity absorption
 
     # CVD Aggressor Flow
     if cvd_buyer_agg:
@@ -4164,13 +4213,25 @@ if df is not None and not df.empty:
 
     # Symmetrical Bearish Scoring
     if below_vwap_lower:
-        v2_bear += 5.0 if vwap_z >= -2.2 else 2.0  # Oversold climax guard
+        v2_bear += 5.0 if vwap_z >= -2.2 else 1.0  # Oversold climax guard
     elif below_vwap:
         v2_bear += 3.0
     if vol_surge:
         v2_bear += 3.0
     elif rel_vol > 1.0:
         v2_bear += 1.5
+
+    # VWAP Multi-Sigma Climax Extension Guard
+    if vwap_z < -2.2:
+        v2_bear = max(0.0, v2_bear - 3.5)  # Climax Oversold (-2.2σ): Do NOT chase puts at extreme extension
+    elif -1.8 <= vwap_z <= -0.5:
+        v2_bear += 2.0  # Optimal institutional breakdown corridor
+
+    # Kyle's Lambda Liquidity Factor
+    if is_liquidity_vacuum:
+        v2_bear = max(0.0, v2_bear - 3.0)  # Low volume displacement trap
+    elif is_volume_absorption:
+        v2_bear += 2.0  # Thick institutional liquidity absorption
 
     if cvd_seller_agg:
         v2_bear += 3.0
@@ -4210,6 +4271,27 @@ if df is not None and not df.empty:
     put_writing = put_oi_chg > 20.0
     put_unwinding = put_oi_chg < -10.0
     call_writing = call_oi_chg > 20.0
+
+    # SpotGamma Dealer Gamma Flip Level & Regime
+    opt_chain_list = live_chain if "live_chain" in locals() and live_chain else []
+    gamma_flip_level = spot
+    gex_regime = "BALANCED"
+    if opt_chain_list:
+        try:
+            from fo_quant_engine import MultiIndicatorMath
+            net_gex_val, gamma_flip_level, gex_regime = MultiIndicatorMath.calculate_gamma_flip_level(spot, opt_chain_list)
+        except Exception:
+            gamma_flip_level = spot
+
+    in_negative_gamma = spot < gamma_flip_level
+    in_positive_gamma = spot > gamma_flip_level
+
+    if in_negative_gamma:
+        v3_bear += 2.0  # Negative gamma accelerates downward cascades
+        v3_bull += 1.5  # Squeeze velocity
+    elif in_positive_gamma:
+        v3_bull = max(0.0, v3_bull - 1.5)  # Positive gamma dampens breakouts
+        v3_bear = max(0.0, v3_bear - 1.5)
 
     curr_vwap = float(latest.get('VWAP', spot))
     is_downtrend_context = (spot < initial_pclose - 1.0) or (spot < curr_vwap - 1.0)
