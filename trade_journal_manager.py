@@ -646,6 +646,7 @@ class ShadowMonitoringEngine:
                             low_p = min(sugg_e, act_e, act_x, sugg_sl)
                             status_raw = j.get("status", "HIT")
                             outcome = "Target Hit" if status_raw == "HIT" else ("Stop-Loss Hit" if status_raw == "FAIL" else "Active Monitoring")
+                            has_verified_exec = bool(j.get("source") == "GROWW_VERIFIED" and (j.get("actual_entry_time") or j.get("screenshot")))
                             rec = {
                                 "id": j.get("id") or f"SIG-{j.get('date', '2026-09-29').replace('-', '')}-01-{sym}",
                                 "timestamp": j.get("trade_given_time", "09:15:00 AM IST"),
@@ -658,12 +659,12 @@ class ShadowMonitoringEngine:
                                 "sl": sugg_sl,
                                 "target_pts": round(sugg_t - sugg_e, 2),
                                 "sl_pts": round(sugg_e - sugg_sl, 2),
-                                "user_executed": True,
-                                "actual_entry_price": act_e,
-                                "actual_entry_time": j.get("actual_entry_time", ""),
-                                "actual_exit_price": act_x,
-                                "actual_exit_time": j.get("actual_exit_time", ""),
-                                "realised_pnl": float(j.get("realised_pnl", 0.0)),
+                                "user_executed": bool(has_verified_exec),
+                                "actual_entry_price": act_e if has_verified_exec else None,
+                                "actual_entry_time": j.get("actual_entry_time", "") if has_verified_exec else "",
+                                "actual_exit_price": act_x if has_verified_exec else None,
+                                "actual_exit_time": j.get("actual_exit_time", "") if has_verified_exec else "",
+                                "realised_pnl": float(j.get("realised_pnl", 0.0)) if has_verified_exec else 0.0,
                                 "screenshot": j.get("screenshot", ""),
                                 "screenshot_data_uri": j.get("screenshot_data_uri", ""),
                                 "shadow_status": outcome,
@@ -754,10 +755,38 @@ class ShadowMonitoringEngine:
         time_str = time_str or datetime.now(IST).strftime("%I:%M:%S %p IST")
         records = cls.load_records()
         
-        # Check if an ACTIVE (open) record for this date and symbol already exists
+        # Check if an identical or active record for this date and symbol already exists (deduplication)
+        def _parse_mins(t_val) -> Optional[float]:
+            if not t_val:
+                return None
+            t_str = str(t_val).strip()
+            try:
+                if "T" in t_str:
+                    t_part = t_str.split("T")[1].replace("Z", "")
+                    p = t_part.split(":")
+                    return int(p[0]) * 60 + int(p[1]) + (float(p[2]) / 60.0 if len(p) > 2 else 0.0)
+                clean = t_str.replace("IST", "").strip()
+                dt = datetime.strptime(clean, "%I:%M:%S %p")
+                return dt.hour * 60 + dt.minute + dt.second / 60.0
+            except Exception:
+                pass
+            try:
+                dt = datetime.strptime(clean, "%I:%M %p")
+                return dt.hour * 60 + dt.minute
+            except Exception:
+                pass
+            return None
+
+        time_mins = _parse_mins(time_str)
         for r in records:
-            if r.get("date") == date_str and r.get("symbol") == symbol and r.get("shadow_status") == "Active Monitoring":
-                return r
+            if r.get("date") == date_str and (r.get("symbol") == symbol or symbol in r.get("symbol", "") or r.get("symbol", "") in symbol):
+                if r.get("shadow_status") == "Active Monitoring":
+                    return r
+                r_mins = _parse_mins(r.get("timestamp"))
+                if time_mins is not None and r_mins is not None and abs(time_mins - r_mins) < 15.0:
+                    return r
+                if r.get("timestamp") == time_str:
+                    return r
 
         clean_sym = symbol.replace(" ", "_")
         time_tag = time_str.replace(":", "").replace(" ", "").replace("IST", "")[:6]
@@ -810,7 +839,7 @@ class ShadowMonitoringEngine:
         - Monitors all suggested trades until 3:30 PM (market close), regardless of user execution.
         - Logs price extremes: Highest Price Reached & Lowest Price Reached post-entry.
         - Records outcome: Target Hit, Stop-Loss Hit, or EOD Exit.
-        - Cross-verifies executed broker fills with Groww to update user_executed.
+        - Cross-verifies executed broker fills with Groww to update user_executed (Strict 1-to-1 Chronological Verification).
         """
         records = cls.load_records()
         if not records:
@@ -822,39 +851,120 @@ class ShadowMonitoringEngine:
         from datetime import time as time_type
         market_close = time_type(15, 30, 0)
 
-        # 1. Check Groww broker executions for user_executed flag
-        executed_map = {}
+        def _parse_time_minutes(t_val) -> Optional[float]:
+            if not t_val:
+                return None
+            t_str = str(t_val).strip()
+            try:
+                if "T" in t_str:
+                    t_part = t_str.split("T")[1].replace("Z", "")
+                    p = t_part.split(":")
+                    return int(p[0]) * 60 + int(p[1]) + (float(p[2]) / 60.0 if len(p) > 2 else 0.0)
+                clean = t_str.replace("IST", "").strip()
+                dt = datetime.strptime(clean, "%I:%M:%S %p")
+                return dt.hour * 60 + dt.minute + dt.second / 60.0
+            except Exception:
+                pass
+            try:
+                dt = datetime.strptime(clean, "%I:%M %p")
+                return dt.hour * 60 + dt.minute
+            except Exception:
+                pass
+            return None
+
+        # 1. Collect verified executed trades for today from live Groww API and/or journal
+        verified_executed_trades = []
         if groww_feed and getattr(groww_feed, "is_connected", False):
             try:
                 gw_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
-                for gt in gw_trades:
-                    sym = gt.get("symbol", "")
-                    executed_map[sym] = gt
+                verified_executed_trades = list(gw_trades)
             except Exception as e:
                 logger.debug(f"Shadow check executed trades error: {e}")
 
-        updated_any = False
-        for rec in records:
-            if rec.get("date") != today_str:
-                continue
+        # If live Groww is disconnected or offline, fallback to today's verified journal trades
+        if not verified_executed_trades:
+            try:
+                j_entries = TradeJournalManager.load_journal()
+                for j in j_entries:
+                    if j.get("date") == today_str and j.get("source") == "GROWW_VERIFIED" and (j.get("actual_entry_time") or j.get("screenshot")):
+                        verified_executed_trades.append({
+                            "symbol": j.get("trading_symbol", ""),
+                            "is_closed": j.get("is_closed", True),
+                            "entry_time": j.get("actual_entry_time", ""),
+                            "exit_time": j.get("actual_exit_time", ""),
+                            "entry_price": float(j.get("actual_entry_price", j.get("entry_price", 0.0))),
+                            "exit_price": float(j.get("actual_exit_price", j.get("exit_price", 0.0))),
+                            "realised_pnl": float(j.get("realised_pnl", 0.0))
+                        })
+            except Exception as e:
+                logger.debug(f"Fallback journal executed trades error: {e}")
 
+        updated_any = False
+        claimed_trades = set()
+
+        # Sort today records chronologically by timestamp so earlier signals claim earlier fills
+        today_recs = [r for r in records if r.get("date") == today_str]
+        today_recs.sort(key=lambda x: _parse_time_minutes(x.get("timestamp")) or 0.0)
+
+        for rec in today_recs:
             sym = rec.get("symbol", "")
             entry = float(rec.get("entry", 30.0))
             target = float(rec.get("target", entry + 10.0))
             sl = float(rec.get("sl", entry - 4.5))
+            rec_mins = _parse_time_minutes(rec.get("timestamp"))
 
-            # Auto-check user execution on Groww
-            for ex_sym, ex_tr in executed_map.items():
-                if sym in ex_sym or ex_sym in sym:
-                    if not rec.get("user_executed"):
-                        rec["user_executed"] = True
-                        updated_any = True
-                    rec["actual_entry_price"] = float(ex_tr.get("entry_price", entry))
-                    rec["actual_entry_time"] = ex_tr.get("entry_time", "")
-                    if ex_tr.get("is_closed"):
-                        rec["actual_exit_price"] = float(ex_tr.get("exit_price", entry))
-                        rec["actual_exit_time"] = ex_tr.get("exit_time", "")
-                        rec["realised_pnl"] = float(ex_tr.get("realised_pnl", 0.0))
+            # Auto-check user execution on Groww (Strict chronological 1-to-1 matching)
+            matched_ex = None
+            matched_idx = None
+            for idx, ex_tr in enumerate(verified_executed_trades):
+                if idx in claimed_trades:
+                    continue
+                ex_sym = ex_tr.get("symbol", "")
+                if sym not in ex_sym and ex_sym not in sym:
+                    continue
+
+                ex_mins = _parse_time_minutes(ex_tr.get("entry_time"))
+                if rec_mins is not None and ex_mins is not None:
+                    # Clock tolerance: broker fill must not be earlier than signal generation time - 2 mins
+                    if ex_mins < (rec_mins - 2.0):
+                        continue
+                    # Must be within 180 minutes of signal
+                    if (ex_mins - rec_mins) > 180.0:
+                        continue
+
+                # Price tolerance: within 3.5 points
+                ex_entry_p = float(ex_tr.get("entry_price", 0.0))
+                if ex_entry_p > 0 and abs(ex_entry_p - entry) > 3.5:
+                    continue
+
+                matched_ex = ex_tr
+                matched_idx = idx
+                break
+
+            if matched_ex is not None:
+                claimed_trades.add(matched_idx)
+                if not rec.get("user_executed"):
+                    rec["user_executed"] = True
+                    updated_any = True
+                rec["actual_entry_price"] = float(matched_ex.get("entry_price", entry))
+                rec["actual_entry_time"] = matched_ex.get("entry_time", "")
+                if matched_ex.get("is_closed"):
+                    rec["actual_exit_price"] = float(matched_ex.get("exit_price", entry))
+                    rec["actual_exit_time"] = matched_ex.get("exit_time", "")
+                    rec["realised_pnl"] = float(matched_ex.get("realised_pnl", 0.0))
+                    updated_any = True
+            else:
+                # No matching Groww execution found!
+                # If there is no uploaded screenshot proof, this signal was NOT executed by user in Groww!
+                has_audit_screenshot = bool(rec.get("screenshot") or rec.get("screenshot_data_uri"))
+                if not has_audit_screenshot:
+                    if rec.get("user_executed") is True or rec.get("actual_entry_price") is not None:
+                        rec["user_executed"] = False
+                        rec["actual_entry_price"] = None
+                        rec["actual_entry_time"] = ""
+                        rec["actual_exit_price"] = None
+                        rec["actual_exit_time"] = ""
+                        rec["realised_pnl"] = 0.0
                         updated_any = True
 
             # Shadow Price Action Monitoring
@@ -972,11 +1082,26 @@ class ShadowMonitoringEngine:
     @classmethod
     def get_records_by_date(cls, selected_date: Optional[str] = None) -> List[Dict[str, Any]]:
         records = cls.load_records()
+        def _get_sort_key(r):
+            t_str = str(r.get("timestamp", ""))
+            mins = 0.0
+            try:
+                clean = t_str.replace("IST", "").strip()
+                dt = datetime.strptime(clean, "%I:%M:%S %p")
+                mins = dt.hour * 60 + dt.minute + dt.second / 60.0
+            except Exception:
+                try:
+                    dt = datetime.strptime(clean, "%I:%M %p")
+                    mins = dt.hour * 60 + dt.minute
+                except Exception:
+                    pass
+            return (r.get("date", ""), mins)
+
         if not selected_date or selected_date.upper() == "ALL":
-            return sorted(records, key=lambda x: (x.get("date", ""), x.get("timestamp", "")), reverse=True)
+            return sorted(records, key=_get_sort_key, reverse=True)
         return sorted(
             [r for r in records if r.get("date") == selected_date],
-            key=lambda x: x.get("timestamp", ""),
+            key=_get_sort_key,
             reverse=True
         )
 
@@ -1208,7 +1333,7 @@ class SequentialTradeEngine:
                 time_str=now_time_str,
                 instrument=instrument,
                 confluence_score=confluence,
-                user_executed=True
+                user_executed=False
             )
         except Exception as e:
             logger.debug(f"ShadowMonitoringEngine log error: {e}")
@@ -1546,7 +1671,9 @@ class SequentialTradeEngine:
             "notes": f"Trade #{t_num} Closed ({status}) • Exit: ₹{exit_p:.2f} ({exit_t}) • {notes}",
             "confluence_score": active.get("confluence", 75.0)
         }
-        TradeJournalManager.add_or_update_entry(journal_rec, starting_cash=starting_cash)
+        # Only record into authentic daily trade ledger if genuinely executed on Groww!
+        if active.get("executed") == "Yes" and active.get("actual_entry"):
+            TradeJournalManager.add_or_update_entry(journal_rec, starting_cash=starting_cash)
 
         # Transition state
         closed_summary = {

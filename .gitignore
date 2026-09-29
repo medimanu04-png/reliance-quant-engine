@@ -33,6 +33,8 @@ telegram_config.json
 
 # Runtime persistent log files
 *_log.json
+!shadow_signals_log.json
+!daily_signals_log.json
 
 # Scratch files
 Program_1.py
