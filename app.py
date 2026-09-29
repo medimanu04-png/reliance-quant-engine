@@ -6363,6 +6363,30 @@ if df is not None and not df.empty:
         
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Modal Dialog for Enlarge / Full Screenshot View
+    @st.dialog("📷 Verified Trade Execution Proof", width="large")
+    def show_screenshot_modal(title_text: str, img_source: str, file_bytes: bytes = None, filename: str = "trade_proof.jpeg"):
+        st.markdown(f"""
+        <div style="background: #0B1120; border: 1px solid #1E293B; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <h4 style="margin: 0; color: #38BDF8; font-size: 1.1rem; font-weight: 800;">{title_text}</h4>
+            <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.8rem;">Groww Broker Order Execution & Trade Proof Verification</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.image(img_source, caption=title_text, use_container_width=True)
+        m_c1, m_c2 = st.columns(2)
+        with m_c1:
+            if file_bytes:
+                st.download_button(
+                    label="📥 Download Screenshot File",
+                    data=file_bytes,
+                    file_name=filename,
+                    mime="image/jpeg",
+                    use_container_width=True
+                )
+        with m_c2:
+            if st.button("✖️ Close Dialog", key=f"close_dialog_{filename}", use_container_width=True):
+                st.rerun()
+
     # ==============================================================================
     # 9. DAILY TRADE PERFORMANCE JOURNAL, SHADOW MONITORING & CALENDAR HISTORY
     # ==============================================================================
@@ -6672,6 +6696,60 @@ if df is not None and not df.empty:
                     "Confluence / Notes": st.column_config.TextColumn("Audit Notes", width="large"),
                 }
             )
+
+            # Quick-Open Attached Screenshot Gallery in Tab 1
+            attached_signals = [r for r in filtered_shadow if (r.get("screenshot") or r.get("screenshot_data_uri"))]
+            if attached_signals:
+                st.markdown("<h5 style='color: #F8FAFC; margin-top: 18px; margin-bottom: 8px;'>📷 Attached Execution Proof Screenshots (Click to View / Enlarge)</h5>", unsafe_allow_html=True)
+                for s_rec in attached_signals:
+                    s_id = s_rec.get("id") or s_rec.get("symbol")
+                    s_sym = s_rec.get("symbol", "N/A")
+                    s_time = s_rec.get("timestamp", "")
+                    s_file = s_rec.get("screenshot", "")
+                    s_uri = s_rec.get("screenshot_data_uri", "")
+                    
+                    img_src = None
+                    img_bytes = None
+                    if s_file and os.path.exists(s_file) and os.path.getsize(s_file) > 0:
+                        img_src = s_file
+                        try:
+                            with open(s_file, "rb") as f:
+                                img_bytes = f.read()
+                        except Exception:
+                            pass
+                    elif s_uri:
+                        img_src = s_uri
+                        if "," in s_uri:
+                            import base64
+                            try:
+                                img_bytes = base64.b64decode(s_uri.split(",", 1)[1])
+                            except Exception:
+                                pass
+
+                    if img_src:
+                        with st.container():
+                            st.markdown(f"""
+                            <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <span style="font-weight: 800; color: #38BDF8;">📷 Trade Proof: {s_sym}</span>
+                                    <span style="font-size: 0.78rem; color: #94A3B8; margin-left: 8px;">{s_rec.get('date')} ({s_time})</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            gal_c1, gal_c2 = st.columns([1.5, 1.2])
+                            with gal_c1:
+                                if st.button(f"🔍 Open / Enlarge Screenshot ({s_sym})", key=f"open_modal_tab1_{s_id}", use_container_width=True):
+                                    show_screenshot_modal(f"Trade Execution Proof: {s_sym}", img_src, img_bytes, f"trade_proof_{s_sym}.jpeg")
+                            with gal_c2:
+                                if img_bytes:
+                                    st.download_button(
+                                        label=f"📥 Download Screenshot",
+                                        data=img_bytes,
+                                        file_name=f"trade_proof_{s_sym}.jpeg",
+                                        mime="image/jpeg",
+                                        key=f"dl_tab1_{s_id}",
+                                        use_container_width=True
+                                    )
         else:
             st.info(f"ℹ️ No signals recorded for {date_label} matching the filter.")
 
@@ -6798,24 +6876,47 @@ if df is not None and not df.empty:
                     trade_id = entry.get("id") or f"{entry.get('date')}_{entry.get('trading_symbol')}"
                     existing_ss = entry.get("screenshot")
                     existing_data_uri = entry.get("screenshot_data_uri", "")
-                    has_verified_ss = bool((existing_ss and os.path.exists(existing_ss) and os.path.getsize(existing_ss) > 0) or existing_data_uri)
                     
-                    with st.expander(f"📷 Screenshot & Attachment for {entry.get('trading_symbol')}", expanded=has_verified_ss):
-                        sc_c1, sc_c2 = st.columns([1.5, 1])
-                        with sc_c1:
-                            img_displayed = False
-                            if existing_ss and os.path.exists(existing_ss) and os.path.getsize(existing_ss) > 0:
-                                st.image(existing_ss, caption=f"Verified Trade Proof: {entry.get('trading_symbol')}", use_container_width=True)
-                                img_displayed = True
-                            elif existing_data_uri:
-                                st.image(existing_data_uri, caption=f"Verified Trade Proof: {entry.get('trading_symbol')}", use_container_width=True)
-                                img_displayed = True
+                    # Resolve image source and bytes
+                    card_img_src = None
+                    card_img_bytes = None
+                    if existing_ss and os.path.exists(existing_ss) and os.path.getsize(existing_ss) > 0:
+                        card_img_src = existing_ss
+                        try:
+                            with open(existing_ss, "rb") as f:
+                                card_img_bytes = f.read()
+                        except Exception:
+                            pass
+                    elif existing_data_uri:
+                        card_img_src = existing_data_uri
+                        if "," in existing_data_uri:
+                            import base64
+                            try:
+                                card_img_bytes = base64.b64decode(existing_data_uri.split(",", 1)[1])
+                            except Exception:
+                                pass
 
-                            if not img_displayed:
-                                if existing_ss:
-                                    st.caption(f"📁 Screenshot path: `{existing_ss}`")
-                                else:
-                                    st.info("📷 No screenshot attached yet for this executed trade.")
+                    with st.expander(f"📷 Screenshot Proof for {entry.get('trading_symbol')}", expanded=True):
+                        sc_c1, sc_c2 = st.columns([1.6, 1])
+                        with sc_c1:
+                            if card_img_src:
+                                st.image(card_img_src, caption=f"Verified Trade Proof: {entry.get('trading_symbol')}", use_container_width=True)
+                                btn_c1, btn_c2 = st.columns(2)
+                                with btn_c1:
+                                    if st.button(f"🔍 Open in Full Modal", key=f"open_modal_tab2_{trade_id}", use_container_width=True):
+                                        show_screenshot_modal(f"Verified Trade Proof: {entry.get('trading_symbol')}", card_img_src, card_img_bytes, f"trade_proof_{entry.get('trading_symbol')}.jpeg")
+                                with btn_c2:
+                                    if card_img_bytes:
+                                        st.download_button(
+                                            label="📥 Download Screenshot",
+                                            data=card_img_bytes,
+                                            file_name=f"trade_proof_{entry.get('trading_symbol')}.jpeg",
+                                            mime="image/jpeg",
+                                            key=f"dl_tab2_{trade_id}",
+                                            use_container_width=True
+                                        )
+                            else:
+                                st.info("📷 No screenshot attached yet for this executed trade.")
                         
                         with sc_c2:
                             uploaded_ss = st.file_uploader(
