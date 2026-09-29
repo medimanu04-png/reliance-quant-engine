@@ -230,10 +230,15 @@ class RelianceQuantBacktester:
                     eval_res = engine.evaluate_90plus_confluence(current_time, c5m, c15m)
                     dom_score = float(eval_res.get("dominant_score", 0.0))
                     status_text = str(eval_res.get("2. TRADE STATUS", ""))
-                    is_tradable = "TRADABLE DAY" in status_text or dom_score >= 75.0
+                    
+                    # Recommendation 1: A+ Strict Selectivity Gate (Raise Gate from 75% -> 84.0%)
+                    is_tradable = (
+                        eval_res.get("is_tradable", False)
+                        or (dom_score >= 84.0 and "STAND DOWN" not in status_text and not eval_res.get("is_target_blocked_by_virgin_vwap", False))
+                    )
 
-                    # Midday volume check
-                    if time(11, 15) <= current_time <= time(13, 30) and dom_score < 82.0:
+                    # Midday lull filter
+                    if time(11, 15) <= current_time <= time(13, 30) and dom_score < 86.0:
                         is_tradable = False
 
                     if is_tradable and not day_traded:
@@ -241,8 +246,14 @@ class RelianceQuantBacktester:
                         is_ce = "CE" in rec_inst or eval_res.get("bullish_score", 0) >= eval_res.get("bearish_score", 0)
                         direction = "BUY CE" if is_ce else "BUY PE"
 
-                        target_price = round(spot + self.spot_target_pts, 2) if is_ce else round(spot - self.spot_target_pts, 2)
-                        sl_price = round(spot - self.spot_sl_pts, 2) if is_ce else round(spot + self.spot_sl_pts, 2)
+                        # Recommendation 3: India VIX Dynamic Target/SL pts
+                        tgt_opt_pts = float(eval_res.get("target_pts", self.target_option_pts))
+                        sl_opt_pts = float(eval_res.get("sl_pts", self.sl_option_pts))
+                        spot_tgt_dyn = round(tgt_opt_pts / self.delta_approx, 2)
+                        spot_sl_dyn = round(sl_opt_pts / self.delta_approx, 2)
+
+                        target_price = round(spot + spot_tgt_dyn, 2) if is_ce else round(spot - spot_tgt_dyn, 2)
+                        sl_price = round(spot - spot_sl_dyn, 2) if is_ce else round(spot + spot_sl_dyn, 2)
 
                         active_trade = {
                             "date": str(d),
@@ -252,9 +263,13 @@ class RelianceQuantBacktester:
                             "entry_price": spot,
                             "target": target_price,
                             "sl": sl_price,
+                            "target_opt_pts": tgt_opt_pts,
+                            "sl_opt_pts": sl_opt_pts,
                             "confluence_score": dom_score,
                             "tier": eval_res.get("tier_rating", "TIER 1"),
-                            "regime": eval_res.get("intraday_regime", "TRENDING")
+                            "regime": eval_res.get("intraday_regime", "TRENDING"),
+                            "atr_comp_ratio": eval_res.get("atr_comp_ratio", 1.0),
+                            "orb_volume_share": eval_res.get("orb_volume_share", 0.0)
                         }
                         day_traded = True
 
