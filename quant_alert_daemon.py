@@ -450,6 +450,31 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(sl_key)
                         logger.info(f"🛑 STOP LOSS ALERT DISPATCHED TO TELEGRAM: {fb}")
 
+            # Theta Stagnation Time-Stop Check (45-Minute Stagnation Rule)
+            entry_time_val = str(active_trade.get("actual_entry_time") or active_trade.get("proposed_at") or "")
+            is_stagnant, elapsed_mins, stag_pts, stag_msg = SequentialTradeEngine.check_theta_stagnation(
+                entry_time_str=entry_time_val,
+                current_ltp=cur_trade_ltp,
+                entry_price=act_entry,
+                max_hold_minutes=45,
+                decay_tolerance_pts=1.2
+            )
+            if is_stagnant:
+                stag_key = f"tg_sent_stag_{today_date}_{trade_num}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(stag_key):
+                    stag_alert = TelegramNotifier.format_theta_stagnation_alert(
+                        contract=inst_sym,
+                        entry_price=act_entry,
+                        current_ltp=cur_trade_ltp,
+                        elapsed_minutes=elapsed_mins,
+                        unrealized_pnl=round(stag_pts * int(active_trade.get("qty", 500)), 2),
+                        spot=spot
+                    )
+                    ok, fb = TelegramNotifier.send_message(bot_token, chat_id, stag_alert)
+                    if ok:
+                        TelegramNotifier.record_alert_sent(stag_key)
+                        logger.info(f"⏳ 📲 THETA STAGNATION ALERT DISPATCHED TO TELEGRAM: {fb}")
+
         # ----------------------------------------------------------------------
         # STATE B: IDLE / ENTRY PENDING (Looking for Fresh Breakout Entry)
         # ----------------------------------------------------------------------

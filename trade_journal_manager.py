@@ -1270,6 +1270,49 @@ class SequentialTradeEngine:
         return False, ""
 
     @classmethod
+    def check_theta_stagnation(
+        cls,
+        entry_time_str: str,
+        current_ltp: float,
+        entry_price: float,
+        max_hold_minutes: int = 45,
+        decay_tolerance_pts: float = 1.2
+    ) -> Tuple[bool, int, float, str]:
+        """
+        Theta Stagnation Rule (Time-Stop Shield):
+        If an intraday option position stays open for >= 45 minutes without reaching Target or SL,
+        and premium has decayed by >= 1.2 pts due to sideways drift, triggers an early exit
+        recommendation to stop theta bleed.
+        Returns: (is_stagnant, elapsed_minutes, unrealized_pts, message)
+        """
+        try:
+            clean_time = entry_time_str.replace(" IST", "").strip()
+            today_date = datetime.now(IST).date()
+            entry_dt = None
+            for fmt in ("%I:%M:%S %p", "%H:%M:%S", "%I:%M %p"):
+                try:
+                    t_obj = datetime.strptime(clean_time, fmt).time()
+                    entry_dt = datetime.combine(today_date, t_obj)
+                    break
+                except Exception:
+                    continue
+            if not entry_dt:
+                return False, 0, 0.0, ""
+
+            now_dt = datetime.now(IST).replace(tzinfo=None)
+            elapsed_minutes = int((now_dt - entry_dt).total_seconds() / 60.0)
+            if elapsed_minutes < 0:
+                elapsed_minutes = 0
+
+            unrealized_pts = round(current_ltp - entry_price, 2)
+            if elapsed_minutes >= max_hold_minutes and unrealized_pts <= -decay_tolerance_pts:
+                msg = f"Trade open for {elapsed_minutes} mins without momentum. Premium decayed {unrealized_pts:+.2f} pts due to theta. Early exit recommended."
+                return True, elapsed_minutes, unrealized_pts, msg
+            return False, elapsed_minutes, unrealized_pts, ""
+        except Exception:
+            return False, 0, 0.0, ""
+
+    @classmethod
     def enter_trade_direct(
         cls,
         contract: str,

@@ -804,3 +804,35 @@ class TelegramNotifier:
 • Stance: <b>STAND DOWN & NO REVENGE TRADING</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
+
+    @classmethod
+    def format_theta_stagnation_alert(
+        cls,
+        contract: str,
+        entry_price: float,
+        current_ltp: float,
+        elapsed_minutes: int,
+        unrealized_pnl: float,
+        spot: float
+    ) -> str:
+        """Formats a THETA STAGNATION TIME-STOP alert for Telegram (45-minute stagnation rule)."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        decay_pts = round(entry_price - current_ltp, 2)
+        return f"""
+⏳ <b>THETA STAGNATION SHIELD TRIGGERED (TIME-STOP)</b> ⏳
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ <b>ACTION:</b> <b>CONSIDER EARLY EXIT / STAND DOWN</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+⏱️ <b>Time in Trade:</b> <b>{elapsed_minutes} Minutes</b> (Threshold: 45 Mins)
+💰 <b>Entry Price:</b> ₹{entry_price:.2f} | <b>Current LTP:</b> ₹{current_ltp:.2f}
+📉 <b>Theta Decay Drag:</b> -{decay_pts:.2f} pts (Unrealized P&L: -₹{abs(unrealized_pnl):,.0f})
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⏰ <b>Time:</b> {now_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 <b>Institutional Mandate:</b>
+• Price action has consolidated sideways for {elapsed_minutes} minutes without directional impulse.
+• Holding naked options through prolonged stagnation leads to guaranteed theta bleed.
+• Rule: Exit position at current market price to prevent further time decay.
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+

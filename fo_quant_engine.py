@@ -605,6 +605,109 @@ class MultiIndicatorMath:
 
         return round(ivp, 1), regime
 
+    @staticmethod
+    def calculate_keltner_channels(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        period: int = 20,
+        atr_period: int = 10,
+        multiplier: float = 1.5
+    ) -> Tuple[List[float], List[float], List[float]]:
+        """
+        Keltner Channels: Center EMA line with upper/lower envelope bounded by ATR multiplier.
+        """
+        ema_mid = MultiIndicatorMath.calculate_ema(closes, period)
+        atr_vals = MultiIndicatorMath.calculate_atr(highs, lows, closes, atr_period)
+        kc_upper, kc_lower = [], []
+        for m, a in zip(ema_mid, atr_vals):
+            kc_upper.append(round(m + (multiplier * a), 2))
+            kc_lower.append(round(m - (multiplier * a), 2))
+        return ema_mid, kc_upper, kc_lower
+
+    @staticmethod
+    def calculate_ttm_squeeze(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        bb_period: int = 20,
+        bb_std: float = 2.0,
+        kc_period: int = 20,
+        kc_mult: float = 1.5
+    ) -> Tuple[str, float, float]:
+        """
+        John Carter TTM Squeeze Volatility Metric.
+        Squeeze ON: Bollinger Bands compress completely INSIDE Keltner Channels (energy coiling).
+        Squeeze FIRED: Bollinger Bands expand OUTSIDE Keltner Channels (explosive volatility release).
+        Returns: (squeeze_state, momentum_val, squeeze_ratio).
+        """
+        if len(closes) < max(bb_period, kc_period):
+            return "NO_SQUEEZE", 0.0, 1.0
+
+        _, bb_u, bb_l, _ = MultiIndicatorMath.calculate_bollinger_bands(closes, bb_period, bb_std)
+        _, kc_u, kc_l = MultiIndicatorMath.calculate_keltner_channels(highs, lows, closes, kc_period, 10, kc_mult)
+
+        latest_bbu, latest_bbl = bb_u[-1], bb_l[-1]
+        latest_kcu, latest_kcl = kc_u[-1], kc_l[-1]
+
+        bb_range = latest_bbu - latest_bbl
+        kc_range = max(0.1, latest_kcu - latest_kcl)
+        squeeze_ratio = round(bb_range / kc_range, 2)
+
+        # Squeeze momentum: delta between spot and (donchian_mid + ema)/2
+        recent_h = max(highs[-bb_period:])
+        recent_l = min(lows[-bb_period:])
+        donchian_mid = (recent_h + recent_l) / 2.0
+        ema20 = MultiIndicatorMath.calculate_ema(closes, bb_period)[-1]
+        val_mean = (donchian_mid + ema20) / 2.0
+        momentum = round(closes[-1] - val_mean, 2)
+
+        is_squeeze_on = (latest_bbu <= latest_kcu) and (latest_bbl >= latest_kcl)
+
+        # Check if squeeze fired
+        prev_bbu, prev_bbl = bb_u[-2], bb_l[-2]
+        prev_kcu, prev_kcl = kc_u[-2], kc_l[-2]
+        prev_squeeze_on = (prev_bbu <= prev_kcu) and (prev_bbl >= prev_kcl)
+
+        if is_squeeze_on:
+            state = "SQUEEZE_ON_COILING"
+        elif prev_squeeze_on or (squeeze_ratio >= 1.0 and abs(momentum) > 0.5):
+            state = "SQUEEZE_FIRED_EXPANSION" if momentum >= 0 else "SQUEEZE_FIRED_BREAKDOWN"
+        else:
+            state = "NO_SQUEEZE"
+
+        return state, momentum, squeeze_ratio
+
+    @staticmethod
+    def calculate_rv_iv_spread(
+        parkinson_rv: float,
+        current_iv: float
+    ) -> Tuple[float, float, str]:
+        """
+        Realized Volatility (Parkinson) vs Implied Volatility (IV) Spread.
+        Spread = RV - IV
+        Ratio = RV / IV
+        If RV > IV: Option price is lagging underlying movement -> Statistical edge for option BUYERS.
+        If IV >> RV: Option is bloated with volatility markup -> Extreme theta drag.
+        Returns: (rv_iv_spread, rv_iv_ratio, vol_edge_bias)
+        """
+        iv_pct = current_iv * 100.0 if current_iv < 1.0 else current_iv
+        if iv_pct <= 0:
+            iv_pct = 21.0
+        spread = round(parkinson_rv - iv_pct, 2)
+        ratio = round(parkinson_rv / iv_pct, 2)
+
+        if ratio >= 1.15:
+            bias = "HIGH_BUYER_EDGE_UNDERPRICED_IV"
+        elif ratio >= 0.95:
+            bias = "FAVORABLE_BUYER_EDGE"
+        elif ratio <= 0.70:
+            bias = "EXPENSIVE_IV_THETA_DRAG"
+        else:
+            bias = "FAIR_VALUE"
+
+        return spread, ratio, bias
+
 
 
 # ============================================================================
@@ -822,7 +925,7 @@ class UltraHighConvictionRelianceEngine:
             if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
                 v3_bear = max(0.0, v3_bear - 4.0)
 
-        # VECTOR 4: Volatility, Parkinson Estimator & Choppiness Index (CHOP) Regime (15 pts)
+        # VECTOR 4: Volatility, Parkinson Estimator, TTM Squeeze & RV/IV Edge (15 pts)
         _, bb_upper, bb_lower, bb_width = MultiIndicatorMath.calculate_bollinger_bands(c5m["close"], 20, 2.0)
         atr_15m = MultiIndicatorMath.calculate_atr(c15m["high"], c15m["low"], c15m["close"], 14)[-1]
         parkinson_vol = MultiIndicatorMath.calculate_parkinson_volatility(c5m["high"], c5m["low"], 14)
@@ -830,30 +933,58 @@ class UltraHighConvictionRelianceEngine:
         is_trending_regime = chop_idx < 45.0
         is_choppy_regime = chop_idx > 61.8
 
+        # John Carter TTM Squeeze & Energy Coiling Metric
+        squeeze_state, squeeze_mom, squeeze_ratio = MultiIndicatorMath.calculate_ttm_squeeze(
+            c5m["high"], c5m["low"], c5m["close"], 20, 2.0, 20, 1.5
+        )
+
+        # Realized vs Implied Volatility (RV vs IV) Option Buyer Edge
+        telemetry_raw_iv = float(opt_telemetry.get("iv", 21.0))
+        rv_iv_spread, rv_iv_ratio, vol_edge = MultiIndicatorMath.calculate_rv_iv_spread(
+            parkinson_vol, telemetry_raw_iv
+        )
+
         # Dynamically adapt Target and SL based on 15m ATR and realized volatility
         self.risk.adapt_to_volatility(atr_15m)
 
         v4_bull = 0.0
         v4_bear = 0.0
-        atr_pts = 7.0 if atr_15m >= 7.5 else (4.0 if atr_15m >= 5.5 else 0.0)
+        atr_pts = 6.0 if atr_15m >= 7.5 else (3.5 if atr_15m >= 5.5 else 0.0)
         v4_bull += atr_pts
         v4_bear += atr_pts
 
         if is_trending_regime:
-            v4_bull += 4.0
-            v4_bear += 4.0
+            v4_bull += 3.0
+            v4_bear += 3.0
         elif not is_choppy_regime:
-            v4_bull += 2.0
-            v4_bear += 2.0
+            v4_bull += 1.5
+            v4_bear += 1.5
 
         if parkinson_vol >= 16.0:  # Healthy intraday expansion regime
+            v4_bull += 1.5
+            v4_bear += 1.5
+
+        # TTM Squeeze Fired Expansion Boost
+        if squeeze_state == "SQUEEZE_FIRED_EXPANSION":
             v4_bull += 2.0
+        elif squeeze_state == "SQUEEZE_FIRED_BREAKDOWN":
             v4_bear += 2.0
+        elif squeeze_state == "SQUEEZE_ON_COILING":
+            v4_bull += 1.0
+            v4_bear += 1.0
+
+        # RV vs IV Volatility Buyer Edge
+        if vol_edge in ("HIGH_BUYER_EDGE_UNDERPRICED_IV", "FAVORABLE_BUYER_EDGE"):
+            v4_bull += 1.5
+            v4_bear += 1.5
+        elif vol_edge == "EXPENSIVE_IV_THETA_DRAG":
+            v4_bull = max(0.0, v4_bull - 2.0)
+            v4_bear = max(0.0, v4_bear - 2.0)
 
         if spot >= bb_upper[-1] * 0.999 and bb_width[-1] >= 1.5:
-            v4_bull += 2.0
+            v4_bull += 1.0
         if spot <= bb_lower[-1] * 1.001 and bb_width[-1] >= 1.5:
-            v4_bear += 2.0
+            v4_bear += 1.0
 
         # VECTOR 5: Zero-Divergence Momentum Velocity (15 pts)
         rsi_series = MultiIndicatorMath.calculate_rsi(c5m["close"], 14)
@@ -1059,7 +1190,7 @@ class UltraHighConvictionRelianceEngine:
             "7. RATIONALE & CONFLUENCE": {
                 "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. Micro-Price OBI: {obi:+.3f} [{obi_bias}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}).",
                 "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
-                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). ATR(14)={atr_15m:.2f} pts | Parkinson Realized Vol={parkinson_vol:.1f}% | IV Percentile={iv_percentile:.1f}% [{iv_regime}] | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
+                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). TTM Squeeze: {squeeze_state} (Ratio: {squeeze_ratio:.2f} | Mom: {squeeze_mom:+.2f}). RV/IV Spread: {rv_iv_spread:+.1f}% [{vol_edge}]. ATR(14)={atr_15m:.2f} pts | Parkinson RV={parkinson_vol:.1f}% | IVP={iv_percentile:.1f}% [{iv_regime}] | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
                 "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stochastic %K={stoch_k:.1f}.",
                 "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. NIFTY 50: {nifty_pct:+.2f}% | Alpha Spread: {alpha_spread:+.2f}% [{rs_bias}]. Bid-Ask Spread: Rs. {opt_spread:.2f}. Feed Status: {'Live Broker' if not is_synthetic_feed else 'Synthetic Fallback'}."
             },
@@ -1082,7 +1213,11 @@ class UltraHighConvictionRelianceEngine:
             "nifty_pct": nifty_pct,
             "alpha_spread": alpha_spread,
             "spread_stand_down": spread_stand_down,
-            "opening_cooldown_active": opening_cooldown_active
+            "opening_cooldown_active": opening_cooldown_active,
+            "squeeze_state": squeeze_state,
+            "squeeze_ratio": squeeze_ratio,
+            "rv_iv_spread": rv_iv_spread,
+            "vol_edge": vol_edge
         }
 
 
