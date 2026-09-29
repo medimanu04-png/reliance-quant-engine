@@ -1123,7 +1123,7 @@ def render_auto_rescan_controller():
             <span>⚡ <b style="color: #34D399;">~4ms</b></span>
         </div>
         <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-            <span>⚡ <b style="color: #FFFFFF;">RELIANCE.NS</b> (500 Qty/Lot)</span>
+            <span>⚡ <b style="color: #FFFFFF;">RELIANCE.NS</b> (250 Qty/Lot)</span>
             <span>🎯 Target: <b style="color: #34D399;">+10.0 pts</b></span>
             <span>🛑 SL: <b style="color: #F87171;">-4.5 pts</b></span>
             <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
@@ -1314,7 +1314,7 @@ st.sidebar.html("""
         </div>
     </div>
     <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 6px; border-top: 1px solid #1E293B;">
-        Underlying: <b style="color: #FFFFFF;">RELIANCE.NS</b> | Lot Size: <b style="color: #10B981;">500</b>
+        Underlying: <b style="color: #FFFFFF;">RELIANCE.NS</b> | Lot Size: <b style="color: #10B981;">250</b>
     </div>
 </div>
 """)
@@ -1332,7 +1332,7 @@ st.sidebar.html("""
 <div style="background: #0B1120; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
     <div style="font-size: 0.74rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; margin-bottom: 6px;">🛡️ Active Risk Guardrails</div>
     <div style="font-size: 0.72rem; color: #94A3B8; line-height: 1.6;">
-        • Sizing: <b style="color: #10B981;">1 Lot (500 Qty)</b><br>
+        • Sizing: <b style="color: #10B981;">1 Lot (250 Qty)</b><br>
         • Risk Cap: <b style="color: #38BDF8;">&le; 4.0% Account Cash</b><br>
         • Circuit Breaker: <b style="color: #F87171;">1-and-Done SL Cap</b><br>
         • Target: <b style="color: #34D399;">+10.0 pts</b> | SL: <b style="color: #F87171;">5.0 pts</b>
@@ -2044,6 +2044,54 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     df['MDI'] = mdi.fillna(15.0)
 
     df = calculate_supertrend(df, period=10, multiplier=3.0)
+
+    # 16 Institutional Quantitative Models & Mathematical Filters
+    try:
+        from fo_quant_engine import MultiIndicatorMath
+        cpr_p, cpr_bc, cpr_tc, cpr_w_pct, cpr_reg = MultiIndicatorMath.calculate_cpr(pdh, pdl, pdc)
+        df['CPR_P'] = cpr_p
+        df['CPR_BC'] = cpr_bc
+        df['CPR_TC'] = cpr_tc
+        df['CPR_Width_Pct'] = cpr_w_pct
+        df['CPR_Regime'] = cpr_reg
+
+        df['Donchian_High'] = df['High'].rolling(20).max().fillna(df['High'])
+        df['Donchian_Low'] = df['Low'].rolling(20).min().fillna(df['Low'])
+        df['Donchian_Mid'] = 0.5 * (df['Donchian_High'] + df['Donchian_Low'])
+
+        cmf_v, cmf_b = MultiIndicatorMath.calculate_cmf(df['High'].tolist(), df['Low'].tolist(), df['Close'].tolist(), df['Volume'].tolist(), 20)
+        df['CMF_20'] = cmf_v
+        
+        pvt_v, pvt_e, pvt_b = MultiIndicatorMath.calculate_pvt(df['Close'].tolist(), df['Volume'].tolist(), 20)
+        df['PVT'] = pvt_v
+        df['PVT_EMA20'] = pvt_e
+
+        eom_v, eom_r = MultiIndicatorMath.calculate_eom(df['High'].tolist(), df['Low'].tolist(), df['Volume'].tolist(), 14)
+        df['EOM_14'] = eom_v
+
+        cmo_v, cmo_r = MultiIndicatorMath.calculate_cmo(df['Close'].tolist(), 14)
+        df['CMO_14'] = cmo_v
+
+        stc_v, stc_b = MultiIndicatorMath.calculate_schaff_trend_cycle(df['Close'].tolist(), 12, 26, 10)
+        df['STC'] = stc_v
+
+        fish_v, _, fish_b = MultiIndicatorMath.calculate_ehlers_fisher_transform(df['High'].tolist(), df['Low'].tolist(), 10)
+        df['Fisher_Transform'] = fish_v
+
+        crsi_v, crsi_r = MultiIndicatorMath.calculate_connors_rsi(df['Close'].tolist(), 3, 2, 100)
+        df['Connors_RSI'] = crsi_v
+
+        cv_v, cv_r = MultiIndicatorMath.calculate_chaikin_volatility(df['High'].tolist(), df['Low'].tolist(), 10, 10)
+        df['Chaikin_Vol'] = cv_v
+
+        mass_v, mass_r = MultiIndicatorMath.calculate_mass_index(df['High'].tolist(), df['Low'].tolist(), 9, 9, 25)
+        df['Mass_Index'] = mass_v
+
+        wavwap_v, wavwap_r = MultiIndicatorMath.calculate_weekly_anchored_vwap(df['High'].tolist(), df['Low'].tolist(), df['Close'].tolist(), df['Volume'].tolist(), df.index.tolist())
+        df['W_AVWAP'] = wavwap_v
+    except Exception:
+        pass
+
     return df
 
 
@@ -4097,6 +4145,38 @@ if df is not None and not df.empty:
     if orb_low_vol_trap and orb_breakdown:
         v1_bear = max(0.0, v1_bear - 3.5)
 
+    # Weekly Anchored VWAP (W-AVWAP)
+    wavwap_val = float(latest.get('W_AVWAP', spot))
+    if spot >= wavwap_val:
+        v1_bull += 2.0
+        v1_bear = max(0.0, v1_bear - 1.5)
+    else:
+        v1_bear += 2.0
+        v1_bull = max(0.0, v1_bull - 1.5)
+
+    # Central Pivot Range (CPR)
+    cpr_tc_val = float(latest.get('CPR_TC', spot))
+    cpr_bc_val = float(latest.get('CPR_BC', spot))
+    cpr_reg_val = str(latest.get('CPR_Regime', 'NORMAL_CPR'))
+    if cpr_reg_val == "NARROW_CPR_TRENDING_BREAKOUT":
+        v1_bull += 2.0
+        v1_bear += 2.0
+    elif cpr_reg_val == "WIDE_CPR_RANGEBOUND_CHOP":
+        v1_bull = max(0.0, v1_bull - 2.0)
+        v1_bear = max(0.0, v1_bear - 2.0)
+    if spot > cpr_tc_val:
+        v1_bull += 2.5
+    elif spot < cpr_bc_val:
+        v1_bear += 2.5
+
+    # Donchian Channels (20-period)
+    donch_high_val = float(latest.get('Donchian_High', spot))
+    donch_low_val = float(latest.get('Donchian_Low', spot))
+    if spot >= donch_high_val:
+        v1_bull += 2.5
+    elif spot <= donch_low_val:
+        v1_bear += 2.5
+
     v1_bull = min(20.0, max(0.0, v1_bull))
     v1_bear = min(20.0, max(0.0, v1_bear))
 
@@ -4322,6 +4402,32 @@ if df is not None and not df.empty:
     if avwap_hod_resistance:
         v2_bear += 1.5  # HOD-Anchored VWAP Overhead Institutional Supply
 
+    # Chaikin Money Flow (CMF-20)
+    cmf_val = float(latest.get('CMF_20', 0.0))
+    if cmf_val >= 0.10:
+        v2_bull += 2.5
+    elif cmf_val <= -0.10:
+        v2_bear += 2.5
+    elif cmf_val >= 0.04:
+        v2_bull += 1.0
+    elif cmf_val <= -0.04:
+        v2_bear += 1.0
+
+    # Price Volume Trend (PVT vs PVT EMA-20)
+    pvt_val = float(latest.get('PVT', 0.0))
+    pvt_ema_val = float(latest.get('PVT_EMA20', 0.0))
+    if pvt_val > pvt_ema_val:
+        v2_bull += 2.0
+    elif pvt_val < pvt_ema_val:
+        v2_bear += 2.0
+
+    # Ease of Movement (EOM-14)
+    eom_val = float(latest.get('EOM_14', 0.0))
+    if eom_val > 10.0:
+        v2_bull += 1.5
+    elif eom_val < -10.0:
+        v2_bear += 1.5
+
     v2_bull = min(18.0, max(0.0, v2_bull))
     v2_bear = min(18.0, max(0.0, v2_bear))
 
@@ -4429,6 +4535,23 @@ if df is not None and not df.empty:
         elif pcr_val <= 0.85:
             v3_bear += 4.0
 
+    # Reliance Cash-Futures Basis Spread & Basis Momentum
+    basis_pts, basis_pct, basis_mom, basis_regime = MultiIndicatorMath.calculate_cash_futures_basis(spot)
+    if basis_regime == "INSTITUTIONAL_FUTURES_LONG_ACCUMULATION":
+        v3_bull += 2.0
+    elif basis_regime in ("FUTURES_DISCOUNT_BEARISH_HEDGING", "FUTURES_BASIS_DECAY_SELLER_DOMINANCE"):
+        v3_bear += 2.0
+
+    # Put-Call Volume vs Put-Call OI Flow Divergence
+    pcr_vol, pcr_oi_val, pcr_div, pcr_flow_bias = MultiIndicatorMath.calculate_pcr_flow_divergence(
+        opt_telemetry.get("put_volume", 50000), opt_telemetry.get("call_volume", 50000),
+        opt_telemetry.get("put_oi", 100000), opt_telemetry.get("call_oi", 100000)
+    )
+    if pcr_flow_bias == "STEALTH_INTRADAY_CALL_BUYING_BULLISH":
+        v3_bull += 2.5
+    elif pcr_flow_bias == "STEALTH_INTRADAY_PUT_BUYING_BEARISH":
+        v3_bear += 2.5
+
     v3_bull = min(20.0, max(0.0, v3_bull))
     v3_bear = min(20.0, max(0.0, v3_bear))
 
@@ -4529,6 +4652,27 @@ if df is not None and not df.empty:
         v4_bull += 2.0  # Upside scramble
         v4_bear = max(0.0, v4_bear - 2.0)
 
+    # Chaikin Volatility (CV-10)
+    cv_val = float(latest.get('Chaikin_Vol', 0.0))
+    if cv_val >= 15.0:
+        v4_bull += 1.5
+        v4_bear += 1.5
+
+    # Donald Dorsey's Mass Index
+    mass_val = float(latest.get('Mass_Index', 25.0))
+    if mass_val >= 27.0:
+        v4_bull += 1.5
+        v4_bear += 1.5
+
+    # ATM Straddle Expected Move Corridor
+    straddle_p, exp_upper, exp_lower, exp_move_pts, straddle_regime = MultiIndicatorMath.calculate_atm_straddle_expected_move(
+        spot, float(opt_telemetry.get("call_ltp", 18.5)), float(opt_telemetry.get("put_ltp", 18.5))
+    )
+    if straddle_regime == "SQUEEZE_EXPANSION_OUTSIDE_EXPECTED_MOVE":
+        v4_bull += 2.0
+    elif straddle_regime == "BREAKDOWN_OUTSIDE_EXPECTED_MOVE":
+        v4_bear += 2.0
+
     v4_bull = min(15.0, max(0.0, v4_bull))
     v4_bear = min(15.0, max(0.0, v4_bear))
 
@@ -4571,6 +4715,37 @@ if df is not None and not df.empty:
         v5_bear += 4.0
     if bullish_rsi_div:
         v5_bear = max(0.0, v5_bear - 4.0)  # Divergence exhaustion penalty
+
+    # Chande Momentum Oscillator (CMO-14)
+    cmo_val = float(latest.get('CMO_14', 0.0))
+    if cmo_val >= 25.0:
+        v5_bull += 2.5
+    elif cmo_val <= -25.0:
+        v5_bear += 2.5
+
+    # Schaff Trend Cycle (STC)
+    stc_val = float(latest.get('STC', 50.0))
+    if stc_val >= 75.0:
+        v5_bull += 2.0
+    elif stc_val <= 25.0:
+        v5_bear += 2.0
+
+    # Ehlers Fisher Transform
+    fisher_val = float(latest.get('Fisher_Transform', 0.0))
+    if fisher_val >= 1.5:
+        v5_bull += 2.0
+    elif fisher_val <= -1.5:
+        v5_bear += 2.0
+
+    # Connors RSI (CRSI-3)
+    crsi_val = float(latest.get('Connors_RSI', 50.0))
+    if crsi_val <= 20.0:
+        v5_bull += 2.0  # Deep oversold dip buy
+    elif crsi_val >= 80.0:
+        v5_bear += 2.0  # Extended rally sell
+
+    v5_bull = min(15.0, max(0.0, v5_bull))
+    v5_bear = min(15.0, max(0.0, v5_bear))
 
     # Vector 6: Dynamic Greek Delta, Expiry Shield & Liquidity (12 pts)
     # Estimate Delta for CE vs PE
@@ -4837,15 +5012,17 @@ if df is not None and not df.empty:
 
     # Half-Kelly & Volatility-Constrained Position Sizing Recommendation:
     # Kelly fraction: f* = (p * b - q) / b
-    p_win = dominant_score / 100.0
-    q_loss = 1.0 - p_win
     b_ratio = effective_target_pts / max(1.0, effective_sl_pts)
     eff_rr_ratio = b_ratio
     actual_risk_pct = risk_pct_of_capital
-    raw_kelly = (p_win * b_ratio - q_loss) / max(0.01, b_ratio)
-    half_kelly = max(0.0, raw_kelly * 0.5)
-    kelly_risk_capital = account_cash * min(0.04, half_kelly) if half_kelly > 0 else account_cash * 0.04
-    kelly_recommended_lots = max(1, min(4, int(kelly_risk_capital / max(1.0, (effective_sl_pts * lot_size)))))
+    full_kelly_pct, half_kelly_pct, kelly_recommended_lots, kelly_risk_capital, kelly_status = MultiIndicatorMath.calculate_dynamic_half_kelly(
+        win_rate=dominant_score,
+        reward_risk_ratio=b_ratio,
+        capital=account_cash,
+        atr=stock_atr,
+        lot_size=lot_size
+    )
+    half_kelly = half_kelly_pct / 100.0
     prev_close_ref = float(nse_data.get("prev_close", 1219.20) if nse_data else 1219.20)
 
 
@@ -5861,8 +6038,8 @@ if df is not None and not df.empty:
                         <span style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF;">{total_trading_qty:,} Units</span>&nbsp;<span style="font-size: 0.80rem; font-weight: 700; color: #38BDF8;">({num_lots} Lots)</span>
                     </div>
                     <div style="height: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
-                        <span style="color: #CBD5E1;">Capital: <b style="color: #FFFFFF;">₹50,000</b></span>
-                        <span style="background: rgba(16, 185, 129, 0.12); color: #34D399; font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.28);">500 Qty/Lot</span>
+                        <span style="color: #CBD5E1;">Capital: <b style="color: #FFFFFF;">₹{account_cash:,.0f}</b></span>
+                        <span style="background: rgba(16, 185, 129, 0.12); color: #34D399; font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.28);">{lot_size} Qty/Lot</span>
                     </div>
                 </div>
                 <div style="font-size: 0.72rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 8px; margin-top: 8px;">
@@ -5870,7 +6047,7 @@ if df is not None and not df.empty:
                         <span>Max Risk: <b style="color: #F87171;">₹{actual_risk:,.0f}</b></span>
                         <span>Max Gain: <b style="color: #34D399;">+₹{actual_reward:,.0f}</b></span>
                     </div>
-                    <div style="font-size: 0.67rem; color: #38BDF8; margin-top: 3px; height: 16px; display: flex; align-items: center;">📡 Source: Position Sizing Engine (500 Qty/Lot x 2 Lots)</div>
+                    <div style="font-size: 0.67rem; color: #38BDF8; margin-top: 3px; height: 16px; display: flex; align-items: center;">📡 Source: Position Sizing Engine ({lot_size} Qty/Lot x {num_lots} Lots)</div>
                 </div>
             </div>
             """)
@@ -5946,10 +6123,11 @@ if df is not None and not df.empty:
                 "icon": "📈",
                 "score": sim_v1,
                 "max": 20.0,
-                "source": "M15 Structural + M5 Trigger + M1 Micro-Execution",
+                "source": "M15 Structural + M5 Trigger + CPR + W-AVWAP + Donchian",
                 "metrics": [
                     ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", f"{'🟢' if mtf_matrix['m15']['is_bullish'] else ('🔴' if mtf_matrix['m15']['is_bearish'] else '🟡')} 9/20/50 EMA Stack"),
-                    ("M5 Setup Confluence", f"{mtf_matrix['m5']['trigger'].replace('_', ' ')}", f"{'🟢 Aligned (+4)' if mtf_matrix['is_triple_bullish'] else ('🔴 Conflict (-4)' if mtf_matrix['is_conflict'] else '🟡 Neutral')}"),
+                    ("Central Pivot Range (CPR)", f"P ₹{float(latest.get('CPR_P', spot)):.1f} | TC ₹{float(latest.get('CPR_TC', spot)):.1f} | BC ₹{float(latest.get('CPR_BC', spot)):.1f}", f"{'🟢 Narrow Breakout' if latest.get('CPR_Regime') == 'NARROW_CPR_TRENDING_BREAKOUT' else ('🛑 Wide Range Chop' if latest.get('CPR_Regime') == 'WIDE_CPR_RANGEBOUND_CHOP' else '🟡 Normal CPR')}"),
+                    ("W-AVWAP & Donchian-20", f"W-AVWAP ₹{float(latest.get('W_AVWAP', spot)):.1f} | [{float(latest.get('Donchian_Low', spot)):.1f} - {float(latest.get('Donchian_High', spot)):.1f}]", f"{'🟢 Weekly Acceptance' if spot >= float(latest.get('W_AVWAP', spot)) else '🔴 Below W-AVWAP'}"),
                     ("Brent / MCX Crude Telemetry", f"{crude_pct:+.2f}% (₹{crude_price:,.0f})", "🟢 O2C Tailwind (+2)" if crude_rallying else ("🔴 Severe Margin Drag (-4.5)" if crude_dumping_severe else "🟡 Steady")),
                     ("15m ORB & Camarilla H4/L4", f"ORB: ₹{orb_h:.1f} | H4: ₹{cam_h4:.1f}", "🟢 Breakout (+5)" if (orb_breakout or cam_breakout_bull) else ("🔴 Breakdown (+5)" if (orb_breakdown or cam_breakdown_bear) else "🟡 Value Range"))
                 ],
@@ -5957,72 +6135,78 @@ if df is not None and not df.empty:
             },
             {
                 "num": 2,
-                "title": "Vector 2: VWAP, CVD & L2 Order Flow",
+                "title": "Vector 2: VWAP, CVD, CMF & Order Flow",
                 "icon": "📊",
                 "score": sim_v2,
                 "max": 18.0,
-                "source": "Session VWAP + ORB AVWAP + Cumulative Volume Delta",
+                "source": "Session VWAP + ORB AVWAP + CVD + CMF + PVT + EOM",
                 "metrics": [
                     ("ORB-15 Anchored VWAP", f"AVWAP: ₹{avwap_orb:.2f} ({avwap_diff:+.2f}p)", f"{'🟢 Retest Support (+3)' if avwap_retest_support else ('🟢 Expanding (+2)' if avwap_expanding_above else ('🔴 Trap Breached (-4)' if avwap_trap_failed else '🟡 Pre-Breakout'))}"),
                     ("CVD Aggressor Flow", f"CVD: {cvd_val:+,.0f} (Δ: {bar_delta:+,.0f})", f"{'🟢 Buyer Ask Aggression (+3)' if cvd_buyer_agg else '🔴 Seller Bid Dominance'}"),
-                    ("CVD Absorption Divergence", "Ask Aggressor vs Price", f"{'🟢 Bullish Absorption (+3.5)' if cvd_bull_divergence else ('🔴 Bearish Distribution (-3.5)' if cvd_bear_divergence else '🟡 Synchronous Flow')}"),
+                    ("Chaikin Money Flow & PVT", f"CMF {float(latest.get('CMF_20', 0.0)):+.3f} | PVT {float(latest.get('PVT', 0.0)):+,.0f}", f"{'🟢 Inst Accumulation' if float(latest.get('CMF_20', 0.0)) >= 0.05 else ('🔴 Inst Distribution' if float(latest.get('CMF_20', 0.0)) <= -0.05 else '🟡 Neutral Money Flow')}"),
+                    ("Ease of Movement (EOM-14)", f"EOM: {float(latest.get('EOM_14', 0.0)):+.2f}", f"{'🟢 Effortless Upward Expansion' if float(latest.get('EOM_14', 0.0)) > 5.0 else ('🔴 Downward Collapse' if float(latest.get('EOM_14', 0.0)) < -5.0 else '🟡 Balanced Flow')}"),
                     ("Session VWAP & L2 Imbalance", f"VWAP ₹{latest['VWAP']:.2f} | L2: {depth_ratio:.2f}x", f"🟢 Above Mean (+4)" if above_vwap else f"🔴 Below Mean (+4)")
                 ],
                 "behavior": v2_beh
             },
             {
                 "num": 3,
-                "title": "Vector 3: Gamma Squeeze & OI Trap",
+                "title": "Vector 3: Gamma Squeeze, Basis & Flow Divergence",
                 "icon": "⚡",
                 "score": sim_v3,
                 "max": 20.0,
-                "source": "Groww Live Option Chain (0-Delay Direct)",
+                "source": "Groww Live Chain + Cash-Futures Basis + PCR Flow Divergence",
                 "metrics": [
                     (f"Call OI Shift ({atm_strike} CE)", f"{opt_telemetry['call_oi_change_pct']:+.1f}% shift", "🟢 Short Covering (+8)" if call_unwinding else ("🟡 Mild Drop (+4)" if opt_telemetry['call_oi_change_pct'] < 0 else "🔴 Call Writing")),
                     (f"Put OI Shift ({atm_strike} PE)", f"{opt_telemetry['put_oi_change_pct']:+.1f}% shift", "🟢 Heavy Writing (+6)" if put_writing else ("🟡 Put Support (+3)" if opt_telemetry['put_oi_change_pct'] > 10.0 else "🔴 Low Put Buildup")),
-                    ("PCR (OI) & Max Pain", f"PCR: {pcr_val:.2f} | Max Pain: ₹{chain_oi['max_pain']:.0f}", "🟢 Strong Cushion (+6)" if pcr_val >= 1.25 else ("🟡 Neutral (+3)" if pcr_val >= 1.05 else "🔴 Bearish (<1.05)")),
-                    ("Call / Put Wall Perimeter", f"Call ₹{call_wall:.0f} | Put ₹{put_wall:.0f}", "🟢 Clear Room" if (abs(spot - call_wall) > 2.0 and abs(spot - put_wall) > 2.0) else "🔴 Near Wall Clamp (-4)")
+                    ("Cash-Futures Basis Spread", f"Basis: {basis_pts:+.2f} pts ({basis_pct:+.2f}%)", f"{'🟢 Futures Long Accumulation (+2)' if basis_regime == 'INSTITUTIONAL_FUTURES_LONG_ACCUMULATION' else ('🔴 Discount Bearish Hedging' if 'DISCOUNT' in basis_regime else '🟡 Normal Basis')}"),
+                    ("PCR Flow vs OI Divergence", f"PCR Vol {pcr_vol:.2f} vs OI {chain_oi.get('overall_pcr', 1.0):.2f}", f"{'🟢 Stealth Call Buying (+2.5)' if 'CALL' in pcr_flow_bias else ('🔴 Stealth Put Buying (+2.5)' if 'PUT' in pcr_flow_bias else '🟡 Aligned Flow')}"),
+                    ("PCR (OI) & Max Pain", f"PCR: {pcr_val:.2f} | Max Pain: ₹{chain_oi['max_pain']:.0f}", "🟢 Strong Cushion (+6)" if pcr_val >= 1.25 else ("🟡 Neutral (+3)" if pcr_val >= 1.05 else "🔴 Bearish (<1.05)"))
                 ],
                 "behavior": v3_beh
             },
             {
                 "num": 4,
-                "title": "Vector 4: Volatility, CHOP & India VIX",
+                "title": "Vector 4: Volatility, CHOP, Mass Index & Straddle",
                 "icon": "🎯",
                 "score": sim_v4,
                 "max": 15.0,
-                "source": "Wilder's ATR (14) + CHOP + India VIX",
+                "source": "Wilder's ATR (14) + CHOP + Chaikin Vol + Mass Index + ATM Straddle",
                 "metrics": [
                     ("Reliance IV Percentile (IVP)", f"{iv_percentile:.1f}% (IV {rel_iv*100.0:.1f}%)", "🟢 Clean Buying Window (+2)" if iv_cheap_window else ("🔴 IV Crush Lock (-4)" if iv_elevated_crush_risk else "🟡 Fair Value")),
-                    ("Choppiness Index (CHOP-14)", f"{chop_val:.1f} (Threshold 61.8)", "🟢 Trending Expansion (+4)" if is_trending_regime else ("🛑 Choppy Stand Down (0)" if is_choppy_regime else "🟡 Neutral Oscillation (+2)")),
-                    ("Dynamic ATR(14) Stop Loss", f"{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f})", f"🟢 ≤4.0% Risk Cap ({risk_pct_of_capital:.1f}%)" if capital_risk_safe else "🔴 Exceeds 4% Budget"),
-                    ("Bollinger Band Expansion", f"Width: {latest['BB_Width']:.2f}%", "🟢 Band Expansion (+2)" if bb_expanding else "🟡 Steady Oscillation")
+                    ("Choppiness Index & Hurst (H)", f"CHOP: {chop_val:.1f} | H={hurst_val:.2f}", "🟢 Trending Persistence (+4)" if (is_trending_regime and hurst_regime == 'TRENDING_PERSISTENCE') else ("🛑 Choppy Stand Down (0)" if is_choppy_regime else "🟡 Moderate Range")),
+                    ("Chaikin Vol & Mass Index", f"CV: {float(latest.get('Chaikin_Vol', 0.0)):+.1f}% | Mass: {float(latest.get('Mass_Index', 25.0)):.2f}", f"{'🟢 Volatility Explosion (+1.5)' if float(latest.get('Chaikin_Vol', 0.0)) > 15.0 else '🟡 Standard Volatility'}"),
+                    ("ATM Straddle Expected Move", f"±₹{exp_move_pts:.1f} (₹{exp_lower:.1f} - ₹{exp_upper:.1f})", f"{'🟢 Squeeze Expansion (+2)' if 'SQUEEZE' in straddle_regime else '🟡 Rangebound Inside Move'}"),
+                    ("Dynamic ATR(14) Stop Loss", f"{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f})", f"🟢 ≤4.0% Risk Cap ({risk_pct_of_capital:.1f}%)" if capital_risk_safe else "🔴 Exceeds 4% Budget")
                 ],
                 "behavior": v4_beh
             },
             {
                 "num": 5,
-                "title": "Vector 5: Zero-Divergence Momentum",
+                "title": "Vector 5: Zero-Divergence Momentum & Cycle",
                 "icon": "🚀",
                 "score": sim_v5,
                 "max": 15.0,
-                "source": "RSI (14) + MACD (12,26,9) + Stochastic TA",
+                "source": "RSI + MACD + CMO + STC + Fisher Transform + Connors RSI",
                 "metrics": [
                     ("RSI (14) Relative Strength", f"{latest['RSI']:.1f} (Sweet Spot: 62-76)", "🟢 Bullish Power Band (+6)" if rsi_sweetspot_bull else ("🔴 Bearish Breakdown (+6)" if rsi_sweetspot_bear else ("🟡 Constructive (+3)" if latest['RSI'] >= 55.0 else "🔴 Neutral/Weak"))),
-                    ("MACD Histogram Trend", f"{latest['MACD_Hist']:+.2f} (vs Prev: {prev['MACD_Hist']:+.2f})", "🟢 Accelerating Bull (+5)" if macd_expanding_bull else ("🔴 Accelerating Bear (+5)" if macd_expanding_bear else "🟡 Decelerating (0)")),
-                    ("Stochastic %K Oscillator", f"{latest['Stoch_K']:.1f} (Sweet Spot: 60-85)", "🟢 Momentum Aligned (+4)" if (stoch_good_bull or stoch_good_bear) else "🟡 Neutral (0)")
+                    ("Chande Momentum (CMO-14)", f"CMO: {float(latest.get('CMO_14', 0.0)):+.1f}", f"{'🟢 Strong Bull Momentum (+2.5)' if float(latest.get('CMO_14', 0.0)) >= 25.0 else ('🔴 Strong Bear Momentum (+2.5)' if float(latest.get('CMO_14', 0.0)) <= -25.0 else '🟡 Neutral Momentum')}"),
+                    ("Schaff Trend Cycle & Fisher", f"STC {float(latest.get('STC', 50.0)):.1f} | Fisher {float(latest.get('Fisher_Transform', 0.0)):+.2f}", f"{'🟢 Bullish Cycle (+2)' if float(latest.get('STC', 50.0)) >= 75.0 else ('🔴 Bearish Cycle (+2)' if float(latest.get('STC', 50.0)) <= 25.0 else '🟡 Balanced Cycle')}"),
+                    ("Connors RSI-3 Pullback Timing", f"CRSI-3: {float(latest.get('Connors_RSI', 50.0)):.1f}", f"{'🟢 Oversold Dip Buy (+2)' if float(latest.get('Connors_RSI', 50.0)) <= 20.0 else ('🔴 Overbought Rally Sell' if float(latest.get('Connors_RSI', 50.0)) >= 80.0 else '🟡 Neutral Pullback')}"),
+                    ("MACD Histogram Trend", f"{latest['MACD_Hist']:+.2f} (vs Prev: {prev['MACD_Hist']:+.2f})", "🟢 Accelerating Bull (+5)" if macd_expanding_bull else ("🔴 Accelerating Bear (+5)" if macd_expanding_bear else "🟡 Decelerating (0)"))
                 ],
                 "behavior": v5_beh
             },
             {
                 "num": 6,
-                "title": "Vector 6: Expiry & Greek Stability",
+                "title": "Vector 6: Expiry, Greeks & Half-Kelly Sizing",
                 "icon": "🛡️",
                 "score": sim_v6,
                 "max": 12.0,
-                "source": "Dynamic 10-Day Mandate + Black-Scholes Greeks",
+                "source": "Dynamic 10-Day Mandate + Black-Scholes Greeks + Dynamic Half-Kelly",
                 "metrics": [
                     ("Dynamic Active Contract", f"{expiry_date_str} ({dte} DTE)", f"🟢 {active_mandate_expiry.split('-')[1].upper() if '-' in active_mandate_expiry else 'MONTHLY'} Mandate Active"),
+                    ("Dynamic Half-Kelly Sizing", f"{half_kelly_pct:.1f}% ({kelly_recommended_lots} Lots | ₹{kelly_risk_capital:,.0f})", f"{'🟢 ' + kelly_status.replace('_', ' ') if 'OPTIMAL' in kelly_status else '🟡 ' + kelly_status.replace('_', ' ')}"),
                     ("Decay Avoidance Protocol", "10-Day Window Enforcement", "🟢 0-DTE Decay 100% Bypassed"),
                     ("Greeks Protection Shield", f"Delta: ~{norm_cdf_d1:.2f} | IV: 21.2%", "🟢 Theta Drag Insulated (+12)")
                 ],
@@ -6444,8 +6628,9 @@ if df is not None and not df.empty:
             "vix_scaler": vix_scaler,
             "orb_low_vol_trap": orb_low_vol_trap,
             "costs_target": costs_target,
-            "costs_sl": costs_sl,
             "kelly_recommended_lots": kelly_recommended_lots,
+            "half_kelly_pct": half_kelly_pct,
+            "kelly_status": kelly_status,
             "is_synthetic_feed": is_synthetic_feed,
             # Institutional Quantitative Enhancements (9.5+ Standard)
             "mtf_matrix": mtf_matrix,
@@ -6455,16 +6640,41 @@ if df is not None and not df.empty:
             "cvd_bear_divergence": cvd_bear_divergence,
             "avwap_orb": avwap_orb,
             "avwap_retest_support": avwap_retest_support,
+            "w_avwap": float(latest.get('W_AVWAP', spot)),
+            "cpr_pivot": float(latest.get('CPR_P', spot)),
+            "cpr_bc": float(latest.get('CPR_BC', spot)),
+            "cpr_tc": float(latest.get('CPR_TC', spot)),
+            "cpr_regime": str(latest.get('CPR_Regime', 'NORMAL_CPR')),
+            "donchian_upper": float(latest.get('Donchian_High', spot)),
+            "donchian_lower": float(latest.get('Donchian_Low', spot)),
+            "cmf": float(latest.get('CMF_20', 0.0)),
+            "pvt": float(latest.get('PVT', 0.0)),
+            "eom": float(latest.get('EOM_14', 0.0)),
+            "basis_pts": basis_pts,
+            "basis_regime": basis_regime,
+            "pcr_vol": pcr_vol,
+            "pcr_divergence": pcr_div,
+            "pcr_flow_bias": pcr_flow_bias,
+            "chaikin_volatility": float(latest.get('Chaikin_Vol', 0.0)),
+            "mass_index": float(latest.get('Mass_Index', 25.0)),
+            "straddle_expected_move": exp_move_pts,
+            "straddle_regime": straddle_regime,
+            "cmo": float(latest.get('CMO_14', 0.0)),
+            "stc": float(latest.get('STC', 50.0)),
+            "fisher_transform": float(latest.get('Fisher_Transform', 0.0)),
+            "connors_rsi": float(latest.get('Connors_RSI', 50.0)),
             "rec_limit_premium": mtf_matrix['m1']['rec_limit_premium_ce'] if recommended_contract_type == "CE" else mtf_matrix['m1']['rec_limit_premium_pe'],
             "premium_savings_pts": mtf_matrix['m1']['premium_savings_pts'],
             "tg_rationale": (
                 f"• <b>M15 Structure:</b> {mtf_matrix['m15']['regime'].replace('_', ' ')} (9/20/50 EMA stack)\n"
-                f"• <b>M5 Trigger:</b> {mtf_matrix['m5']['trigger'].replace('_', ' ')}\n"
+                f"• <b>M5 Trigger:</b> {mtf_matrix['m5']['trigger'].replace('_', ' ')} | CPR: {str(latest.get('CPR_Regime', 'NORMAL_CPR')).replace('_', ' ')}\n"
+                f"• <b>W-AVWAP & Donchian:</b> W-AVWAP ₹{float(latest.get('W_AVWAP', spot)):.1f} | Donchian [₹{float(latest.get('Donchian_Low', spot)):.1f} - ₹{float(latest.get('Donchian_High', spot)):.1f}]\n"
                 f"• <b>M1 Limit Execution:</b> Optimal Bid ₹{mtf_matrix['m1']['rec_limit_premium_ce'] if recommended_contract_type == 'CE' else mtf_matrix['m1']['rec_limit_premium_pe']:.2f} (Saves ₹{mtf_matrix['m1']['premium_savings_pts']:.2f}/unit)\n"
-                f"• <b>CVD Flow:</b> {cvd_val:+,.0f} ({'🟢 Bullish Ask Absorption' if cvd_bull_divergence else ('🔴 Bearish Distribution' if cvd_bear_divergence else 'Synchronous')})\n"
-                f"• <b>IV Percentile:</b> {iv_percentile:.1f}% ({'🟢 Clean Buying Window' if iv_cheap_window else ('🔴 Peak Volatility Lock' if iv_elevated_crush_risk else 'Fair Volatility')})\n"
+                f"• <b>CVD Flow & CMF:</b> CVD {cvd_val:+,.0f} | CMF-20 {float(latest.get('CMF_20', 0.0)):+.3f} ({'🟢 Bullish Ask Absorption' if cvd_bull_divergence else ('🔴 Bearish Distribution' if cvd_bear_divergence else 'Synchronous')})\n"
+                f"• <b>Momentum Matrix:</b> CMO {float(latest.get('CMO_14', 0.0)):+.1f} | STC {float(latest.get('STC', 50.0)):.1f} | CRSI {float(latest.get('Connors_RSI', 50.0)):.1f} | Fisher {float(latest.get('Fisher_Transform', 0.0)):+.2f}\n"
+                f"• <b>IV & Basis:</b> IVP {iv_percentile:.1f}% | Basis {basis_pts:+.2f} pts | Straddle Move ±₹{exp_move_pts:.1f}\n"
                 f"• <b>Brent/MCX Crude:</b> {crude_pct:+.2f}% ({'🟢 Refining Tailwind' if crude_rallying else ('🔴 Severe O2C Drag' if crude_dumping_severe else 'Steady')})\n"
-                f"• <b>Risk Sizing:</b> {num_lots} Lot ({total_trading_qty} Qty) | 1.5× ATR SL: -{effective_sl_pts:.1f} pts ({risk_pct_of_capital:.1f}% of Capital ≤ 4%)"
+                f"• <b>Half-Kelly Sizing:</b> {half_kelly_pct:.1f}% ({kelly_recommended_lots} Lots | {kelly_status}) | 1.5× ATR SL: -{effective_sl_pts:.1f} pts ({risk_pct_of_capital:.1f}% of Capital ≤ 4%)"
             )
         }
 
@@ -6610,9 +6820,9 @@ if df is not None and not df.empty:
         # ==============================================================================
         # 9. DAILY TRADE PERFORMANCE JOURNAL, SHADOW MONITORING & CALENDAR HISTORY
         # ==============================================================================
-        # Calculate 2-lot capital allocation on today's suggested strike price (Mandate: strictly 2 Lots = 1,000 Qty)
+        # Calculate capital allocation on today's suggested strike price (Mandate: strictly 1 Lot = 250 Qty)
         today_strike_price = float(estimated_premium if estimated_premium > 0 else (current_option_ltp if current_option_ltp > 0 else 37.65))
-        today_2lot_capital = round(2 * 500 * today_strike_price, 2)
+        today_2lot_capital = round(num_lots * lot_size * today_strike_price, 2)
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
         # 1. Automatic Groww Execution Cross-Verification (Strictly RELIANCE)
@@ -7436,7 +7646,7 @@ if df is not None and not df.empty:
 
         with col_cfg_left:
             st.markdown("### 🎯 Risk & Position Sizing Parameters")
-            c_lots = st.number_input("Number of Lots (RELIANCE: 500 Qty/Lot)", min_value=1, max_value=4, value=st.session_state.get("num_lots", 1), key="ui_num_lots")
+            c_lots = st.number_input(f"Number of Lots (RELIANCE: {lot_size} Qty/Lot)", min_value=1, max_value=4, value=st.session_state.get("num_lots", 1), key="ui_num_lots")
             st.session_state["num_lots"] = c_lots
 
             c_target = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=st.session_state.get("target_pts", 10.0), step=0.5, key="ui_target_pts")
@@ -7459,10 +7669,10 @@ if df is not None and not df.empty:
                     st.session_state["session_sl_count"] = 0
                     st.rerun()
 
-            st.html("""
+            st.html(f"""
             <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 10px 14px; margin: 10px 0; font-size: 0.74rem; color: #CBD5E1; line-height: 1.5;">
                 🛡️ <b>Capital-Preserving Institutional Model:</b><br>
-                Sizing: <b>1 Lot (500 Qty)</b> | Risk Cap: <b>&le; 4.0% Account Cash</b><br>
+                Sizing: <b>1 Lot ({lot_size} Qty)</b> | Risk Cap: <b>&le; 4.0% Account Cash</b><br>
                 Dynamic Stop Loss: <b>1.5× 5m ATR</b> | Target: <b>+10.0 pts</b><br>
                 IV Filter: <b>IVP &lt; 50% Clean Window</b> (Crush Lock if &gt;70%)<br>
                 Macro Gate: <b>Brent/MCX Crude O2C Margin Gate Active</b>

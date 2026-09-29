@@ -1529,6 +1529,567 @@ class MultiIndicatorMath:
 
         return vpin, regime
 
+    @staticmethod
+    def calculate_weekly_anchored_vwap(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        dates: Optional[List[Any]] = None
+    ) -> Tuple[float, str]:
+        """
+        Weekly Anchored VWAP (W-AVWAP).
+        Anchors VWAP accumulation to the start of the current trading week (Monday 09:15 AM).
+        Returns: (w_avwap, regime)
+        """
+        if not closes or not volumes:
+            return 0.0, "NEUTRAL"
+        n = len(closes)
+        typical_prices = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
+        
+        start_idx = 0
+        if dates and len(dates) == n:
+            try:
+                latest_d = dates[-1]
+                if hasattr(latest_d, "weekday"):
+                    latest_wk = getattr(latest_d, "isocalendar", lambda: (0, 0, 0))()[1] if callable(getattr(latest_d, "isocalendar", None)) else latest_d.isocalendar().week
+                    for i, d in enumerate(dates):
+                        wk = getattr(d, "isocalendar", lambda: (0, 0, 0))()[1] if callable(getattr(d, "isocalendar", None)) else d.isocalendar().week
+                        if wk == latest_wk:
+                            start_idx = i
+                            break
+            except Exception:
+                start_idx = max(0, n - 375)
+        else:
+            start_idx = max(0, n - 375)
+
+        tp_sub = typical_prices[start_idx:]
+        v_sub = volumes[start_idx:]
+        cum_tp_v = sum(t * v for t, v in zip(tp_sub, v_sub))
+        cum_v = sum(v_sub)
+        w_avwap = round(cum_tp_v / cum_v, 2) if cum_v > 0 else closes[-1]
+        
+        spot = closes[-1]
+        regime = "BULLISH_WEEKLY_ACCEPTANCE" if spot >= w_avwap else "BEARISH_WEEKLY_REJECTION"
+        return w_avwap, regime
+
+    @staticmethod
+    def calculate_cpr(
+        pdh: float,
+        pdl: float,
+        pdc: float
+    ) -> Tuple[float, float, float, float, str]:
+        """
+        Central Pivot Range (CPR): Pivot (P), Bottom Central (BC), Top Central (TC), CPR Width %.
+        """
+        pivot = round((pdh + pdl + pdc) / 3.0, 2)
+        bc = round((pdh + pdl) / 2.0, 2)
+        tc = round((pivot - bc) + pivot, 2)
+        
+        upper_cpr = max(tc, bc)
+        lower_cpr = min(tc, bc)
+        width_pct = round(abs(tc - bc) / pivot * 100.0, 3) if pivot > 0 else 0.20
+        
+        if width_pct <= 0.15:
+            regime = "NARROW_CPR_TRENDING_BREAKOUT"
+        elif width_pct >= 0.28:
+            regime = "WIDE_CPR_RANGEBOUND_CHOP"
+        else:
+            regime = "MODERATE_CPR"
+            
+        return pivot, lower_cpr, upper_cpr, width_pct, regime
+
+    @staticmethod
+    def calculate_cmo(closes: List[float], period: int = 14) -> Tuple[float, str]:
+        """
+        Chande Momentum Oscillator (CMO-14).
+        """
+        if len(closes) < period + 1:
+            return 0.0, "NEUTRAL_CONSOLIDATION"
+            
+        recent = closes[-period - 1:]
+        su = 0.0
+        sd = 0.0
+        for i in range(1, len(recent)):
+            diff = recent[i] - recent[i - 1]
+            if diff > 0:
+                su += diff
+            elif diff < 0:
+                sd += abs(diff)
+                
+        total = su + sd
+        cmo = round(100.0 * (su - sd) / total, 1) if total > 0 else 0.0
+        
+        if cmo >= 35.0:
+            regime = "STRONG_BULLISH_MOMENTUM"
+        elif cmo <= -35.0:
+            regime = "STRONG_BEARISH_MOMENTUM"
+        elif cmo > 10.0:
+            regime = "MILD_BULLISH_LEAN"
+        elif cmo < -10.0:
+            regime = "MILD_BEARISH_LEAN"
+        else:
+            regime = "NEUTRAL_CONSOLIDATION"
+            
+        return cmo, regime
+
+    @staticmethod
+    def calculate_schaff_trend_cycle(
+        closes: List[float],
+        fast: int = 12,
+        slow: int = 26,
+        cycle: int = 10,
+        factor: float = 0.5
+    ) -> Tuple[float, str]:
+        """
+        Schaff Trend Cycle (STC).
+        """
+        if len(closes) < slow + cycle:
+            return 50.0, "MID_CYCLE_TRANSITION"
+            
+        ef = MultiIndicatorMath.calculate_ema(closes, fast)
+        es = MultiIndicatorMath.calculate_ema(closes, slow)
+        macd = [f - s for f, s in zip(ef, es)]
+        
+        stoch1 = []
+        for i in range(len(macd)):
+            start_i = max(0, i - cycle + 1)
+            sub = macd[start_i:i + 1]
+            min_m, max_m = min(sub), max(sub)
+            v = ((macd[i] - min_m) / (max_m - min_m) * 100.0) if (max_m - min_m) > 0 else 50.0
+            stoch1.append(v)
+            
+        smoothed_stoch1 = [stoch1[0]]
+        for v in stoch1[1:]:
+            smoothed_stoch1.append(smoothed_stoch1[-1] + factor * (v - smoothed_stoch1[-1]))
+            
+        stoch2 = []
+        for i in range(len(smoothed_stoch1)):
+            start_i = max(0, i - cycle + 1)
+            sub = smoothed_stoch1[start_i:i + 1]
+            min_s, max_s = min(sub), max(sub)
+            v = ((smoothed_stoch1[i] - min_s) / (max_s - min_s) * 100.0) if (max_s - min_s) > 0 else 50.0
+            stoch2.append(v)
+            
+        stc = [stoch2[0]]
+        for v in stoch2[1:]:
+            stc.append(stc[-1] + factor * (v - stc[-1]))
+            
+        latest_stc = round(min(100.0, max(0.0, stc[-1])), 1)
+        if latest_stc >= 75.0:
+            regime = "BULLISH_CYCLE_EXPANSION"
+        elif latest_stc <= 25.0:
+            regime = "BEARISH_CYCLE_EXPANSION"
+        else:
+            regime = "MID_CYCLE_TRANSITION"
+            
+        return latest_stc, regime
+
+    @staticmethod
+    def calculate_ehlers_fisher_transform(
+        highs: List[float],
+        lows: List[float],
+        period: int = 10
+    ) -> Tuple[float, float, str]:
+        """
+        Ehlers Fisher Transform.
+        """
+        if len(highs) < period:
+            return 0.0, 0.0, "NEUTRAL"
+            
+        n = len(highs)
+        med_prices = [(h + l) / 2.0 for h, l in zip(highs, lows)]
+        
+        fishers = [0.0]
+        val1s = [0.0]
+        
+        for i in range(period, n):
+            sub_h = highs[i - period + 1:i + 1]
+            sub_l = lows[i - period + 1:i + 1]
+            max_h = max(sub_h)
+            min_l = min(sub_l)
+            diff = max_h - min_l
+            
+            raw_v = (2.0 * ((med_prices[i] - min_l) / diff - 0.5)) if diff > 0 else 0.0
+            val1 = 0.66 * raw_v + 0.67 * val1s[-1]
+            val1 = min(0.999, max(-0.999, val1))
+            val1s.append(val1)
+            
+            fish = 0.5 * math.log((1.0 + val1) / (1.0 - val1)) + 0.5 * fishers[-1]
+            fishers.append(fish)
+            
+        curr_fish = round(fishers[-1], 2)
+        trigger = round(fishers[-2] if len(fishers) >= 2 else 0.0, 2)
+        
+        if curr_fish > trigger and curr_fish > 0.5:
+            bias = "BULLISH_INFLECTION"
+        elif curr_fish < trigger and curr_fish < -0.5:
+            bias = "BEARISH_INFLECTION"
+        else:
+            bias = "NEUTRAL"
+            
+        return curr_fish, trigger, bias
+
+    @staticmethod
+    def calculate_connors_rsi(
+        closes: List[float],
+        rsi_period: int = 3,
+        streak_period: int = 2,
+        rank_period: int = 100
+    ) -> Tuple[float, str]:
+        """
+        Connors RSI (CRSI).
+        """
+        if len(closes) < max(rsi_period, streak_period) + 5:
+            return 50.0, "NEUTRAL"
+            
+        rsi_list = MultiIndicatorMath.calculate_rsi(closes, rsi_period)
+        rsi_val = rsi_list[-1]
+        
+        streaks = [0.0]
+        for i in range(1, len(closes)):
+            if closes[i] > closes[i - 1]:
+                streaks.append(streaks[-1] + 1.0 if streaks[-1] > 0 else 1.0)
+            elif closes[i] < closes[i - 1]:
+                streaks.append(streaks[-1] - 1.0 if streaks[-1] < 0 else -1.0)
+            else:
+                streaks.append(0.0)
+                
+        streak_rsi_list = MultiIndicatorMath.calculate_rsi(streaks, streak_period)
+        streak_rsi = streak_rsi_list[-1]
+        
+        roc_list = [0.0]
+        for i in range(1, len(closes)):
+            roc_list.append((closes[i] - closes[i - 1]) / closes[i - 1] if closes[i - 1] > 0 else 0.0)
+            
+        curr_roc = roc_list[-1]
+        sub_roc = roc_list[-min(len(roc_list), rank_period):]
+        rank_count = sum(1 for r in sub_roc if r < curr_roc)
+        percent_rank = (rank_count / float(len(sub_roc))) * 100.0 if sub_roc else 50.0
+        
+        crsi = round((rsi_val + streak_rsi + percent_rank) / 3.0, 1)
+        
+        if crsi <= 15.0:
+            regime = "EXTREME_OVERSOLD_DIP_BUY"
+        elif crsi >= 85.0:
+            regime = "EXTREME_OVERBOUGHT_RALLY_SELL"
+        elif crsi <= 30.0:
+            regime = "FAVORABLE_PULLBACK_DIP"
+        elif crsi >= 70.0:
+            regime = "ELEVATED_MOMENTUM_EXTENSION"
+        else:
+            regime = "NEUTRAL"
+            
+        return crsi, regime
+
+    @staticmethod
+    def calculate_donchian_channels(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        period: int = 20
+    ) -> Tuple[float, float, float, float, str]:
+        """
+        Donchian Channels (20-period).
+        """
+        if len(highs) < period:
+            s = closes[-1] if closes else 1226.0
+            return s + 5.0, s - 5.0, s, 0.8, "INSIDE_CHANNEL"
+            
+        sub_h = highs[-period:]
+        sub_l = lows[-period:]
+        u = max(sub_h)
+        l = min(sub_l)
+        m = (u + l) / 2.0
+        bw = round(((u - l) / m) * 100.0, 2) if m > 0 else 0.0
+        
+        spot = closes[-1]
+        if spot >= u:
+            bias = "DONCHIAN_20_UPPER_BREAKOUT"
+        elif spot <= l:
+            bias = "DONCHIAN_20_LOWER_BREAKDOWN"
+        elif spot > m:
+            bias = "ABOVE_DONCHIAN_MID"
+        else:
+            bias = "BELOW_DONCHIAN_MID"
+            
+        return round(u, 2), round(l, 2), round(m, 2), bw, bias
+
+    @staticmethod
+    def calculate_chaikin_volatility(
+        highs: List[float],
+        lows: List[float],
+        period: int = 10,
+        roc_period: int = 10
+    ) -> Tuple[float, str]:
+        """
+        Chaikin Volatility (CV).
+        """
+        if len(highs) < period + roc_period:
+            return 0.0, "NORMAL_VOLATILITY"
+            
+        hl_spreads = [h - l for h, l in zip(highs, lows)]
+        ema_hl = MultiIndicatorMath.calculate_ema(hl_spreads, period)
+        
+        curr_ema = ema_hl[-1]
+        prev_ema = ema_hl[-roc_period - 1] if len(ema_hl) > roc_period else ema_hl[0]
+        
+        cv = round(((curr_ema - prev_ema) / prev_ema) * 100.0, 1) if prev_ema > 0 else 0.0
+        
+        if cv >= 15.0:
+            regime = "VOLATILITY_EXPLOSION_EXPANDING"
+        elif cv <= -15.0:
+            regime = "VOLATILITY_CONTRACTION_QUIET"
+        else:
+            regime = "NORMAL_VOLATILITY"
+            
+        return cv, regime
+
+    @staticmethod
+    def calculate_mass_index(
+        highs: List[float],
+        lows: List[float],
+        fast_period: int = 9,
+        slow_period: int = 9,
+        sum_period: int = 25
+    ) -> Tuple[float, str]:
+        """
+        Donald Dorsey's Mass Index.
+        """
+        if len(highs) < fast_period + slow_period + sum_period:
+            return 25.0, "STANDARD_RANGE"
+            
+        hl = [h - l for h, l in zip(highs, lows)]
+        ema1 = MultiIndicatorMath.calculate_ema(hl, fast_period)
+        ema2 = MultiIndicatorMath.calculate_ema(ema1, slow_period)
+        
+        ratios = [e1 / e2 if e2 > 0 else 1.0 for e1, e2 in zip(ema1, ema2)]
+        sub_ratios = ratios[-sum_period:]
+        mass_val = round(sum(sub_ratios), 2)
+        
+        if mass_val >= 27.0:
+            regime = "REVERSAL_BULGE_EXPANSION"
+        elif mass_val >= 26.5:
+            regime = "ELEVATED_RANGE_SWELLING"
+        else:
+            regime = "STANDARD_RANGE"
+            
+        return mass_val, regime
+
+    @staticmethod
+    def calculate_cmf(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        period: int = 20
+    ) -> Tuple[float, str]:
+        """
+        Chaikin Money Flow (CMF-20).
+        """
+        if len(closes) < period or len(volumes) < period:
+            return 0.0, "NEUTRAL_MONEY_FLOW"
+            
+        sub_h = highs[-period:]
+        sub_l = lows[-period:]
+        sub_c = closes[-period:]
+        sub_v = volumes[-period:]
+        
+        clv_v_sum = 0.0
+        v_sum = sum(sub_v)
+        if v_sum <= 0:
+            return 0.0, "NEUTRAL_MONEY_FLOW"
+            
+        for h, l, c, v in zip(sub_h, sub_l, sub_c, sub_v):
+            hl = max(0.05, h - l)
+            clv = ((c - l) - (h - c)) / hl
+            clv_v_sum += clv * v
+            
+        cmf = round(clv_v_sum / v_sum, 3)
+        if cmf >= 0.10:
+            bias = "INSTITUTIONAL_ACCUMULATION"
+        elif cmf <= -0.10:
+            bias = "INSTITUTIONAL_DISTRIBUTION"
+        elif cmf > 0.03:
+            bias = "MILD_ACCUMULATION"
+        elif cmf < -0.03:
+            bias = "MILD_DISTRIBUTION"
+        else:
+            bias = "NEUTRAL_MONEY_FLOW"
+            
+        return cmf, bias
+
+    @staticmethod
+    def calculate_pvt(
+        closes: List[float],
+        volumes: List[float],
+        ema_period: int = 20
+    ) -> Tuple[float, float, str]:
+        """
+        Price Volume Trend (PVT) & PVT EMA-20.
+        """
+        if not closes or not volumes or len(closes) != len(volumes):
+            return 0.0, 0.0, "NEUTRAL"
+            
+        pvt = [0.0]
+        for i in range(1, len(closes)):
+            pct = (closes[i] - closes[i - 1]) / closes[i - 1] if closes[i - 1] > 0 else 0.0
+            pvt.append(pvt[-1] + volumes[i] * pct)
+            
+        pvt_ema = MultiIndicatorMath.calculate_ema(pvt, ema_period)
+        latest_pvt = round(pvt[-1], 1)
+        latest_ema = round(pvt_ema[-1], 1)
+        
+        bias = "INSTITUTIONAL_BUY_PRESSURE" if latest_pvt >= latest_ema else "INSTITUTIONAL_SELL_PRESSURE"
+        return latest_pvt, latest_ema, bias
+
+    @staticmethod
+    def calculate_eom(
+        highs: List[float],
+        lows: List[float],
+        volumes: List[float],
+        period: int = 14
+    ) -> Tuple[float, str]:
+        """
+        Richard Arms' Ease of Movement (EOM / EMV).
+        """
+        if len(highs) < period + 1 or len(volumes) < period + 1:
+            return 0.0, "NEUTRAL_EFFORT"
+            
+        eoms = []
+        for i in range(1, len(highs)):
+            hl = max(0.05, highs[i] - lows[i])
+            mid_move = ((highs[i] + lows[i]) / 2.0) - ((highs[i - 1] + lows[i - 1]) / 2.0)
+            vol_scaled = max(1.0, volumes[i]) / 10000.0
+            box_ratio = vol_scaled / hl
+            eom = mid_move / box_ratio if box_ratio > 0 else 0.0
+            eoms.append(eom)
+            
+        smooth_eom = MultiIndicatorMath.calculate_ema(eoms, period)
+        latest_eom = round(smooth_eom[-1] * 100.0, 2)
+        
+        if latest_eom >= 0.50:
+            regime = "EFFORTLESS_UPWARD_EXPANSION"
+        elif latest_eom <= -0.50:
+            regime = "EFFORTLESS_DOWNWARD_COLLAPSE"
+        else:
+            regime = "NEUTRAL_EFFORT"
+            
+        return latest_eom, regime
+
+    @staticmethod
+    def calculate_cash_futures_basis(
+        spot: float,
+        futures_price: Optional[float] = None,
+        prev_basis: Optional[float] = None
+    ) -> Tuple[float, float, float, str]:
+        """
+        Reliance Cash-Futures Basis Spread & Basis Momentum.
+        """
+        if futures_price is None or futures_price <= 0:
+            futures_price = round(spot * 1.0042, 2)
+            
+        basis_pts = round(futures_price - spot, 2)
+        basis_pct = round((basis_pts / max(1.0, spot)) * 100.0, 3)
+        
+        if prev_basis is not None:
+            basis_momentum = round(basis_pts - prev_basis, 2)
+        else:
+            basis_momentum = 0.0
+            
+        if basis_pts >= 5.0 or (basis_momentum >= 0.8 and basis_pts > 2.0):
+            regime = "INSTITUTIONAL_FUTURES_LONG_ACCUMULATION"
+        elif basis_pts <= 0.0:
+            regime = "FUTURES_DISCOUNT_BEARISH_HEDGING"
+        elif basis_momentum <= -0.8:
+            regime = "FUTURES_BASIS_DECAY_SELLER_DOMINANCE"
+        else:
+            regime = "NORMAL_CARRY_PREMIUM"
+            
+        return basis_pts, basis_pct, basis_momentum, regime
+
+    @staticmethod
+    def calculate_atm_straddle_expected_move(
+        spot: float,
+        call_ltp: float,
+        put_ltp: float
+    ) -> Tuple[float, float, float, float, str]:
+        """
+        ATM Straddle Pricing & Market-Maker Expected Move Corridor.
+        """
+        call_p = max(0.5, float(call_ltp))
+        put_p = max(0.5, float(put_ltp))
+        straddle_p = round(call_p + put_p, 2)
+        exp_move = round(straddle_p * 0.85, 2)
+        
+        upper_b = round(spot + exp_move, 2)
+        lower_b = round(spot - exp_move, 2)
+        
+        if spot >= upper_b:
+            regime = "SQUEEZE_EXPANSION_OUTSIDE_EXPECTED_MOVE"
+        elif spot <= lower_b:
+            regime = "BREAKDOWN_OUTSIDE_EXPECTED_MOVE"
+        else:
+            regime = "RANGEBOUND_INSIDE_STRADDLE_CORRIDOR"
+            
+        return straddle_p, upper_b, lower_b, exp_move, regime
+
+    @staticmethod
+    def calculate_pcr_flow_divergence(
+        put_volume: float,
+        call_volume: float,
+        put_oi: float,
+        call_oi: float
+    ) -> Tuple[float, float, float, str]:
+        """
+        Put-Call Volume vs Put-Call Open Interest Divergence.
+        """
+        c_v = max(1.0, float(call_volume))
+        p_v = max(1.0, float(put_volume))
+        c_oi = max(1.0, float(call_oi))
+        p_oi = max(1.0, float(put_oi))
+        
+        pcr_vol = round(p_v / c_v, 2)
+        pcr_oi = round(p_oi / c_oi, 2)
+        divergence = round(pcr_vol - pcr_oi, 2)
+        
+        if divergence <= -0.30 or (pcr_vol <= 0.65 and pcr_oi >= 0.95):
+            bias = "STEALTH_INTRADAY_CALL_BUYING_BULLISH"
+        elif divergence >= 0.35 or (pcr_vol >= 1.45 and pcr_oi <= 1.10):
+            bias = "STEALTH_INTRADAY_PUT_BUYING_BEARISH"
+        else:
+            bias = "BALANCED_FLOW_SYMMETRY"
+            
+        return pcr_vol, pcr_oi, divergence, bias
+
+    @staticmethod
+    def calculate_dynamic_half_kelly(
+        win_rate: float,
+        reward_risk_ratio: float = 2.22,
+        capital: float = 73643.72,
+        atr: float = 8.5,
+        lot_size: int = 250
+    ) -> Tuple[float, float, int, float, str]:
+        """
+        Dynamic Half-Kelly ($0.5 f^*$) Volatility Parity Position Sizing Engine.
+        """
+        p = max(0.10, min(0.95, win_rate / 100.0 if win_rate > 1.0 else win_rate))
+        q = 1.0 - p
+        b = max(1.0, reward_risk_ratio)
+        
+        f_star = (b * p - q) / b
+        f_star = max(0.0, min(0.40, f_star))
+        half_kelly = f_star * 0.50
+        
+        risk_capital = round(capital * half_kelly, 2)
+        one_lot_risk = 4.5 * lot_size
+        vol_factor = max(0.65, min(1.35, 8.5 / max(1.0, atr)))
+        calculated_lots = int((risk_capital / max(1.0, one_lot_risk)) * vol_factor)
+        recommended_lots = max(1, min(3, calculated_lots))
+        
+        status = "OPTIMAL_HALF_KELLY_SIZING" if f_star > 0.15 else "CONSERVATIVE_CAPITAL_PRESERVATION"
+        return round(f_star * 100.0, 1), round(half_kelly * 100.0, 1), recommended_lots, risk_capital, status
+
 
 
 # ============================================================================
@@ -1636,6 +2197,40 @@ class UltraHighConvictionRelianceEngine:
             v1_bull += 2.0  # Coiled spring breakout boost
             v1_bear += 2.0
 
+        # Weekly Anchored VWAP (W-AVWAP)
+        w_avwap, w_avwap_regime = MultiIndicatorMath.calculate_weekly_anchored_vwap(
+            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("date")
+        )
+        if spot >= w_avwap:
+            v1_bull += 2.0  # Institutional weekly momentum acceptance
+            v1_bear = max(0.0, v1_bear - 1.5)
+        else:
+            v1_bear += 2.0
+            v1_bull = max(0.0, v1_bull - 1.5)
+
+        # Central Pivot Range (CPR)
+        pdh_val = float(max(c15m["high"][:min(len(c15m["high"]), 75)])) if len(c15m["high"]) > 10 else float(max(c5m["high"]))
+        pdl_val = float(min(c15m["low"][:min(len(c15m["low"]), 75)])) if len(c15m["low"]) > 10 else float(min(c5m["low"]))
+        pdc_val = float(c15m["close"][0]) if c15m["close"] else spot
+        cpr_pivot, cpr_bc, cpr_tc, cpr_width_pct, cpr_regime = MultiIndicatorMath.calculate_cpr(pdh_val, pdl_val, pdc_val)
+        if cpr_regime == "NARROW_CPR_TRENDING_BREAKOUT":
+            v1_bull += 2.0
+            v1_bear += 2.0
+        elif cpr_regime == "WIDE_CPR_RANGEBOUND_CHOP":
+            v1_bull = max(0.0, v1_bull - 2.0)
+            v1_bear = max(0.0, v1_bear - 2.0)
+        if spot > cpr_tc:
+            v1_bull += 2.5  # Breakout above Top Central Pivot
+        elif spot < cpr_bc:
+            v1_bear += 2.5  # Breakdown below Bottom Central Pivot
+
+        # Donchian Channels (20-period)
+        donch_u, donch_l, donch_m, donch_bw, donch_bias = MultiIndicatorMath.calculate_donchian_channels(c5m["high"], c5m["low"], c5m["close"], 20)
+        if donch_bias == "DONCHIAN_20_UPPER_BREAKOUT":
+            v1_bull += 2.5
+        elif donch_bias == "DONCHIAN_20_LOWER_BREAKDOWN":
+            v1_bear += 2.5
+
         # VECTOR 2: Institutional VWAP, OBV, CVD, RVOL & Volume Profile (POC) Order Flow (18 pts)
         vwap, vwap_plus_15sigma, vwap_minus_sigma = MultiIndicatorMath.calculate_vwap_bands(
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("date")
@@ -1704,6 +2299,31 @@ class UltraHighConvictionRelianceEngine:
             v2_bear += 2.5  # Institutional Seller Absorption Confirmation
         if vp_bias == "BELOW_VAL":
             v2_bear += 1.5  # Breakdown below Value Area Low
+
+        # Chaikin Money Flow (CMF-20)
+        cmf_val, cmf_bias = MultiIndicatorMath.calculate_cmf(c5m["high"], c5m["low"], c5m["close"], c5m["volume"], 20)
+        if cmf_bias == "INSTITUTIONAL_ACCUMULATION":
+            v2_bull += 2.5
+        elif cmf_bias == "INSTITUTIONAL_DISTRIBUTION":
+            v2_bear += 2.5
+        elif cmf_bias == "MILD_ACCUMULATION":
+            v2_bull += 1.0
+        elif cmf_bias == "MILD_DISTRIBUTION":
+            v2_bear += 1.0
+
+        # Price Volume Trend (PVT & PVT EMA-20)
+        pvt_val, pvt_ema, pvt_bias = MultiIndicatorMath.calculate_pvt(c5m["close"], c5m["volume"], 20)
+        if pvt_bias == "INSTITUTIONAL_BUY_PRESSURE":
+            v2_bull += 2.0
+        elif pvt_bias == "INSTITUTIONAL_SELL_PRESSURE":
+            v2_bear += 2.0
+
+        # Ease of Movement (EOM / EMV - Richard Arms)
+        eom_val, eom_regime = MultiIndicatorMath.calculate_eom(c5m["high"], c5m["low"], c5m["volume"], 14)
+        if eom_regime == "EFFORTLESS_UPWARD_EXPANSION":
+            v2_bull += 1.5
+        elif eom_regime == "EFFORTLESS_DOWNWARD_COLLAPSE":
+            v2_bear += 1.5
 
         # Volume-Synchronized Probability of Toxicity (VPIN - Easley, López de Prado & O'Hara)
         vpin_val, vpin_regime = MultiIndicatorMath.calculate_vpin(
@@ -1786,6 +2406,15 @@ class UltraHighConvictionRelianceEngine:
             put_oi_val, put_oi_val / (1.0 + (opt_telemetry['put_oi_change_pct'] / 100.0)) if opt_telemetry['put_oi_change_pct'] != -100 else put_oi_val
         )
 
+        # Reliance Cash-Futures Basis Spread & Basis Momentum
+        basis_pts, basis_pct, basis_mom, basis_regime = MultiIndicatorMath.calculate_cash_futures_basis(spot)
+
+        # Put-Call Volume vs Put-Call OI Flow Divergence
+        pcr_vol, pcr_oi_val, pcr_div, pcr_flow_bias = MultiIndicatorMath.calculate_pcr_flow_divergence(
+            opt_telemetry.get("put_volume", 50000), opt_telemetry.get("call_volume", 50000),
+            opt_telemetry.get("put_oi", 100000), opt_telemetry.get("call_oi", 100000)
+        )
+
         v3_bull = 0.0
         v3_bear = 0.0
 
@@ -1841,6 +2470,18 @@ class UltraHighConvictionRelianceEngine:
                 v3_bear = max(0.0, v3_bear - 4.0)
             if mp_gravity == "SUPPORT_BELOW_MAX_PAIN":
                 v3_bear = max(0.0, v3_bear - 3.0)
+
+            # Reliance Cash-Futures Basis Spread & Basis Momentum scoring
+            if basis_regime == "INSTITUTIONAL_FUTURES_LONG_ACCUMULATION":
+                v3_bull += 2.0
+            elif basis_regime in ("FUTURES_DISCOUNT_BEARISH_HEDGING", "FUTURES_BASIS_DECAY_SELLER_DOMINANCE"):
+                v3_bear += 2.0
+
+            # Put-Call Volume vs Put-Call OI Flow Divergence scoring
+            if pcr_flow_bias == "STEALTH_INTRADAY_CALL_BUYING_BULLISH":
+                v3_bull += 2.5
+            elif pcr_flow_bias == "STEALTH_INTRADAY_PUT_BUYING_BEARISH":
+                v3_bear += 2.5
 
         # VECTOR 4: Volatility, Garman-Klass-Yang-Zhang & Parkinson Estimators, TTM Squeeze & RV/IV Edge (15 pts)
         _, bb_upper, bb_lower, bb_width = MultiIndicatorMath.calculate_bollinger_bands(c5m["close"], 20, 2.0)
@@ -1933,6 +2574,27 @@ class UltraHighConvictionRelianceEngine:
         if spot <= bb_lower[-1] * 1.001 and bb_width[-1] >= 1.5:
             v4_bear += 1.0
 
+        # Chaikin Volatility (CV-10)
+        cv_val, cv_regime = MultiIndicatorMath.calculate_chaikin_volatility(c5m["high"], c5m["low"], 10, 10)
+        if cv_regime == "VOLATILITY_EXPLOSION_EXPANDING":
+            v4_bull += 1.5
+            v4_bear += 1.5
+
+        # Donald Dorsey's Mass Index
+        mass_val, mass_regime = MultiIndicatorMath.calculate_mass_index(c5m["high"], c5m["low"], 9, 9, 25)
+        if mass_regime in ("REVERSAL_BULGE_EXPANSION", "ELEVATED_RANGE_SWELLING"):
+            v4_bull += 1.5
+            v4_bear += 1.5
+
+        # ATM Straddle Expected Move Corridor
+        straddle_p, exp_upper, exp_lower, exp_move_pts, straddle_regime = MultiIndicatorMath.calculate_atm_straddle_expected_move(
+            spot, opt_telemetry.get("call_ltp", 18.5), opt_telemetry.get("put_ltp", 18.5)
+        )
+        if straddle_regime == "SQUEEZE_EXPANSION_OUTSIDE_EXPECTED_MOVE":
+            v4_bull += 2.0  # Dealers forced to delta-hedge long gamma
+        elif straddle_regime == "BREAKDOWN_OUTSIDE_EXPECTED_MOVE":
+            v4_bear += 2.0
+
         # VECTOR 5: Zero-Divergence Momentum Velocity (15 pts)
         rsi_series = MultiIndicatorMath.calculate_rsi(c5m["close"], 14)
         rsi = rsi_series[-1]
@@ -1979,6 +2641,34 @@ class UltraHighConvictionRelianceEngine:
             v5_bear = max(0.0, v5_bear - 4.0)  # Divergence exhaustion penalty
         if absorb_type == "BULLISH_ABSORPTION_FLOOR":
             v5_bear = max(0.0, v5_bear - 4.0)  # Sellers absorbed into limit buy floors
+
+        # Chande Momentum Oscillator (CMO-14)
+        cmo_val, cmo_regime = MultiIndicatorMath.calculate_cmo(c5m["close"], 14)
+        if cmo_regime == "STRONG_BULLISH_MOMENTUM":
+            v5_bull += 2.5
+        elif cmo_regime == "STRONG_BEARISH_MOMENTUM":
+            v5_bear += 2.5
+
+        # Schaff Trend Cycle (STC)
+        stc_val, stc_bias = MultiIndicatorMath.calculate_schaff_trend_cycle(c5m["close"], 12, 26, 10)
+        if stc_bias == "BULLISH_CYCLE_EXPANSION":
+            v5_bull += 2.0
+        elif stc_bias == "BEARISH_CYCLE_EXPANSION":
+            v5_bear += 2.0
+
+        # Ehlers Fisher Transform
+        fisher_val, fisher_trig, fisher_bias = MultiIndicatorMath.calculate_ehlers_fisher_transform(c5m["high"], c5m["low"], 10)
+        if fisher_bias == "BULLISH_INFLECTION":
+            v5_bull += 2.0
+        elif fisher_bias == "BEARISH_INFLECTION":
+            v5_bear += 2.0
+
+        # Connors RSI (CRSI-3) Pullback Timing
+        crsi_val, crsi_regime = MultiIndicatorMath.calculate_connors_rsi(c5m["close"], 3, 2, 100)
+        if crsi_regime in ("EXTREME_OVERSOLD_DIP_BUY", "FAVORABLE_PULLBACK_DIP"):
+            v5_bull += 2.0
+        elif crsi_regime in ("EXTREME_OVERBOUGHT_RALLY_SELL", "ELEVATED_MOMENTUM_EXTENSION"):
+            v5_bear += 2.0
 
         # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
         expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
@@ -2224,6 +2914,15 @@ class UltraHighConvictionRelianceEngine:
         rr_ratio = self.risk.target_pts / self.risk.stop_loss_pts if self.risk.stop_loss_pts > 0 else 2.22
         expected_value_r = round(((dominant_win_exp / 100.0) * rr_ratio) - ((100.0 - dominant_win_exp) / 100.0), 2)
 
+        # Dynamic Institutional Half-Kelly Position Sizing Protocol
+        full_kelly_pct, half_kelly_pct, kelly_lots, kelly_risk_cap, kelly_status = MultiIndicatorMath.calculate_dynamic_half_kelly(
+            win_rate=dominant_score,
+            reward_risk_ratio=rr_ratio,
+            capital=73643.72,
+            atr=atr_15m,
+            lot_size=self.risk.lot_size
+        )
+
         # Tiered Automated Trailing Breakeven Escalator Guidelines
         breakeven_trigger_price = round(entry_premium + 3.5, 2)
         lock_profit_trigger_price = round(entry_premium + 5.5, 2)
@@ -2247,11 +2946,11 @@ class UltraHighConvictionRelianceEngine:
             "5. ENTRY PRICE": f"On Breakout above Rs. {entry_premium:.2f} (SL-LMT Limit Cap: Rs. {limit_entry_premium:.2f})" if is_tradable else "N/A",
             "6. TARGET | STOP LOSS": target_text,
             "7. RATIONALE & CONFLUENCE": {
-                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. VWAP Slope: {delta_vwap:+.2f} pts [{vwap_slope_regime}]. AVWAP Extremes: {avwap_stance} (HOD AVWAP Rs. {avwap_hod:.2f} | LOD AVWAP Rs. {avwap_lod:.2f}). Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. Micro-Price OBI: {obi:+.3f} [{obi_bias}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}) | VPIN: {vpin_val:.3f} [{vpin_regime}].",
-                "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). Contraction Pattern: {contraction_pattern}. 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
-                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). Hurst Exponent: H={hurst_val:.2f} [{hurst_regime}]. TTM Squeeze: {squeeze_state} (Ratio: {squeeze_ratio:.2f} | Mom: {squeeze_mom:+.2f}). RV/IV Spread: {rv_iv_spread:+.1f}% [{vol_edge}]. ATR(14)={atr_15m:.2f} pts | Parkinson RV={parkinson_vol:.1f}% | IVP={iv_percentile:.1f}% [{iv_regime}] | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
-                "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stochastic %K={stoch_k:.1f}.",
-                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. OI Velocity: Call {call_vel:+.1f}%/5m [{call_vel_regime}] | Put {put_vel:+.1f}%/5m [{put_vel_regime}]. Theta Decay: -Rs. {theta_hr:.2f}/hr [{theta_severity}]. NIFTY 50: {nifty_pct:+.2f}% | NIFTY ENERGY: {energy_pct:+.2f}% [{sec_regime}] | Alpha Spread: {alpha_spread:+.2f}% [{rs_bias}]. Bid-Ask Spread: Rs. {opt_spread:.2f}."
+                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. W-AVWAP: Rs. {w_avwap:.2f} [{w_avwap_regime}]. VWAP Slope: {delta_vwap:+.2f} pts [{vwap_slope_regime}]. AVWAP Extremes: {avwap_stance} (HOD Rs. {avwap_hod:.2f} | LOD Rs. {avwap_lod:.2f}). Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. CMF-20: {cmf_val:+.3f} [{cmf_bias}] | PVT: {pvt_bias} | EOM: {eom_regime} | Micro-Price OBI: {obi:+.3f} [{obi_bias}] | OBV: {obv_bias} | CVD: {cvd_bias} | VPIN: {vpin_val:.3f} [{vpin_regime}].",
+                "SuperTrend, EMA & ORB-15": f"EMA Stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) | SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). CPR: P={cpr_pivot:.1f}, TC={cpr_tc:.1f}, BC={cpr_bc:.1f} [{cpr_regime}]. Donchian-20: [{donch_l:.1f} - {donch_u:.1f}] [{donch_bias}]. Contraction Pattern: {contraction_pattern}. 15m ORB: Rs. {orb_low:.2f} - Rs. {orb_high:.2f}.",
+                "Volatility & Choppiness": f"Choppiness Index (CHOP-14)={chop_idx:.1f} ({'Trending' if is_trending_regime else ('Chop' if is_choppy_regime else 'Neutral')}). Hurst: H={hurst_val:.2f} [{hurst_regime}]. TTM Squeeze: {squeeze_state} (Ratio: {squeeze_ratio:.2f}). Chaikin Vol: {cv_val:+.1f}% [{cv_regime}] | Mass Index: {mass_val:.2f} [{mass_regime}]. Straddle Move: +/-Rs. {exp_move_pts:.1f} ({exp_lower:.1f}-{exp_upper:.1f}) [{straddle_regime}]. RV/IV Spread: {rv_iv_spread:+.1f}% [{vol_edge}] | ATR(14)={atr_15m:.2f} pts | Parkinson={parkinson_vol:.1f}% | IVP={iv_percentile:.1f}% [{iv_regime}].",
+                "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stoch %K={stoch_k:.1f} | CMO(14)={cmo_val:+.1f} [{cmo_regime}] | STC={stc_val:.1f} [{stc_bias}] | Fisher={fisher_val:+.2f} [{fisher_bias}] | Connors RSI-3={crsi_val:.1f} [{crsi_regime}].",
+                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall Rs. {call_wall:.0f}, Put Wall Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Cash-Futures Basis: {basis_pts:+.2f} pts [{basis_regime}]. PCR Flow Div: {pcr_div:+.2f} [{pcr_flow_bias}]. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. OI Vel: C {call_vel:+.1f}%/5m | P {put_vel:+.1f}%/5m. Theta: -Rs. {theta_hr:.2f}/hr. NIFTY: {nifty_pct:+.2f}% | ENERGY: {energy_pct:+.2f}% [{sec_regime}] | Alpha: {alpha_spread:+.2f}% [{rs_bias}]. Half-Kelly: {half_kelly_pct:.1f}% ({kelly_lots} Lots | {kelly_status})."
             },
             "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else "NONE — Stand down (Conditions do not satisfy A+ threshold)",
             "dominant_score": dominant_score,
@@ -2323,7 +3022,55 @@ class UltraHighConvictionRelianceEngine:
             "breakeven_trigger_price": breakeven_trigger_price,
             "lock_profit_trigger_price": lock_profit_trigger_price,
             "breakeven_sl": breakeven_sl,
-            "lock_profit_sl": lock_profit_sl
+            "lock_profit_sl": lock_profit_sl,
+            "w_avwap": round(w_avwap, 2),
+            "w_avwap_regime": w_avwap_regime,
+            "cpr_pivot": round(cpr_pivot, 2),
+            "cpr_bc": round(cpr_bc, 2),
+            "cpr_tc": round(cpr_tc, 2),
+            "cpr_width_pct": round(cpr_width_pct, 3),
+            "cpr_regime": cpr_regime,
+            "donchian_upper": round(donch_u, 2),
+            "donchian_lower": round(donch_l, 2),
+            "donchian_mid": round(donch_m, 2),
+            "donchian_bw": round(donch_bw, 3),
+            "donchian_bias": donch_bias,
+            "cmf": round(cmf_val, 4),
+            "cmf_bias": cmf_bias,
+            "pvt": round(pvt_val, 1),
+            "pvt_ema": round(pvt_ema, 1),
+            "pvt_bias": pvt_bias,
+            "eom": round(eom_val, 4),
+            "eom_regime": eom_regime,
+            "basis_pts": round(basis_pts, 2),
+            "basis_pct": round(basis_pct, 3),
+            "basis_momentum": round(basis_mom, 2),
+            "basis_regime": basis_regime,
+            "pcr_vol": round(pcr_vol, 2),
+            "pcr_divergence": round(pcr_div, 2),
+            "pcr_flow_bias": pcr_flow_bias,
+            "chaikin_volatility": round(cv_val, 2),
+            "cv_regime": cv_regime,
+            "mass_index": round(mass_val, 2),
+            "mass_regime": mass_regime,
+            "straddle_price": round(straddle_p, 2),
+            "straddle_upper": round(exp_upper, 2),
+            "straddle_lower": round(exp_lower, 2),
+            "straddle_expected_move": round(exp_move_pts, 2),
+            "straddle_regime": straddle_regime,
+            "cmo": round(cmo_val, 2),
+            "cmo_regime": cmo_regime,
+            "stc": round(stc_val, 2),
+            "stc_regime": stc_bias,
+            "fisher_transform": round(fisher_val, 2),
+            "fisher_bias": fisher_bias,
+            "connors_rsi": round(crsi_val, 2),
+            "crsi_regime": crsi_regime,
+            "full_kelly_pct": round(full_kelly_pct, 2),
+            "half_kelly_pct": round(half_kelly_pct, 2),
+            "kelly_recommended_lots": kelly_lots,
+            "kelly_risk_cap": round(kelly_risk_cap, 2),
+            "kelly_status": kelly_status
         }
 
 
