@@ -7262,6 +7262,47 @@ if df is not None and not df.empty:
                     st.success("✅ Trade record saved successfully!")
                     st.rerun()
 
+        # ======================================================================
+        # GITHUB SYNCHRONIZATION (LOCAL MASTER COPY ARCHITECTURE)
+        # ======================================================================
+        with st.expander("🔄 GitHub Synchronization (Local Master Copy)", expanded=False):
+            st.markdown(
+                "<p style='font-size: 0.85rem; color: #94A3B8; margin-bottom: 12px;'>"
+                "Maintains automated continuous synchronization between local workspace and GitHub. "
+                "<b style='color: #38BDF8;'>Local workspace is the master copy (single source of truth)</b>. "
+                "Any remote divergence resolves automatically with local priority (<code>-X ours</code>)."
+                "</p>",
+                unsafe_allow_html=True
+            )
+            try:
+                from git_sync_manager import GitSyncManager
+                sync_info = GitSyncManager.get_sync_status()
+                
+                g_c1, g_c2, g_c3 = st.columns(3)
+                with g_c1:
+                    is_synced = sync_info.get("in_sync", False)
+                    st.metric("Sync Status", "In Sync ✅" if is_synced else "Unsynced Changes ⚠️")
+                with g_c2:
+                    has_changes = sync_info.get("has_local_changes", False)
+                    ahead = sync_info.get("ahead_commits", 0)
+                    chg_lbl = f"{ahead} commit(s) ahead" if ahead > 0 else ("Pending Commit" if has_changes else "Clean Working Tree")
+                    st.metric("Local Master", chg_lbl)
+                with g_c3:
+                    st.metric("Last Synced", sync_info.get("last_sync_time") or "Never")
+
+                if st.button("🚀 Push Local Master to GitHub Now", use_container_width=True, type="primary"):
+                    with st.spinner("Pushing local master changes to GitHub..."):
+                        sync_res = GitSyncManager.sync_local_to_git()
+                        if sync_res.get("success"):
+                            st.success(f"✅ Synced successfully! (Commit: {sync_res.get('commit_hash', 'Latest')})")
+                        else:
+                            st.error(f"❌ {sync_res.get('message')}")
+                        time.sleep(1)
+                        st.rerun()
+            except Exception as e:
+                st.caption(f"Git sync helper available in local environment: {e}")
+
+
 
 
 else:

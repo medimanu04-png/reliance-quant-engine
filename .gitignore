@@ -25,9 +25,7 @@ desktop.ini
 # Agent & Brain artifacts
 .gemini/
 .system_generated/
-
-push_to_github.bat
-run_app.bat
+git_sync_state.json
 
 # Sensitive config files (contain API tokens/secrets)
 groww_config.json

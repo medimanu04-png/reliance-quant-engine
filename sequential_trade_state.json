@@ -15,14 +15,14 @@
     "qty": 1000,
     "num_lots": 2,
     "confluence": 83.5,
-    "highest_price": 29.85,
+    "highest_price": 30.4,
     "trailing_sl": 27.35,
     "status": "Open",
     "proposed_at": "12:45:00 PM IST",
-    "current_ltp": 28.7,
-    "unrealized_pnl": -1150.0
+    "current_ltp": 30.4,
+    "unrealized_pnl": 550.0
   },
   "last_closed_trade": null,
   "today_trade_count": 1,
-  "updated_at": "2026-09-29 01:17:41 PM IST"
+  "updated_at": "2026-09-29 01:22:41 PM IST"
 }

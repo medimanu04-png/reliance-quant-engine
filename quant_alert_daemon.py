@@ -183,6 +183,7 @@ class RelianceQuantAlertDaemon:
         self.last_spot = 0.0
         self.last_seen_state = None
         self.last_chop_alert_sent = False
+        self.last_git_sync_ts = time.time()
 
     def is_market_hours(self) -> Tuple[bool, str]:
         """Checks if current time is within Indian NSE trading hours."""
@@ -312,6 +313,17 @@ class RelianceQuantAlertDaemon:
                 groww_feed=self.groww_feed,
                 starting_cash=STARTING_CAPITAL
             )
+            if trade_update.get("closed_trade"):
+                try:
+                    from git_sync_manager import GitSyncManager
+                    cl_t = trade_update.get("closed_trade", {})
+                    threading.Thread(
+                        target=GitSyncManager.sync_local_to_git,
+                        kwargs={"auto": True, "commit_message": f"feat(trade): auto-sync closed Trade #{trade_num} ({cl_t.get('status')}) PnL: {cl_t.get('pnl')}"},
+                        daemon=True
+                    ).start()
+                except Exception as e:
+                    logger.debug(f"Git auto-sync error on trade closure: {e}")
 
             # Trailing SL Trigger Alert
             if cur_trade_ltp > active_trade.get("highest_price", act_entry):
@@ -423,6 +435,15 @@ class RelianceQuantAlertDaemon:
                         qty=1000,
                         num_lots=2
                     )
+                    try:
+                        from git_sync_manager import GitSyncManager
+                        threading.Thread(
+                            target=GitSyncManager.sync_local_to_git,
+                            kwargs={"auto": True, "commit_message": f"feat(trade): auto-sync entry ({contract_label}) @ ₹{active_option_ltp:.2f}"},
+                            daemon=True
+                        ).start()
+                    except Exception as e:
+                        logger.debug(f"Git auto-sync error on entry: {e}")
 
                 logger.info(
                     f"[{time_str}] 🔥 ENTRY TRIGGER CONFIRMED! Contract: {contract_label} | "
@@ -488,6 +509,20 @@ class RelianceQuantAlertDaemon:
             ShadowMonitoringEngine.update_shadow_monitoring(self.groww_feed)
         except Exception:
             pass
+
+        # 8. Periodic 15-minute background git sync (Local Master Copy)
+        now_ts = time.time()
+        if now_ts - self.last_git_sync_ts > 900:
+            self.last_git_sync_ts = now_ts
+            try:
+                from git_sync_manager import GitSyncManager
+                threading.Thread(
+                    target=GitSyncManager.sync_local_to_git,
+                    kwargs={"auto": True, "commit_message": f"chore(sync): periodic auto-sync local master [{time_str}]"},
+                    daemon=True
+                ).start()
+            except Exception as e:
+                logger.debug(f"Periodic git sync error: {e}")
 
     def start(self):
         """Continuous production execution loop."""
