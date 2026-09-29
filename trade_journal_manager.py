@@ -517,6 +517,18 @@ class TradeJournalManager:
         starting_capital = starting_cash if (starting_cash is not None and starting_cash > 0) else STARTING_CAPITAL
         total_cash = round(starting_capital + total_profit, 2)
         
+        # Today's 2-lot required capital
+        if today_strike_price is not None and today_strike_price > 0:
+            today_2lot_capital = round(2 * 500 * today_strike_price, 2)
+        else:
+            today_2lot_capital = round(2 * 500 * 37.65, 2)
+        
+        win_rate = (len(hits) / len(traded_days) * 100.0) if len(traded_days) > 0 else 0.0
+        profit_factor = (total_captured / total_lost) if total_lost > 0 else (total_captured if total_captured > 0 else 1.0)
+        roi_pct = (total_profit / starting_capital) * 100.0 if starting_capital > 0 else 0.0
+        
+        avg_capital_deployed = round(sum(e.get("capital_deployed", 0.0) for e in traded_days) / len(traded_days), 2) if traded_days else 0.0
+        
         return {
             "starting_capital": starting_capital,
             "today_2lot_capital": today_2lot_capital,
