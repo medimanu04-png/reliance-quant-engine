@@ -1245,12 +1245,14 @@ st.markdown("---")
 # ==============================================================================
 # 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR
 # ==============================================================================
+if "lot_size" not in st.session_state:
+    st.session_state["lot_size"] = 250  # Revised NSE standard lot size for RELIANCE
 if "num_lots" not in st.session_state:
     st.session_state["num_lots"] = 1
 if "target_pts" not in st.session_state:
     st.session_state["target_pts"] = 10.0
 if "sl_pts" not in st.session_state:
-    st.session_state["sl_pts"] = 5.0
+    st.session_state["sl_pts"] = 4.5
 if "MIN_HIT_PERCENTAGE" not in st.session_state:
     st.session_state["MIN_HIT_PERCENTAGE"] = 60.0
 if "max_daily_sl_allowed" not in st.session_state:
@@ -1315,7 +1317,7 @@ st.sidebar.html("""
 # Resolve parameters for engine computation
 symbol = "RELIANCE.NS"
 scrip_choice = "RELIANCE"
-lot_size = 500
+lot_size = int(st.session_state.get("lot_size", 250))
 num_lots = int(st.session_state.get("num_lots", 1))
 total_trading_qty = lot_size * num_lots
 target_pts = float(st.session_state.get("target_pts", 10.0))

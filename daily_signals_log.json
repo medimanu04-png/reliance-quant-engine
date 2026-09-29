@@ -19,7 +19,7 @@
     "full_contract": "RELIANCE 1190 CE (27-OCT-2026)",
     "symbol": "RELIANCE26OCT1190CE",
     "contract_type": "CE",
-    "strike": 261190,
+    "strike": 1190,
     "expiry": "27-OCT-2026",
     "suggested_entry": 35.5,
     "suggested_exit": 45.5,

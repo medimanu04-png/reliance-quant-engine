@@ -219,6 +219,12 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
             else:
                 e["status"] = e.get("status", "STAND DOWN")
 
+        # Estimate statutory charges (STT, GST, Exchange fees, SEBI, Brokerage ~Rs. 65 per lot)
+        statutory_charges = round(65.0 * num_lots, 2) if ep > 0 else 0.0
+        net_after_charges = round(net - statutory_charges, 2) if e.get("is_closed") else net
+        e["estimated_statutory_charges"] = statutory_charges
+        e["net_pnl_after_charges"] = net_after_charges
+
         e["trade_roi_pct"] = round((net / cap_deployed) * 100.0, 1) if cap_deployed > 0 else 0.0
         
         running_cum_profit += net
@@ -1443,12 +1449,24 @@ class SequentialTradeEngine:
                 "state": state
             }
 
+        # Robust regex strike parsing: extract 4-5 digit strike preceding CE/PE
+        import re
+        m = re.search(r'(\d{4,5})\s*(?:CE|PE)', contract)
+        if m:
+            parsed_strike = int(m.group(1))
+        else:
+            digits = re.findall(r'\d{3,5}', contract)
+            parsed_strike = int(digits[-1]) if digits else 1200
+
+        limit_entry = round(float(planned_entry) + 0.35, 2)
+
         next_trade_num = int(state.get("today_trade_count", 0)) + 1
         active_trade = {
             "trade_num": next_trade_num,
             "contract": contract,
             "instrument": instrument,
             "planned_entry": round(float(planned_entry), 2),
+            "limit_entry": limit_entry,
             "actual_entry": None,
             "actual_entry_time": None,
             "executed": "Pending",
@@ -1477,9 +1495,10 @@ class SequentialTradeEngine:
                 "full_contract": instrument,
                 "symbol": contract,
                 "contract_type": "PE" if "PE" in contract else "CE",
-                "strike": int("".join(filter(str.isdigit, contract)) or 1200),
+                "strike": parsed_strike,
                 "expiry": expiry,
                 "suggested_entry": planned_entry,
+                "limit_entry": limit_entry,
                 "suggested_exit": target,
                 "suggested_sl": sl,
                 "confluence_score": confluence
@@ -1489,7 +1508,7 @@ class SequentialTradeEngine:
 
         return {
             "success": True,
-            "msg": f"✅ Trade #{next_trade_num} proposed: {instrument} @ ₹{planned_entry:.2f}. Waiting for Groww fill confirmation.",
+            "msg": f"✅ Trade #{next_trade_num} proposed: {instrument} @ ₹{planned_entry:.2f} (SL-LMT Cap: ₹{limit_entry:.2f}). Waiting for Groww fill confirmation.",
             "state": state
         }
 

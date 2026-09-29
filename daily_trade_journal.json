@@ -39,7 +39,9 @@
     "confluence_score": 78.5,
     "trade_roi_pct": 21.7,
     "cumulative_profit": 6375.0,
-    "total_cash": 80018.72
+    "total_cash": 80018.72,
+    "estimated_statutory_charges": 130.0,
+    "net_pnl_after_charges": 6245.0
   },
   {
     "id": "TRD-20260930-02-RELIANCE26OCT1200PE",
@@ -79,6 +81,8 @@
     "screenshot": "",
     "notes": "Verified Groww Execution \u2022 Buy \u20b929.38 () -> Sell \u20b935.75 () \u2022 Realized P&L: +\u20b96,375.00",
     "confluence_score": 75.0,
+    "estimated_statutory_charges": 130.0,
+    "net_pnl_after_charges": 6245.0,
     "trade_roi_pct": 21.7,
     "cumulative_profit": 12750.0,
     "total_cash": 86393.72

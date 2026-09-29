@@ -176,18 +176,22 @@ class NSEIndiaFetcher:
         curr_str = exp_curr.strftime("%d-%b-%Y").upper()
         next_str = exp_next.strftime("%d-%b-%Y").upper()
 
-        if elapsed_trading_days <= 10:
+        # High Liquidity & Tight Spread Mandate:
+        # Trade Current Monthly Contract as long as >= 4 trading days remain to ensure tight bid-ask spreads
+        # (Rs. 0.05-0.15) and massive depth. Roll over to next month ONLY when <= 3 trading days remain to
+        # avoid expiration week gamma pins and rapid theta decay.
+        if rem_trading_days >= 4:
             active_expiry = exp_curr
-            phase = "FIRST_10_DAYS"
+            phase = "CURRENT_MONTH_HIGH_LIQUIDITY"
             is_rollover = False
-            rule_badge = "🟢 1st 10 Trading Days Window (Current Expiry Active)"
-            rule_desc = f"Trading Day {elapsed_trading_days}/10 of {month_name} Contract: Trading Current Expiry {curr_str} (Optimal Delta & Low Theta Decay)."
+            rule_badge = "🟢 High-Liquidity Active Window (Current Month Expiry)"
+            rule_desc = f"{rem_trading_days} Trading Days left in {month_name} Contract: Trading Current Expiry {curr_str} (Maximum Contract Depth & Tightest Bid-Ask Spread)."
         else:
             active_expiry = exp_next
             phase = "DECAY_AVOIDANCE_ROLLOVER"
             is_rollover = True
-            rule_badge = "🛡️ Decay Avoidance Active (Day 11+ Rolled to Next Month)"
-            rule_desc = f"Trading Day {elapsed_trading_days} of Cycle (>10d elapsed, {rem_trading_days}d left in {month_name}): Rolled over to Next Month Expiry {next_str} to completely eliminate near-expiry theta decay & gamma pin risk."
+            rule_badge = "🛡️ Expiry Week Rollover (Rolled to Next Month)"
+            rule_desc = f"Expiry Week Warning ({rem_trading_days}d left in {month_name}): Rolled over to Next Month Expiry {next_str} to completely eliminate near-expiry theta decay & gamma pin risk."
 
         return {
             "today": today_dt.strftime("%d-%b-%Y"),
