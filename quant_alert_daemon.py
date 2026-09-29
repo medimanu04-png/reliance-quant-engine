@@ -313,16 +313,18 @@ class RelianceQuantAlertDaemon:
         is_synthetic_feed = bool(confluence_eval.get("is_synthetic_feed", False))
         spread_stand_down = bool(confluence_eval.get("spread_stand_down", False))
         opening_cooldown_active = bool(confluence_eval.get("opening_cooldown_active", False))
+        is_midday_lull = bool(confluence_eval.get("is_midday_lull", False))
+        min_confluence_gate = 82.0 if is_midday_lull else 75.0
 
         # Check Daily Loss Circuit Breaker (One-and-Done Capital Preservation Protocol)
         has_daily_loss, loss_reason = SequentialTradeEngine.has_daily_loss_occurred_today()
 
-        # Strict Institutional Gate: Confluence Score must be >= 75.0% and NO stand down flags
+        # Strict Institutional Gate: Confluence Score must be >= min_confluence_gate and NO stand down flags
         is_tradable = (
             "TRADABLE" in status_text.upper()
             and "NON-TRADABLE" not in status_text.upper()
             and "STAND DOWN" not in status_text.upper()
-            and (dominant_score >= 75.0)
+            and (dominant_score >= min_confluence_gate)
             and not is_synthetic_feed
             and not spread_stand_down
             and not opening_cooldown_active
@@ -583,7 +585,14 @@ class RelianceQuantAlertDaemon:
                         lot_size=250,
                         win_prob=win_exp,
                         spot=spot,
-                        rationale=f"Dual ATM Breakout confirmed ({tier_str})\n• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n• Order Type: Stop-Loss Limit (SL-LMT)\n• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f}\n• Max Slippage Collar: ₹0.35 (Never use Market Buy)"
+                        rationale=(
+                            f"Dual ATM Breakout confirmed ({tier_str})\n"
+                            f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
+                            f"• Order Type: Stop-Loss Limit (SL-LMT)\n"
+                            f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage: ₹0.35)\n"
+                            f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', 1200):.0f} | Realized Vol: GKYZ={confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
+                            f"• Execution Guard: Bar Mature & 2-Tick Persistence Confirmed"
+                        )
                     )
                     buttons = TelegramNotifier.get_entry_ce_buttons(f"RELIANCE {recommended_strike} CE") if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"RELIANCE {recommended_strike} PE")
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)

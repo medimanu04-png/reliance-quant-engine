@@ -437,6 +437,141 @@ class MultiIndicatorMath:
         return round(latest_cvd, 0), round(latest_ema, 0), bias
 
     @staticmethod
+    def calculate_yang_zhang_volatility(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        opens: Optional[List[float]] = None,
+        period: int = 14
+    ) -> float:
+        """
+        Garman-Klass-Yang-Zhang (GKYZ) Realized Volatility Estimator.
+        Combines overnight jump variance, continuous Brownian motion, and open-to-close drift.
+        Statistically up to 14x more efficient than close-to-close historical volatility.
+        Returns annualized percentage volatility (%).
+        """
+        n = len(closes)
+        if n < period + 1:
+            return MultiIndicatorMath.calculate_parkinson_volatility(highs, lows, period)
+
+        if opens is None or len(opens) != n:
+            opens = [closes[0]] + closes[:-1]
+
+        h_sub = highs[-period:]
+        l_sub = lows[-period:]
+        c_sub = closes[-period:]
+        o_sub = opens[-period:]
+        prev_c = closes[-period - 1:-1]
+
+        # 1. Overnight jump variance (open to prev close)
+        sum_overnight = sum((math.log(max(1e-5, o) / max(1e-5, pc))) ** 2 for o, pc in zip(o_sub, prev_c))
+        v_open = sum_overnight / (period - 1.0) if period > 1 else 0.0
+
+        # 2. Continuous open-to-close variance
+        sum_c_o = sum((math.log(max(1e-5, c) / max(1e-5, o))) ** 2 for c, o in zip(c_sub, o_sub))
+        v_close = sum_c_o / (period - 1.0) if period > 1 else 0.0
+
+        # 3. Rogers-Satchell drift-independent variance
+        sum_rs = 0.0
+        for h, l, c, o in zip(h_sub, l_sub, c_sub, o_sub):
+            ho = math.log(max(1e-5, h) / max(1e-5, o))
+            hc = math.log(max(1e-5, h) / max(1e-5, c))
+            lo = math.log(max(1e-5, l) / max(1e-5, o))
+            lc = math.log(max(1e-5, l) / max(1e-5, c))
+            sum_rs += (ho * hc) + (lo * lc)
+        v_rs = sum_rs / period
+
+        k = 0.34 / (1.34 + (period + 1.0) / (period - 1.0)) if period > 1 else 0.34
+        yz_var = v_open + k * v_close + (1.0 - k) * v_rs
+        annualized = math.sqrt(max(1e-6, yz_var)) * math.sqrt(252.0 * 75.0) * 100.0
+        return round(min(80.0, max(5.0, annualized)), 1)
+
+    @staticmethod
+    def calculate_cvd_absorption_divergence(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        opens: Optional[List[float]] = None,
+        lookback: int = 5
+    ) -> Tuple[bool, str]:
+        """
+        Footprint Cumulative Volume Delta (CVD) Absorption & Exhaustion Filter.
+        Detects when price prints a higher high but aggressive buyer volume dries up (absorption trap),
+        or when price prints a lower low but aggressive seller volume dries up.
+        Returns: (has_absorption_trap: bool, trap_type: str)
+        """
+        if len(closes) < 2 * lookback or len(volumes) < 2 * lookback:
+            return False, "NO_ABSORPTION"
+
+        deltas = []
+        for i in range(len(closes)):
+            hl = max(0.05, highs[i] - lows[i])
+            buyer_ratio = (closes[i] - lows[i]) / hl
+            deltas.append(volumes[i] * (2.0 * buyer_ratio - 1.0))
+
+        recent_high = max(highs[-lookback:])
+        prev_high = max(highs[-2 * lookback:-lookback])
+        recent_cvd_sum = sum(deltas[-lookback:])
+        prev_cvd_sum = sum(deltas[-2 * lookback:-lookback])
+
+        # Bearish Absorption Wall: Price made higher high, but buyer CVD turned negative (limit sellers absorbed buyers)
+        if recent_high > prev_high and recent_cvd_sum < 0 and prev_cvd_sum > 0:
+            return True, "BEARISH_ABSORPTION_WALL"
+
+        # Bullish Absorption Floor: Price made lower low, but seller CVD turned positive (limit buyers absorbed sellers)
+        recent_low = min(lows[-lookback:])
+        prev_low = min(lows[-2 * lookback:-lookback])
+        if recent_low < prev_low and recent_cvd_sum > 0 and prev_cvd_sum < 0:
+            return True, "BULLISH_ABSORPTION_FLOOR"
+
+        return False, "NO_ABSORPTION"
+
+    @staticmethod
+    def calculate_max_pain(chain: List[Dict[str, Any]], spot: float) -> Tuple[float, float, str]:
+        """
+        Multi-Strike Max Pain Dynamic Gravity Model.
+        Computes total payout to option buyers across all strikes.
+        The strike where total writer payout is minimized is the Max Pain strike.
+        Returns: (max_pain_strike, distance_from_spot, gravity_bias)
+        """
+        if not chain or not spot:
+            return spot, 0.0, "NEUTRAL"
+
+        valid_rows = [r for r in chain if float(r.get("strike", 0)) > 0]
+        if not valid_rows:
+            return spot, 0.0, "NEUTRAL"
+
+        strikes = sorted(list(set(float(r["strike"]) for r in valid_rows)))
+        min_loss = float("inf")
+        max_pain_strike = spot
+
+        for k in strikes:
+            total_loss = 0.0
+            for r in valid_rows:
+                s = float(r.get("strike", 0))
+                c_oi = float(r.get("call_oi", 0))
+                p_oi = float(r.get("put_oi", 0))
+                if k > s:
+                    total_loss += (k - s) * c_oi
+                elif k < s:
+                    total_loss += (s - k) * p_oi
+
+            if total_loss < min_loss:
+                min_loss = total_loss
+                max_pain_strike = k
+
+        dist = round(spot - max_pain_strike, 1)
+        if dist > 15.0:
+            gravity = "RESISTANCE_ABOVE_MAX_PAIN"
+        elif dist < -15.0:
+            gravity = "SUPPORT_BELOW_MAX_PAIN"
+        else:
+            gravity = "ALIGNED_WITH_MAX_PAIN"
+
+        return max_pain_strike, dist, gravity
+
+    @staticmethod
     def calculate_dealer_gamma_exposure(spot: float, chain: List[Dict[str, Any]]) -> Tuple[float, str]:
         """
         Dealer Net Gamma Exposure (GEX) Proxy across Option Chain:
@@ -1187,8 +1322,9 @@ class UltraHighConvictionRelianceEngine:
         put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
         pcr = chain_oi.get("overall_pcr", 1.0)
 
-        # Dealer Net Gamma Exposure (GEX) Calculation
+        # Dealer Net Gamma Exposure (GEX) & Max Pain Dynamic Gravity Model
         net_gex, gex_regime = MultiIndicatorMath.calculate_dealer_gamma_exposure(spot, chain_oi.get("chain", []))
+        max_pain_strike, mp_dist, mp_gravity = MultiIndicatorMath.calculate_max_pain(chain_oi.get("chain", []), spot)
 
         # VECTOR 3: Short Gamma Squeeze, Strike OI Walls & Dealer GEX (20 pts)
         call_unwinding = opt_telemetry['call_oi_change_pct'] < -10.0
@@ -1236,6 +1372,9 @@ class UltraHighConvictionRelianceEngine:
             # Call Wall resistance proximity clamp
             if abs(spot - call_wall) <= 2.0 and opt_telemetry['call_oi_change_pct'] >= 0:
                 v3_bull = max(0.0, v3_bull - 4.0)
+            # Max Pain Dynamic Gravity check: option writers aggressively defend resistance above max pain
+            if mp_gravity == "RESISTANCE_ABOVE_MAX_PAIN":
+                v3_bull = max(0.0, v3_bull - 3.0)
 
             if put_unwinding:
                 v3_bear += 7.0
@@ -1256,11 +1395,15 @@ class UltraHighConvictionRelianceEngine:
             # Put Wall support proximity clamp
             if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
                 v3_bear = max(0.0, v3_bear - 4.0)
+            if mp_gravity == "SUPPORT_BELOW_MAX_PAIN":
+                v3_bear = max(0.0, v3_bear - 3.0)
 
-        # VECTOR 4: Volatility, Parkinson Estimator, TTM Squeeze & RV/IV Edge (15 pts)
+        # VECTOR 4: Volatility, Garman-Klass-Yang-Zhang & Parkinson Estimators, TTM Squeeze & RV/IV Edge (15 pts)
         _, bb_upper, bb_lower, bb_width = MultiIndicatorMath.calculate_bollinger_bands(c5m["close"], 20, 2.0)
         atr_15m = MultiIndicatorMath.calculate_atr(c15m["high"], c15m["low"], c15m["close"], 14)[-1]
         parkinson_vol = MultiIndicatorMath.calculate_parkinson_volatility(c5m["high"], c5m["low"], 14)
+        yang_zhang_vol = MultiIndicatorMath.calculate_yang_zhang_volatility(c5m["high"], c5m["low"], c5m["close"], c5m.get("open"), 14)
+        effective_rv = round(0.5 * (parkinson_vol + yang_zhang_vol), 1)
         chop_idx = MultiIndicatorMath.calculate_choppiness(c5m["high"], c5m["low"], c5m["close"], 14)
         is_trending_regime = chop_idx < 45.0
         is_choppy_regime = chop_idx > 61.8
@@ -1273,7 +1416,7 @@ class UltraHighConvictionRelianceEngine:
         # Realized vs Implied Volatility (RV vs IV) Option Buyer Edge
         telemetry_raw_iv = float(opt_telemetry.get("iv", 21.0))
         rv_iv_spread, rv_iv_ratio, vol_edge = MultiIndicatorMath.calculate_rv_iv_spread(
-            parkinson_vol, telemetry_raw_iv
+            effective_rv, telemetry_raw_iv
         )
 
         # Dynamically adapt Target and SL based on 15m ATR and realized volatility
@@ -1332,6 +1475,11 @@ class UltraHighConvictionRelianceEngine:
         bearish_rsi_div = (spot > max(recent_closes)) and (rsi < max(recent_rsis) - 2.5)
         bullish_rsi_div = (spot < min(recent_closes)) and (rsi > min(recent_rsis) + 2.5)
 
+        # Footprint Cumulative Volume Delta (CVD) Absorption & Exhaustion Filter
+        has_absorb_trap, absorb_type = MultiIndicatorMath.calculate_cvd_absorption_divergence(
+            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("open"), lookback=5
+        )
+
         v5_bull = 0.0
         if 62.0 <= rsi <= 76.0:
             v5_bull += 6.0
@@ -1343,6 +1491,8 @@ class UltraHighConvictionRelianceEngine:
             v5_bull += 4.0
         if bearish_rsi_div:
             v5_bull = max(0.0, v5_bull - 4.0)  # Divergence exhaustion penalty
+        if absorb_type == "BEARISH_ABSORPTION_WALL":
+            v5_bull = max(0.0, v5_bull - 4.0)  # Buyers absorbed into limit sell walls
 
         v5_bear = 0.0
         if 24.0 <= rsi <= 38.0:
@@ -1355,6 +1505,8 @@ class UltraHighConvictionRelianceEngine:
             v5_bear += 4.0
         if bullish_rsi_div:
             v5_bear = max(0.0, v5_bear - 4.0)  # Divergence exhaustion penalty
+        if absorb_type == "BULLISH_ABSORPTION_FLOOR":
+            v5_bear = max(0.0, v5_bear - 4.0)  # Sellers absorbed into limit buy floors
 
         # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
         expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
@@ -1432,12 +1584,12 @@ class UltraHighConvictionRelianceEngine:
         raw_bull = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull
         raw_bear = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear
 
-        # Midday "Lunch Lull" Time-of-Day Filter (11:30 AM – 01:15 PM IST)
+        # Midday "Lunch Lull" Time-of-Day Filter (11:15 AM – 01:45 PM IST)
         # Low institutional liquidity and spread widening peak during midday; penalize raw score unless volume surge
-        is_midday_lull = time(11, 30) <= current_time <= time(13, 15)
+        is_midday_lull = time(11, 15) <= current_time <= time(13, 45)
         if is_midday_lull and not vol_surge:
-            raw_bull = max(0.0, raw_bull - 3.5)
-            raw_bear = max(0.0, raw_bear - 3.5)
+            raw_bull = max(0.0, raw_bull - 4.0)
+            raw_bear = max(0.0, raw_bear - 4.0)
 
         # Calibrated Institutional Logistic Sigmoid Probability Mapping
         # Calibrated: s0=42.0 centers 50% on moderate trend; k=0.10 sharpens discrimination between genuine A+ vs chop
@@ -1621,6 +1773,13 @@ class UltraHighConvictionRelianceEngine:
             "avwap_stance": avwap_stance,
             "parkinson_vol": parkinson_vol,
             "cvd_bias": cvd_bias,
+            "cvd_absorption_trap": absorb_type,
+            "max_pain_strike": max_pain_strike,
+            "max_pain_dist": mp_dist,
+            "max_pain_gravity": mp_gravity,
+            "yang_zhang_vol": yang_zhang_vol,
+            "effective_rv": effective_rv,
+            "is_midday_lull": is_midday_lull,
             "vpin": vpin_val,
             "vpin_regime": vpin_regime,
             "debit_spread": debit_spread_rec,

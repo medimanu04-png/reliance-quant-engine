@@ -1329,7 +1329,7 @@ class SequentialTradeEngine:
         direction: str,
         expiry: str,
         confluence: float,
-        qty: int = 500,
+        qty: int = 250,
         num_lots: int = 1
     ) -> Dict[str, Any]:
         """
@@ -1422,7 +1422,7 @@ class SequentialTradeEngine:
         direction: str,
         expiry: str,
         confluence: float,
-        qty: int = 500,
+        qty: int = 250,
         num_lots: int = 1
     ) -> Dict[str, Any]:
         """
@@ -1750,8 +1750,8 @@ class SequentialTradeEngine:
             "actual_exit_time": exit_t,
             "actual_exit_price": exit_p,
             "exit_price": exit_p,
-            "num_lots": active.get("num_lots", 2),
-            "lot_size": 500,
+            "num_lots": active.get("num_lots", 1),
+            "lot_size": active.get("lot_size", 250),
             "qty": qty,
             "capital_deployed": round(actual_entry * qty, 2),
             "realised_pnl": pnl,
@@ -1826,6 +1826,14 @@ class SequentialTradeEngine:
             t for t in journal 
             if t.get("date") == today_str and "RELIANCE" in str(t.get("trading_symbol", "")).upper()
         ]
+        # If no trades have been executed yet today, display recent verified trades from earlier sessions
+        is_prior_session = False
+        if not today_trades:
+            today_trades = [
+                t for t in journal 
+                if "RELIANCE" in str(t.get("trading_symbol", "")).upper()
+            ][-5:]
+            is_prior_session = True
 
         rows = []
         for i, tr in enumerate(today_trades, 1):
@@ -1844,9 +1852,11 @@ class SequentialTradeEngine:
 
             conf_val = tr.get("confluence_score")
             conf_str = f"{float(conf_val):.1f}%" if conf_val is not None else "—"
+            trade_lbl = f"Trade {i}" if not is_prior_session else f"Trade {i} ({tr.get('date', '')})"
 
             rows.append({
-                "Trade #": f"Trade {i}",
+                "Trade #": trade_lbl,
+                "Date": tr.get("date", today_str),
                 "Instrument": tr.get("instrument") or tr.get("trading_symbol") or f"RELIANCE {tr.get('suggested_contract')}",
                 "Confluence": conf_str,
                 "Planned Entry": f"₹{float(tr.get('suggested_entry', 0.0)):.2f}",
@@ -1877,6 +1887,7 @@ class SequentialTradeEngine:
 
                 rows.append({
                     "Trade #": f"Trade {t_idx}",
+                    "Date": today_str,
                     "Instrument": active.get("instrument", active.get("contract", "")),
                     "Confluence": conf_act_str,
                     "Planned Entry": f"₹{float(active.get('planned_entry', 0.0)):.2f}",

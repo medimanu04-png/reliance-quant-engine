@@ -6722,16 +6722,27 @@ if df is not None and not df.empty:
         """, unsafe_allow_html=True)
 
         # Running Sequential Trade Log Table (Strict Operating Discipline)
-        st.markdown("<h4 style='color: #F8FAFC; margin-top: 15px; margin-bottom: 6px;'>📋 Running Sequential Trade Log</h4>", unsafe_allow_html=True)
+        seq_state = SequentialTradeEngine.get_state()
+        curr_state_val = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
+        state_color = "#10B981" if curr_state_val == SequentialTradeEngine.STATE_IDLE else ("#F59E0B" if curr_state_val == SequentialTradeEngine.STATE_ENTRY_PENDING else "#38BDF8")
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; margin-bottom: 6px;">
+            <h4 style='color: #F8FAFC; margin: 0;'>📋 Running Sequential Trade Log</h4>
+            <span style="background: rgba(15, 23, 42, 0.8); border: 1px solid {state_color}; color: {state_color}; padding: 3px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+                ● ENGINE: {curr_state_val}
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
         st.caption("Strict Sequential Trading Operating Discipline • One Trade at a Time • Verified Groww Executions")
         running_rows = SequentialTradeEngine.get_running_trade_log_rows()
         if running_rows:
             df_running = pd.DataFrame(running_rows)
             st_dataframe_stretch(
                 df_running,
-                height=min(240, 55 + (len(running_rows) * 40)),
+                height=min(260, 55 + (len(running_rows) * 40)),
                 column_config={
                     "Trade #": st.column_config.TextColumn("Trade #", width="small"),
+                    "Date": st.column_config.TextColumn("Date", width="small"),
                     "Instrument": st.column_config.TextColumn("Instrument", width="medium"),
                     "Confluence": st.column_config.TextColumn("Confluence", width="small"),
                     "Planned Entry": st.column_config.TextColumn("Planned Entry", width="small"),
@@ -6739,10 +6750,104 @@ if df is not None and not df.empty:
                     "Executed (Yes/No)": st.column_config.TextColumn("Executed (Yes/No)", width="small"),
                     "SL": st.column_config.TextColumn("SL", width="small"),
                     "Target": st.column_config.TextColumn("Target", width="small"),
-                    "Status": st.column_config.TextColumn("Status (Open / Target Hit / SL Hit)", width="medium"),
+                    "Status": st.column_config.TextColumn("Status", width="medium"),
                     "P&L": st.column_config.TextColumn("P&L", width="small"),
                 }
             )
+        else:
+            st.info("ℹ️ No trades recorded yet today. Click '➕ Record / Sync Trade into Sequential Log' below or await an institutional 75%+ confluence setup.")
+
+        # Entry Interface for Running Sequential Trade Log
+        with st.expander("➕ Record / Sync Trade into Sequential Log", expanded=False):
+            t_sync, t_manual = st.tabs(["🔄 Sync Groww Broker Executions", "✍️ Manual Trade Entry / Override"])
+
+            with t_sync:
+                st.caption("Fetch genuine completed fills from your Groww account and automatically log them into today's Sequential Trade Log.")
+                c_sync_btn, c_sync_status = st.columns([1.2, 2.8])
+                with c_sync_btn:
+                    if st.button("🔄 Sync from Groww Now", key="sync_groww_trades_btn", use_container_width=True):
+                        try:
+                            feed = st.session_state.get("groww_feed")
+                            synced_count = TradeJournalManager.sync_with_groww_executed_trades(feed, starting_cash=STARTING_CAPITAL)
+                            st.success(f"Successfully synced {synced_count} executed trade(s) from Groww!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Sync error: {e}")
+                with c_sync_status:
+                    st.caption("Auto-reconciles order executions, fill prices, and realised P&L from Groww broker API.")
+
+            with t_manual:
+                st.caption("Directly record an executed trade into the Sequential Trade Log and Ledger.")
+                with st.form(key="manual_seq_trade_entry_form"):
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    with col_m1:
+                        m_instrument = st.text_input("Instrument / Contract", value="RELIANCE 1280 PE", help="E.g., RELIANCE 1280 PE or RELIANCE 1300 CE")
+                        m_action = st.selectbox("Action / Type", ["BUY PE", "BUY CE", "BUY FUT", "SELL FUT"], index=0)
+                        m_date = st.text_input("Trade Date", value=datetime.now(IST).strftime("%Y-%m-%d"))
+                    with col_m2:
+                        m_planned_entry = st.number_input("Planned Entry (₹)", value=14.50, step=0.25, format="%.2f")
+                        m_actual_entry = st.number_input("Actual Groww Entry (₹)", value=14.50, step=0.25, format="%.2f")
+                        m_exit_price = st.number_input("Exit Price (₹) (0 if Open)", value=24.50, step=0.25, format="%.2f")
+                    with col_m3:
+                        m_sl = st.number_input("Stop Loss (₹)", value=10.00, step=0.25, format="%.2f")
+                        m_target = st.number_input("Target Price (₹)", value=24.50, step=0.25, format="%.2f")
+                        m_lots = st.number_input("Number of Lots (250 qty/lot)", value=1, min_value=1, max_value=20, step=1)
+
+                    col_m4, col_m5 = st.columns(2)
+                    with col_m4:
+                        m_status = st.selectbox("Status", ["Target Hit", "SL Hit", "Open", "Discretionary Exit (+Profit)", "Discretionary Exit (-Loss)", "EOD Exit"], index=0)
+                        m_confluence = st.slider("Confluence Score (%)", min_value=50.0, max_value=100.0, value=78.5, step=0.5)
+                    with col_m5:
+                        m_notes = st.text_area("Trade Notes / Rationale", value="Manual entry verified against Groww contract note.", height=78)
+
+                    submit_manual = st.form_submit_button("💾 Save Trade to Sequential Log", use_container_width=True)
+                    if submit_manual:
+                        qty_calc = int(m_lots * 250)
+                        pts = round(m_exit_price - m_actual_entry, 2) if m_status != "Open" else 0.0
+                        realised_pnl = round(pts * qty_calc, 2) if m_status != "Open" else 0.0
+
+                        t_now = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                        t_rec = {
+                            "id": f"TRD-{m_date.replace('-', '')}-{int(time_mod.time()) % 1000:03d}-MANUAL",
+                            "date": m_date,
+                            "day": datetime.strptime(m_date, "%Y-%m-%d").strftime("%A") if m_date else "Today",
+                            "trading_symbol": m_instrument,
+                            "instrument": m_instrument,
+                            "type": m_action,
+                            "decision": "TRADABLE (A+ SETUP)" if m_confluence >= 75 else "MANUAL ENTRY",
+                            "source": "MANUAL_ENTRY",
+                            "is_closed": (m_status != "Open"),
+                            "trade_given_time": t_now,
+                            "suggested_contract": m_instrument,
+                            "suggested_entry": m_planned_entry,
+                            "suggested_exit": m_target,
+                            "suggested_sl": m_sl,
+                            "suggested_target_pts": round(m_target - m_planned_entry, 2),
+                            "suggested_sl_pts": round(m_planned_entry - m_sl, 2),
+                            "actual_entry_time": t_now,
+                            "actual_entry_price": m_actual_entry,
+                            "entry_price": m_actual_entry,
+                            "actual_exit_time": t_now if m_status != "Open" else None,
+                            "actual_exit_price": m_exit_price if m_status != "Open" else None,
+                            "exit_price": m_exit_price if m_status != "Open" else None,
+                            "num_lots": int(m_lots),
+                            "lot_size": 250,
+                            "qty": qty_calc,
+                            "capital_deployed": round(m_actual_entry * qty_calc, 2),
+                            "realised_pnl": realised_pnl,
+                            "total_profit": realised_pnl,
+                            "net_profit": realised_pnl,
+                            "net_pnl": realised_pnl,
+                            "amount_captured": realised_pnl if realised_pnl > 0 else 0.0,
+                            "amount_lost": abs(realised_pnl) if realised_pnl < 0 else 0.0,
+                            "status": "HIT" if "Target" in m_status or realised_pnl > 0 else ("FAIL" if "SL" in m_status or realised_pnl < 0 else "OPEN"),
+                            "entry_slippage_pts": round(m_actual_entry - m_planned_entry, 2),
+                            "notes": f"Manual Log • {m_status} • {m_notes}",
+                            "confluence_score": m_confluence
+                        }
+                        TradeJournalManager.add_or_update_entry(t_rec, starting_cash=STARTING_CAPITAL)
+                        st.success(f"✅ Trade {m_instrument} recorded successfully into Sequential Trade Log!")
+                        st.rerun()
 
         # Search & Outcome Filter Controls
         f_c1, f_c2 = st.columns([1.5, 2.5])
