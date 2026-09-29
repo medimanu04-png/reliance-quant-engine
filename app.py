@@ -6896,10 +6896,18 @@ if df is not None and not df.empty:
             )
 
             # Quick-Open Attached Screenshot Gallery in Tab 1
-            attached_signals = [r for r in filtered_shadow if (r.get("screenshot") or r.get("screenshot_data_uri"))]
+            attached_signals = []
+            seen_att = set()
+            for r in filtered_shadow:
+                if r.get("screenshot") or r.get("screenshot_data_uri"):
+                    att_id = r.get("id") or f"{r.get('date')}_{r.get('symbol')}"
+                    if att_id not in seen_att:
+                        seen_att.add(att_id)
+                        attached_signals.append(r)
+
             if attached_signals:
                 st.markdown("<h5 style='color: #F8FAFC; margin-top: 18px; margin-bottom: 8px;'>📷 Attached Execution Proof Screenshots (Click to View / Enlarge)</h5>", unsafe_allow_html=True)
-                for s_rec in attached_signals:
+                for idx, s_rec in enumerate(attached_signals):
                     s_id = s_rec.get("id") or s_rec.get("symbol")
                     s_sym = s_rec.get("symbol", "N/A")
                     s_time = s_rec.get("timestamp", "")
@@ -6936,7 +6944,7 @@ if df is not None and not df.empty:
                             """, unsafe_allow_html=True)
                             gal_c1, gal_c2 = st.columns([1.5, 1.2])
                             with gal_c1:
-                                if st.button(f"🔍 Open / Enlarge Screenshot ({s_sym})", key=f"open_modal_tab1_{s_id}", use_container_width=True):
+                                if st.button(f"🔍 Open / Enlarge Screenshot ({s_sym})", key=f"open_modal_tab1_{s_id}_{idx}", use_container_width=True):
                                     show_screenshot_modal(f"Trade Execution Proof: {s_sym}", img_src, img_bytes, f"trade_proof_{s_sym}.jpeg")
                             with gal_c2:
                                 if img_bytes:
@@ -6945,7 +6953,7 @@ if df is not None and not df.empty:
                                         data=img_bytes,
                                         file_name=f"trade_proof_{s_sym}.jpeg",
                                         mime="image/jpeg",
-                                        key=f"dl_tab1_{s_id}",
+                                        key=f"dl_tab1_{s_id}_{idx}",
                                         use_container_width=True
                                     )
         else:
@@ -6974,7 +6982,16 @@ if df is not None and not df.empty:
             ]
 
         if filtered_entries:
-            for entry in reversed(filtered_entries):
+            # Deduplicate entries strictly by unique ID
+            unique_filtered_entries = []
+            seen_f_ids = set()
+            for e in filtered_entries:
+                eid = e.get("id") or f"{e.get('date')}_{e.get('trading_symbol')}_{e.get('actual_entry_time', '')}"
+                if eid not in seen_f_ids:
+                    seen_f_ids.add(eid)
+                    unique_filtered_entries.append(e)
+
+            for idx, entry in enumerate(reversed(unique_filtered_entries)):
                 st_raw = entry.get("status", "STAND DOWN")
                 if st_raw == "HIT":
                     badge_color = "#10B981"
@@ -7101,7 +7118,7 @@ if df is not None and not df.empty:
                                 st.image(card_img_src, caption=f"Verified Trade Proof: {entry.get('trading_symbol')}", use_container_width=True)
                                 btn_c1, btn_c2 = st.columns(2)
                                 with btn_c1:
-                                    if st.button(f"🔍 Open in Full Modal", key=f"open_modal_tab2_{trade_id}", use_container_width=True):
+                                    if st.button(f"🔍 Open in Full Modal", key=f"open_modal_tab2_{trade_id}_{idx}", use_container_width=True):
                                         show_screenshot_modal(f"Verified Trade Proof: {entry.get('trading_symbol')}", card_img_src, card_img_bytes, f"trade_proof_{entry.get('trading_symbol')}.jpeg")
                                 with btn_c2:
                                     if card_img_bytes:
@@ -7110,7 +7127,7 @@ if df is not None and not df.empty:
                                             data=card_img_bytes,
                                             file_name=f"trade_proof_{entry.get('trading_symbol')}.jpeg",
                                             mime="image/jpeg",
-                                            key=f"dl_tab2_{trade_id}",
+                                            key=f"dl_tab2_{trade_id}_{idx}",
                                             use_container_width=True
                                         )
                             else:
@@ -7120,11 +7137,11 @@ if df is not None and not df.empty:
                             uploaded_ss = st.file_uploader(
                                 f"Upload / Replace Screenshot",
                                 type=["png", "jpg", "jpeg", "webp"],
-                                key=f"file_uploader_{trade_id}"
+                                key=f"file_uploader_{trade_id}_{idx}"
                             )
                             if uploaded_ss is not None:
                                 file_bytes = uploaded_ss.getvalue()
-                                save_flag_key = f"saved_ss_{trade_id}_{uploaded_ss.name}_{len(file_bytes)}"
+                                save_flag_key = f"saved_ss_{trade_id}_{idx}_{uploaded_ss.name}_{len(file_bytes)}"
                                 if len(file_bytes) > 0 and not st.session_state.get(save_flag_key, False):
                                     saved_path = TradeJournalManager.save_screenshot_file(
                                         trade_id=trade_id,
