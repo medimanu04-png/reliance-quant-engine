@@ -6362,18 +6362,6 @@ if df is not None and not df.empty:
                 "confluence_score": round(float(dominant_score), 1)
             }
             SignalTracker.save_signal(sig_dict)
-            ShadowMonitoringEngine.log_signal(
-                symbol=sig_dict["symbol"],
-                action=sig_dict["action"],
-                entry=sig_dict["suggested_entry"],
-                target=sig_dict["suggested_exit"],
-                sl=sig_dict["suggested_sl"],
-                date_str=sig_dict["date"],
-                time_str=sig_dict["trade_given_time"],
-                instrument=sig_dict["full_contract"],
-                confluence_score=sig_dict["confluence_score"],
-                user_executed=False
-            )
         except Exception:
             pass
 
@@ -6717,6 +6705,8 @@ if df is not None and not df.empty:
     # Filter Records Based on Calendar Date Selection
     active_date_filter = None if date_scope == "All Dates (Full History)" else selected_date_str
     shadow_records = ShadowMonitoringEngine.get_records_by_date(active_date_filter)
+    # Strict Rule: Only make / keep entries that are executed in Groww (or verified audit screenshot)! No other entries should be made!
+    shadow_records = [r for r in shadow_records if r.get("user_executed") or r.get("screenshot") or r.get("screenshot_data_uri")]
     journal_entries = TradeJournalManager.load_journal(starting_cash=account_cash)
 
     if active_date_filter:
@@ -6821,7 +6811,7 @@ if df is not None and not df.empty:
     # --------------------------------------------------------------------------
     with tab_shadow:
         st.markdown(f"<h4 style='color: #F8FAFC; margin-top: 10px; margin-bottom: 6px;'>🛰️ Daily Signal Log & Automated Shadow Monitoring ({date_label})</h4>", unsafe_allow_html=True)
-        st.caption("Monitors every suggested trade until 3:30 PM market close via Groww API tick data • Tracks Highest & Lowest Price Reached post-entry • Confirms user execution")
+        st.caption("Strict Groww Broker Execution Policy • Only genuine trades executed in Groww are entered & tracked • Zero phantom entries")
 
         shadow_table_rows = []
         for r in filtered_shadow:

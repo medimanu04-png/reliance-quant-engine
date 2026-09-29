@@ -612,7 +612,8 @@ class ShadowMonitoringEngine:
                 with open(SHADOW_SIGNALS_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        return data
+                        # Strict Rule: Only make / keep entries that are executed in Groww (or verified audit screenshot)!
+                        return [r for r in data if r.get("user_executed") or r.get("screenshot") or r.get("screenshot_data_uri")]
             except Exception as e:
                 logger.debug(f"Error loading shadow signals log: {e}")
         return cls._bootstrap_from_existing()
@@ -682,57 +683,6 @@ class ShadowMonitoringEngine:
             except Exception as e:
                 logger.debug(f"Bootstrap journal error: {e}")
 
-        # 2. From daily_signals_log.json for signals not yet in journal
-        if os.path.exists(SIGNALS_FILE):
-            try:
-                with open(SIGNALS_FILE, "r", encoding="utf-8") as f:
-                    s_data = json.load(f)
-                    if isinstance(s_data, dict):
-                        existing_syms = {r.get("symbol") for r in records}
-                        for k, s in s_data.items():
-                            if not isinstance(s, dict):
-                                continue
-                            sym = s.get("symbol", "")
-                            if not sym or sym in existing_syms:
-                                continue
-                            sugg_e = float(s.get("suggested_entry", 35.0))
-                            sugg_t = float(s.get("suggested_exit", sugg_e + 10.0))
-                            sugg_sl = float(s.get("suggested_sl", max(0.05, sugg_e - 4.5)))
-                            rec = {
-                                "id": f"SIG-{s.get('date', '2026-09-29').replace('-', '')}-02-{sym}",
-                                "timestamp": s.get("trade_given_time", "11:52:32 AM IST"),
-                                "date": s.get("date", "2026-09-29"),
-                                "symbol": sym,
-                                "instrument": s.get("full_contract") or sym,
-                                "action": f"BUY {s.get('contract_type', 'CE')}",
-                                "entry": sugg_e,
-                                "target": sugg_t,
-                                "sl": sugg_sl,
-                                "target_pts": round(sugg_t - sugg_e, 2),
-                                "sl_pts": round(sugg_e - sugg_sl, 2),
-                                "user_executed": False,
-                                "actual_entry_price": None,
-                                "actual_entry_time": "",
-                                "actual_exit_price": None,
-                                "actual_exit_time": "",
-                                "realised_pnl": 0.0,
-                                "screenshot": "",
-                                "screenshot_data_uri": "",
-                                "shadow_status": "Active Monitoring",
-                                "highest_price_reached": sugg_e,
-                                "lowest_price_reached": sugg_e,
-                                "current_price": sugg_e,
-                                "exit_price": None,
-                                "exit_time": "",
-                                "shadow_pts": 0.0,
-                                "shadow_pnl": 0.0,
-                                "confluence_score": float(s.get("confluence_score", 82.0)),
-                                "notes": "Shadow tracking active until 3:30 PM market close."
-                            }
-                            records.append(rec)
-            except Exception as e:
-                logger.debug(f"Bootstrap signals error: {e}")
-
         cls.save_records(records)
         return records
 
@@ -755,7 +705,9 @@ class ShadowMonitoringEngine:
         time_str = time_str or datetime.now(IST).strftime("%I:%M:%S %p IST")
         records = cls.load_records()
         
-        # Check if an identical or active record for this date and symbol already exists (deduplication)
+        # Strict Rule: Only make an entry if trade is executed in Groww (no other entries should be made)
+        if not user_executed:
+            return None
         def _parse_mins(t_val) -> Optional[float]:
             if not t_val:
                 return None
@@ -1023,6 +975,65 @@ class ShadowMonitoringEngine:
                     rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
                     updated_any = True
 
+        # Check for any unclaimed Groww executed trades and make entry for them!
+        for idx, ex_tr in enumerate(verified_executed_trades):
+            if idx in claimed_trades:
+                continue
+            ex_sym = ex_tr.get("symbol", "")
+            ex_time = ex_tr.get("entry_time", "")
+            ex_price = float(ex_tr.get("entry_price", 0.0))
+            is_closed = ex_tr.get("is_closed", False)
+            exit_p = float(ex_tr.get("exit_price", 0.0))
+            exit_t = ex_tr.get("exit_time", "")
+            pnl = float(ex_tr.get("realised_pnl", 0.0))
+
+            matched_signal = SignalTracker.find_matching_signal(symbol=ex_sym, actual_entry_time=ex_time, date_str=today_str)
+            sugg_entry = float(matched_signal.get("suggested_entry", ex_price)) if matched_signal else ex_price
+            sugg_target = float(matched_signal.get("suggested_exit", sugg_entry + 10.0)) if matched_signal else round(sugg_entry + 10.0, 2)
+            sugg_sl = float(matched_signal.get("suggested_sl", max(0.05, sugg_entry - 4.5))) if matched_signal else round(max(0.05, sugg_entry - 4.5), 2)
+            t_time = matched_signal.get("trade_given_time", ex_time) if matched_signal else ex_time
+
+            new_rec = {
+                "id": f"TRD-{today_str.replace('-', '')}-{len(records) + 1:02d}-{ex_sym}",
+                "timestamp": t_time,
+                "date": today_str,
+                "symbol": ex_sym,
+                "instrument": matched_signal.get("full_contract", ex_sym) if matched_signal else ex_sym,
+                "action": "BUY PE" if "PE" in ex_sym else "BUY CE",
+                "entry": sugg_entry,
+                "target": sugg_target,
+                "sl": sugg_sl,
+                "target_pts": round(sugg_target - sugg_entry, 2),
+                "sl_pts": round(sugg_entry - sugg_sl, 2),
+                "user_executed": True,
+                "actual_entry_price": ex_price,
+                "actual_entry_time": ex_time,
+                "actual_exit_price": exit_p if is_closed else None,
+                "actual_exit_time": exit_t if is_closed else "",
+                "realised_pnl": pnl if is_closed else 0.0,
+                "screenshot": "",
+                "screenshot_data_uri": "",
+                "shadow_status": ("Target Hit" if pnl >= 0 else "Stop-Loss Hit") if is_closed else "Active Monitoring",
+                "highest_price_reached": max(ex_price, exit_p) if is_closed else ex_price,
+                "lowest_price_reached": min(ex_price, exit_p) if is_closed else ex_price,
+                "current_price": exit_p if is_closed else ex_price,
+                "exit_price": exit_p if is_closed else None,
+                "exit_time": exit_t if is_closed else "",
+                "shadow_pts": round(exit_p - sugg_entry, 2) if is_closed else 0.0,
+                "shadow_pnl": pnl if is_closed else 0.0,
+                "confluence_score": float(matched_signal.get("confluence_score", 78.0)) if matched_signal else 75.0,
+                "notes": f"Verified Groww Execution • Buy ₹{ex_price:.2f}" + (f" -> Sell ₹{exit_p:.2f} • Realized P&L: ₹{pnl:+,.2f}" if is_closed else "")
+            }
+            records.append(new_rec)
+            claimed_trades.add(idx)
+            updated_any = True
+
+        # Strict Rule: Only make / keep entries that are executed in Groww (or verified audit screenshot)! No other entries should be made!
+        orig_count = len(records)
+        records = [r for r in records if r.get("user_executed") or r.get("screenshot") or r.get("screenshot_data_uri")]
+        if len(records) != orig_count:
+            updated_any = True
+
         if updated_any:
             cls.save_records(records)
 
@@ -1082,6 +1093,7 @@ class ShadowMonitoringEngine:
     @classmethod
     def get_records_by_date(cls, selected_date: Optional[str] = None) -> List[Dict[str, Any]]:
         records = cls.load_records()
+        records = [r for r in records if r.get("user_executed") or r.get("screenshot") or r.get("screenshot_data_uri")]
         def _get_sort_key(r):
             t_str = str(r.get("timestamp", ""))
             mins = 0.0
@@ -1321,22 +1333,6 @@ class SequentialTradeEngine:
             })
         except Exception as e:
             logger.debug(f"SignalTracker save error: {e}")
-
-        try:
-            ShadowMonitoringEngine.log_signal(
-                symbol=contract,
-                action=f"BUY {'PE' if 'PE' in contract else 'CE'}",
-                entry=actual_p,
-                target=target_p,
-                sl=sl_p,
-                date_str=today_str,
-                time_str=now_time_str,
-                instrument=instrument,
-                confluence_score=confluence,
-                user_executed=False
-            )
-        except Exception as e:
-            logger.debug(f"ShadowMonitoringEngine log error: {e}")
 
         return {
             "success": True,
@@ -1759,26 +1755,20 @@ class SequentialTradeEngine:
                 "P&L": pnl_str
             })
 
-        # If there is currently an active or pending trade not yet closed in journal, append it
+        # If there is currently an active trade genuinely executed on Groww and not yet closed in journal, append it
         state = cls.get_state()
         curr_state = state.get("current_state")
         active = state.get("active_trade")
-        if active and curr_state in [cls.STATE_ENTRY_PENDING, cls.STATE_IN_TRADE]:
+        if active and curr_state == cls.STATE_IN_TRADE and active.get("executed") == "Yes":
             # Check if this active trade is already in rows by trade index or open status
             t_idx = int(active.get("trade_num") or (len(rows) + 1))
             already_in_rows = any(r.get("Trade #") == f"Trade {t_idx}" for r in rows)
             if not already_in_rows:
-                if curr_state == cls.STATE_IN_TRADE:
-                    act_entry = f"₹{float(active.get('actual_entry', 0.0)):.2f}"
-                    status_lbl = "Open"
-                    unreal = float(active.get("unrealized_pnl", 0.0))
-                    pnl_lbl = f"{'+' if unreal >= 0 else ''}₹{unreal:,.2f} (Live)"
-                    executed_lbl = "Yes"
-                else:
-                    act_entry = "Pending Fill"
-                    status_lbl = "Entry Pending"
-                    pnl_lbl = "₹0.00 (Pending)"
-                    executed_lbl = "Pending"
+                act_entry = f"₹{float(active.get('actual_entry', 0.0)):.2f}"
+                status_lbl = "Open"
+                unreal = float(active.get("unrealized_pnl", 0.0))
+                pnl_lbl = f"{'+' if unreal >= 0 else ''}₹{unreal:,.2f} (Live)"
+                executed_lbl = "Yes"
 
                 rows.append({
                     "Trade #": f"Trade {t_idx}",

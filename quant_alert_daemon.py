@@ -421,33 +421,27 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(entry_alert_key)
                         logger.info(f"🔥 🚀 ENTRY TRIGGER ALERT SENT TO TELEGRAM: {fb}")
 
-                # Instantly enter into Sequential Engine and Shadow Monitoring if IDLE or previous trade closed
-                if current_state in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED]:
-                    SequentialTradeEngine.enter_trade_direct(
-                        contract=f"RELIANCE26OCT{recommended_strike}{contract_type}",
-                        instrument=contract_label,
-                        entry_price=active_option_ltp,
-                        sl=round(active_option_ltp - 4.5, 2),
-                        target=round(active_option_ltp + 10.0, 2),
-                        direction=f"BUY {contract_type}",
-                        expiry=expiry_date,
-                        confluence=75.0,
-                        qty=1000,
-                        num_lots=2
-                    )
-                    try:
-                        from git_sync_manager import GitSyncManager
-                        threading.Thread(
-                            target=GitSyncManager.sync_local_to_git,
-                            kwargs={"auto": True, "commit_message": f"feat(trade): auto-sync entry ({contract_label}) @ ₹{active_option_ltp:.2f}"},
-                            daemon=True
-                        ).start()
-                    except Exception as e:
-                        logger.debug(f"Git auto-sync error on entry: {e}")
+                # Save signal in SignalTracker so UI recommendation card is updated with the setup
+                try:
+                    SignalTracker.save_signal({
+                        "date": today_date,
+                        "trade_given_time": time_str,
+                        "full_contract": contract_label,
+                        "symbol": f"RELIANCE26OCT{recommended_strike}{contract_type}",
+                        "contract_type": contract_type,
+                        "strike": recommended_strike,
+                        "expiry": expiry_date,
+                        "suggested_entry": active_option_ltp,
+                        "suggested_exit": round(active_option_ltp + 10.0, 2),
+                        "suggested_sl": round(active_option_ltp - 4.5, 2),
+                        "confluence_score": 75.0
+                    })
+                except Exception as e:
+                    logger.debug(f"SignalTracker save error in daemon: {e}")
 
                 logger.info(
                     f"[{time_str}] 🔥 ENTRY TRIGGER CONFIRMED! Contract: {contract_label} | "
-                    f"LTP: ₹{active_option_ltp:.2f} >= Trigger: ₹{breakout_level:.2f}"
+                    f"LTP: ₹{active_option_ltp:.2f} >= Trigger: ₹{breakout_level:.2f} | Awaiting user execution in Groww..."
                 )
 
             # B2. Setup Armed Pre-Alert
@@ -504,9 +498,13 @@ class RelianceQuantAlertDaemon:
                     f"Confluence below A+ threshold • 0 Orders Placed"
                 )
 
-        # 7. Update Shadow Monitoring
+        # 7. Update Shadow Monitoring & Sync Verified Groww Executions
         try:
             ShadowMonitoringEngine.update_shadow_monitoring(self.groww_feed)
+            if self.groww_feed and getattr(self.groww_feed, "_is_connected", False):
+                gw_trades = self.groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                if gw_trades:
+                    TradeJournalManager.sync_groww_trades(gw_trades)
         except Exception:
             pass
 
