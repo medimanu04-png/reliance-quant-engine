@@ -258,16 +258,48 @@ class RelianceQuantAlertDaemon:
         dynamic_target_pts = float(confluence_eval.get("target_pts", 10.0))
         dynamic_sl_pts = float(confluence_eval.get("sl_pts", 4.5))
         is_synthetic_feed = bool(confluence_eval.get("is_synthetic_feed", False))
+        spread_stand_down = bool(confluence_eval.get("spread_stand_down", False))
+        opening_cooldown_active = bool(confluence_eval.get("opening_cooldown_active", False))
 
-        # Strict Institutional Gate: Confluence Score must be >= 75.0% and NOT on synthetic fallback
+        # Check Daily Loss Circuit Breaker (One-and-Done Capital Preservation Protocol)
+        has_daily_loss, loss_reason = SequentialTradeEngine.has_daily_loss_occurred_today()
+
+        # Strict Institutional Gate: Confluence Score must be >= 75.0% and NO stand down flags
         is_tradable = (
             "TRADABLE" in status_text.upper()
             and "NON-TRADABLE" not in status_text.upper()
             and "STAND DOWN" not in status_text.upper()
             and (dominant_score >= 75.0)
             and not is_synthetic_feed
+            and not spread_stand_down
+            and not opening_cooldown_active
+            and not has_daily_loss
         )
         is_chop = "CHOP" in status_text.upper()
+
+        if has_daily_loss:
+            logger.info(f"[{time_str}] 🚨 DAILY CIRCUIT BREAKER ACTIVE: {loss_reason or '1 loss recorded today'}. All new trade entries locked.")
+            cb_alert_key = f"tg_sent_cb_{today_date}"
+            tg_config = TelegramNotifier.load_config()
+            tg_enabled = tg_config.get("enabled", True)
+            bot_token = tg_config.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
+            chat_id = tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
+            if tg_enabled and not TelegramNotifier.is_alert_sent(cb_alert_key):
+                cb_msg = TelegramNotifier.format_daily_circuit_breaker_alert(
+                    date_str=today_date,
+                    realized_pnl=-2250.0,
+                    remaining_capital=STARTING_CAPITAL - 2250.0
+                )
+                ok, fb = TelegramNotifier.send_message(bot_token, chat_id, cb_msg)
+                if ok:
+                    TelegramNotifier.record_alert_sent(cb_alert_key)
+                    logger.info(f"🚨 Daily Circuit Breaker Alert sent to Telegram: {fb}")
+
+        if opening_cooldown_active:
+            logger.info(f"[{time_str}] ⏳ OPENING COOLDOWN ACTIVE (09:15-09:30 AM): Building 15m ORB range & Initial Balance. Standing down.")
+
+        if spread_stand_down:
+            logger.info(f"[{time_str}] ⚠️ WIDE SPREAD STAND DOWN: Option bid-ask spread > ₹0.35 threshold. Preserving capital against slippage.")
 
         dominant_side = "CALL (CE)" if "BULLISH" in prob_str.upper() else "PUT (PE)"
         contract_type = "CE" if dominant_side == "CALL (CE)" else "PE"
@@ -364,7 +396,7 @@ class RelianceQuantAlertDaemon:
                             direction=active_trade.get("direction", "BULLISH (CALL / CE)"),
                             secured_pnl=round(unreal_pts * 500),
                             entry_price=act_entry,
-                            num_lots=active_trade.get("num_lots", 2),
+                            num_lots=active_trade.get("num_lots", 1),
                             lot_size=500,
                             spot=spot
                         )
@@ -379,14 +411,14 @@ class RelianceQuantAlertDaemon:
                 target_key = f"tg_sent_target_{today_date}_{trade_num}_{recommended_strike}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(target_key):
                     profit_pts = round(cur_trade_ltp - act_entry, 2)
-                    tot_pnl = round(profit_pts * int(active_trade.get("qty", 1000)), 2)
+                    tot_pnl = round(profit_pts * int(active_trade.get("qty", 500)), 2)
                     tgt_msg = TelegramNotifier.format_target_hit_alert(
                         contract=inst_sym,
                         entry_price=act_entry,
                         exit_price=cur_trade_ltp,
                         profit_pts=profit_pts,
                         total_pnl=tot_pnl,
-                        num_lots=active_trade.get("num_lots", 2),
+                        num_lots=active_trade.get("num_lots", 1),
                         lot_size=500,
                         spot=spot
                     )
@@ -401,14 +433,14 @@ class RelianceQuantAlertDaemon:
                 sl_key = f"tg_sent_sl_{today_date}_{trade_num}_{recommended_strike}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(sl_key):
                     loss_pts = round(act_entry - cur_trade_ltp, 2)
-                    tot_loss = round(loss_pts * int(active_trade.get("qty", 1000)), 2)
+                    tot_loss = round(loss_pts * int(active_trade.get("qty", 500)), 2)
                     sl_msg = TelegramNotifier.format_stop_loss_alert(
                         contract=inst_sym,
                         entry_price=act_entry,
                         sl_price=cur_trade_ltp,
                         loss_pts=loss_pts,
                         total_loss=tot_loss,
-                        num_lots=active_trade.get("num_lots", 2),
+                        num_lots=active_trade.get("num_lots", 1),
                         lot_size=500,
                         spot=spot
                     )
@@ -434,7 +466,7 @@ class RelianceQuantAlertDaemon:
                         entry_price=active_option_ltp,
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
-                        num_lots=2,
+                        num_lots=1,
                         lot_size=500,
                         win_prob=round(dominant_score, 1),
                         spot=spot,
@@ -497,7 +529,7 @@ class RelianceQuantAlertDaemon:
                         distance_pts=gap_pts,
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
-                        num_lots=2,
+                        num_lots=1,
                         lot_size=500,
                         win_prob=70.0,
                         spot=spot

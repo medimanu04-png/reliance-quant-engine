@@ -449,6 +449,162 @@ class MultiIndicatorMath:
             regime = "BALANCED_GAMMA"
         return round(net_gex, 2), regime
 
+    @staticmethod
+    def calculate_volume_profile_poc(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        num_bins: int = 20
+    ) -> Tuple[float, float, float, str]:
+        """
+        Intraday Volume Profile: Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL).
+        Bins prices between intraday min and max, distributes volume proportionally,
+        and identifies POC (highest volume price) and 70% Value Area corridor.
+        Returns: (poc, vah, val, profile_bias).
+        """
+        if not closes or not volumes or len(closes) != len(volumes):
+            spot = closes[-1] if closes else 1226.0
+            return spot, spot + 4.0, spot - 4.0, "INSIDE_VALUE_AREA"
+
+        min_p = min(lows) if lows else min(closes)
+        max_p = max(highs) if highs else max(closes)
+        price_range = max_p - min_p
+        spot = closes[-1]
+
+        if price_range <= 0.5:
+            return round(spot, 2), round(spot + 3.0, 2), round(spot - 3.0, 2), "INSIDE_VALUE_AREA"
+
+        bin_size = price_range / float(num_bins)
+        bin_volumes = [0.0] * num_bins
+        bin_prices = [min_p + (i + 0.5) * bin_size for i in range(num_bins)]
+
+        for h, l, c, v in zip(highs, lows, closes, volumes):
+            avg_p = (h + l + c) / 3.0
+            bin_idx = int((avg_p - min_p) / bin_size)
+            bin_idx = min(num_bins - 1, max(0, bin_idx))
+            bin_volumes[bin_idx] += v
+
+        # Identify Point of Control (POC)
+        max_vol_idx = bin_volumes.index(max(bin_volumes))
+        poc = round(bin_prices[max_vol_idx], 2)
+
+        # 70% Value Area expansion outwards from POC
+        total_vol = sum(bin_volumes)
+        target_va_vol = 0.70 * total_vol
+        current_va_vol = bin_volumes[max_vol_idx]
+        left_idx = max_vol_idx
+        right_idx = max_vol_idx
+
+        while current_va_vol < target_va_vol and (left_idx > 0 or right_idx < num_bins - 1):
+            next_left_vol = bin_volumes[left_idx - 1] if left_idx > 0 else -1.0
+            next_right_vol = bin_volumes[right_idx + 1] if right_idx < num_bins - 1 else -1.0
+
+            if next_right_vol >= next_left_vol:
+                right_idx += 1
+                current_va_vol += bin_volumes[right_idx]
+            else:
+                left_idx -= 1
+                current_va_vol += bin_volumes[left_idx]
+
+        vah = round(bin_prices[right_idx] + (bin_size / 2.0), 2)
+        val = round(bin_prices[left_idx] - (bin_size / 2.0), 2)
+
+        if spot > vah:
+            profile_bias = "ABOVE_VAH"
+        elif spot < val:
+            profile_bias = "BELOW_VAL"
+        else:
+            profile_bias = "INSIDE_VALUE_AREA"
+
+        return poc, vah, val, profile_bias
+
+    @staticmethod
+    def calculate_micro_price_imbalance(
+        bid_price: float,
+        ask_price: float,
+        bid_qty: float,
+        ask_qty: float
+    ) -> Tuple[float, float, str]:
+        """
+        Cartea-Jaimungal Microstructural Micro-Price & Order Book Imbalance (OBI).
+        MicroPrice = (Ask * BidQty + Bid * AskQty) / (BidQty + AskQty)
+        OBI = (BidQty - AskQty) / (BidQty + AskQty)
+        Returns: (micro_price, obi, bias)
+        """
+        tot_qty = bid_qty + ask_qty
+        if tot_qty <= 0 or bid_price <= 0 or ask_price <= 0:
+            mid = (bid_price + ask_price) / 2.0 if (bid_price > 0 and ask_price > 0) else 0.0
+            return mid, 0.0, "NEUTRAL"
+
+        micro_price = (ask_price * bid_qty + bid_price * ask_qty) / tot_qty
+        obi = (bid_qty - ask_qty) / tot_qty
+
+        if obi >= 0.25:
+            bias = "BID_PRESSURE"
+        elif obi <= -0.25:
+            bias = "ASK_PRESSURE"
+        else:
+            bias = "BALANCED"
+
+        return round(micro_price, 2), round(obi, 3), bias
+
+    @staticmethod
+    def calculate_nifty_relative_strength(
+        reliance_pct: float,
+        nifty_pct: float,
+        beta: float = 1.15
+    ) -> Tuple[float, str]:
+        """
+        Beta-Adjusted Relative Strength / Alpha Spread vs NIFTY 50 benchmark.
+        Alpha Spread = Reliance% - (Beta * Nifty%)
+        Returns: (alpha_spread, bias)
+        """
+        expected_ret = beta * nifty_pct
+        alpha_spread = reliance_pct - expected_ret
+        if alpha_spread >= 0.35:
+            bias = "STRONG_OUTPERFORMANCE"
+        elif alpha_spread >= 0.15:
+            bias = "MILD_OUTPERFORMANCE"
+        elif alpha_spread <= -0.35:
+            bias = "STRONG_UNDERPERFORMANCE"
+        elif alpha_spread <= -0.15:
+            bias = "MILD_UNDERPERFORMANCE"
+        else:
+            bias = "IN_LINE_WITH_INDEX"
+        return round(alpha_spread, 2), bias
+
+    @staticmethod
+    def calculate_iv_rank_percentile(
+        current_iv: float,
+        historical_ivs: Optional[List[float]] = None
+    ) -> Tuple[float, str]:
+        """
+        Implied Volatility Percentile (IVP).
+        For naked option buyers, high IVP (> 80%) carries severe IV crush risk.
+        Low to medium IVP (15% - 65%) gives the best volatility expansion tailwind.
+        Returns: (iv_percentile, regime)
+        """
+        if not historical_ivs or len(historical_ivs) < 5:
+            # Calibrated baseline distribution for Reliance ATM IV (typically 18% to 32%)
+            baseline = [17.5, 18.2, 19.0, 20.1, 21.0, 22.0, 22.8, 23.5, 24.5, 26.0, 28.5, 32.0]
+            historical_ivs = baseline
+
+        current_val = current_iv * 100.0 if current_iv < 1.0 else current_iv
+        less_count = sum(1 for x in historical_ivs if x < current_val)
+        ivp = (less_count / len(historical_ivs)) * 100.0
+
+        if ivp > 85.0:
+            regime = "EXTREME_HIGH_IV_CRUSH_RISK"
+        elif ivp >= 65.0:
+            regime = "ELEVATED_IV"
+        elif ivp >= 20.0:
+            regime = "OPTIMAL_VOL_EXPANSION"
+        else:
+            regime = "VERY_CHEAP_IV"
+
+        return round(ivp, 1), regime
+
 
 
 # ============================================================================
@@ -475,7 +631,13 @@ class UltraHighConvictionRelianceEngine:
         V6: Greek Delta & Non-Near Expiry Stability (12 pts)
         Total = 100 Points.
         """
-        market_open, market_close = time(9, 15), time(15, 10)
+        # Strict Execution Timing Gates:
+        # 1. 09:15 - 09:30 AM: Opening Price Discovery & ORB Formation (Stand Down / Capital Preservation)
+        # 2. 09:30 - 14:45 PM: Active High-Probability Execution Window
+        # 3. 14:45 - 15:05 PM: Intraday Expiry / Square-off Cooldown
+        # 4. 15:05+ PM: Auto Square-off Enforcement
+        opening_cooldown_active = time(9, 15) <= current_time < time(9, 30)
+        market_open, market_close = time(9, 30), time(15, 10)
         cutoff, auto_sq = time(14, 45), time(15, 5)
 
         time_allowed = market_open <= current_time <= market_close and current_time <= cutoff
@@ -530,7 +692,7 @@ class UltraHighConvictionRelianceEngine:
         if htf_bear:
             v1_bear += 3.0  # 60m Macro Trend Invariance Confirmation
 
-        # VECTOR 2: Institutional VWAP, OBV & Cumulative Volume Delta (CVD) Order Flow (18 pts)
+        # VECTOR 2: Institutional VWAP, OBV, CVD & Volume Profile (POC) Order Flow (18 pts)
         vwap, vwap_plus_15sigma, vwap_minus_sigma = MultiIndicatorMath.calculate_vwap_bands(
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("date")
         )
@@ -540,6 +702,9 @@ class UltraHighConvictionRelianceEngine:
         obv_val, obv_ema, obv_bias = MultiIndicatorMath.calculate_obv(c5m["close"], c5m["volume"], 20)
         latest_cvd, cvd_ema, cvd_bias = MultiIndicatorMath.calculate_volume_delta(
             c5m.get("open"), c5m["high"], c5m["low"], c5m["close"], c5m["volume"], 20
+        )
+        poc_price, vah_price, val_price, vp_bias = MultiIndicatorMath.calculate_volume_profile_poc(
+            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], num_bins=20
         )
 
         # Bullish V2
@@ -553,9 +718,11 @@ class UltraHighConvictionRelianceEngine:
         elif c5m["volume"][-1] > vol_avg20:
             v2_bull += 2.0
         if obv_bias == "BUYER_AGGRESSION":
-            v2_bull += 4.0
+            v2_bull += 3.0
         if cvd_bias == "AGGRESSIVE_BUYING":
-            v2_bull += 3.0  # Institutional Buyer Absorption Confirmation
+            v2_bull += 2.5  # Institutional Buyer Absorption Confirmation
+        if vp_bias == "ABOVE_VAH":
+            v2_bull += 1.5  # Expansion above Value Area High
 
         # Bearish V2
         v2_bear = 0.0
@@ -568,9 +735,11 @@ class UltraHighConvictionRelianceEngine:
         elif c5m["volume"][-1] > vol_avg20:
             v2_bear += 2.0
         if obv_bias == "SELLER_AGGRESSION":
-            v2_bear += 4.0
+            v2_bear += 3.0
         if cvd_bias == "AGGRESSIVE_SELLING":
-            v2_bear += 3.0  # Institutional Seller Absorption Confirmation
+            v2_bear += 2.5  # Institutional Seller Absorption Confirmation
+        if vp_bias == "BELOW_VAL":
+            v2_bear += 1.5  # Breakdown below Value Area Low
 
         # Strike & OI Telemetry (Strict 10-point Strike Interval for RELIANCE)
         strike_step = 10
@@ -578,6 +747,21 @@ class UltraHighConvictionRelianceEngine:
         chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True)
         opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True)
         is_synthetic_feed = opt_telemetry.get("is_synthetic", False) or chain_oi.get("is_synthetic", False)
+
+        # Microstructure Micro-Price Imbalance & Spread Cushion Evaluation
+        best_bid = float(opt_telemetry.get("best_bid", spot - 0.15))
+        best_ask = float(opt_telemetry.get("best_ask", spot + 0.15))
+        bid_qty = float(opt_telemetry.get("bid_qty", 1000))
+        ask_qty = float(opt_telemetry.get("ask_qty", 1000))
+        micro_p, obi, obi_bias = MultiIndicatorMath.calculate_micro_price_imbalance(best_bid, best_ask, bid_qty, ask_qty)
+        if obi_bias == "BID_PRESSURE":
+            v2_bull += 1.0
+        elif obi_bias == "ASK_PRESSURE":
+            v2_bear += 1.0
+
+        # Stand down if option bid-ask spread > 0.35 pts (prevents spread slippage losses on 1 lot)
+        opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
+        spread_stand_down = (opt_spread > 0.35) and not is_synthetic_feed
 
         call_wall = float(chain_oi.get("call_wall", atm_strike + 10))
         put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
@@ -714,12 +898,15 @@ class UltraHighConvictionRelianceEngine:
         expiry_date_str = expiry_plan.get("selected_expiry", "27-OCT-2026")
         dte_val = expiry_plan.get("dte", 30)
 
-        # VECTOR 6: Dynamic Greek Delta, Expiry Shield & Liquidity (12 pts)
+        # VECTOR 6: Dynamic Greek Delta, Expiry Shield, Liquidity & IV Percentile (12 pts)
         T_val = dte_val / 365.0
         r_rate = 0.0675
         # Dynamic IV extraction with safe historical fallback
         telemetry_iv = float(opt_telemetry.get("iv", 0.0))
         iv = (telemetry_iv / 100.0) if telemetry_iv > 5.0 else 0.212
+
+        # Implied Volatility Percentile (IVP) Filter
+        iv_percentile, iv_regime = MultiIndicatorMath.calculate_iv_rank_percentile(iv)
 
         if T_val > 0:
             d1_val = (math.log(spot / atm_strike) + (r_rate + 0.5 * (iv ** 2)) * T_val) / (iv * math.sqrt(T_val))
@@ -731,14 +918,48 @@ class UltraHighConvictionRelianceEngine:
         delta_score_bull = 6.0 if (0.46 <= delta_ce <= 0.60) else (4.0 if (0.40 <= delta_ce <= 0.68) else 2.0)
         delta_score_bear = 6.0 if (0.46 <= delta_pe <= 0.60) else (4.0 if (0.40 <= delta_pe <= 0.68) else 2.0)
         dte_score = 3.0 if dte_val >= 7 else (1.5 if dte_val >= 3 else 0.0)
-        liquidity_spread_score = 3.0  # Dual ATM corridor tight bid-ask spread
+        liquidity_spread_score = 3.0 if not spread_stand_down else 0.0
+
         v6_bull = delta_score_bull + dte_score + liquidity_spread_score
         v6_bear = delta_score_bear + dte_score + liquidity_spread_score
 
-        # VECTOR 7: Global News & Macro Sentiment Telemetry (+/- 5.0 pts)
-        macro_news_score = 5.0
-        macro_bull = macro_news_score
-        macro_bear = -macro_news_score
+        # Naked option buyer protection: Penalize entries when IV is bloated (IVP > 85%)
+        if iv_percentile > 85.0:
+            v6_bull = max(0.0, v6_bull - 3.0)
+            v6_bear = max(0.0, v6_bear - 3.0)
+        elif 20.0 <= iv_percentile <= 65.0:
+            v6_bull += 1.0
+            v6_bear += 1.0
+
+        # VECTOR 7: Global News & NIFTY 50 Relative Strength Telemetry (+/- 5.0 pts)
+        nifty_pct = 0.0
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw = GrowwMarketFeed.get_instance()
+            benchmarks = gw.get_live_benchmarks()
+            nifty_info = benchmarks.get("NIFTY 50", {}) if isinstance(benchmarks, dict) else {}
+            nifty_pct = float(nifty_info.get("pct_change", 0.0))
+        except Exception:
+            pass
+
+        rel_ref_close = float(c5m["close"][0]) if c5m["close"] else spot
+        reliance_pct = ((spot - rel_ref_close) / rel_ref_close) * 100.0 if rel_ref_close > 0 else 0.0
+        alpha_spread, rs_bias = MultiIndicatorMath.calculate_nifty_relative_strength(reliance_pct, nifty_pct)
+
+        macro_bull = 5.0
+        macro_bear = -5.0
+        if rs_bias in ("STRONG_OUTPERFORMANCE", "MILD_OUTPERFORMANCE"):
+            macro_bull += 2.0
+            macro_bear -= 2.0
+        elif rs_bias in ("STRONG_UNDERPERFORMANCE", "MILD_UNDERPERFORMANCE"):
+            macro_bull -= 2.0
+            macro_bear += 2.0
+
+        # NIFTY Index Conflict Guards
+        if nifty_pct < -0.35:
+            macro_bull -= 3.0
+        if nifty_pct > 0.35:
+            macro_bear -= 3.0
 
         # Symmetric Dual-Directional Probability Calculation
         raw_bull = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull
@@ -771,13 +992,15 @@ class UltraHighConvictionRelianceEngine:
             recommended_type = "PE"
 
         total_probability = dominant_score
-        # Strict Execution Gate: Must NOT be running on synthetic fallback
+        # Strict Execution Gate: Must NOT be running on synthetic fallback, in opening cooldown, or wide spread
         is_tradable = (
             (total_probability >= self.trade_regime_threshold)
             and time_allowed
+            and not opening_cooldown_active
             and not auto_sq_active
             and not is_choppy_regime
             and not is_synthetic_feed
+            and not spread_stand_down
         )
 
         # Dynamic Dual ATM Corridor Resolution & Best Strike Suggestion
@@ -806,6 +1029,10 @@ class UltraHighConvictionRelianceEngine:
 
         if is_synthetic_feed:
             status_text = "OFFLINE / AWAITING LIVE BROKER FEED (STAND DOWN)"
+        elif opening_cooldown_active:
+            status_text = "OPENING COOLDOWN ACTIVE (09:15-09:30 AM IST) — BUILDING INITIAL BALANCE / ORB"
+        elif spread_stand_down:
+            status_text = f"STAND DOWN — WIDE BID-ASK SPREAD (Spread Rs. {opt_spread:.2f} > Rs. 0.35 threshold)"
         elif is_tradable:
             status_text = f"TRADABLE DAY / ACTIVE {dominant_side} SETUP"
         elif is_choppy_regime:
@@ -830,11 +1057,11 @@ class UltraHighConvictionRelianceEngine:
             "5. ENTRY PRICE": f"On Breakout above Rs. {entry_premium:.2f} (Option Premium)" if is_tradable else "N/A",
             "6. TARGET | STOP LOSS": target_text,
             "7. RATIONALE & CONFLUENCE": {
-                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}).",
+                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. Micro-Price OBI: {obi:+.3f} [{obi_bias}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}).",
                 "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
-                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). ATR(14)={atr_15m:.2f} pts | Parkinson Realized Vol={parkinson_vol:.1f}% | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
+                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). ATR(14)={atr_15m:.2f} pts | Parkinson Realized Vol={parkinson_vol:.1f}% | IV Percentile={iv_percentile:.1f}% [{iv_regime}] | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
                 "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stochastic %K={stoch_k:.1f}.",
-                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. Feed Status: {'Live Broker' if not is_synthetic_feed else 'Synthetic Fallback'}."
+                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. NIFTY 50: {nifty_pct:+.2f}% | Alpha Spread: {alpha_spread:+.2f}% [{rs_bias}]. Bid-Ask Spread: Rs. {opt_spread:.2f}. Feed Status: {'Live Broker' if not is_synthetic_feed else 'Synthetic Fallback'}."
             },
             "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else "NONE — Stand down (Conditions do not satisfy 90% A+ threshold)",
             "dominant_score": dominant_score,
@@ -845,7 +1072,17 @@ class UltraHighConvictionRelianceEngine:
             "sl_pts": self.risk.stop_loss_pts,
             "parkinson_vol": parkinson_vol,
             "cvd_bias": cvd_bias,
-            "gex_regime": gex_regime
+            "gex_regime": gex_regime,
+            "volume_profile_poc": poc_price,
+            "vah": vah_price,
+            "val": val_price,
+            "micro_price": micro_p,
+            "obi": obi,
+            "iv_percentile": iv_percentile,
+            "nifty_pct": nifty_pct,
+            "alpha_spread": alpha_spread,
+            "spread_stand_down": spread_stand_down,
+            "opening_cooldown_active": opening_cooldown_active
         }
 
 
@@ -877,7 +1114,7 @@ def main():
     print(f"1230 CE (Rank 2)  : LTP Rs. {high['call_ltp']:.2f} | Vol: {high['call_volume_contracts']:,} Lots (Rs. {high['call_volume_cr']:,.2f} Cr) | OI: {high['call_oi_lots']:,} Lots ({high['call_oi_shares']:,} Sh) [+{high['call_oi_change_pct']:.1f}%]")
     print(f"ATM Order Flow    : 1220 PCR: {low['pcr_oi']:.2f} | 1230 PCR: {high['pcr_oi']:.2f} | Flow: {atm_telemetry['comparative']['flow_bias']}")
     print(f"Option Chain OI   : Cumulative PCR: {chain_preview['overall_pcr']:.2f} | Max Pain: Rs. {chain_preview['max_pain']} | Put Wall: Rs. {chain_preview['put_wall']}")
-    print(f"Contract          : RELIANCE (1 Lot = 500 Qty) | Sizing: 2 Lots = {engine.risk.total_quantity} Units")
+    print(f"Contract          : RELIANCE (1 Lot = 500 Qty) | Sizing: {engine.risk.num_lots} Lot = {engine.risk.total_quantity} Units")
     print(f"Strike Policy     : DUAL ATM CORRIDOR with Quantitative Best Strike Selection")
     print(f"Target Hit Gate   : ULTRA-STRICT >= 90.0% Probability Confluence (A+ Setup)")
     print(f"Fixed Target      : +{engine.risk.target_pts} pts (+Rs. {engine.risk.target_reward_rupees:,.2f})")

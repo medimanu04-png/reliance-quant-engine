@@ -494,25 +494,46 @@ class TelegramNotifier:
 🚀 <b>TRADE ENTRY CONFIRMED — {action}</b> 🚀
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 📌 <b>Contract:</b> <code>{contract}</code>
-⚡ <b>Action:</b> <b>BUY NOW AT MARKET</b>
+⚡ <b>Order Type:</b> <b>LIMIT ORDER ONLY @ ₹{entry_price:.2f}</b>
+⚠️ <b>Slippage Warning:</b> <i>DO NOT USE MARKET BUY (Prevents ₹500–₹1,500 spread drag)</i>
 {dir_icon} <b>Direction:</b> {direction}
 📊 <b>Statistical Win Rate:</b> <b>{win_prob:.1f}%</b> (Execution Gate >60%)
 
-💰 <b>Entry Trigger:</b> <b>₹{entry_price:.2f}</b>
+💰 <b>Entry Limit Price:</b> <b>₹{entry_price:.2f}</b>
 🎯 <b>Profit Target:</b> <b>₹{target_price:.2f}</b> (+{target_pts:.1f} pts | +₹{potential_gain:,})
 🛑 <b>Stop Loss:</b> <b>₹{sl_price:.2f}</b> (-{sl_pts:.1f} pts | -₹{potential_loss:,})
-📦 <b>Position Sizing:</b> {num_lots} Lots ({total_qty:,} Units)
+📦 <b>Position Sizing:</b> {num_lots} Lot ({total_qty:,} Units) — Strict 1-Lot Capital Preservation
 📍 <b>Reliance Spot:</b> ₹{spot:.2f}
 ⏰ <b>Time:</b> {now_str}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━{quant_block}
-💡 <b>Execution Checklist:</b>
-1. Place Market BUY order for <b>{contract}</b> on Groww / broker
-2. Set GTT / Stop-loss order at <b>₹{sl_price:.2f}</b>
-3. Set profit target order at <b>₹{target_price:.2f}</b>
-4. Mandatory square-off at <b>03:05 PM IST</b>
+💡 <b>Institutional Execution Checklist:</b>
+1. Place <b>LIMIT BUY</b> order at <b>₹{entry_price:.2f}</b> on Groww / broker
+2. Verify Bid-Ask Spread on Groww is ≤ ₹0.25 (Stand down if spread > ₹0.35)
+3. Set GTT / Stop-loss order at <b>₹{sl_price:.2f}</b>
+4. Set profit target order at <b>₹{target_price:.2f}</b>
+5. Mandatory auto square-off at <b>03:05 PM IST</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
         return msg
+
+    @classmethod
+    def format_daily_circuit_breaker_alert(cls, reason: str, spot: float) -> str:
+        """Formats an alert when the 1-loss daily circuit breaker activates."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        return f"""
+🛑 <b>DAILY LOSS CIRCUIT BREAKER ACTIVATED</b> 🛑
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ <b>Capital Preservation Rule:</b> <b>ONE-AND-DONE MANDATE</b>
+⏰ <b>Time:</b> {now_str}
+📍 <b>Reliance Spot:</b> ₹{spot:.2f}
+⚠️ <b>Trigger:</b> {reason}
+
+🔒 <b>Engine Decision:</b> <b>ALL NEW ENTRIES LOCKED FOR TODAY</b>
+• Zero further orders will be initiated.
+• Prevents emotional revenge trading and drawdown compounding.
+• Account capital remains safely preserved for tomorrow's market.
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
 
     @classmethod
     def format_armed_alert(

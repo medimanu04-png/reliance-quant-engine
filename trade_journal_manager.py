@@ -16,7 +16,7 @@ import os
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -1206,8 +1206,8 @@ class SequentialTradeEngine:
                     "sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - 4.5))),
                     "target": float(active_tr.get("suggested_exit", active_tr.get("entry_price", 0.0) + 10.0)),
                     "direction": active_tr.get("type", "BUY PE"),
-                    "qty": int(active_tr.get("qty", 1000)),
-                    "num_lots": int(active_tr.get("num_lots", 2)),
+                    "qty": int(active_tr.get("qty", 500)),
+                    "num_lots": int(active_tr.get("num_lots", 1)),
                     "highest_price": float(active_tr.get("actual_entry_price", active_tr.get("entry_price", 0.0))),
                     "trailing_sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - 4.5))),
                     "status": "Open",
@@ -1251,6 +1251,25 @@ class SequentialTradeEngine:
             logger.warning(f"Failed to persist sequential state: {e}")
 
     @classmethod
+    def has_daily_loss_occurred_today(cls) -> Tuple[bool, str]:
+        """
+        One-and-Done Institutional Circuit Breaker:
+        Returns (True, reason) if any trade executed today hit Stop-Loss or realized a negative PnL.
+        Protects the trader from revenge trading and overtrading.
+        """
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        journal = TradeJournalManager.load_journal()
+        today_losses = [
+            t for t in journal
+            if t.get("date") == today_str
+            and (t.get("status") in ["FAIL", "SL Hit"] or float(t.get("realised_pnl", 0.0)) < 0)
+        ]
+        if today_losses:
+            loss_t = today_losses[-1]
+            return True, f"1 Stop-Loss Hit Today on {loss_t.get('trading_symbol', 'RELIANCE')} ({loss_t.get('status')})"
+        return False, ""
+
+    @classmethod
     def enter_trade_direct(
         cls,
         contract: str,
@@ -1261,8 +1280,8 @@ class SequentialTradeEngine:
         direction: str,
         expiry: str,
         confluence: float,
-        qty: int = 1000,
-        num_lots: int = 2
+        qty: int = 500,
+        num_lots: int = 1
     ) -> Dict[str, Any]:
         """
         Immediately transitions engine to IN-TRADE (ACTIVE MONITORING).
@@ -1271,6 +1290,15 @@ class SequentialTradeEngine:
         """
         state = cls.get_state()
         curr_state = state.get("current_state", cls.STATE_IDLE)
+
+        # One-and-Done Daily Circuit Breaker Guard
+        has_loss, loss_reason = cls.has_daily_loss_occurred_today()
+        if has_loss:
+            return {
+                "success": False,
+                "msg": f"⛔ CIRCUIT BREAKER ACTIVE: {loss_reason}. All new entries locked for today to preserve capital.",
+                "state": state
+            }
 
         if curr_state == cls.STATE_IN_TRADE and state.get("active_trade"):
             return {
@@ -1345,8 +1373,8 @@ class SequentialTradeEngine:
         direction: str,
         expiry: str,
         confluence: float,
-        qty: int = 1000,
-        num_lots: int = 2
+        qty: int = 500,
+        num_lots: int = 1
     ) -> Dict[str, Any]:
         """
         Rule 1: Propose a new trade setup. Strictly forbidden if an active or pending trade exists.
@@ -1354,6 +1382,15 @@ class SequentialTradeEngine:
         """
         state = cls.get_state()
         curr_state = state.get("current_state", cls.STATE_IDLE)
+
+        # One-and-Done Daily Circuit Breaker Guard
+        has_loss, loss_reason = cls.has_daily_loss_occurred_today()
+        if has_loss:
+            return {
+                "success": False,
+                "msg": f"⛔ CIRCUIT BREAKER ACTIVE: {loss_reason}. All new entries locked for today to preserve capital.",
+                "state": state
+            }
 
         # Zero Parallel Signals Guard
         if curr_state in [cls.STATE_ENTRY_PENDING, cls.STATE_IN_TRADE]:
