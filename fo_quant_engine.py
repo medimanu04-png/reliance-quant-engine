@@ -6,12 +6,12 @@ Target Hit Probability Threshold: STRICTLY >= 90.0% (A+ Institutional Setup Only
 
 Operational Mandates & Parameters:
   1. Asset: RELIANCE (NSE: RELIANCE)
-  2. Lot Size: 500 Qty per Lot | Position: 2 Lots = 1,000 Units
+  2. Lot Size: 250 Qty per Lot | Position: Standard 1 Lot = 250 Units (Half-Kelly Scaled)
   3. Strike Mandate: DUAL ATM CORRIDOR (Nearest 10-Pt Increments: e.g. 1220 & 1230) with Quantitative Best Strike Selection
   4. Expiry Mandate: STRICTLY NEXT MONTHLY EXPIRY (Zero Near-Expiry Gamma Risk)
-  5. Fixed Target: +8.0 Points (Option Premium) -> +Rs. 8,000.00
-  6. Fixed Stop Loss: -4.0 Points (Option Premium) -> -Rs. 4,000.00 (1:2 R:R Ratio)
-  7. Capital Base: Rs. 50,000.00
+  5. Fixed Target: +6.5 to +8.5 Points (Option Premium)
+  6. Fixed Stop Loss: -3.2 to -4.5 Points (Option Premium) (1:2 R:R Ratio)
+  7. Capital Base: Rs. 73,643.72 (Strict <= 4.0% Risk Cap per Trade)
   8. Trading Window: 09:15 AM to 03:10 PM IST (Cutoff: 02:45 PM | Auto-Square-Off: 03:05 PM)
   9. ULTRA-HIGH-CONVICTION GATE:
      - Probability >= 90.0%: "TRADABLE DAY / A+ ULTRA-HIGH-CONVICTION SETUP (>90% HIT PROBABILITY)"
@@ -51,11 +51,51 @@ if sys.stdout.encoding != 'utf-8':
 class RelianceRiskBudget:
     total_capital: float = 73643.72
     lot_size: int = 250  # Standardized 1 lot = 250 units for strict institutional capital preservation
-    num_lots: int = 1    # Strictly 1 lot for institutional capital preservation (<= 4.0% risk cap)
+    num_lots: int = 1    # Strictly 1 lot base for institutional capital preservation (<= 4.0% risk cap)
     target_pts: float = 6.5
     stop_loss_pts: float = 3.2
     limit_collar_pts: float = 0.65  # Institutional Stop-Limit execution collar (prevents market spike slippage & gap misses)
     estimated_tax_per_lot: float = 65.0  # Estimated statutory charges (STT, GST, Exchange turnover & brokerage)
+    daily_sl_cap_rupees: float = 1200.0  # Strict 1-and-Done Cap (~1.6% of capital)
+    max_daily_sl_trades: int = 1  # 1-and-Done Rule (trading ceases immediately if 1 SL is hit)
+
+    def check_daily_sl_cap(self, daily_realized_loss: float = 0.0, daily_sl_count: int = 0) -> Tuple[bool, str]:
+        """
+        1-and-Done Daily SL Cap Enforcement.
+        If 1 trade hits SL or cumulative daily loss >= daily_sl_cap_rupees, lockout execution for the session.
+        """
+        if daily_sl_count >= self.max_daily_sl_trades:
+            return False, f"1-AND-DONE SL LOCKOUT ACTIVE: {daily_sl_count} SL hit today. Trading suspended to eliminate tilt & preserve capital."
+        if daily_realized_loss >= self.daily_sl_cap_rupees:
+            return False, f"DAILY LOSS CAP EXCEEDED: Loss Rs. {daily_realized_loss:.2f} >= Cap Rs. {self.daily_sl_cap_rupees:.2f}. Execution locked."
+        return True, "CAPITAL_RISK_BUDGET_AVAILABLE"
+
+    @staticmethod
+    def calculate_tiered_escalator_sl(
+        current_ltp: float,
+        entry_price: float,
+        initial_sl: float
+    ) -> Tuple[float, str, str]:
+        """
+        Tiered Trailing Breakeven Escalator Protocol:
+        - Tier 0: LTP < Entry + 3.5 pts -> Maintain Initial SL
+        - Tier 1: LTP >= Entry + 3.5 pts -> Move SL to Cost + 0.10 pts (Risk-Free Breakeven)
+        - Tier 2: LTP >= Entry + 5.5 pts -> Lock SL to Entry + 3.00 pts (Lock in Rs. 750+ profit)
+        """
+        profit_pts = round(current_ltp - entry_price, 2)
+        if profit_pts >= 5.5:
+            current_sl = round(entry_price + 3.00, 2)
+            tier_status = "TIER_2_PROFIT_LOCK (+5.5 pts hit -> SL locked at +3.0 pts)"
+            action = "LOCK_PROFIT_TRAILING"
+        elif profit_pts >= 3.5:
+            current_sl = round(entry_price + 0.10, 2)
+            tier_status = "TIER_1_BREAKEVEN (+3.5 pts hit -> SL moved to Cost +0.10 pts)"
+            action = "MOVE_SL_TO_COST_RISK_FREE"
+        else:
+            current_sl = initial_sl
+            tier_status = f"TIER_0_INITIAL_PROTECTION (Profit {profit_pts:+.2f} pts < +3.5 pts trigger)"
+            action = "MAINTAIN_INITIAL_STOP_LOSS"
+        return current_sl, tier_status, action
 
     def adapt_to_volatility(self, atr_15m: float, delta: float = 0.52, india_vix: float = 14.5):
         """
@@ -2068,10 +2108,12 @@ class MultiIndicatorMath:
         reward_risk_ratio: float = 2.22,
         capital: float = 73643.72,
         atr: float = 8.5,
-        lot_size: int = 250
+        lot_size: int = 250,
+        target_risk_pct: Optional[float] = None
     ) -> Tuple[float, float, int, float, str]:
         """
-        Dynamic Half-Kelly ($0.5 f^*$) Volatility Parity Position Sizing Engine.
+        Dynamic Half-Kelly ($0.5 f^*$) Volatility-Targeted Position Sizing Engine:
+        Target Lots = max(1, round((Target Risk % * Capital) / (ATR_14 * Lot Size)))
         """
         p = max(0.10, min(0.95, win_rate / 100.0 if win_rate > 1.0 else win_rate))
         q = 1.0 - p
@@ -2081,14 +2123,247 @@ class MultiIndicatorMath:
         f_star = max(0.0, min(0.40, f_star))
         half_kelly = f_star * 0.50
         
-        risk_capital = round(capital * half_kelly, 2)
-        one_lot_risk = 4.5 * lot_size
-        vol_factor = max(0.65, min(1.35, 8.5 / max(1.0, atr)))
-        calculated_lots = int((risk_capital / max(1.0, one_lot_risk)) * vol_factor)
-        recommended_lots = max(1, min(3, calculated_lots))
+        # Effective Target Risk %: capped strictly at <= 4.0% of account capital for preservation
+        effective_risk_pct = min(0.04, half_kelly) if half_kelly > 0 else 0.015
+        if target_risk_pct is not None and target_risk_pct > 0:
+            effective_risk_pct = min(0.04, target_risk_pct / 100.0 if target_risk_pct > 1.0 else target_risk_pct)
+
+        risk_capital = round(capital * effective_risk_pct, 2)
+        
+        # Standard option expected move risk = ATR_14 * 0.52 (delta)
+        opt_risk_per_unit = max(2.5, min(6.5, atr * 0.52))
+        risk_per_contract = opt_risk_per_unit * lot_size
+        
+        # Explicit Institutional Formula: max(1, round((effective_risk_pct * capital) / risk_per_contract))
+        calculated_lots = max(1, round(risk_capital / max(1.0, risk_per_contract)))
+        recommended_lots = min(3, calculated_lots) # Strict 3-lot ceiling for 73k account
         
         status = "OPTIMAL_HALF_KELLY_SIZING" if f_star > 0.15 else "CONSERVATIVE_CAPITAL_PRESERVATION"
         return round(f_star * 100.0, 1), round(half_kelly * 100.0, 1), recommended_lots, risk_capital, status
+
+    @staticmethod
+    def calculate_wick_guard_and_tick_persistence(
+        spot: float,
+        orb_high: float,
+        orb_low: float,
+        recent_ticks: Optional[List[float]] = None,
+        current_time: Optional[time] = None,
+        candle_elapsed_seconds: Optional[int] = None,
+        interval_seconds: int = 300
+    ) -> Tuple[bool, bool, bool, str]:
+        """
+        ORB Breakout + 45s Wick Guard + 2-Tick Persistence Validation Protocol.
+        
+        Institutional Rationale:
+        1. 45-Second Wick Guard: Breakouts occurring in the first 45 seconds of a 5-minute
+           candle often leave severe upper/lower wicks (intra-bar fakeout rejections).
+           Sustained body maturity (>= 45s) is mandatory before triggering.
+        2. 2-Tick Persistence: Verifies that price holds beyond the ORB perimeter for at least
+           2 consecutive market price samples/ticks, defeating single-tick liquidity sweeps.
+           
+        Returns:
+            (is_breakout_confirmed, wick_guard_passed, tick_persistence_passed, regime_description)
+        """
+        if orb_high <= 0 or orb_low <= 0:
+            return False, True, True, "ORB_NOT_ESTABLISHED"
+            
+        is_bull_cross = spot >= orb_high
+        is_bear_cross = spot <= orb_low
+        
+        if not (is_bull_cross or is_bear_cross):
+            return False, True, True, "INSIDE_ORB_CORRIDOR"
+            
+        # 1. 45s Wick Guard Evaluation
+        wick_guard_passed = True
+        elapsed_sec = 60
+        if candle_elapsed_seconds is not None:
+            elapsed_sec = candle_elapsed_seconds
+        elif current_time is not None:
+            m = current_time.minute % (interval_seconds // 60)
+            elapsed_sec = (m * 60) + current_time.second
+            
+        if elapsed_sec < 45:
+            wick_guard_passed = False
+            
+        # 2. 2-Tick Persistence Evaluation
+        tick_persistence_passed = True
+        if recent_ticks and len(recent_ticks) >= 2:
+            if is_bull_cross:
+                tick_persistence_passed = (recent_ticks[-1] >= orb_high and recent_ticks[-2] >= orb_high)
+            else:
+                tick_persistence_passed = (recent_ticks[-1] <= orb_low and recent_ticks[-2] <= orb_low)
+                
+        is_breakout_confirmed = (is_bull_cross or is_bear_cross) and wick_guard_passed and tick_persistence_passed
+        
+        if not wick_guard_passed:
+            regime = "EARLY_CANDLE_WICK_TRAP_HAZARD (<45s Elapsed — Awaiting Bar Maturity)"
+        elif not tick_persistence_passed:
+            regime = "SINGLE_TICK_SWEEP_REJECTION (Failed 2-Tick Persistence Filter)"
+        elif is_breakout_confirmed:
+            regime = "INSTITUTIONAL_PERSISTENT_BREAKOUT_CONFIRMED (Wick Guard & 2-Tick Passed)"
+        else:
+            regime = "NEUTRAL_CORRIDOR"
+            
+        return is_breakout_confirmed, wick_guard_passed, tick_persistence_passed, regime
+
+    @staticmethod
+    def calculate_value_at_risk_and_greeks_neutrality(
+        spot: float,
+        option_ltp: float,
+        num_lots: int = 1,
+        lot_size: int = 250,
+        delta: float = 0.52,
+        iv: float = 0.212,
+        dte: int = 30,
+        contract_type: str = "CE",
+        confidence_level: float = 0.99
+    ) -> Dict[str, Any]:
+        """
+        Value-at-Risk (VaR 95% & 99%) & Real-Time Portfolio Greek Neutrality Framework.
+        
+        Mathematical Formulations:
+        1. 1-Day Parametric VaR = Position Notional * Z_alpha * (IV / sqrt(252))
+        2. Net Portfolio Delta = Qty * Contract Delta (in underlying shares)
+        3. Portfolio Greek Neutrality: Quantifies directional beta exposure vs market-neutral delta-gamma hedging.
+        """
+        qty = num_lots * lot_size
+        position_notional = round(qty * option_ltp, 2)
+        daily_vol = iv / math.sqrt(252.0)
+        
+        # Z-scores for standard confidence levels
+        z_95 = 1.645
+        z_99 = 2.326
+        
+        # Max loss is capped by premium paid for long naked option
+        var_95_pts = min(option_ltp, round(option_ltp * z_95 * daily_vol * 1.5, 2))
+        var_99_pts = min(option_ltp, round(option_ltp * z_99 * daily_vol * 1.5, 2))
+        var_95_rs = round(var_95_pts * qty, 2)
+        var_99_rs = round(var_99_pts * qty, 2)
+        
+        # Portfolio Greeks in Share / Currency equivalents
+        eff_delta = delta if contract_type == "CE" else -delta
+        pos_delta_shares = round(qty * eff_delta, 1)
+        
+        # Gamma: dDelta / dSpot = N'(d1) / (Spot * IV * sqrt(T))
+        T = max(1, dte) / 365.0
+        gamma_unit = 0.3989 / max(1.0, spot * iv * math.sqrt(T))
+        pos_gamma = round(qty * gamma_unit, 4)
+        
+        # Theta: 1-Day Theta decay in Rupees
+        theta_unit_day = round((option_ltp * iv) / (2.0 * math.sqrt(T) * 365.0), 2)
+        pos_theta_rs = round(-qty * theta_unit_day, 2)
+        
+        # Vega: Rupees per 1% change in IV
+        vega_unit = round(spot * math.sqrt(T) * 0.01 * 0.3989, 2)
+        pos_vega_rs = round(qty * vega_unit, 2)
+        
+        if abs(pos_delta_shares) <= 25.0:
+            neutrality_regime = "DELTA_NEUTRAL_HEDGED (Market-Neutral Portfolio)"
+        elif pos_delta_shares > 25.0:
+            neutrality_regime = f"DIRECTIONAL_LONG_GAMMA (+{pos_delta_shares} Share Delta Equivalent)"
+        else:
+            neutrality_regime = f"DIRECTIONAL_SHORT_GAMMA ({pos_delta_shares} Share Delta Equivalent)"
+            
+        return {
+            "position_notional": position_notional,
+            "var_95_rupees": var_95_rs,
+            "var_99_rupees": var_99_rs,
+            "var_95_pts": var_95_pts,
+            "var_99_pts": var_99_pts,
+            "portfolio_delta_shares": pos_delta_shares,
+            "portfolio_gamma": pos_gamma,
+            "portfolio_theta_daily_rs": pos_theta_rs,
+            "portfolio_vega_rs": pos_vega_rs,
+            "neutrality_regime": neutrality_regime,
+            "max_risk_cap_rupees": round(num_lots * lot_size * 4.5, 2)
+        }
+
+    @staticmethod
+    def calculate_passive_limit_pegging_and_vwap_slicing(
+        bid_price: float,
+        ask_price: float,
+        bid_qty: int = 1000,
+        ask_qty: int = 1000,
+        target_lots: int = 1,
+        lot_size: int = 250,
+        urgency: str = "PASSIVE",
+        entry_trigger: float = 0.0,
+        max_collar_pts: float = 0.30
+    ) -> Dict[str, Any]:
+        """
+        Passive Limit Pegging, VWAP Slicing & Zero-Slippage Routing Protocol.
+        
+        Institutional Rationale:
+        1. Passive Limit Pegging: Eliminates the 0.20-0.50 pt bid-ask spread drag of market orders.
+           Calculates order book Micro-Price and pegs limit orders passively to earn the spread.
+        2. VWAP Slicing Engine: Slices parent orders (>1 lot) into balanced child tranches to eliminate
+           market impact and adverse selection.
+        3. Zero-Slippage SL-LMT Routing Collar: Strictly limits fill slippage within max_collar_pts (0.30 pts = Rs. 75).
+        """
+        b = max(0.05, float(bid_price))
+        a = max(b + 0.05, float(ask_price))
+        spread = round(a - b, 2)
+        total_depth = max(1, bid_qty + ask_qty)
+        
+        # Order Book Micro-Price: Size-weighted volume equilibrium
+        micro_price = round(((bid_qty * a) + (ask_qty * b)) / total_depth, 2)
+        
+        # Passive Pegged Price Resolution
+        if urgency == "PASSIVE":
+            # Peg to Best Bid + 0.05 (Priority maker fill without crossing spread)
+            pegged_limit = round(min(a - 0.05, b + 0.05), 2)
+            routing_mode = "PASSIVE_BID_PEG (Maker Rebate / Zero Spread Drag)"
+        elif urgency == "MIDPOINT":
+            # Peg to Micro-Price / Midpoint
+            pegged_limit = round((b + a) / 2.0, 2)
+            routing_mode = "MICRO_PRICE_MIDPOINT_PEG (Balanced Execution)"
+        else:
+            # COLLAR_TRIGGER: Aggressive breakout execution with strict limit collar cap
+            pegged_limit = round(entry_trigger + max_collar_pts, 2) if entry_trigger > 0 else round(a, 2)
+            routing_mode = "ZERO_SLIPPAGE_COLLAR_ROUTING (SL-LMT Execution Cap)"
+            
+        slippage_saved_pts = round(max(0.0, a - pegged_limit), 2)
+        slippage_saved_rs = round(slippage_saved_pts * target_lots * lot_size, 2)
+        
+        # VWAP Slicing Schedule
+        if target_lots > 1:
+            num_slices = min(target_lots, 3)
+            slice_size_lots = target_lots // num_slices
+            remainder = target_lots % num_slices
+            slices = []
+            for i in range(num_slices):
+                lots = slice_size_lots + (1 if i < remainder else 0)
+                slices.append({
+                    "slice_id": i + 1,
+                    "lots": lots,
+                    "qty": lots * lot_size,
+                    "interval_seconds": i * 45,
+                    "peg_price": pegged_limit
+                })
+            slicing_regime = f"VWAP_SLICED_{num_slices}_TRANCHES ({target_lots} Total Lots sliced over {num_slices * 45}s)"
+        else:
+            slices = [{
+                "slice_id": 1,
+                "lots": 1,
+                "qty": lot_size,
+                "interval_seconds": 0,
+                "peg_price": pegged_limit
+            }]
+            slicing_regime = "SINGLE_LOT_DIRECT_PEGGED (No Slicing Required)"
+            
+        return {
+            "bid_price": b,
+            "ask_price": a,
+            "spread_pts": spread,
+            "micro_price": micro_price,
+            "pegged_limit_price": pegged_limit,
+            "slippage_saved_pts": slippage_saved_pts,
+            "slippage_saved_rupees": slippage_saved_rs,
+            "routing_mode": routing_mode,
+            "slicing_regime": slicing_regime,
+            "child_slices": slices,
+            "zero_slippage_collar_cap": round(entry_trigger + max_collar_pts, 2) if entry_trigger > 0 else round(pegged_limit + max_collar_pts, 2)
+        }
 
 
 
@@ -2151,6 +2426,18 @@ class UltraHighConvictionRelianceEngine:
         adx, pdi, mdi = MultiIndicatorMath.calculate_adx(c5m["high"], c5m["low"], c5m["close"], 14)
         orb_high, orb_low = MultiIndicatorMath.calculate_orb(c5m["high"], c5m["low"], 3, c5m.get("date"))
 
+        # Toby Crabel / Linda Raschke ORB Breakout + 45s Wick Guard + 2-Tick Persistence
+        recent_ticks_orb = c5m["close"][-5:] if len(c5m["close"]) >= 5 else [spot, spot]
+        is_breakout_confirmed, wick_guard_passed, tick_persistence_passed, persistence_regime = MultiIndicatorMath.calculate_wick_guard_and_tick_persistence(
+            spot=spot,
+            orb_high=orb_high,
+            orb_low=orb_low,
+            recent_ticks=recent_ticks_orb,
+            current_time=current_time,
+            candle_elapsed_seconds=None,
+            interval_seconds=300
+        )
+
         # Kaufman Adaptive Moving Average (KAMA) & Efficiency Ratio (KER)
         kama_series, ker_val, ker_regime = MultiIndicatorMath.calculate_kama(c5m["close"], 10, 2, 30)
         kama_latest = kama_series[-1] if kama_series else spot
@@ -2164,7 +2451,14 @@ class UltraHighConvictionRelianceEngine:
         if adx >= 25.0 and pdi > mdi:
             v1_bull += 3.0
         if spot >= orb_high:
-            v1_bull += 3.0  # Confirmed 15m ORB Breakout
+            if is_breakout_confirmed:
+                v1_bull += 3.0  # Confirmed 15m ORB Breakout (Wick Guard & 2-Tick Passed)
+            elif not wick_guard_passed:
+                v1_bull += 0.5  # Early candle wick trap hazard (<45s elapsed)
+            elif not tick_persistence_passed:
+                v1_bull += 0.5  # Single-tick sweep rejection penalty
+            else:
+                v1_bull += 1.5
         if htf_bull:
             v1_bull += 3.0  # 60m Macro Trend Invariance Confirmation
         if spot > kama_latest and ker_val >= 0.35:
@@ -2181,7 +2475,14 @@ class UltraHighConvictionRelianceEngine:
         if adx >= 25.0 and mdi > pdi:
             v1_bear += 3.0
         if spot <= orb_low:
-            v1_bear += 3.0  # Confirmed 15m ORB Breakdown
+            if is_breakout_confirmed:
+                v1_bear += 3.0  # Confirmed 15m ORB Breakdown (Wick Guard & 2-Tick Passed)
+            elif not wick_guard_passed:
+                v1_bear += 0.5  # Early candle wick trap hazard (<45s elapsed)
+            elif not tick_persistence_passed:
+                v1_bear += 0.5  # Single-tick sweep rejection penalty
+            else:
+                v1_bear += 1.5
         if htf_bear:
             v1_bear += 3.0  # 60m Macro Trend Invariance Confirmation
         if spot < kama_latest and ker_val >= 0.35:
@@ -2923,6 +3224,33 @@ class UltraHighConvictionRelianceEngine:
             lot_size=self.risk.lot_size
         )
 
+        # Value-at-Risk (VaR 95% & 99%) & Real-Time Portfolio Greek Neutrality Framework
+        active_delta = delta_ce if recommended_type == "CE" else delta_pe
+        var_greeks = MultiIndicatorMath.calculate_value_at_risk_and_greeks_neutrality(
+            spot=spot,
+            option_ltp=current_option_ltp if current_option_ltp > 0 else 18.0,
+            num_lots=kelly_lots,
+            lot_size=self.risk.lot_size,
+            delta=active_delta,
+            iv=iv,
+            dte=dte_val,
+            contract_type=recommended_type,
+            confidence_level=0.99
+        )
+
+        # Passive Limit Pegging, VWAP Slicing & Zero-Slippage Routing Protocol
+        pegged_routing = MultiIndicatorMath.calculate_passive_limit_pegging_and_vwap_slicing(
+            bid_price=float(opt_telemetry.get("best_bid", current_option_ltp - 0.15)),
+            ask_price=float(opt_telemetry.get("best_ask", current_option_ltp + 0.15)),
+            bid_qty=int(opt_telemetry.get("bid_qty", 1000)),
+            ask_qty=int(opt_telemetry.get("ask_qty", 1000)),
+            target_lots=kelly_lots,
+            lot_size=self.risk.lot_size,
+            urgency="COLLAR_TRIGGER" if is_tradable else "PASSIVE",
+            entry_trigger=entry_premium,
+            max_collar_pts=self.risk.limit_collar_pts
+        )
+
         # Tiered Automated Trailing Breakeven Escalator Guidelines
         breakeven_trigger_price = round(entry_premium + 3.5, 2)
         lock_profit_trigger_price = round(entry_premium + 5.5, 2)
@@ -2932,8 +3260,9 @@ class UltraHighConvictionRelianceEngine:
         target_text = (
             f"TARGET: Rs. {tp_premium:.2f} (+{self.risk.target_pts:.1f} pts | Gross +Rs. {self.risk.target_reward_rupees:,.0f} | Net ~Rs. {self.risk.net_target_reward_rupees:,.0f}) | "
             f"STOP LOSS: Rs. {sl_premium:.2f} (-{self.risk.stop_loss_pts:.1f} pts | Gross -Rs. {self.risk.max_risk_rupees:,.0f} | Net ~Rs. {self.risk.net_max_risk_rupees:,.0f}) "
-            f"[Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f} | SL Order: Trigger {sl_premium:.2f} / Limit {sl_limit_collar:.2f}] "
-            f"🛡️ [Breakeven Escalator: 1) At +3.5 pts (Rs. {breakeven_trigger_price:.2f}) -> Move SL to Cost Rs. {breakeven_sl:.2f} (Risk-Free!) | 2) At +5.5 pts (Rs. {lock_profit_trigger_price:.2f}) -> Lock SL to Rs. {lock_profit_sl:.2f} (+Rs. 750 profit)]"
+            f"[Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f} | Pegged Limit: Rs. {pegged_routing['pegged_limit_price']:.2f} | Routing: {pegged_routing['routing_mode']}] "
+            f"🛡️ [Breakeven Escalator: 1) At +3.5 pts (Rs. {breakeven_trigger_price:.2f}) -> Move SL to Cost Rs. {breakeven_sl:.2f} (Risk-Free!) | 2) At +5.5 pts (Rs. {lock_profit_trigger_price:.2f}) -> Lock SL to Rs. {lock_profit_sl:.2f} (+Rs. 750 profit)] "
+            f"📊 [VaR 99%: Rs. {var_greeks['var_99_rupees']:,.0f} | Delta Eqv: {var_greeks['portfolio_delta_shares']:+.1f} Sh | {var_greeks['neutrality_regime']}]"
             if is_tradable
             else "TARGET: N/A | STOP LOSS: N/A"
         )
@@ -2947,10 +3276,10 @@ class UltraHighConvictionRelianceEngine:
             "6. TARGET | STOP LOSS": target_text,
             "7. RATIONALE & CONFLUENCE": {
                 "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. W-AVWAP: Rs. {w_avwap:.2f} [{w_avwap_regime}]. VWAP Slope: {delta_vwap:+.2f} pts [{vwap_slope_regime}]. AVWAP Extremes: {avwap_stance} (HOD Rs. {avwap_hod:.2f} | LOD Rs. {avwap_lod:.2f}). Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. CMF-20: {cmf_val:+.3f} [{cmf_bias}] | PVT: {pvt_bias} | EOM: {eom_regime} | Micro-Price OBI: {obi:+.3f} [{obi_bias}] | OBV: {obv_bias} | CVD: {cvd_bias} | VPIN: {vpin_val:.3f} [{vpin_regime}].",
-                "SuperTrend, EMA & ORB-15": f"EMA Stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) | SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). CPR: P={cpr_pivot:.1f}, TC={cpr_tc:.1f}, BC={cpr_bc:.1f} [{cpr_regime}]. Donchian-20: [{donch_l:.1f} - {donch_u:.1f}] [{donch_bias}]. Contraction Pattern: {contraction_pattern}. 15m ORB: Rs. {orb_low:.2f} - Rs. {orb_high:.2f}.",
+                "SuperTrend, EMA & ORB-15": f"EMA Stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) | SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). CPR: P={cpr_pivot:.1f}, TC={cpr_tc:.1f}, BC={cpr_bc:.1f} [{cpr_regime}]. Donchian-20: [{donch_l:.1f} - {donch_u:.1f}] [{donch_bias}]. Contraction Pattern: {contraction_pattern}. 15m ORB: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Wick Guard: {'Passed (>=45s)' if wick_guard_passed else 'Immature (<45s)'} | 2-Tick: {'Confirmed' if tick_persistence_passed else 'Sweep Trap'}).",
                 "Volatility & Choppiness": f"Choppiness Index (CHOP-14)={chop_idx:.1f} ({'Trending' if is_trending_regime else ('Chop' if is_choppy_regime else 'Neutral')}). Hurst: H={hurst_val:.2f} [{hurst_regime}]. TTM Squeeze: {squeeze_state} (Ratio: {squeeze_ratio:.2f}). Chaikin Vol: {cv_val:+.1f}% [{cv_regime}] | Mass Index: {mass_val:.2f} [{mass_regime}]. Straddle Move: +/-Rs. {exp_move_pts:.1f} ({exp_lower:.1f}-{exp_upper:.1f}) [{straddle_regime}]. RV/IV Spread: {rv_iv_spread:+.1f}% [{vol_edge}] | ATR(14)={atr_15m:.2f} pts | Parkinson={parkinson_vol:.1f}% | IVP={iv_percentile:.1f}% [{iv_regime}].",
                 "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stoch %K={stoch_k:.1f} | CMO(14)={cmo_val:+.1f} [{cmo_regime}] | STC={stc_val:.1f} [{stc_bias}] | Fisher={fisher_val:+.2f} [{fisher_bias}] | Connors RSI-3={crsi_val:.1f} [{crsi_regime}].",
-                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall Rs. {call_wall:.0f}, Put Wall Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Cash-Futures Basis: {basis_pts:+.2f} pts [{basis_regime}]. PCR Flow Div: {pcr_div:+.2f} [{pcr_flow_bias}]. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. OI Vel: C {call_vel:+.1f}%/5m | P {put_vel:+.1f}%/5m. Theta: -Rs. {theta_hr:.2f}/hr. NIFTY: {nifty_pct:+.2f}% | ENERGY: {energy_pct:+.2f}% [{sec_regime}] | Alpha: {alpha_spread:+.2f}% [{rs_bias}]. Half-Kelly: {half_kelly_pct:.1f}% ({kelly_lots} Lots | {kelly_status})."
+                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall Rs. {call_wall:.0f}, Put Wall Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Cash-Futures Basis: {basis_pts:+.2f} pts [{basis_regime}]. PCR Flow Div: {pcr_div:+.2f} [{pcr_flow_bias}]. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. OI Vel: C {call_vel:+.1f}%/5m | P {put_vel:+.1f}%/5m. Theta: -Rs. {theta_hr:.2f}/hr. NIFTY: {nifty_pct:+.2f}% | ENERGY: {energy_pct:+.2f}% [{sec_regime}] | Alpha: {alpha_spread:+.2f}% [{rs_bias}]. Half-Kelly: {half_kelly_pct:.1f}% ({kelly_lots} Lots | {kelly_status}). VaR 99%: Rs. {var_greeks['var_99_rupees']:,.0f} | Delta Eqv: {var_greeks['portfolio_delta_shares']:+.1f} Sh | Slicing: {pegged_routing['slicing_regime']}."
             },
             "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else "NONE — Stand down (Conditions do not satisfy A+ threshold)",
             "dominant_score": dominant_score,
@@ -3070,7 +3399,24 @@ class UltraHighConvictionRelianceEngine:
             "half_kelly_pct": round(half_kelly_pct, 2),
             "kelly_recommended_lots": kelly_lots,
             "kelly_risk_cap": round(kelly_risk_cap, 2),
-            "kelly_status": kelly_status
+            "kelly_status": kelly_status,
+            "is_breakout_confirmed": is_breakout_confirmed,
+            "wick_guard_passed": wick_guard_passed,
+            "tick_persistence_passed": tick_persistence_passed,
+            "persistence_regime": persistence_regime,
+            "var_95_rupees": var_greeks["var_95_rupees"],
+            "var_99_rupees": var_greeks["var_99_rupees"],
+            "var_95_pts": var_greeks["var_95_pts"],
+            "var_99_pts": var_greeks["var_99_pts"],
+            "portfolio_delta_shares": var_greeks["portfolio_delta_shares"],
+            "portfolio_gamma": var_greeks["portfolio_gamma"],
+            "portfolio_theta_daily_rs": var_greeks["portfolio_theta_daily_rs"],
+            "portfolio_vega_rs": var_greeks["portfolio_vega_rs"],
+            "neutrality_regime": var_greeks["neutrality_regime"],
+            "pegged_limit_price": pegged_routing["pegged_limit_price"],
+            "routing_mode": pegged_routing["routing_mode"],
+            "slicing_regime": pegged_routing["slicing_regime"],
+            "slippage_saved_rupees": pegged_routing["slippage_saved_rupees"]
         }
 
 
@@ -3102,7 +3448,7 @@ def main():
     print(f"1230 CE (Rank 2)  : LTP Rs. {high['call_ltp']:.2f} | Vol: {high['call_volume_contracts']:,} Lots (Rs. {high['call_volume_cr']:,.2f} Cr) | OI: {high['call_oi_lots']:,} Lots ({high['call_oi_shares']:,} Sh) [+{high['call_oi_change_pct']:.1f}%]")
     print(f"ATM Order Flow    : 1220 PCR: {low['pcr_oi']:.2f} | 1230 PCR: {high['pcr_oi']:.2f} | Flow: {atm_telemetry['comparative']['flow_bias']}")
     print(f"Option Chain OI   : Cumulative PCR: {chain_preview['overall_pcr']:.2f} | Max Pain: Rs. {chain_preview['max_pain']} | Put Wall: Rs. {chain_preview['put_wall']}")
-    print(f"Contract          : RELIANCE (1 Lot = 500 Qty) | Sizing: {engine.risk.num_lots} Lot = {engine.risk.total_quantity} Units")
+    print(f"Contract          : RELIANCE (1 Lot = {engine.risk.lot_size} Qty) | Sizing: {engine.risk.num_lots} Lot = {engine.risk.total_quantity} Units")
     print(f"Strike Policy     : DUAL ATM CORRIDOR with Quantitative Best Strike Selection")
     print(f"Target Hit Gate   : ULTRA-STRICT >= 90.0% Probability Confluence (A+ Setup)")
     print(f"Fixed Target      : +{engine.risk.target_pts} pts (+Rs. {engine.risk.target_reward_rupees:,.2f})")

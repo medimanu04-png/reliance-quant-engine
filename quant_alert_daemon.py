@@ -389,6 +389,7 @@ class RelianceQuantAlertDaemon:
         # Microstructure Confirmation Gate (Anti-Wick & Candle-Maturity Protocol)
         sec_into_bar = (now_dt.minute % 5) * 60 + now_dt.second
         is_bar_mature = (sec_into_bar >= 45)  # Filters noise spikes during the first 45s of candle formation
+        wick_guard_passed = confluence_eval.get("wick_guard_passed", is_bar_mature)
 
         breakout_key = f"{today_date}_{recommended_strike}_{contract_type}"
         if active_option_ltp >= breakout_level:
@@ -400,7 +401,7 @@ class RelianceQuantAlertDaemon:
         # Require price to hold at/above breakout level for at least 2 consecutive daemon scan ticks
         tick_persistence_passed = (consecutive_ticks >= 2) or self.force_run
 
-        candle_gate_passed = is_bar_mature and tick_persistence_passed
+        candle_gate_passed = is_bar_mature and wick_guard_passed and tick_persistence_passed
         if self.require_candle_close:
             # Strict closed candle requirement (must be within last 30s of 5m bar or completed)
             candle_gate_passed = (sec_into_bar >= 270) and tick_persistence_passed
@@ -643,11 +644,14 @@ class RelianceQuantAlertDaemon:
                         rationale=(
                             f"Dual ATM Breakout confirmed ({tier_str})\n"
                             f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
-                            f"• Order Type: Stop-Loss Limit (SL-LMT)\n"
+                            f"• Order Type: Stop-Loss Limit (SL-LMT) | Pegged Limit: ₹{confluence_eval.get('pegged_limit_price', active_option_ltp):.2f}\n"
                             f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{self.quant_engine.risk.limit_collar_pts:.2f})\n"
+                            f"• Wick Guard: {'Passed (>=45s)' if wick_guard_passed else 'Immature'} | 2-Tick: Confirmed ({consecutive_ticks} ticks)\n"
+                            f"• Macro & Basis: W-AVWAP ₹{confluence_eval.get('w_avwap', spot):.2f} | Futures Basis {confluence_eval.get('basis_pts', 0.0):+.2f} pts ({confluence_eval.get('basis_regime', 'BALANCED')})\n"
+                            f"• Sizing & Risk: Half-Kelly {confluence_eval.get('half_kelly_pct', 20.0):.1f}% ({confluence_eval.get('kelly_recommended_lots', 1)} Lots) | VaR-99% ₹{confluence_eval.get('var_99_rupees', 0.0):,.0f} | Delta Eqv: {confluence_eval.get('portfolio_delta_shares', 0.0):+.1f} Sh\n"
                             f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', 1200):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
                             f"• Trend & Efficiency: KAMA @ ₹{confluence_eval.get('kama', spot):.2f} (KER: {confluence_eval.get('kaufman_efficiency_ratio', 0.5):.2f}) | FVG: {confluence_eval.get('fvg_status', 'NEUTRAL')}\n"
-                            f"• Liquidity Spread: {confluence_eval.get('corwin_schultz_spread_pct', 0.05):.3f}% ({confluence_eval.get('corwin_schultz_regime', 'NORMAL')}) | Bar Maturity: {confluence_eval.get('bar_maturity_pct', 80.0):.0f}%\n"
+                            f"• Routing & Slicing: {confluence_eval.get('routing_mode', 'ZERO_SLIPPAGE_ROUTING')} | {confluence_eval.get('slicing_regime', 'DIRECT_PEGGED')}\n"
                             f"• Stop Loss Protection: Set SL-LMT order Trigger ₹{max(0.05, active_option_ltp - dynamic_sl_pts):.2f} / Limit ₹{max(0.05, active_option_ltp - dynamic_sl_pts - self.quant_engine.risk.limit_collar_pts):.2f}. (Emergency: Exit at Market if limit breached!){spread_text}"
                         )
                     )

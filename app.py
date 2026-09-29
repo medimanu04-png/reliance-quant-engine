@@ -3939,8 +3939,21 @@ if df is not None and not df.empty:
 
     orb_h = float(latest.get('ORB_High', spot + 10))
     orb_l = float(latest.get('ORB_Low', spot - 10))
-    orb_breakout = spot >= orb_h
-    orb_breakdown = spot <= orb_l
+
+    # ORB Breakout + 45s Wick Guard + 2-Tick Persistence Validation Protocol
+    from fo_quant_engine import MultiIndicatorMath
+    recent_ticks_app = df['Close'].iloc[-5:].tolist() if len(df) >= 5 else [spot, spot]
+    is_orb_confirmed, wick_guard_passed, tick_persistence_passed, orb_persistence_regime = MultiIndicatorMath.calculate_wick_guard_and_tick_persistence(
+        spot=spot,
+        orb_high=orb_h,
+        orb_low=orb_l,
+        recent_ticks=recent_ticks_app,
+        current_time=current_time,
+        candle_elapsed_seconds=None,
+        interval_seconds=300
+    )
+    orb_breakout = (spot >= orb_h) and is_orb_confirmed
+    orb_breakdown = (spot <= orb_l) and is_orb_confirmed
 
     # Higher-Timeframe 60m Trend Invariance Check
     htf_ref = float(latest.get('HTF_EMA20', latest['Close']))
@@ -6570,6 +6583,32 @@ if df is not None and not df.empty:
         # ==============================================================================
         st.subheader(f"⚡ Live 1-Second Dynamic Telemetry: Dual ATM Corridor (₹{lower_atm} & ₹{upper_atm})")
 
+        # Real-Time Portfolio VaR, Greek Neutrality, Passive Limit Pegging & VWAP Slicing
+        active_plan_ltp = live_broker_ltp if live_broker_ltp > 0 else (c1_live_ltp if atm_strike == lower_atm else c2_live_ltp)
+        var_greeks_app = MultiIndicatorMath.calculate_value_at_risk_and_greeks_neutrality(
+            spot=spot,
+            option_ltp=active_plan_ltp if active_plan_ltp > 0 else 18.0,
+            num_lots=kelly_recommended_lots,
+            lot_size=lot_size,
+            delta=0.52,
+            iv=float(latest.get('Parkinson_Vol', 21.0)) / 100.0,
+            dte=expiry_plan.get("dte", 30),
+            contract_type=recommended_contract_type if recommended_contract_type else "CE",
+            confidence_level=0.99
+        )
+
+        pegged_routing_app = MultiIndicatorMath.calculate_passive_limit_pegging_and_vwap_slicing(
+            bid_price=float(opt_telemetry.get("best_bid", active_plan_ltp - 0.15)),
+            ask_price=float(opt_telemetry.get("best_ask", active_plan_ltp + 0.15)),
+            bid_qty=int(opt_telemetry.get("bid_qty", 1000)),
+            ask_qty=int(opt_telemetry.get("ask_qty", 1000)),
+            target_lots=kelly_recommended_lots,
+            lot_size=lot_size,
+            urgency="COLLAR_TRIGGER" if (orb_breakout or orb_breakdown) else "PASSIVE",
+            entry_trigger=active_plan_ltp + 1.20,
+            max_collar_pts=0.65
+        )
+
         trade_plan = {
             "is_tradable": is_tradable,
             "dominant_side": dominant_side,
@@ -6665,6 +6704,23 @@ if df is not None and not df.empty:
             "connors_rsi": float(latest.get('Connors_RSI', 50.0)),
             "rec_limit_premium": mtf_matrix['m1']['rec_limit_premium_ce'] if recommended_contract_type == "CE" else mtf_matrix['m1']['rec_limit_premium_pe'],
             "premium_savings_pts": mtf_matrix['m1']['premium_savings_pts'],
+            "is_orb_confirmed": is_orb_confirmed,
+            "wick_guard_passed": wick_guard_passed,
+            "tick_persistence_passed": tick_persistence_passed,
+            "orb_persistence_regime": orb_persistence_regime,
+            "var_95_rupees": var_greeks_app["var_95_rupees"],
+            "var_99_rupees": var_greeks_app["var_99_rupees"],
+            "var_95_pts": var_greeks_app["var_95_pts"],
+            "var_99_pts": var_greeks_app["var_99_pts"],
+            "portfolio_delta_shares": var_greeks_app["portfolio_delta_shares"],
+            "portfolio_gamma": var_greeks_app["portfolio_gamma"],
+            "portfolio_theta_daily_rs": var_greeks_app["portfolio_theta_daily_rs"],
+            "portfolio_vega_rs": var_greeks_app["portfolio_vega_rs"],
+            "neutrality_regime": var_greeks_app["neutrality_regime"],
+            "pegged_limit_price": pegged_routing_app["pegged_limit_price"],
+            "routing_mode": pegged_routing_app["routing_mode"],
+            "slicing_regime": pegged_routing_app["slicing_regime"],
+            "slippage_saved_rupees": pegged_routing_app["slippage_saved_rupees"],
             "tg_rationale": (
                 f"• <b>M15 Structure:</b> {mtf_matrix['m15']['regime'].replace('_', ' ')} (9/20/50 EMA stack)\n"
                 f"• <b>M5 Trigger:</b> {mtf_matrix['m5']['trigger'].replace('_', ' ')} | CPR: {str(latest.get('CPR_Regime', 'NORMAL_CPR')).replace('_', ' ')}\n"
@@ -6674,7 +6730,10 @@ if df is not None and not df.empty:
                 f"• <b>Momentum Matrix:</b> CMO {float(latest.get('CMO_14', 0.0)):+.1f} | STC {float(latest.get('STC', 50.0)):.1f} | CRSI {float(latest.get('Connors_RSI', 50.0)):.1f} | Fisher {float(latest.get('Fisher_Transform', 0.0)):+.2f}\n"
                 f"• <b>IV & Basis:</b> IVP {iv_percentile:.1f}% | Basis {basis_pts:+.2f} pts | Straddle Move ±₹{exp_move_pts:.1f}\n"
                 f"• <b>Brent/MCX Crude:</b> {crude_pct:+.2f}% ({'🟢 Refining Tailwind' if crude_rallying else ('🔴 Severe O2C Drag' if crude_dumping_severe else 'Steady')})\n"
-                f"• <b>Half-Kelly Sizing:</b> {half_kelly_pct:.1f}% ({kelly_recommended_lots} Lots | {kelly_status}) | 1.5× ATR SL: -{effective_sl_pts:.1f} pts ({risk_pct_of_capital:.1f}% of Capital ≤ 4%)"
+                f"• <b>Half-Kelly Sizing:</b> {half_kelly_pct:.1f}% ({kelly_recommended_lots} Lots | {kelly_status}) | 1.5× ATR SL: -{effective_sl_pts:.1f} pts ({risk_pct_of_capital:.1f}% of Capital ≤ 4%)\n"
+                f"• <b>Risk Management & VaR:</b> VaR-99% ₹{var_greeks_app['var_99_rupees']:,.0f} | Portfolio Delta {var_greeks_app['portfolio_delta_shares']:+.1f} Sh ({var_greeks_app['neutrality_regime']})\n"
+                f"• <b>Execution Routing:</b> {pegged_routing_app['routing_mode']} @ ₹{pegged_routing_app['pegged_limit_price']:.2f} | {pegged_routing_app['slicing_regime']}\n"
+                f"• <b>ORB & Wick Guard:</b> {'🟢 Confirmed' if is_orb_confirmed else '⏳ ' + orb_persistence_regime}"
             )
         }
 
@@ -7589,8 +7648,8 @@ if df is not None and not df.empty:
                     mf_c4, mf_c5, mf_c6, mf_c7 = st.columns(4)
                     m_entry = mf_c4.number_input("Actual Entry Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price))
                     m_exit = mf_c5.number_input("Actual Exit Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price + 10.0 if m_status == "HIT" else max(0.05, today_strike_price - 4.5)))
-                    m_qty = mf_c6.number_input("Traded Quantity", min_value=1, step=50, value=1000)
-                    m_pnl = mf_c7.number_input("Total Profit / P&L (₹)", step=500.0, value=round((m_exit - m_entry) * m_qty, 2) if m_status in ["HIT", "FAIL"] else 0.0)
+                    m_qty = mf_c6.number_input("Traded Quantity", min_value=1, step=50, value=int(st.session_state.get("lot_size", 250) * st.session_state.get("num_lots", 1)))
+                    m_pnl = mf_c7.number_input("Total Profit / P&L (₹)", step=250.0, value=round((m_exit - m_entry) * m_qty, 2) if m_status in ["HIT", "FAIL"] else 0.0)
 
                     m_notes = st.text_input("Audit Notes", value="Manual Trade Adjustment")
                     m_submit = st_form_submit_button_stretch("💾 Save Trade Record")
@@ -7616,8 +7675,8 @@ if df is not None and not df.empty:
                             "entry_price": float(m_entry),
                             "actual_exit_time": datetime.now(IST).strftime("%I:%M:%S %p IST") if m_status != "OPEN" else "",
                             "actual_exit_price": float(m_exit),
-                            "num_lots": max(1, round(m_qty / (250 if m_qty % 250 == 0 and (m_qty % 500 != 0 or m_qty == 250) else (500 if m_qty % 500 == 0 else 250)))),
-                            "lot_size": 250 if m_qty % 250 == 0 and (m_qty % 500 != 0 or m_qty == 250) else (500 if m_qty % 500 == 0 else 250),
+                            "num_lots": max(1, round(m_qty / st.session_state.get("lot_size", 250))),
+                            "lot_size": st.session_state.get("lot_size", 250),
                             "qty": int(m_qty),
                             "capital_deployed": round(float(m_entry) * m_qty, 2),
                             "realised_pnl": float(m_pnl),
