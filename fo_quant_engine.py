@@ -2442,6 +2442,12 @@ class UltraHighConvictionRelianceEngine:
         kama_series, ker_val, ker_regime = MultiIndicatorMath.calculate_kama(c5m["close"], 10, 2, 30)
         kama_latest = kama_series[-1] if kama_series else spot
 
+        # ATR-Normalized ORB Width Gate (Toby Crabel: sweet spot 0.6x-1.5x ATR)
+        orb_width = orb_high - orb_low if (orb_high > 0 and orb_low > 0) else 0.0
+        orb_atr_5m = MultiIndicatorMath.calculate_atr(c5m["high"], c5m["low"], c5m["close"], 14)[-1] if len(c5m["close"]) >= 15 else 8.5
+        orb_atr_ratio = round(orb_width / max(0.1, orb_atr_5m), 2)
+        orb_width_quality = "OPTIMAL" if 0.6 <= orb_atr_ratio <= 1.5 else ("TOO_NARROW_NOISE_TRAP" if orb_atr_ratio < 0.5 else ("TOO_WIDE_MOVE_EXHAUSTED" if orb_atr_ratio > 2.0 else "ACCEPTABLE"))
+
         # Bullish V1 (Max 20 pts)
         v1_bull = 0.0
         if ema9 > ema20 > ema50 and c15m["close"][-1] > ema200:
@@ -2459,6 +2465,11 @@ class UltraHighConvictionRelianceEngine:
                 v1_bull += 0.5  # Single-tick sweep rejection penalty
             else:
                 v1_bull += 1.5
+            # ATR-Normalized ORB Width Gate: penalize too-narrow or too-wide ORB
+            if orb_atr_ratio < 0.5:
+                v1_bull = max(0.0, v1_bull - 2.0)  # Too narrow = noise trap
+            elif orb_atr_ratio > 2.0:
+                v1_bull = max(0.0, v1_bull - 1.5)  # Too wide = move exhausted
         if htf_bull:
             v1_bull += 3.0  # 60m Macro Trend Invariance Confirmation
         if spot > kama_latest and ker_val >= 0.35:
@@ -2483,6 +2494,11 @@ class UltraHighConvictionRelianceEngine:
                 v1_bear += 0.5  # Single-tick sweep rejection penalty
             else:
                 v1_bear += 1.5
+            # ATR-Normalized ORB Width Gate: penalize too-narrow or too-wide ORB
+            if orb_atr_ratio < 0.5:
+                v1_bear = max(0.0, v1_bear - 2.0)  # Too narrow = noise trap
+            elif orb_atr_ratio > 2.0:
+                v1_bear = max(0.0, v1_bear - 1.5)  # Too wide = move exhausted
         if htf_bear:
             v1_bear += 3.0  # 60m Macro Trend Invariance Confirmation
         if spot < kama_latest and ker_val >= 0.35:
@@ -2687,8 +2703,9 @@ class UltraHighConvictionRelianceEngine:
         put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
         pcr = chain_oi.get("overall_pcr", 1.0)
 
-        # Dealer Net Gamma Exposure (GEX) & Max Pain Dynamic Gravity Model
+        # Dealer Net Gamma Exposure (GEX), Gamma Flip Level & Max Pain Dynamic Gravity Model
         net_gex, gex_regime = MultiIndicatorMath.calculate_dealer_gamma_exposure(spot, chain_oi.get("chain", []))
+        _, gamma_flip_strike, gamma_flip_regime = MultiIndicatorMath.calculate_gamma_flip_level(spot, chain_oi.get("chain", []))
         max_pain_strike, mp_dist, mp_gravity = MultiIndicatorMath.calculate_max_pain(chain_oi.get("chain", []), spot)
 
         # VECTOR 3: Short Gamma Squeeze, Strike OI Walls & Dealer GEX (20 pts)
@@ -2743,6 +2760,11 @@ class UltraHighConvictionRelianceEngine:
                 v3_bull += 3.0  # Dealers forced to buy higher on breakout
             elif gex_regime == "POSITIVE_GAMMA_PINNING":
                 v3_bull = max(0.0, v3_bull - 3.0)  # Pinning resistance
+            # Gamma Flip Level Crossover: spot above gamma flip = acceleration zone
+            if gamma_flip_regime == "NEGATIVE_GAMMA_VOLATILITY_EXPANSION" and spot > gamma_flip_strike:
+                v3_bull += 4.0  # Crossed above gamma flip — dealers short gamma, breakout acceleration
+            elif gamma_flip_regime == "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION":
+                v3_bull = max(0.0, v3_bull - 2.0)  # Dealers long gamma above flip = pinning
             # Call Wall resistance proximity clamp
             if abs(spot - call_wall) <= 2.0 and opt_telemetry['call_oi_change_pct'] >= 0:
                 v3_bull = max(0.0, v3_bull - 4.0)
@@ -2766,11 +2788,23 @@ class UltraHighConvictionRelianceEngine:
                 v3_bear += 3.0  # Dealers forced to sell lower on breakdown
             elif gex_regime == "POSITIVE_GAMMA_PINNING":
                 v3_bear = max(0.0, v3_bear - 3.0)
+            # Gamma Flip Level Crossover: spot below gamma flip = acceleration zone
+            if gamma_flip_regime == "NEGATIVE_GAMMA_VOLATILITY_EXPANSION" and spot < gamma_flip_strike:
+                v3_bear += 4.0  # Crossed below gamma flip — dealers short gamma, breakdown acceleration
+            elif gamma_flip_regime == "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION":
+                v3_bear = max(0.0, v3_bear - 2.0)  # Dealers long gamma below flip = pinning
             # Put Wall support proximity clamp
             if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
                 v3_bear = max(0.0, v3_bear - 4.0)
             if mp_gravity == "SUPPORT_BELOW_MAX_PAIN":
                 v3_bear = max(0.0, v3_bear - 3.0)
+
+            # OI Velocity Spread Divergence (Put vel rising + Call vel falling = bullish support)
+            oi_vel_spread = round(put_vel - call_vel, 2)
+            if oi_vel_spread >= 3.0:  # Put writers supporting aggressively
+                v3_bull += 2.0
+            elif oi_vel_spread <= -3.0:  # Call writers capping aggressively
+                v3_bear += 2.0
 
             # Reliance Cash-Futures Basis Spread & Basis Momentum scoring
             if basis_regime == "INSTITUTIONAL_FUTURES_LONG_ACCUMULATION":
@@ -2915,57 +2949,69 @@ class UltraHighConvictionRelianceEngine:
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("open"), lookback=5
         )
 
+        # Correlation-Adjusted Momentum Oscillator Consensus (Deduplicated)
+        # RSI, Stoch, CMO, STC, and Fisher are 70-85% correlated (all derived from close prices).
+        # Instead of additive scoring (which inflates V5 by 2-3x), use consensus count.
+        cmo_val, cmo_regime = MultiIndicatorMath.calculate_cmo(c5m["close"], 14)
+        stc_val, stc_bias = MultiIndicatorMath.calculate_schaff_trend_cycle(c5m["close"], 12, 26, 10)
+        fisher_val, fisher_trig, fisher_bias = MultiIndicatorMath.calculate_ehlers_fisher_transform(c5m["high"], c5m["low"], 10)
+        crsi_val, crsi_regime = MultiIndicatorMath.calculate_connors_rsi(c5m["close"], 3, 2, 100)
+
+        # Bullish Momentum Consensus (count of aligned oscillators)
+        bull_osc_signals = [
+            (62.0 <= rsi <= 76.0) or (55.0 <= rsi < 80.0),      # RSI bullish zone
+            (60.0 <= stoch_k <= 85.0),                           # Stochastic bullish zone
+            cmo_regime in ("STRONG_BULLISH_MOMENTUM", "MILD_BULLISH_LEAN"),  # CMO bullish
+            stc_bias == "BULLISH_CYCLE_EXPANSION",                # STC bullish
+            fisher_bias == "BULLISH_INFLECTION",                  # Fisher bullish
+        ]
+        bull_consensus = sum(1 for s in bull_osc_signals if s)
+
         v5_bull = 0.0
-        if 62.0 <= rsi <= 76.0:
-            v5_bull += 6.0
-        elif 55.0 <= rsi < 80.0:
-            v5_bull += 3.0
-        if macd_expanding_bull:
+        if bull_consensus >= 4:     # 4/5 or 5/5 oscillators aligned — strong momentum consensus
+            v5_bull += 8.0
+        elif bull_consensus >= 3:   # 3/5 aligned — moderate consensus
             v5_bull += 5.0
-        if 60.0 <= stoch_k <= 85.0:
-            v5_bull += 4.0
+        elif bull_consensus >= 2:
+            v5_bull += 2.5
+        # RSI sweet spot premium (non-consensus bonus for optimal RSI range)
+        if 62.0 <= rsi <= 76.0:
+            v5_bull += 2.0
+        if macd_expanding_bull:
+            v5_bull += 5.0  # MACD is not correlated with oscillators — independent signal
         if bearish_rsi_div:
             v5_bull = max(0.0, v5_bull - 4.0)  # Divergence exhaustion penalty
         if absorb_type == "BEARISH_ABSORPTION_WALL":
             v5_bull = max(0.0, v5_bull - 4.0)  # Buyers absorbed into limit sell walls
 
+        # Bearish Momentum Consensus
+        bear_osc_signals = [
+            (24.0 <= rsi <= 38.0) or (20.0 <= rsi <= 45.0),      # RSI bearish zone
+            (15.0 <= stoch_k <= 40.0),                           # Stochastic bearish zone
+            cmo_regime in ("STRONG_BEARISH_MOMENTUM", "MILD_BEARISH_LEAN"),  # CMO bearish
+            stc_bias == "BEARISH_CYCLE_EXPANSION",                # STC bearish
+            fisher_bias == "BEARISH_INFLECTION",                  # Fisher bearish
+        ]
+        bear_consensus = sum(1 for s in bear_osc_signals if s)
+
         v5_bear = 0.0
-        if 24.0 <= rsi <= 38.0:
-            v5_bear += 6.0
-        elif 20.0 <= rsi <= 45.0:
-            v5_bear += 3.0
-        if macd_expanding_bear:
+        if bear_consensus >= 4:
+            v5_bear += 8.0
+        elif bear_consensus >= 3:
             v5_bear += 5.0
-        if 15.0 <= stoch_k <= 40.0:
-            v5_bear += 4.0
+        elif bear_consensus >= 2:
+            v5_bear += 2.5
+        # RSI sweet spot premium for bearish
+        if 24.0 <= rsi <= 38.0:
+            v5_bear += 2.0
+        if macd_expanding_bear:
+            v5_bear += 5.0  # MACD is independent — not correlated with oscillator consensus
         if bullish_rsi_div:
             v5_bear = max(0.0, v5_bear - 4.0)  # Divergence exhaustion penalty
         if absorb_type == "BULLISH_ABSORPTION_FLOOR":
             v5_bear = max(0.0, v5_bear - 4.0)  # Sellers absorbed into limit buy floors
 
-        # Chande Momentum Oscillator (CMO-14)
-        cmo_val, cmo_regime = MultiIndicatorMath.calculate_cmo(c5m["close"], 14)
-        if cmo_regime == "STRONG_BULLISH_MOMENTUM":
-            v5_bull += 2.5
-        elif cmo_regime == "STRONG_BEARISH_MOMENTUM":
-            v5_bear += 2.5
-
-        # Schaff Trend Cycle (STC)
-        stc_val, stc_bias = MultiIndicatorMath.calculate_schaff_trend_cycle(c5m["close"], 12, 26, 10)
-        if stc_bias == "BULLISH_CYCLE_EXPANSION":
-            v5_bull += 2.0
-        elif stc_bias == "BEARISH_CYCLE_EXPANSION":
-            v5_bear += 2.0
-
-        # Ehlers Fisher Transform
-        fisher_val, fisher_trig, fisher_bias = MultiIndicatorMath.calculate_ehlers_fisher_transform(c5m["high"], c5m["low"], 10)
-        if fisher_bias == "BULLISH_INFLECTION":
-            v5_bull += 2.0
-        elif fisher_bias == "BEARISH_INFLECTION":
-            v5_bear += 2.0
-
-        # Connors RSI (CRSI-3) Pullback Timing
-        crsi_val, crsi_regime = MultiIndicatorMath.calculate_connors_rsi(c5m["close"], 3, 2, 100)
+        # Connors RSI (CRSI-3) Pullback Timing — independent of momentum consensus (uses price rank)
         if crsi_regime in ("EXTREME_OVERSOLD_DIP_BUY", "FAVORABLE_PULLBACK_DIP"):
             v5_bull += 2.0
         elif crsi_regime in ("EXTREME_OVERBOUGHT_RALLY_SELL", "ELEVATED_MOMENTUM_EXTENSION"):
@@ -3017,19 +3063,26 @@ class UltraHighConvictionRelianceEngine:
             v6_bull = max(0.0, v6_bull - 2.0)
             v6_bear = max(0.0, v6_bear - 2.0)
 
+        # 25-Delta IV Skew: Measures institutional tail hedging demand
+        # Estimate 25Δ IVs from OTM chain strikes (ATM ± 20pt)
+        otm_call_strike = atm_strike + 20
+        otm_put_strike = atm_strike - 20
+        otm_call_row = next((r for r in chain_oi.get("chain", []) if float(r.get("strike", 0)) == otm_call_strike), None)
+        otm_put_row = next((r for r in chain_oi.get("chain", []) if float(r.get("strike", 0)) == otm_put_strike), None)
+        # Approximate 25Δ IV from LTP ratio vs ATM (IV smile proxy)
+        atm_iv_pct = iv * 100.0 if iv < 1.0 else iv
+        call_iv_25d = atm_iv_pct * 0.92 if not otm_call_row else atm_iv_pct * max(0.80, min(1.15, float(otm_call_row.get("call_ltp", 10.0)) / max(1.0, current_option_ltp if 'current_option_ltp' in dir() else 18.0)))
+        put_iv_25d = atm_iv_pct * 1.08 if not otm_put_row else atm_iv_pct * max(0.85, min(1.25, float(otm_put_row.get("put_ltp", 10.0)) / max(1.0, current_option_ltp if 'current_option_ltp' in dir() else 18.0)))
+        iv_skew, iv_skew_regime = MultiIndicatorMath.calculate_25delta_iv_skew(call_iv_25d, put_iv_25d)
+        if iv_skew_regime == "INSTITUTIONAL_DOWNSIDE_HEDGING" and not is_synthetic_feed:
+            v6_bear += 2.0  # Heavy put hedging = institutional bearish bias
+            v6_bull = max(0.0, v6_bull - 1.5)
+        elif iv_skew_regime == "UPSIDE_CALL_SQUEEZE_DEMAND" and not is_synthetic_feed:
+            v6_bull += 2.0  # Aggressive call demand = institutional bullish bias
+            v6_bear = max(0.0, v6_bear - 1.5)
+
         # VECTOR 7: Multi-Asset Sectoral Alignment & NIFTY 50 Relative Strength Telemetry (+/- 5.0 pts)
-        nifty_pct = 0.0
-        energy_pct = 0.0
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            gw = GrowwMarketFeed.get_instance()
-            benchmarks = gw.get_live_benchmarks()
-            nifty_info = benchmarks.get("NIFTY 50", {}) if isinstance(benchmarks, dict) else {}
-            energy_info = benchmarks.get("NIFTY ENERGY", {}) if isinstance(benchmarks, dict) else {}
-            nifty_pct = float(nifty_info.get("pct_change", 0.0))
-            energy_pct = float(energy_info.get("pct_change", 0.0))
-        except Exception:
-            pass
+        # (Reuses nifty_pct and energy_pct already fetched in V4 benchmark extraction at L2808-2825)
 
         rel_ref_close = float(c5m["close"][0]) if c5m["close"] else spot
         reliance_pct = ((spot - rel_ref_close) / rel_ref_close) * 100.0 if rel_ref_close > 0 else 0.0
@@ -3319,6 +3372,15 @@ class UltraHighConvictionRelianceEngine:
             "vpin_regime": vpin_regime,
             "debit_spread": debit_spread_rec,
             "gex_regime": gex_regime,
+            "gamma_flip_strike": round(gamma_flip_strike, 1),
+            "gamma_flip_regime": gamma_flip_regime,
+            "iv_skew": round(iv_skew, 2),
+            "iv_skew_regime": iv_skew_regime,
+            "orb_atr_ratio": orb_atr_ratio,
+            "orb_width_quality": orb_width_quality,
+            "oi_velocity_spread": oi_vel_spread if 'oi_vel_spread' in dir() else 0.0,
+            "bull_momentum_consensus": bull_consensus,
+            "bear_momentum_consensus": bear_consensus,
             "volume_profile_poc": poc_price,
             "vah": vah_price,
             "val": val_price,
