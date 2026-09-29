@@ -130,20 +130,23 @@ class RelianceCandleFetcher:
     def get_5m_candles(cls, spot: float, max_age_secs: float = 60.0) -> Dict[str, Any]:
         now = time.time()
         df = None
+        is_delayed_yfinance = False
+
         if cls._cache_5m is not None and (now - cls._last_fetch_5m) < max_age_secs:
             df = cls._cache_5m
         else:
-            # 1. Primary: Direct official NSE candles via Groww Charting Service
+            # 1. Primary: Direct official NSE candles via Groww Charting Service (0-Delay Live)
             try:
                 gw_feed = GrowwMarketFeed.get_instance()
                 df = gw_feed.get_reliance_historical_candles(interval="5m", days=5)
                 if df is not None and not df.empty and len(df) >= 30:
                     cls._cache_5m = df
                     cls._last_fetch_5m = now
+                    is_delayed_yfinance = False
             except Exception as e:
                 logger.debug(f"Groww charting candle fetch error: {e}")
 
-            # 2. Secondary fallback: Yahoo Finance
+            # 2. Secondary fallback: Yahoo Finance (Warning: 15-minute delayed data on NSE)
             if df is None or df.empty or len(df) < 30:
                 try:
                     t = yf.Ticker("RELIANCE.NS")
@@ -158,6 +161,8 @@ class RelianceCandleFetcher:
                         df = df_yf
                         cls._cache_5m = df
                         cls._last_fetch_5m = now
+                        is_delayed_yfinance = True
+                        logger.warning("⚠️ Live Groww candles unavailable. Yahoo Finance 15-minute delayed data loaded. Gating real-money execution.")
                 except Exception as e:
                     logger.debug(f"yfinance fetch error: {e}")
 
@@ -169,7 +174,8 @@ class RelianceCandleFetcher:
                 "close": [],
                 "volume": [],
                 "date": [],
-                "is_synthetic": True
+                "is_synthetic": True,
+                "is_delayed": True
             }
 
         return {
@@ -178,13 +184,16 @@ class RelianceCandleFetcher:
             "close": df["Close"].tolist(),
             "volume": df["Volume"].tolist(),
             "date": df.index.date.tolist() if hasattr(df.index, 'date') else [],
-            "is_synthetic": False
+            "is_synthetic": is_delayed_yfinance,
+            "is_delayed": is_delayed_yfinance
         }
 
     @classmethod
     def get_15m_candles(cls, spot: float, max_age_secs: float = 120.0) -> Dict[str, Any]:
         now = time.time()
         df = None
+        is_delayed_yfinance = False
+
         if cls._cache_15m is not None and (now - cls._last_fetch_15m) < max_age_secs:
             df = cls._cache_15m
         else:
@@ -194,6 +203,7 @@ class RelianceCandleFetcher:
                 if df is not None and not df.empty and len(df) >= 20:
                     cls._cache_15m = df
                     cls._last_fetch_15m = now
+                    is_delayed_yfinance = False
             except Exception as e:
                 logger.debug(f"Groww 15m candle fetch error: {e}")
 
@@ -205,6 +215,7 @@ class RelianceCandleFetcher:
                         df = df_yf
                         cls._cache_15m = df
                         cls._last_fetch_15m = now
+                        is_delayed_yfinance = True
                 except Exception:
                     pass
 
@@ -217,7 +228,8 @@ class RelianceCandleFetcher:
             "close": df["Close"].tolist(),
             "volume": df["Volume"].tolist(),
             "date": df.index.date.tolist() if hasattr(df.index, 'date') else [],
-            "is_synthetic": False
+            "is_synthetic": is_delayed_yfinance,
+            "is_delayed": is_delayed_yfinance
         }
 
 
@@ -572,9 +584,15 @@ class RelianceQuantAlertDaemon:
             # B1. Confirmed Breakout Entry
             if entry_confirmed:
                 entry_alert_key = f"tg_sent_entry_{today_date}_{recommended_strike}_{contract_type}"
-                limit_cap = round(active_option_ltp + 0.35, 2)
+                limit_cap = round(active_option_ltp + self.quant_engine.risk.limit_collar_pts, 2)
                 win_exp = float(confluence_eval.get("win_expectancy_pct", 62.0))
                 tier_str = str(confluence_eval.get("tier_rating", "TIER 1 (A+ INSTITUTIONAL SETUP)"))
+                debit_spread = confluence_eval.get("debit_spread", {})
+                spread_text = (
+                    f"\n• 🛡️ Hedged Spread Alternative: {debit_spread.get('spread_name', 'N/A')} "
+                    f"(Net Debit: ₹{debit_spread.get('net_debit_pts', 0):.2f} | Max Loss: ₹{debit_spread.get('max_risk_rupees', 0):,.0f} | Max Gain: ₹{debit_spread.get('max_reward_rupees', 0):,.0f})"
+                ) if debit_spread else ""
+
                 if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key):
                     entry_msg = TelegramNotifier.format_entry_alert(
                         contract=contract_label,
@@ -583,17 +601,18 @@ class RelianceQuantAlertDaemon:
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
                         num_lots=1,
-                        lot_size=250,
+                        lot_size=self.quant_engine.risk.lot_size,
                         win_prob=win_exp,
                         spot=spot,
                         rationale=(
                             f"Dual ATM Breakout confirmed ({tier_str})\n"
                             f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
                             f"• Order Type: Stop-Loss Limit (SL-LMT)\n"
-                            f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage: ₹0.35)\n"
+                            f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{self.quant_engine.risk.limit_collar_pts:.2f})\n"
                             f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', 1200):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
                             f"• Trend & Efficiency: KAMA @ ₹{confluence_eval.get('kama', spot):.2f} (KER: {confluence_eval.get('kaufman_efficiency_ratio', 0.5):.2f}) | FVG: {confluence_eval.get('fvg_status', 'NEUTRAL')}\n"
-                            f"• Liquidity Spread: {confluence_eval.get('corwin_schultz_spread_pct', 0.05):.3f}% ({confluence_eval.get('corwin_schultz_regime', 'NORMAL')}) | Bar Maturity: {confluence_eval.get('bar_maturity_pct', 80.0):.0f}%"
+                            f"• Liquidity Spread: {confluence_eval.get('corwin_schultz_spread_pct', 0.05):.3f}% ({confluence_eval.get('corwin_schultz_regime', 'NORMAL')}) | Bar Maturity: {confluence_eval.get('bar_maturity_pct', 80.0):.0f}%\n"
+                            f"• Stop Loss Protection: Set SL-LMT order Trigger ₹{max(0.05, active_option_ltp - dynamic_sl_pts):.2f} / Limit ₹{max(0.05, active_option_ltp - dynamic_sl_pts - self.quant_engine.risk.limit_collar_pts):.2f}. (Emergency: Exit at Market if limit breached!){spread_text}"
                         )
                     )
                     buttons = TelegramNotifier.get_entry_ce_buttons(f"RELIANCE {recommended_strike} CE") if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"RELIANCE {recommended_strike} PE")
@@ -657,8 +676,8 @@ class RelianceQuantAlertDaemon:
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
                         num_lots=1,
-                        lot_size=500,
-                        win_prob=70.0,
+                        lot_size=self.quant_engine.risk.lot_size,
+                        win_prob=win_exp if 'win_exp' in locals() else 65.0,
                         spot=spot
                     )
                     buttons = TelegramNotifier.get_armed_buttons(f"RELIANCE {recommended_strike} {contract_type}")

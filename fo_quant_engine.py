@@ -54,23 +54,35 @@ class RelianceRiskBudget:
     num_lots: int = 1    # Strictly 1 lot for institutional capital preservation (<= 4.0% risk cap)
     target_pts: float = 6.5
     stop_loss_pts: float = 3.2
-    limit_collar_pts: float = 0.35  # Strict Stop-Limit execution collar (prevents market spike slippage)
+    limit_collar_pts: float = 0.65  # Institutional Stop-Limit execution collar (prevents market spike slippage & gap misses)
     estimated_tax_per_lot: float = 65.0  # Estimated statutory charges (STT, GST, Exchange turnover & brokerage)
 
-    def adapt_to_volatility(self, atr_15m: float, delta: float = 0.52):
+    def adapt_to_volatility(self, atr_15m: float, delta: float = 0.52, india_vix: float = 14.5):
         """
-        Dynamically adapts target and stop-loss points to realized intraday volatility
-        and option contract Delta.
-        Expected option move = ATR(15m) * Delta.
+        Dynamically adapts target and stop-loss points to realized intraday volatility (ATR),
+        option contract Delta, and broader market volatility regime (India VIX).
+        - VIX < 12.5 (Compressed): Low volatility regime. Clamped targets 5.0 - 6.5 pts, SL 2.5 - 3.0 pts.
+        - VIX 12.5 - 17.5 (Optimal): Standard institutional targets 6.5 - 8.5 pts, SL 3.0 - 3.8 pts.
+        - VIX > 18.0 (Elevated): Wider noise buffer. Clamped targets 7.5 - 10.0 pts, SL 3.8 - 4.5 pts.
         Maintains an institutional 1:2.0 to 1:2.2 R:R ratio while setting achievable targets.
         """
         if atr_15m and atr_15m > 0:
             eff_delta = max(0.35, min(0.70, delta if delta else 0.52))
             opt_expected_move = atr_15m * eff_delta
-            # Realistic option SL: clamped between 2.5 and 4.2 pts
-            dynamic_sl = round(min(4.2, max(2.5, opt_expected_move * 0.75)), 1)
-            # Realistic option Target: ~2.0-2.2x SL, clamped between 5.5 and 9.0 pts
-            dynamic_tgt = round(min(9.0, max(5.5, dynamic_sl * 2.1)), 1)
+            
+            # VIX regime adjustment multiplier
+            if india_vix < 12.5:
+                vix_factor = 0.85
+            elif india_vix > 18.0:
+                vix_factor = 1.15
+            else:
+                vix_factor = 1.00
+
+            # Realistic option SL: clamped between 2.5 and 4.5 pts
+            base_sl = opt_expected_move * 0.75 * vix_factor
+            dynamic_sl = round(min(4.5, max(2.5, base_sl)), 1)
+            # Realistic option Target: ~2.0-2.2x SL, clamped between 5.5 and 9.5 pts
+            dynamic_tgt = round(min(9.5, max(5.5, dynamic_sl * 2.1)), 1)
             self.stop_loss_pts = dynamic_sl
             self.target_pts = dynamic_tgt
 
@@ -254,6 +266,39 @@ class MultiIndicatorMath:
             k_vals.append(k)
         smoothed_k = MultiIndicatorMath.calculate_ema(k_vals, smooth_k)
         return round(smoothed_k[-1], 1)
+
+    @staticmethod
+    def calculate_rvol_zscore(volumes: List[float], period: int = 20) -> Tuple[float, float, str]:
+        """
+        Calculates Relative Volume (RVOL) and Volume Standard Deviation Z-Score.
+        RVOL = Volume / Mean(Volume_20)
+        Z-Score = (Volume - Mean(Volume_20)) / Std(Volume_20)
+        - Z >= 1.75 & RVOL >= 1.65 -> INSTITUTIONAL_VOLUME_EXPANSION
+        - Z in [0.5, 1.75) -> HEALTHY_PARTICIPATION
+        - Z < -0.5 or RVOL < 0.75 -> LOW_VOLUME_RETAIL_DRIFT
+        """
+        if not volumes or len(volumes) < period:
+            return 1.0, 0.0, "NORMAL"
+        recent = volumes[-period:]
+        mean_v = sum(recent) / float(len(recent))
+        if mean_v <= 0:
+            return 1.0, 0.0, "NORMAL"
+        variance = sum((v - mean_v) ** 2 for v in recent) / float(len(recent))
+        std_v = math.sqrt(variance) if variance > 0 else 1.0
+        
+        curr_v = volumes[-1]
+        rvol = round(curr_v / mean_v, 2)
+        z = round((curr_v - mean_v) / std_v, 2)
+        
+        if z >= 1.75 or rvol >= 1.65:
+            regime = "INSTITUTIONAL_VOLUME_EXPANSION"
+        elif z >= 0.5 or rvol >= 1.20:
+            regime = "HEALTHY_PARTICIPATION"
+        elif z <= -0.75 or rvol <= 0.70:
+            regime = "LOW_VOLUME_RETAIL_DRIFT"
+        else:
+            regime = "NORMAL"
+        return rvol, z, regime
 
     @staticmethod
     def calculate_vwap_bands(highs: List[float], lows: List[float], closes: List[float], volumes: List[float], session_dates: Optional[List[Any]] = None):
@@ -1403,13 +1448,14 @@ class UltraHighConvictionRelianceEngine:
         elif ker_val < 0.20:
             v1_bear = max(0.0, v1_bear - 1.5)  # Consolidation whipsaw drag
 
-        # VECTOR 2: Institutional VWAP, OBV, CVD & Volume Profile (POC) Order Flow (18 pts)
+        # VECTOR 2: Institutional VWAP, OBV, CVD, RVOL & Volume Profile (POC) Order Flow (18 pts)
         vwap, vwap_plus_15sigma, vwap_minus_sigma = MultiIndicatorMath.calculate_vwap_bands(
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("date")
         )
         vwap_z, z_status = MultiIndicatorMath.calculate_vwap_zscore(spot, vwap, vwap_plus_15sigma)
         vol_avg20 = sum(c5m["volume"][-20:]) / 20.0 if len(c5m["volume"]) >= 20 else c5m["volume"][-1]
-        vol_surge = c5m["volume"][-1] >= 1.70 * vol_avg20
+        rvol, vol_zscore, rvol_regime = MultiIndicatorMath.calculate_rvol_zscore(c5m["volume"], 20)
+        vol_surge = (c5m["volume"][-1] >= 1.65 * vol_avg20) or (vol_zscore >= 1.75)
         obv_val, obv_ema, obv_bias = MultiIndicatorMath.calculate_obv(c5m["close"], c5m["volume"], 20)
         latest_cvd, cvd_ema, cvd_bias = MultiIndicatorMath.calculate_volume_delta(
             c5m.get("open"), c5m["high"], c5m["low"], c5m["close"], c5m["volume"], 20
@@ -1424,10 +1470,14 @@ class UltraHighConvictionRelianceEngine:
             v2_bull += 7.0 if vwap_z <= 2.2 else 3.0  # Climax guard: penalize if overextended
         elif spot > vwap:
             v2_bull += 4.0
-        if vol_surge:
-            v2_bull += 4.0
-        elif c5m["volume"][-1] > vol_avg20:
+        if rvol_regime == "INSTITUTIONAL_VOLUME_EXPANSION":
+            v2_bull += 4.5
+        elif vol_surge:
+            v2_bull += 3.5
+        elif rvol_regime == "HEALTHY_PARTICIPATION":
             v2_bull += 2.0
+        elif rvol_regime == "LOW_VOLUME_RETAIL_DRIFT":
+            v2_bull = max(0.0, v2_bull - 2.5)  # Penalize low volume false breakouts
         if obv_bias == "BUYER_AGGRESSION":
             v2_bull += 3.0
         if cvd_bias == "AGGRESSIVE_BUYING":
@@ -1441,10 +1491,14 @@ class UltraHighConvictionRelianceEngine:
             v2_bear += 7.0 if vwap_z >= -2.2 else 3.0  # Oversold climax guard
         elif spot < vwap:
             v2_bear += 4.0
-        if vol_surge:
-            v2_bear += 4.0
-        elif c5m["volume"][-1] > vol_avg20:
+        if rvol_regime == "INSTITUTIONAL_VOLUME_EXPANSION":
+            v2_bear += 4.5
+        elif vol_surge:
+            v2_bear += 3.5
+        elif rvol_regime == "HEALTHY_PARTICIPATION":
             v2_bear += 2.0
+        elif rvol_regime == "LOW_VOLUME_RETAIL_DRIFT":
+            v2_bear = max(0.0, v2_bear - 2.5)  # Penalize low volume false breakdowns
         if obv_bias == "SELLER_AGGRESSION":
             v2_bear += 3.0
         if cvd_bias == "AGGRESSIVE_SELLING":
@@ -1610,8 +1664,27 @@ class UltraHighConvictionRelianceEngine:
             effective_rv, telemetry_raw_iv
         )
 
-        # Dynamically adapt Target and SL based on 15m ATR and realized volatility
-        self.risk.adapt_to_volatility(atr_15m)
+        # Macro Benchmark & India VIX extraction
+        india_vix = 14.5
+        nifty_pct = 0.0
+        energy_pct = 0.0
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw = GrowwMarketFeed.get_instance()
+            benchmarks = gw.get_live_benchmarks()
+            if isinstance(benchmarks, dict):
+                vix_item = benchmarks.get("INDIA VIX", {})
+                if isinstance(vix_item, dict) and float(vix_item.get("ltp", 0.0)) > 5.0:
+                    india_vix = float(vix_item["ltp"])
+                nifty_info = benchmarks.get("NIFTY 50", {})
+                energy_info = benchmarks.get("NIFTY ENERGY", {})
+                nifty_pct = float(nifty_info.get("pct_change", 0.0))
+                energy_pct = float(energy_info.get("pct_change", 0.0))
+        except Exception:
+            pass
+
+        # Dynamically adapt Target and SL based on 15m ATR, Delta and India VIX regime
+        self.risk.adapt_to_volatility(atr_15m, delta=0.52, india_vix=india_vix)
 
         v4_bull = 0.0
         v4_bear = 0.0
@@ -1775,12 +1848,12 @@ class UltraHighConvictionRelianceEngine:
         raw_bull = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull
         raw_bear = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear
 
-        # Midday "Lunch Lull" Time-of-Day Filter (11:15 AM – 01:45 PM IST)
-        # Low institutional liquidity and spread widening peak during midday; penalize raw score unless volume surge
-        is_midday_lull = time(11, 15) <= current_time <= time(13, 45)
+        # Midday "Lunch Lull" Time-of-Day Filter (11:15 AM – 01:30 PM IST)
+        # Low institutional liquidity and spread widening peak during midday; require volume surge to clear
+        is_midday_lull = time(11, 15) <= current_time <= time(13, 30)
         if is_midday_lull and not vol_surge:
-            raw_bull = max(0.0, raw_bull - 4.0)
-            raw_bear = max(0.0, raw_bear - 4.0)
+            raw_bull = max(0.0, raw_bull - 5.0)
+            raw_bear = max(0.0, raw_bear - 5.0)
 
         # Intra-Candle Bar Maturity & Intra-Bar Noise Filter (5-minute candle)
         bar_maturity_pct, is_bar_mature = MultiIndicatorMath.calculate_bar_maturity(current_time, interval_mins=5)
@@ -1836,15 +1909,17 @@ class UltraHighConvictionRelianceEngine:
             tier_rating = "TIER 4 (STAND DOWN / CAPITAL PRESERVATION)"
 
         total_probability = dominant_score
+        midday_cleared = (not is_midday_lull) or vol_surge
         # Strict Execution Gate: Must NOT be running on synthetic fallback, in opening cooldown, wide spread, or toxic VPIN
         is_tradable = (
-            (total_probability >= self.trade_regime_threshold)
+            (total_probability >= (82.0 if is_midday_lull else self.trade_regime_threshold))
             and time_allowed
             and not opening_cooldown_active
             and not auto_sq_active
             and not is_choppy_regime
             and not is_synthetic_feed
             and not spread_stand_down
+            and midday_cleared
             and not (vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT")
         )
 
@@ -1872,6 +1947,7 @@ class UltraHighConvictionRelianceEngine:
         contract_name = f"RELIANCE {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | {self.risk.num_lots} Lot / {self.risk.total_quantity} Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
         tp_premium = round(entry_premium + self.risk.target_pts, 2)
         sl_premium = round(entry_premium - self.risk.stop_loss_pts, 2)
+        sl_limit_collar = round(sl_premium - self.risk.limit_collar_pts, 2)
 
         # Defined-Risk Debit Spread Recommendation (ATM Long + OTM Short Hedge)
         spread_step = 20
@@ -1914,6 +1990,8 @@ class UltraHighConvictionRelianceEngine:
             status_text = "OPENING COOLDOWN ACTIVE (09:15-09:30 AM IST) — BUILDING INITIAL BALANCE / ORB"
         elif spread_stand_down:
             status_text = f"STAND DOWN — WIDE BID-ASK SPREAD (Spread Rs. {opt_spread:.2f} > Rs. 0.35 threshold)"
+        elif is_midday_lull and not vol_surge:
+            status_text = "MIDDAY LIQUIDITY LULL / STAND DOWN (11:15 AM - 01:30 PM | Capital Preserved Against Low-Volume Chop)"
         elif vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT":
             status_text = f"STAND DOWN — HIGH ORDER FLOW TOXICITY (VPIN {vpin_val:.3f} >= 0.50 | Toxic Flow)"
         elif is_tradable:
@@ -1932,7 +2010,8 @@ class UltraHighConvictionRelianceEngine:
 
         target_text = (
             f"TARGET: Rs. {tp_premium:.2f} (+{self.risk.target_pts:.1f} pts | Gross +Rs. {self.risk.target_reward_rupees:,.0f} | Net ~Rs. {self.risk.net_target_reward_rupees:,.0f}) | "
-            f"STOP LOSS: Rs. {sl_premium:.2f} (-{self.risk.stop_loss_pts:.1f} pts | Gross -Rs. {self.risk.max_risk_rupees:,.0f} | Net ~Rs. {self.risk.net_max_risk_rupees:,.0f}) [Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f}]"
+            f"STOP LOSS: Rs. {sl_premium:.2f} (-{self.risk.stop_loss_pts:.1f} pts | Gross -Rs. {self.risk.max_risk_rupees:,.0f} | Net ~Rs. {self.risk.net_max_risk_rupees:,.0f}) "
+            f"[Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f} | SL Order: Trigger {sl_premium:.2f} / Limit {sl_limit_collar:.2f} (Exit at Market if breached!)]"
             if is_tradable
             else "TARGET: N/A | STOP LOSS: N/A"
         )

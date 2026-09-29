@@ -725,8 +725,8 @@ class TelegramNotifier:
         contract: str,
         current_ltp: float = 37.65,
         reason: str = "Mandatory intraday EOD cut-off before broker auto-square-off charges at 03:15 PM",
-        num_lots: int = 2,
-        lot_size: int = 500,
+        num_lots: int = 1,
+        lot_size: int = 250,
         spot: float = 1226.40,
         **kwargs
     ) -> str:

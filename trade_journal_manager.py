@@ -178,10 +178,15 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
             e["id"] = f"TRD-{e.get('date', '').replace('-', '')}-{i:02d}-{sym_tag}"
         
         ep = float(e.get("entry_price", e.get("actual_entry_price", 0.0)))
-        qty = int(e.get("qty", 1000))
-        num_lots = max(1, round(qty / 500))
+        lot_sz = int(e.get("lot_size", 250))
+        qty = int(e.get("qty", lot_sz))
+        if qty > 0 and (qty % 250 == 0) and (qty % 500 != 0 or qty == 250):
+            lot_sz = 250
+        elif qty > 0 and (qty % 500 == 0):
+            lot_sz = int(e.get("lot_size", 500))
+        num_lots = max(1, round(qty / lot_sz)) if lot_sz > 0 else 1
         e["num_lots"] = e.get("num_lots", num_lots)
-        e["lot_size"] = 500
+        e["lot_size"] = lot_sz
         e["qty"] = qty
         
         # Realized net P&L directly from Groww execution or captured/lost
@@ -512,8 +517,8 @@ class TradeJournalManager:
                 "actual_exit_time": actual_exit_time_str,
                 "actual_exit_price": exit_p,
                 "exit_price": exit_p,
-                "num_lots": max(1, round(qty / 500)),
-                "lot_size": 500,
+                "num_lots": max(1, round(qty / (250 if qty % 250 == 0 and (qty % 500 != 0 or qty == 250) else (500 if qty % 500 == 0 else 250)))),
+                "lot_size": 250 if qty % 250 == 0 and (qty % 500 != 0 or qty == 250) else (500 if qty % 500 == 0 else 250),
                 "qty": qty,
                 "capital_deployed": cap_deployed,
                 "realised_pnl": realised_pnl,

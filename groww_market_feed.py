@@ -242,7 +242,9 @@ class GrowwMarketFeed:
     def _auto_refresh_token(self) -> bool:
         """Automatically exchanges totp_token + live TOTP code for a fresh daily access token."""
         if not self._totp_secret or not (self._totp_token or self._api_key):
-            return False
+            self._load_saved_credentials()
+            if not self._totp_secret or not (self._totp_token or self._api_key):
+                return False
         try:
             import pyotp
             from growwapi import GrowwAPI

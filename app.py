@@ -2127,8 +2127,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     plan_target_pts = tp.get("target_pts", 10.0)
     plan_sl_pts = tp.get("sl_pts", 4.5)
     plan_num_lots = tp.get("num_lots", 1)
-    plan_lot_size = tp.get("lot_size", 500)
-    plan_qty = tp.get("total_trading_qty", 500)
+    plan_lot_size = tp.get("lot_size", 250)
+    plan_qty = tp.get("total_trading_qty", 250)
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
     plan_score = tp.get("dominant_score", 75.0)
     plan_gate = tp.get("min_hit_percentage", 75.0)
@@ -2895,7 +2895,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     profit_pts=round(active_track_ltp - act_entry, 2),
                     total_pnl=profit_rs,
                     num_lots=act_lots,
-                    lot_size=500,
+                    lot_size=plan_lot_size,
                     spot=spot_tick
                 )
                 buttons = TelegramNotifier.get_target_hit_buttons()
@@ -2937,7 +2937,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     loss_pts=round(act_entry - active_track_ltp, 2),
                     total_loss=loss_rs,
                     num_lots=act_lots,
-                    lot_size=500,
+                    lot_size=plan_lot_size,
                     spot=spot_tick
                 )
                 buttons = TelegramNotifier.get_stop_loss_buttons()
@@ -7346,9 +7346,8 @@ if df is not None and not df.empty:
                             "entry_price": float(m_entry),
                             "actual_exit_time": datetime.now(IST).strftime("%I:%M:%S %p IST") if m_status != "OPEN" else "",
                             "actual_exit_price": float(m_exit),
-                            "exit_price": float(m_exit),
-                            "num_lots": max(1, round(m_qty / 500)),
-                            "lot_size": 500,
+                            "num_lots": max(1, round(m_qty / (250 if m_qty % 250 == 0 and (m_qty % 500 != 0 or m_qty == 250) else (500 if m_qty % 500 == 0 else 250)))),
+                            "lot_size": 250 if m_qty % 250 == 0 and (m_qty % 500 != 0 or m_qty == 250) else (500 if m_qty % 500 == 0 else 250),
                             "qty": int(m_qty),
                             "capital_deployed": round(float(m_entry) * m_qty, 2),
                             "realised_pnl": float(m_pnl),
