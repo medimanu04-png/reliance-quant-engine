@@ -368,19 +368,15 @@ class TradeJournalManager:
             starting_cash = STARTING_CAPITAL
 
         current_entries = cls.load_journal(starting_cash)
-        existing_map = {}
-        for e in current_entries:
-            e_t = e.get("actual_entry_time", "")
-            key = f"{e.get('date', '')}_{e.get('trading_symbol', e.get('instrument', ''))}_{e_t}" if e_t else f"{e.get('date', '')}_{e.get('trading_symbol', e.get('instrument', ''))}"
-            existing_map[key] = e
-            if e.get("id"):
-                existing_map[e["id"]] = e
-            base_key = f"{e.get('date', '')}_{e.get('trading_symbol', e.get('instrument', ''))}"
-            if base_key not in existing_map:
-                existing_map[base_key] = e
-
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         today_day = datetime.now(IST).strftime("%A")
+
+        # Deduplicate existing entries strictly by unique trade ID
+        unique_entries = {}
+        for e in current_entries:
+            eid = e.get("id") or f"TRD-{e.get('date', today_str).replace('-', '')}-01-{e.get('trading_symbol', '')}"
+            e["id"] = eid
+            unique_entries[eid] = e
         
         # Load or use active signal for today
         signal = active_signal or SignalTracker.get_signal(today_str) or {}
@@ -416,8 +412,23 @@ class TradeJournalManager:
                     actual_exit_time_str = raw_exit_t
 
             is_reliance = "RELIANCE" in sym.upper()
-            composite_key = f"{today_str}_{sym}_{raw_entry_t}" if raw_entry_t else f"{today_str}_{sym}"
-            existing = existing_map.get(composite_key) or existing_map.get(f"{today_str}_{sym}", {})
+
+            # Find matching existing entry (by timestamp or contract + entry price)
+            existing_match_id = None
+            for eid, e in unique_entries.items():
+                if e.get("date") != today_str:
+                    continue
+                # Match by timestamp if available
+                e_en_t = str(e.get("actual_entry_time", ""))
+                if raw_entry_t and (raw_entry_t in e_en_t or e_en_t in raw_entry_t):
+                    existing_match_id = eid
+                    break
+                # Match by symbol and entry price within tolerance
+                if e.get("trading_symbol") == sym and abs(float(e.get("actual_entry_price", 0.0)) - entry_p) < 0.15:
+                    existing_match_id = eid
+                    break
+
+            existing = unique_entries.get(existing_match_id, {}) if existing_match_id else {}
             existing_screenshot = existing.get("screenshot", "")
             existing_notes = existing.get("notes", "")
 
@@ -467,8 +478,9 @@ class TradeJournalManager:
 
             trade_status = "HIT" if realised_pnl > 0 else ("FAIL" if realised_pnl < 0 else ("OPEN" if not is_closed else "STAND DOWN"))
 
+            rec_id = existing_match_id or f"TRD-{today_str.replace('-', '')}-{len(unique_entries) + 1:02d}-{sym}"
             record = {
-                "id": existing.get("id") or f"TRD-{today_str.replace('-', '')}-{sym}",
+                "id": rec_id,
                 "date": today_str,
                 "day": today_day,
                 "trading_symbol": sym,
@@ -514,10 +526,10 @@ class TradeJournalManager:
                 "notes": notes_str,
                 "confluence_score": confluence
             }
-            existing_map[composite_key] = record
+            unique_entries[rec_id] = record
 
         all_updated = [
-            e for e in existing_map.values()
+            e for e in unique_entries.values()
             if "RELIANCE" in str(e.get("trading_symbol", "")).upper() or "RELIANCE" in str(e.get("instrument", "")).upper()
         ]
         recalculated = recalculate_journal(all_updated, starting_cash)
