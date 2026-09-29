@@ -712,6 +712,11 @@ class GrowwMarketFeed:
                 "change": 77.40, "pct_change": 0.34, "currency": "INR", "prefix": "₹",
                 "unit": "pts", "icon": "🇮🇳", "category": "Groww NSE Live"
             },
+            "NIFTY ENERGY": {
+                "name": "NIFTY ENERGY", "symbol": "NSE:CNXENERGY", "price": 40280.15,
+                "change": 182.50, "pct_change": 0.46, "currency": "INR", "prefix": "₹",
+                "unit": "pts", "icon": "⚡", "category": "Groww Sectoral Live"
+            },
             "BANK NIFTY": {
                 "name": "BANK NIFTY", "symbol": "NSE:BANKNIFTY", "price": 55580.40,
                 "change": 141.90, "pct_change": 0.26, "currency": "INR", "prefix": "₹",
@@ -1421,10 +1426,20 @@ class GrowwMarketFeed:
             buy_qty = int(base_depth * (1.0 + skew))
             sell_qty = int(base_depth * (1.0 - skew))
 
+        ltp = float(spot_data.get("spot_ltp", 1226.00))
+        best_bid = round(ltp - 0.05, 2)
+        best_ask = round(ltp + 0.05, 2)
+        tot_q = buy_qty + sell_qty
+        if tot_q > 0:
+            stoikov_micro = (best_ask * buy_qty + best_bid * sell_qty) / tot_q
+        else:
+            stoikov_micro = ltp
+        micro_spread = round(stoikov_micro - ltp, 2)
+
         ratio = round(buy_qty / sell_qty, 2) if sell_qty > 0 else 1.0
-        if ratio >= 1.30:
+        if ratio >= 1.30 or micro_spread >= 0.04:
             bias = "BUYER_DOMINANCE"
-        elif ratio <= 0.77:
+        elif ratio <= 0.77 or micro_spread <= -0.04:
             bias = "SELLER_DOMINANCE"
         else:
             bias = "BALANCED"
@@ -1434,7 +1449,9 @@ class GrowwMarketFeed:
             "sell_qty": sell_qty,
             "imbalance_ratio": ratio,
             "bias": bias,
-            "summary": f"{ratio:.2f}x ({bias.replace('_', ' ')})"
+            "stoikov_micro_price": round(stoikov_micro, 2),
+            "micro_spread": micro_spread,
+            "summary": f"{ratio:.2f}x ({bias.replace('_', ' ')}) | Micro-P: ₹{stoikov_micro:.2f} ({micro_spread:+.2f})"
         }
 
 

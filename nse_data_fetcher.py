@@ -261,6 +261,18 @@ class NSEIndiaFetcher:
                 "icon": "🇮🇳",
                 "category": "NSE Benchmark"
             },
+            "NIFTY ENERGY": {
+                "name": "NIFTY ENERGY",
+                "symbol": "^CNXENERGY",
+                "price": 40280.15,
+                "change": 182.50,
+                "pct_change": 0.46,
+                "currency": "INR",
+                "prefix": "₹",
+                "unit": "pts",
+                "icon": "⚡",
+                "category": "Sectoral Benchmark"
+            },
             "BANK NIFTY": {
                 "name": "BANK NIFTY",
                 "symbol": "^NSEBANK",

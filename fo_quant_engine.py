@@ -520,6 +520,67 @@ class MultiIndicatorMath:
         return poc, vah, val, profile_bias
 
     @staticmethod
+    def calculate_anchored_vwap_extremes(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float]
+    ) -> Tuple[float, float, str]:
+        """
+        Calculates Anchored VWAP from High-of-Day (HOD) and Low-of-Day (LOD).
+        Returns: (avwap_hod, avwap_lod, stance)
+        """
+        if not closes or not volumes or len(closes) != len(volumes):
+            spot = closes[-1] if closes else 1210.0
+            return spot, spot, "NEUTRAL"
+
+        hod_idx = highs.index(max(highs))
+        lod_idx = lows.index(min(lows))
+
+        # AVWAP from LOD (Key dip-buying support)
+        tp_lod = [(h + l + c) / 3.0 for h, l, c in zip(highs[lod_idx:], lows[lod_idx:], closes[lod_idx:])]
+        vol_lod = volumes[lod_idx:]
+        cum_tp_lod = sum(t * v for t, v in zip(tp_lod, vol_lod))
+        sum_v_lod = sum(vol_lod)
+        avwap_lod = round(cum_tp_lod / sum_v_lod, 2) if sum_v_lod > 0 else closes[-1]
+
+        # AVWAP from HOD (Key overhead supply)
+        tp_hod = [(h + l + c) / 3.0 for h, l, c in zip(highs[hod_idx:], lows[hod_idx:], closes[hod_idx:])]
+        vol_hod = volumes[hod_idx:]
+        cum_tp_hod = sum(t * v for t, v in zip(tp_hod, vol_hod))
+        sum_v_hod = sum(vol_hod)
+        avwap_hod = round(cum_tp_hod / sum_v_hod, 2) if sum_v_hod > 0 else closes[-1]
+
+        spot = closes[-1]
+        if spot > avwap_hod and spot > avwap_lod:
+            stance = "BULLISH_ACCEPTANCE_ABOVE_EXTREMES"
+        elif spot < avwap_lod and spot < avwap_hod:
+            stance = "BEARISH_ACCEPTANCE_BELOW_EXTREMES"
+        else:
+            stance = "INSIDE_EXTREME_AVWAP_CORRIDOR"
+
+        return avwap_hod, avwap_lod, stance
+
+    @staticmethod
+    def calculate_25delta_iv_skew(
+        call_iv_25d: float,
+        put_iv_25d: float
+    ) -> Tuple[float, str]:
+        """
+        25-Delta Put vs Call Implied Volatility Skew.
+        Positive Skew > +3.5% indicates heavy institutional tail risk / downside put hedging.
+        Negative Skew < -1.5% indicates aggressive call buying / squeeze demand.
+        """
+        skew = round(put_iv_25d - call_iv_25d, 2)
+        if skew > 3.5:
+            regime = "INSTITUTIONAL_DOWNSIDE_HEDGING"
+        elif skew < -1.5:
+            regime = "UPSIDE_CALL_SQUEEZE_DEMAND"
+        else:
+            regime = "NORMAL_SKEW_BALANCE"
+        return skew, regime
+
+    @staticmethod
     def calculate_micro_price_imbalance(
         bid_price: float,
         ask_price: float,

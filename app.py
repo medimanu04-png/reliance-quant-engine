@@ -1143,9 +1143,10 @@ def render_live_macro_benchmarks_strip():
     source_label = "Groww Trading API (0-Delay Authenticated)" if groww_inst.is_connected else "Groww Live Feed (0-Delay Direct Engine)"
 
     cards_html = []
-    order = ["NIFTY 50", "BANK NIFTY", "GIFT NIFTY", "S&P 500 (US)", "INDIA VIX", "CRUDE OIL"]
+    order = ["NIFTY 50", "NIFTY ENERGY", "BANK NIFTY", "GIFT NIFTY", "INDIA VIX", "CRUDE OIL"]
     benchmark_source_map = {
         "NIFTY 50": "Groww API (NSE)",
+        "NIFTY ENERGY": "Groww API (Sectoral)",
         "BANK NIFTY": "Groww API (NSE)",
         "GIFT NIFTY": "Groww API (NSE IX)",
         "S&P 500 (US)": "Groww API (Global)",
@@ -3121,7 +3122,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             """
             theme_box_border = "#10B981"
-            header_title = "🔥 ACTIVE ENTRY TRIGGERED — BUY CALL (CE) AT MARKET!"
+            header_title = "🔥 ACTIVE ENTRY TRIGGERED — BUY CALL (CE) VIA LIMIT IOC!"
             header_badge = "🟢 BUY CALL SIGNAL CONFIRMED"
         else:
             entry_ui_buttons = """
@@ -3135,11 +3136,21 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             """
             theme_box_border = "#EF4444"
-            header_title = "🔻 ACTIVE ENTRY TRIGGERED — BUY PUT (PE) AT MARKET!"
+            header_title = "🔻 ACTIVE ENTRY TRIGGERED — BUY PUT (PE) VIA LIMIT IOC!"
             header_badge = "🔴 BUY PUT SIGNAL CONFIRMED"
+
+        now_time_ist = datetime.now(IST).time()
+        is_opening_spread_risk = time(9, 15) <= now_time_ist < time(9, 25)
+        opening_guard_html = """
+        <div style="background: rgba(245, 158, 11, 0.18); border: 1px solid #F59E0B; border-radius: 6px; padding: 6px 12px; margin-bottom: 8px; font-size: 0.74rem; color: #FDE68A; display: flex; align-items: center; gap: 8px;">
+            <span>🛡️</span>
+            <span><b>OPENING SPREAD DEFENSE (09:15–09:25 AM IST):</b> Spreads can widen at the open. Strictly execute via <b>Limit Order (₹{round(active_live_ltp + 0.15, 2)} IOC)</b> to prevent spread slippage.</span>
+        </div>
+        """ if is_opening_spread_risk else ""
 
         st.html(f"""
         <div class="trigger-active-box" style="border: 2px solid {theme_box_border} !important;">
+            {opening_guard_html}
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span class="live-dot" style="background: {theme_box_border}; width: 14px; height: 14px;"></span>
@@ -3152,7 +3163,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 </span>
             </div>
             <div style="font-size: 0.84rem; color: #A7F3D0; font-weight: 600; margin-bottom: 12px;">
-                Breakout level ₹{breakout_level:.2f} reached! Execution criteria satisfied. Place immediate market BUY order on broker terminal.
+                Breakout level ₹{breakout_level:.2f} reached! Execution criteria satisfied. Place LIMIT order at <b>₹{round(active_live_ltp + 0.15, 2)}</b> (LTP + ₹0.15 IOC) to eliminate spread slippage.
             </div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 16px;">
                 <div>
@@ -3161,8 +3172,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry} • ATM Strike</div>
                 </div>
                 <div>
-                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">💰 Current Execution LTP</div>
-                    <div style="font-size: 1.45rem; font-weight: 900; color: #10B981; margin-top: 2px;">₹{active_live_ltp:.2f}</div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">💰 Limit Bid (IOC)</div>
+                    <div style="font-size: 1.45rem; font-weight: 900; color: #10B981; margin-top: 2px;">₹{round(active_live_ltp + 0.15, 2)}</div>
                     <div style="font-size: 0.72rem; color: #6EE7B7;">Trigger Level: ₹{breakout_level:.2f}</div>
                 </div>
                 <div>
@@ -3178,7 +3189,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.78rem;">
                 <span style="color: #E2E8F0;">📦 Sizing: <b style="color: #FFFFFF;">{plan_num_lots} Lots ({plan_qty:,} Units)</b> &nbsp;|&nbsp; Win Probability: <b style="color: #34D399;">{plan_score:.1f}%</b> (Execution Gate &gt;{plan_gate:.0f}%)</span>
-                <span style="color: #FDE68A; font-weight: 700;">⚡ Place BUY Order on Groww / Broker Now</span>
+                <span style="color: #FDE68A; font-weight: 700;">⚡ Place Limit Order (LTP + ₹0.15 IOC) on Groww Now</span>
             </div>
             <div style="margin-top: 8px; border-top: 1px solid rgba(16, 185, 129, 0.3); padding-top: 6px; display: flex; justify-content: space-between; font-size: 0.70rem; color: #94A3B8;">
                 <span>LTP Source: <b style="color: #38BDF8;">Groww 1s Live Stream</b></span>
@@ -3935,6 +3946,16 @@ if df is not None and not df.empty:
     elif nifty_fighting_bull:
         v1_bull = max(0.0, v1_bull - 4.0)  # Counter-trend index drag penalty!
 
+    # NIFTY Energy Sector Alignment
+    energy_data = benchmarks.get("NIFTY ENERGY", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
+    energy_pct = float(energy_data.get("pct_change", 0.35))
+    energy_sector_bull = energy_pct >= 0.20
+    energy_sector_bear = energy_pct <= -0.20
+    if energy_sector_bull:
+        v1_bull += 1.5  # NIFTY Energy Sector Tailwind
+    elif energy_sector_bear:
+        v1_bull = max(0.0, v1_bull - 1.5)
+
     # Crude Oil Refining Margin Alignment
     if crude_rallying:
         v1_bull += 2.0  # Crude rally fuels Reliance O2C refining tailwind
@@ -3980,6 +4001,11 @@ if df is not None and not df.empty:
         v1_bear += 2.0  # NIFTY 50 Index Headwind Confluence
     elif nifty_fighting_bear:
         v1_bear = max(0.0, v1_bear - 4.0)  # Counter-trend index drag penalty!
+
+    if energy_sector_bear:
+        v1_bear += 1.5  # NIFTY Energy Sector Breakdown
+    elif energy_sector_bull:
+        v1_bear = max(0.0, v1_bear - 1.5)
 
     # Crude Oil Sector Alignment
     if crude_dumping_severe:
@@ -4063,12 +4089,39 @@ if df is not None and not df.empty:
         elif avwap_diff < -0.60:
             avwap_trap_failed = True  # Spot lost the breakout anchor: Institutional Trap Warning!
 
-    # Level-2 Order Book Bid/Ask Quantity Imbalance
+    # Level-2 Order Book Bid/Ask Imbalance & Stoikov Micro-Price
     from groww_market_feed import GrowwMarketFeed
     ob_depth = GrowwMarketFeed.get_instance().get_reliance_order_book_imbalance()
     depth_ratio = float(ob_depth.get("imbalance_ratio", 1.0))
     depth_buyer_agg = depth_ratio >= 1.25
     depth_seller_agg = depth_ratio <= 0.80
+    stoikov_micro = float(ob_depth.get("stoikov_micro_price", spot))
+    micro_spread = float(ob_depth.get("micro_spread", 0.0))
+    stoikov_bull = micro_spread >= 0.04
+    stoikov_bear = micro_spread <= -0.04
+
+    # Dynamic Anchored VWAP from High-of-Day (HOD) and Low-of-Day (LOD)
+    avwap_hod_resistance = False
+    avwap_lod_support = False
+    if len(df) >= 5 and 'High' in df.columns and 'Low' in df.columns and 'Volume' in df.columns:
+        hod_idx = int(df['High'].values.argmax())
+        lod_idx = int(df['Low'].values.argmin())
+        tp_lod = (df['High'].iloc[lod_idx:] + df['Low'].iloc[lod_idx:] + df['Close'].iloc[lod_idx:]) / 3.0
+        vol_lod = df['Volume'].iloc[lod_idx:]
+        cum_tp_lod = (tp_lod * vol_lod).sum()
+        cum_vol_lod = vol_lod.sum()
+        avwap_lod = round(cum_tp_lod / cum_vol_lod, 2) if cum_vol_lod > 0 else spot
+
+        tp_hod = (df['High'].iloc[hod_idx:] + df['Low'].iloc[hod_idx:] + df['Close'].iloc[hod_idx:]) / 3.0
+        vol_hod = df['Volume'].iloc[hod_idx:]
+        cum_tp_hod = (tp_hod * vol_hod).sum()
+        cum_vol_hod = vol_hod.sum()
+        avwap_hod = round(cum_tp_hod / cum_vol_hod, 2) if cum_vol_hod > 0 else spot
+
+        if spot >= avwap_lod and df['Low'].iloc[-1] <= avwap_lod + 0.60:
+            avwap_lod_support = True
+        if spot <= avwap_hod and df['High'].iloc[-1] >= avwap_hod - 0.60:
+            avwap_hod_resistance = True
 
     if above_vwap_upper:
         v2_bull += 5.0 if vwap_z <= 2.2 else 2.0  # Climax guard: penalize if overextended
@@ -4098,9 +4151,16 @@ if df is not None and not df.empty:
         v2_bull = max(0.0, v2_bull - 4.0)  # Failed breakout penalty
 
     if depth_buyer_agg:
-        v2_bull += 3.0  # Strong limit buy order depth absorption
+        v2_bull += 2.0  # Limit buy depth absorption
     elif depth_seller_agg:
-        v2_bull = max(0.0, v2_bull - 2.5)  # Overhead ask supply overhang penalty
+        v2_bull = max(0.0, v2_bull - 2.0)
+
+    if stoikov_bull:
+        v2_bull += 1.5  # Stoikov Micro-Price confirmation (Limit buyers lifting ask)
+    elif stoikov_bear:
+        v2_bull = max(0.0, v2_bull - 1.5)
+    if avwap_lod_support:
+        v2_bull += 1.5  # LOD-Anchored VWAP Institutional Dip Support
 
     # Symmetrical Bearish Scoring
     if below_vwap_lower:
@@ -4127,9 +4187,16 @@ if df is not None and not df.empty:
         v2_bear += 2.0
 
     if depth_seller_agg:
-        v2_bear += 3.0
+        v2_bear += 2.0
     elif depth_buyer_agg:
-        v2_bear = max(0.0, v2_bear - 2.5)
+        v2_bear = max(0.0, v2_bear - 2.0)
+
+    if stoikov_bear:
+        v2_bear += 1.5  # Stoikov Micro-Price confirmation (Limit sellers dumping bid)
+    elif stoikov_bull:
+        v2_bear = max(0.0, v2_bear - 1.5)
+    if avwap_hod_resistance:
+        v2_bear += 1.5  # HOD-Anchored VWAP Overhead Institutional Supply
 
     v2_bull = min(18.0, max(0.0, v2_bull))
     v2_bear = min(18.0, max(0.0, v2_bear))
@@ -4286,6 +4353,22 @@ if df is not None and not df.empty:
     elif iv_elevated_crush_risk:
         v4_bull = max(0.0, v4_bull - 4.0)  # Extreme IV crush penalty (-4.0)
         v4_bear = max(0.0, v4_bear - 4.0)
+
+    # 25-Delta Put/Call Implied Volatility Skew
+    otm_call_ltp = float(high_data.get("call_ltp", ref_atm_ltp * 0.65))
+    otm_put_ltp = float(low_data.get("put_ltp", ref_atm_ltp * 0.65))
+    approx_call_iv_25d = ((otm_call_ltp / max(1.0, (spot * 0.25))) * math.sqrt(1.0 / max(0.01, T_val))) * 100.0 if T_val > 0 else 20.0
+    approx_put_iv_25d = ((otm_put_ltp / max(1.0, (spot * 0.25))) * math.sqrt(1.0 / max(0.01, T_val))) * 100.0 if T_val > 0 else 22.0
+    iv_skew_25d = round(approx_put_iv_25d - approx_call_iv_25d, 2)
+    skew_bear_hedging = iv_skew_25d > 3.5  # Institutional downside hedging demand (warning for CE!)
+    skew_bull_squeeze = iv_skew_25d < -1.5 # Institutional upside call scramble
+
+    if skew_bear_hedging:
+        v4_bear += 2.0  # Downside hedging demand
+        v4_bull = max(0.0, v4_bull - 2.5)  # Downside skew penalty for CE
+    elif skew_bull_squeeze:
+        v4_bull += 2.0  # Upside scramble
+        v4_bear = max(0.0, v4_bear - 2.0)
 
     v4_bull = min(15.0, max(0.0, v4_bull))
     v4_bear = min(15.0, max(0.0, v4_bear))
@@ -4510,25 +4593,24 @@ if df is not None and not df.empty:
 
     estimated_premium = round(current_option_ltp + 1.20, 2)  # Breakout trigger level
 
-    # Enhancement: Dynamic ATR & India VIX Scaled Profit Target
-    # Low-vol days (VIX < 12.0) -> targets scale down to 7.0-8.5 pts (fast scalps)
-    # High-vol days (VIX >= 15.0) -> targets scale up to 11.5-14.0 pts (let runners run)
-    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else 2.5
-    bs_delta = norm_cdf_d1 if 'norm_cdf_d1' in dir() else 0.50
+    # Enhancement: Institutional Volatility-Adaptive SL & Profit Target
+    # Scaled dynamically by Black-Scholes Delta (0.50), Realized 15m ATR, and India VIX
+    # Low-vol days -> SL tightens to 3.5 pts (Rs. 1,750 risk = 2.3% capital risk)
+    # High-vol days -> SL expands to 5.0 pts (Rs. 2,500 risk = 3.4% capital risk, strictly <= 4.0%)
+    # Target dynamically preserves >= 2.2:1 Reward-to-Risk ratio (8.0 to 14.0 pts)
+    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else 6.50
+    bs_delta = norm_cdf_d1 if ('norm_cdf_d1' in dir() or 'norm_cdf_d1' in locals()) else 0.50
     vix_val_current = float(benchmarks.get("INDIA VIX", {}).get("price", 13.50)) if "benchmarks" in locals() or "benchmarks" in globals() else 13.50
-    vix_scaler = max(0.80, min(1.35, vix_val_current / 13.50))
-    atr_dynamic_target = round(max(7.0, min(float(target_pts * 1.35), stock_atr * bs_delta * 0.90 * vix_scaler)), 1)
-    
-    # Use the dynamic target in live mode, but keep user's sidebar value as reference
-    effective_target_pts = atr_dynamic_target if not is_sim_active else target_pts
+    vix_scaler = max(0.85, min(1.30, vix_val_current / 13.50))
+
+    volatility_adapted_sl = round(min(5.0, max(3.5, bs_delta * stock_atr * 0.85)), 1)
+    max_sl_from_capital_cap = round((account_cash * 0.04) / max(1, total_trading_qty), 1)
+    effective_sl_pts = min(volatility_adapted_sl, max_sl_from_capital_cap) if not is_sim_active else sl_pts
+
+    volatility_adapted_target = round(min(14.0, max(8.0, effective_sl_pts * 2.2 * vix_scaler)), 1)
+    effective_target_pts = volatility_adapted_target if not is_sim_active else target_pts
     target_pts_display = effective_target_pts
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
-
-    # Enhancement 2.5: Dynamic ATR(14) Stop Loss (1.5 * 5m ATR scaled to Option Premium)
-    atr_dynamic_sl = round(max(2.5, min(7.5, 1.5 * stock_atr)), 1)
-    # Institutional Risk Cap: Stop Loss strictly capped so risk <= 4.0% of account cash
-    max_sl_from_capital_cap = round((account_cash * 0.04) / max(1, total_trading_qty), 1)
-    effective_sl_pts = min(atr_dynamic_sl, max_sl_from_capital_cap) if not is_sim_active else sl_pts
     is_sl_dynamic = not is_sim_active
 
     # Enhancement 3: Trailing Stop-Loss Break-Even Shield Configuration
