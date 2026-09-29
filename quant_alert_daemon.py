@@ -591,8 +591,9 @@ class RelianceQuantAlertDaemon:
                             f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
                             f"• Order Type: Stop-Loss Limit (SL-LMT)\n"
                             f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage: ₹0.35)\n"
-                            f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', 1200):.0f} | Realized Vol: GKYZ={confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
-                            f"• Execution Guard: Bar Mature & 2-Tick Persistence Confirmed"
+                            f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', 1200):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
+                            f"• Trend & Efficiency: KAMA @ ₹{confluence_eval.get('kama', spot):.2f} (KER: {confluence_eval.get('kaufman_efficiency_ratio', 0.5):.2f}) | FVG: {confluence_eval.get('fvg_status', 'NEUTRAL')}\n"
+                            f"• Liquidity Spread: {confluence_eval.get('corwin_schultz_spread_pct', 0.05):.3f}% ({confluence_eval.get('corwin_schultz_regime', 'NORMAL')}) | Bar Maturity: {confluence_eval.get('bar_maturity_pct', 80.0):.0f}%"
                         )
                     )
                     buttons = TelegramNotifier.get_entry_ce_buttons(f"RELIANCE {recommended_strike} CE") if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"RELIANCE {recommended_strike} PE")

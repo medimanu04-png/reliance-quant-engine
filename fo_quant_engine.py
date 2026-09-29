@@ -405,6 +405,132 @@ class MultiIndicatorMath:
             return 0.05, "NORMAL_LIQUIDITY"
 
     @staticmethod
+    def calculate_kama(
+        closes: List[float],
+        period: int = 10,
+        fast_period: int = 2,
+        slow_period: int = 30
+    ) -> Tuple[List[float], float, str]:
+        """
+        Kaufman Adaptive Moving Average (KAMA) & Efficiency Ratio (KER).
+        Dynamically adapts smoothing based on market efficiency:
+        - ER near 1.0 -> Trending impulse (fast smoothing equivalent to EMA-2)
+        - ER near 0.0 -> Choppy consolidation (slow smoothing equivalent to EMA-30)
+        """
+        if not closes:
+            return [], 0.0, "CHOP"
+        if len(closes) <= period:
+            return closes, 0.5, "MODERATE_EFFICIENCY"
+
+        fast_sc = 2.0 / (fast_period + 1.0)
+        slow_sc = 2.0 / (slow_period + 1.0)
+
+        kama = [closes[period - 1]]
+        er_vals = [0.5]
+
+        for i in range(period, len(closes)):
+            change = abs(closes[i] - closes[i - period])
+            volatility = sum(abs(closes[j] - closes[j - 1]) for j in range(i - period + 1, i + 1))
+            er = (change / volatility) if volatility > 0 else 0.0
+            er_vals.append(er)
+            sc = (er * (fast_sc - slow_sc) + slow_sc) ** 2
+            kama_val = kama[-1] + sc * (closes[i] - kama[-1])
+            kama.append(kama_val)
+
+        latest_er = round(er_vals[-1], 3)
+        padded_kama = ([kama[0]] * period) + kama[1:]
+
+        if latest_er >= 0.38:
+            regime = "HIGH_EFFICIENCY_TRENDING"
+        elif latest_er >= 0.22:
+            regime = "MODERATE_EFFICIENCY"
+        else:
+            regime = "EFFICIENCY_COLLAPSE_CHOP"
+
+        return padded_kama, latest_er, regime
+
+    @staticmethod
+    def calculate_fair_value_gaps(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        lookback: int = 12
+    ) -> Tuple[List[Dict[str, Any]], str, float]:
+        """
+        Fair Value Gap (FVG) / Institutional Imbalance Void Detection.
+        - Bullish FVG: Candle[i-2] High < Candle[i] Low (Imbalance zone [H_{i-2}, L_i])
+        - Bearish FVG: Candle[i-2] Low > Candle[i] High (Imbalance zone [H_i, L_{i-2}])
+        Evaluates whether current spot is currently retesting or sitting inside an active FVG zone.
+        """
+        if len(closes) < 4:
+            return [], "NO_ACTIVE_FVG", 0.0
+
+        spot = closes[-1]
+        start_idx = max(2, len(closes) - lookback)
+        active_fvgs = []
+
+        for i in range(start_idx, len(closes)):
+            h_prev = highs[i - 2]
+            l_curr = lows[i]
+            if l_curr > h_prev + 0.30:  # Minimum 30 paise gap to qualify as institutional void
+                active_fvgs.append({
+                    "type": "BULLISH_FVG",
+                    "top": round(l_curr, 2),
+                    "bottom": round(h_prev, 2),
+                    "bar_idx": i
+                })
+
+            l_prev = lows[i - 2]
+            h_curr = highs[i]
+            if h_curr < l_prev - 0.30:
+                active_fvgs.append({
+                    "type": "BEARISH_FVG",
+                    "top": round(l_prev, 2),
+                    "bottom": round(h_curr, 2),
+                    "bar_idx": i
+                })
+
+        status = "NO_ACTIVE_FVG"
+        cushion_pts = 0.0
+
+        for fvg in reversed(active_fvgs[-3:]):
+            f_top = fvg["top"]
+            f_bot = fvg["bottom"]
+            if fvg["type"] == "BULLISH_FVG":
+                if (f_bot - 0.50) <= spot <= (f_top + 1.20):
+                    status = "BULLISH_FVG_SUPPORT_RETEST"
+                    cushion_pts = round(spot - f_bot, 2)
+                    break
+            elif fvg["type"] == "BEARISH_FVG":
+                if (f_bot - 1.20) <= spot <= (f_top + 0.50):
+                    status = "BEARISH_FVG_RESISTANCE_RETEST"
+                    cushion_pts = round(f_top - spot, 2)
+                    break
+
+        return active_fvgs, status, cushion_pts
+
+    @staticmethod
+    def calculate_bar_maturity(
+        current_time: time,
+        interval_mins: int = 5
+    ) -> Tuple[float, bool]:
+        """
+        Intra-Candle Bar Maturity Filter.
+        Calculates percentage of time elapsed in the current 5-minute bar:
+        - Maturity < 65%: Intra-bar price movement is vulnerable to noise and fake spikes.
+        - Maturity >= 70%: Candle formation is well-established and statistically representative.
+        """
+        try:
+            elapsed_mins = current_time.minute % interval_mins
+            elapsed_secs = (elapsed_mins * 60) + current_time.second
+            total_secs = interval_mins * 60
+            maturity_pct = round(min(100.0, max(0.0, (elapsed_secs / total_secs) * 100.0)), 1)
+            is_mature = maturity_pct >= 70.0
+            return maturity_pct, is_mature
+        except Exception:
+            return 80.0, True
+
+    @staticmethod
     def calculate_camarilla_pivots(pdh: float, pdl: float, pdc: float) -> Tuple[float, float, float, float]:
         """
         Camarilla Equation Pivots: H4 (Long Breakout), H3 (Ceiling), L3 (Floor), L4 (Short Breakdown).
@@ -1239,6 +1365,10 @@ class UltraHighConvictionRelianceEngine:
         adx, pdi, mdi = MultiIndicatorMath.calculate_adx(c5m["high"], c5m["low"], c5m["close"], 14)
         orb_high, orb_low = MultiIndicatorMath.calculate_orb(c5m["high"], c5m["low"], 3, c5m.get("date"))
 
+        # Kaufman Adaptive Moving Average (KAMA) & Efficiency Ratio (KER)
+        kama_series, ker_val, ker_regime = MultiIndicatorMath.calculate_kama(c5m["close"], 10, 2, 30)
+        kama_latest = kama_series[-1] if kama_series else spot
+
         # Bullish V1 (Max 20 pts)
         v1_bull = 0.0
         if ema9 > ema20 > ema50 and c15m["close"][-1] > ema200:
@@ -1251,6 +1381,10 @@ class UltraHighConvictionRelianceEngine:
             v1_bull += 3.0  # Confirmed 15m ORB Breakout
         if htf_bull:
             v1_bull += 3.0  # 60m Macro Trend Invariance Confirmation
+        if spot > kama_latest and ker_val >= 0.35:
+            v1_bull += 2.0  # High-efficiency trending breakout
+        elif ker_val < 0.20:
+            v1_bull = max(0.0, v1_bull - 1.5)  # Consolidation whipsaw drag
 
         # Bearish V1 (Max 20 pts)
         v1_bear = 0.0
@@ -1264,6 +1398,10 @@ class UltraHighConvictionRelianceEngine:
             v1_bear += 3.0  # Confirmed 15m ORB Breakdown
         if htf_bear:
             v1_bear += 3.0  # 60m Macro Trend Invariance Confirmation
+        if spot < kama_latest and ker_val >= 0.35:
+            v1_bear += 2.0  # High-efficiency trending breakdown
+        elif ker_val < 0.20:
+            v1_bear = max(0.0, v1_bear - 1.5)  # Consolidation whipsaw drag
 
         # VECTOR 2: Institutional VWAP, OBV, CVD & Volume Profile (POC) Order Flow (18 pts)
         vwap, vwap_plus_15sigma, vwap_minus_sigma = MultiIndicatorMath.calculate_vwap_bands(
@@ -1351,6 +1489,15 @@ class UltraHighConvictionRelianceEngine:
             v2_bull += 2.0
         elif avwap_stance == "BEARISH_ACCEPTANCE_BELOW_EXTREMES":
             v2_bear += 2.0
+
+        # Fair Value Gap (FVG) / Institutional Imbalance Void Retest
+        active_fvgs, fvg_status, fvg_cushion = MultiIndicatorMath.calculate_fair_value_gaps(
+            c5m["high"], c5m["low"], c5m["close"], lookback=12
+        )
+        if fvg_status == "BULLISH_FVG_SUPPORT_RETEST":
+            v2_bull += 2.0  # Retesting institutional buyer imbalance zone
+        elif fvg_status == "BEARISH_FVG_RESISTANCE_RETEST":
+            v2_bear += 2.0  # Retesting institutional seller imbalance zone
 
         # Stand down if option bid-ask spread > 0.35 pts (prevents spread slippage losses on 1 lot)
         opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
@@ -1635,6 +1782,12 @@ class UltraHighConvictionRelianceEngine:
             raw_bull = max(0.0, raw_bull - 4.0)
             raw_bear = max(0.0, raw_bear - 4.0)
 
+        # Intra-Candle Bar Maturity & Intra-Bar Noise Filter (5-minute candle)
+        bar_maturity_pct, is_bar_mature = MultiIndicatorMath.calculate_bar_maturity(current_time, interval_mins=5)
+        if not is_bar_mature and not vol_surge:
+            raw_bull = max(0.0, raw_bull - 2.5)  # Intra-bar immature noise penalty
+            raw_bear = max(0.0, raw_bear - 2.5)
+
         # Calibrated Institutional Logistic Sigmoid Probability Mapping
         # Calibrated: s0=42.0 centers 50% on moderate trend; k=0.10 sharpens discrimination between genuine A+ vs chop
         def calibrate_prob(score: float) -> float:
@@ -1823,6 +1976,14 @@ class UltraHighConvictionRelianceEngine:
             "max_pain_gravity": mp_gravity,
             "yang_zhang_vol": yang_zhang_vol,
             "effective_rv": effective_rv,
+            "kama": round(kama_latest, 2),
+            "kaufman_efficiency_ratio": ker_val,
+            "ker_regime": ker_regime,
+            "fvg_status": fvg_status,
+            "bar_maturity_pct": bar_maturity_pct,
+            "is_bar_mature": is_bar_mature,
+            "corwin_schultz_spread_pct": cs_spread_pct,
+            "corwin_schultz_regime": cs_regime,
             "is_midday_lull": is_midday_lull,
             "vpin": vpin_val,
             "vpin_regime": vpin_regime,
