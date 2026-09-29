@@ -344,7 +344,7 @@ class NSEIndiaFetcher:
         return benchmarks
 
     @classmethod
-    def get_dynamic_market_ticks(cls, force_refresh: bool = True) -> Dict[str, Any]:
+    def get_dynamic_market_ticks(cls, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Retrieves real-time live market quotes for major benchmarks directly from Groww.
         Ensures 100% zero-delay accuracy matching Groww's live terminal print with active running numbers.

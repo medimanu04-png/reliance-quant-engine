@@ -1080,13 +1080,13 @@ def render_auto_rescan_controller():
     with col_rb:
         rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key="btn_instant_rescan")
     with col_cb:
-        auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", True), key="cb_auto_rescan_5s")
+        auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", False), key="cb_auto_rescan_5s")
         st.session_state["auto_rescan_active"] = auto_active
 
     elapsed = now - st.session_state["last_auto_rescan_ts"]
     should_auto = auto_active and (elapsed >= 4.8)
 
-    if rescan_btn or should_auto:
+    if rescan_btn:
         try:
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
@@ -1100,10 +1100,20 @@ def render_auto_rescan_controller():
         NSEIndiaFetcher._last_fetch_time = 0
         st.session_state["last_auto_rescan_ts"] = now
         st.session_state["just_rescanned"] = True
-        if rescan_btn:
-            st.session_state["manual_rescan_clicked"] = True
+        st.session_state["manual_rescan_clicked"] = True
         st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
         st.rerun(scope="app")
+    elif should_auto:
+        import threading
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw = GrowwMarketFeed.get_instance()
+            threading.Thread(target=gw._fetch_reliance_spot_now, daemon=True).start()
+            threading.Thread(target=gw._fetch_reliance_chain_now, daemon=True).start()
+            threading.Thread(target=gw._execute_live_benchmark_fetch, daemon=True).start()
+        except Exception:
+            pass
+        st.session_state["last_auto_rescan_ts"] = now
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     st.html(f"""
