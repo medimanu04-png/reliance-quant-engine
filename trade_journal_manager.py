@@ -460,7 +460,7 @@ class TradeJournalManager:
                     sugg_entry = entry_p
                     sugg_exit = round(entry_p + 10.0, 2)
                     sugg_sl = round(max(0.05, entry_p - 4.5), 2)
-                    confluence = 70.0
+                    confluence = 75.0
                     trade_type = "BUY CE" if "CE" in sym else ("BUY PE" if "PE" in sym else "BUY")
 
             entry_slippage = round(entry_p - sugg_entry, 2)

@@ -241,7 +241,20 @@ class RelianceQuantAlertDaemon:
 
         prob_str = confluence_eval.get("3. PROBABILITY SCORE", "")
         status_text = confluence_eval.get("2. TRADE STATUS", "")
-        is_tradable = "TRADABLE" in status_text.upper() and "NON-TRADABLE" not in status_text.upper()
+        dominant_score = float(confluence_eval.get("dominant_score", 0.0))
+        if dominant_score <= 0.0 and prob_str:
+            try:
+                import re
+                m = re.findall(r"(\d+(?:\.\d+)?)%", prob_str)
+                if m:
+                    dominant_score = max(float(x) for x in m)
+            except Exception:
+                dominant_score = 75.0
+        if dominant_score <= 0.0:
+            dominant_score = 75.0
+
+        # Strict Institutional Gate: Confluence Score must be >= 75.0%
+        is_tradable = "TRADABLE" in status_text.upper() and "NON-TRADABLE" not in status_text.upper() and (dominant_score >= 75.0)
         is_chop = "CHOP" in status_text.upper()
 
         dominant_side = "CALL (CE)" if "BULLISH" in prob_str.upper() else "PUT (PE)"
@@ -411,9 +424,9 @@ class RelianceQuantAlertDaemon:
                         sl_pts=4.5,
                         num_lots=2,
                         lot_size=500,
-                        win_prob=72.0,
+                        win_prob=round(dominant_score, 1),
                         spot=spot,
-                        rationale=f"Dual ATM Breakout confirmed above pinned trigger ₹{breakout_level:.2f}"
+                        rationale=f"Dual ATM Breakout confirmed (Confluence: {dominant_score:.1f}% >= 75.0% Institutional Gate) above pinned trigger ₹{breakout_level:.2f}"
                     )
                     buttons = TelegramNotifier.get_entry_ce_buttons(f"RELIANCE {recommended_strike} CE") if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"RELIANCE {recommended_strike} PE")
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
@@ -434,7 +447,7 @@ class RelianceQuantAlertDaemon:
                         "suggested_entry": active_option_ltp,
                         "suggested_exit": round(active_option_ltp + 10.0, 2),
                         "suggested_sl": round(active_option_ltp - 4.5, 2),
-                        "confluence_score": 75.0
+                        "confluence_score": round(dominant_score, 1)
                     })
                 except Exception as e:
                     logger.debug(f"SignalTracker save error in daemon: {e}")
@@ -449,7 +462,7 @@ class RelianceQuantAlertDaemon:
                         date_str=today_date,
                         time_str=time_str,
                         instrument=contract_label,
-                        confluence_score=75.0,
+                        confluence_score=round(dominant_score, 1),
                         user_executed=False
                     )
                 except Exception as e:

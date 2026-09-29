@@ -357,7 +357,7 @@ class MultiIndicatorMath:
 class UltraHighConvictionRelianceEngine:
     def __init__(self):
         self.risk = RelianceRiskBudget()
-        self.trade_regime_threshold = 60.0  # Trade if Prob >= 60%, else Stand Down
+        self.trade_regime_threshold = 75.0  # Trade if Prob >= 75%, else Stand Down
 
     def evaluate_90plus_confluence(
         self,
@@ -686,7 +686,10 @@ class UltraHighConvictionRelianceEngine:
                 "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stochastic %K={stoch_k:.1f}.",
                 "Volume & Strike OI Walls": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi['overall_pcr']:.2f}. ATM Call shift: {opt_telemetry['call_oi_change_pct']:+.1f}% | ATM Put shift: {opt_telemetry['put_oi_change_pct']:+.1f}%."
             },
-            "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else "NONE — Stand down (Conditions do not satisfy 90% A+ threshold)"
+            "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else "NONE — Stand down (Conditions do not satisfy 90% A+ threshold)",
+            "dominant_score": dominant_score,
+            "bullish_score": bullish_score,
+            "bearish_score": bearish_score
         }
 
 

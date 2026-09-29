@@ -1290,7 +1290,7 @@ total_trading_qty = lot_size * num_lots
 with st.sidebar.expander("⚙️ Optimal Strategy & Risk Parameters", expanded=True):
     target_pts = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=10.0, step=0.5, help="Optimal backtested target (+10.0 pts = +₹5,000 / 1 lot)")
     sl_pts = st.number_input("Stop Loss Reference Cap (pts)", min_value=1.0, max_value=30.0, value=5.0, step=0.5, help="Dynamic Stop Loss defaults to 1.5x 5m ATR, strictly capped <= 4.0% of account capital")
-    MIN_HIT_PERCENTAGE = st.slider("Directional Gate Threshold (%)", min_value=50.0, max_value=85.0, value=60.0, step=1.0, help="Optimal execution gate (>60% filters consolidation chop while capturing high-probability directional trends)")
+    MIN_HIT_PERCENTAGE = st.slider("Directional Gate Threshold (%)", min_value=50.0, max_value=85.0, value=75.0, step=1.0, help="Optimal execution gate (>75% filters consolidation chop and low-conviction setups, capturing only high-probability directional trends)")
     
     # Enhancement: Max Daily Loss / Circuit Breaker Safeguard
     max_daily_sl_allowed = st.number_input("Max Daily Stop Losses Before Auto-Lock", min_value=1, max_value=4, value=2, step=1, help="Stops trading for the day after this many stop losses (prevents revenge trading and capital erosion)")
@@ -2333,8 +2333,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     plan_lot_size = tp.get("lot_size", 500)
     plan_qty = tp.get("total_trading_qty", 500)
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
-    plan_score = tp.get("dominant_score", 72.0)
-    plan_gate = tp.get("min_hit_percentage", 60.0)
+    plan_score = tp.get("dominant_score", 75.0)
+    plan_gate = tp.get("min_hit_percentage", 75.0)
     plan_dir = tp.get("dominant_side", "BULLISH (CALL / CE)")
     sim_entry = tp.get("simulate_entry", False)
     sim_armed = tp.get("simulate_armed", False)
