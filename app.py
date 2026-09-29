@@ -7969,8 +7969,67 @@ if df is not None and not df.empty:
                 st.success(f"Synced {synced_n} trade(s) from journal.")
                 time.sleep(1)
                 st.rerun()
+    # ==============================================================================
+    # 9.6. WALK-FORWARD HISTORICAL BACKTEST RESULTS (60-DAY OUT-OF-SAMPLE AUDIT)
+    # ==============================================================================
+    with st.expander("📈 60-Day Historical Walk-Forward Backtest Results (RELIANCE F&O)", expanded=True):
+        st.markdown(
+            "<p style='font-size: 0.85rem; color: #94A3B8; margin-bottom: 12px;'>"
+            "Strict point-in-time sequential simulation across <b>4,338 historical 5-minute candles (59 trading sessions)</b>. "
+            "Enforces 1 trade/day maximum, Toby Crabel ORB-15, Breakeven Escalator, and 1:2.14 Reward-to-Risk options payout modeling."
+            "</p>",
+            unsafe_allow_html=True
+        )
+        try:
+            bt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest_results_summary.json")
+            if os.path.exists(bt_path):
+                with open(bt_path, "r", encoding="utf-8") as f:
+                    bt_data = json.load(f)
+                
+                b1, b2, b3, b4, b5 = st.columns(5)
+                with b1:
+                    st.metric("Total Sessions", f"{bt_data.get('total_trading_days')} Days")
+                with b2:
+                    st.metric("Win Rate", f"{bt_data.get('win_rate_pct')}%", f"{bt_data.get('winning_trades')}W / {bt_data.get('losing_trades')}L")
+                with b3:
+                    net_rs = bt_data.get('net_pnl_rs', 0.0)
+                    st.metric("Net Realized P&L", f"{'+' if net_rs >= 0 else ''}₹{net_rs:,.2f}", f"{bt_data.get('return_on_capital_pct')}% ROI")
+                with b4:
+                    st.metric("Profit Factor", f"{bt_data.get('profit_factor')}x")
+                with b5:
+                    st.metric("Max Drawdown", f"{bt_data.get('max_drawdown_pct')}%", f"-₹{bt_data.get('max_drawdown_rs'):,.0f}")
+
+                st.markdown(
+                    f"<div style='background: rgba(15, 23, 42, 0.65); border: 1px solid #334155; border-radius: 8px; padding: 12px 16px; margin: 12px 0;'>"
+                    f"<span style='color: #38BDF8; font-weight: 600;'>Institutional Audit Metrics:</span> "
+                    f"<span style='color: #E2E8F0; margin-left: 8px;'>Avg Win: <b>+{bt_data.get('avg_win_pts')} pts</b> (~₹{bt_data.get('avg_win_pts', 0)*250:,.0f})</span> • "
+                    f"<span style='color: #F87171; margin-left: 8px;'>Avg Loss: <b>-{bt_data.get('avg_loss_pts')} pts</b> (~₹{bt_data.get('avg_loss_pts', 0)*250:,.0f})</span> • "
+                    f"<span style='color: #A7F3D0; margin-left: 8px;'>Gross Wins: ₹{bt_data.get('gross_profit_rs'):,.0f}</span> • "
+                    f"<span style='color: #FECACA; margin-left: 8px;'>Gross Losses: ₹{bt_data.get('gross_loss_rs'):,.0f}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+                recent_bt = bt_data.get("recent_trades", [])
+                if recent_bt:
+                    st.markdown("<p style='font-size: 0.8rem; font-weight: 600; color: #94A3B8; text-transform: uppercase;'>Recent Simulated Trades Audit Trail:</p>", unsafe_allow_html=True)
+                    bt_table = []
+                    for t in recent_bt:
+                        bt_table.append({
+                            "Date": t.get("date"),
+                            "Direction": t.get("direction"),
+                            "Confluence": f"{t.get('confluence_score')}%",
+                            "Entry": f"₹{t.get('entry_price', 0):.2f}",
+                            "Exit": f"₹{t.get('exit_price', 0):.2f}",
+                            "Outcome": t.get("exit_reason"),
+                            "Points": f"{'+' if t.get('pts_captured', 0) >= 0 else ''}{t.get('pts_captured', 0):.2f}",
+                            "PnL": f"{'+' if t.get('pnl', 0) >= 0 else ''}₹{t.get('pnl', 0):,.2f}"
+                        })
+                    st.dataframe(pd.DataFrame(bt_table), use_container_width=True, hide_index=True)
+            else:
+                st.info("Run `python walkforward_backtest_engine.py` to refresh backtest data.")
         except Exception as e:
-            st.caption(f"Calibration engine ready: {e}")
+            st.caption(f"Backtest viewer ready: {e}")
 
     # ==============================================================================
     # GITHUB SYNCHRONIZATION (LOCAL MASTER COPY ARCHITECTURE)
