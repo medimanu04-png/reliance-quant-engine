@@ -55,17 +55,30 @@ class RelianceRiskBudget:
     target_pts: float = 10.0
     stop_loss_pts: float = 4.5  # Dynamic 1.5x 5m ATR (Strictly <= 4.0% of Capital)
 
+    def adapt_to_volatility(self, atr_15m: float):
+        """
+        Dynamically adapts target and stop-loss points to realized intraday volatility
+        while strictly enforcing the 1:2.0 to 1:2.2 R:R ratio and <= 4% capital risk budget.
+        """
+        if atr_15m and atr_15m > 0:
+            # Dynamic SL based on 0.9x 15m ATR, clamped between 3.5 and 5.0 pts
+            dynamic_sl = round(min(5.0, max(3.5, atr_15m * 0.9)), 1)
+            # Dynamic Target maintaining ~1:2.2 R:R ratio, clamped between 8.0 and 14.0 pts
+            dynamic_tgt = round(min(14.0, max(8.0, dynamic_sl * 2.2)), 1)
+            self.stop_loss_pts = dynamic_sl
+            self.target_pts = dynamic_tgt
+
     @property
     def total_quantity(self) -> int:
         return self.lot_size * self.num_lots  # 500 Units
 
     @property
     def max_risk_rupees(self) -> float:
-        return self.total_quantity * self.stop_loss_pts  # Rs. 2,250.00 (3.4% of capital)
+        return self.total_quantity * self.stop_loss_pts  # e.g. Rs. 2,250.00 (3.4% of capital)
 
     @property
     def target_reward_rupees(self) -> float:
-        return self.total_quantity * self.target_pts  # Rs. 5,000.00 (1:2.22 R:R Ratio)
+        return self.total_quantity * self.target_pts  # e.g. Rs. 5,000.00 (1:2.22 R:R Ratio)
 
 
 # ============================================================================
@@ -349,6 +362,93 @@ class MultiIndicatorMath:
         l4 = round(pdc - (rng * 1.1 / 2.0), 2)
         return h4, h3, l3, l4
 
+    @staticmethod
+    def calculate_parkinson_volatility(highs: List[float], lows: List[float], period: int = 14) -> float:
+        """
+        Parkinson High-Low Realized Volatility Estimator.
+        5x more statistically efficient than close-to-close variance for intraday price action.
+        Returns annualized percentage volatility (%).
+        """
+        if len(highs) < period or len(lows) < period:
+            return 18.5
+        h_sub = highs[-period:]
+        l_sub = lows[-period:]
+        sum_sq = sum((math.log(max(1e-5, h) / max(1e-5, l))) ** 2 for h, l in zip(h_sub, l_sub))
+        parkinson_var = sum_sq / (4.0 * math.log(2.0) * period)
+        # Annualize assuming 252 days * 75 five-minute bars/day (~18,900 bars/year)
+        annualized = math.sqrt(parkinson_var) * math.sqrt(252.0 * 75.0) * 100.0
+        return round(min(80.0, max(5.0, annualized)), 1)
+
+    @staticmethod
+    def calculate_volume_delta(
+        opens: Optional[List[float]],
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        period: int = 20
+    ) -> Tuple[float, float, str]:
+        """
+        Order Flow Cumulative Volume Delta (CVD) Estimator.
+        Deconstructs bar microstructure into buyer-initiated vs seller-initiated volume
+        using candle body and wick pressure.
+        Returns (latest_delta, cvd_ema, bias).
+        """
+        if not closes or not volumes or len(closes) != len(volumes):
+            return 0.0, 0.0, "NEUTRAL"
+        
+        deltas = []
+        for i in range(len(closes)):
+            h = highs[i]
+            l = lows[i]
+            c = closes[i]
+            o = opens[i] if opens and len(opens) == len(closes) else (closes[i - 1] if i > 0 else closes[0])
+            v = volumes[i]
+            hl_range = max(0.05, h - l)
+            # Intra-bar buyer absorption ratio
+            buyer_ratio = (c - l) / hl_range
+            delta = v * (2.0 * buyer_ratio - 1.0)
+            deltas.append(delta)
+        
+        cvd = [deltas[0]]
+        for d in deltas[1:]:
+            cvd.append(cvd[-1] + d)
+            
+        cvd_ema = MultiIndicatorMath.calculate_ema(cvd, period)
+        latest_cvd = cvd[-1]
+        latest_ema = cvd_ema[-1]
+        bias = "AGGRESSIVE_BUYING" if latest_cvd >= latest_ema else "AGGRESSIVE_SELLING"
+        return round(latest_cvd, 0), round(latest_ema, 0), bias
+
+    @staticmethod
+    def calculate_dealer_gamma_exposure(spot: float, chain: List[Dict[str, Any]]) -> Tuple[float, str]:
+        """
+        Dealer Net Gamma Exposure (GEX) Proxy across Option Chain:
+        GEX ~ Sum((Call OI - Put OI) * Gamma * Spot^2)
+        Positive GEX -> Market Makers are long gamma (pinning / mean reversion / breakout resistance)
+        Negative GEX -> Market Makers are short gamma (acceleration / squeeze / high breakout follow-through)
+        """
+        if not chain or not spot:
+            return 0.0, "BALANCED_GAMMA"
+        net_gex = 0.0
+        for row in chain:
+            strike = float(row.get("strike", spot))
+            call_oi = float(row.get("call_oi", 0))
+            put_oi = float(row.get("put_oi", 0))
+            moneyness = abs(spot - strike) / max(1.0, spot)
+            if moneyness <= 0.04:  # ATM & near-ATM corridor contributes 90% of active gamma
+                gamma_proxy = math.exp(-0.5 * ((spot - strike) / 15.0) ** 2) / 15.0
+                gex_strike = (call_oi - put_oi) * gamma_proxy * (spot ** 2) / 1e7
+                net_gex += gex_strike
+                
+        if net_gex < -15.0:
+            regime = "SHORT_GAMMA_SQUEEZE_EXPANSION"
+        elif net_gex > 25.0:
+            regime = "POSITIVE_GAMMA_PINNING"
+        else:
+            regime = "BALANCED_GAMMA"
+        return round(net_gex, 2), regime
+
 
 
 # ============================================================================
@@ -386,7 +486,15 @@ class UltraHighConvictionRelianceEngine:
         ema9 = MultiIndicatorMath.calculate_ema(c5m["close"], 9)[-1]
         ema20 = MultiIndicatorMath.calculate_ema(c5m["close"], 20)[-1]
         ema50 = MultiIndicatorMath.calculate_ema(c5m["close"], 50)[-1]
-        ema200 = MultiIndicatorMath.calculate_ema(c15m["close"], 200)[-1] if len(c15m["close"]) >= 200 else c15m["close"][0]
+        
+        # Robust 200-period EMA fallback for short historical buffers
+        if len(c15m["close"]) >= 200:
+            ema200 = MultiIndicatorMath.calculate_ema(c15m["close"], 200)[-1]
+        elif len(c15m["close"]) >= 20:
+            ema200 = MultiIndicatorMath.calculate_ema(c15m["close"], min(50, len(c15m["close"])))[-1]
+        else:
+            ema200 = c15m["close"][-1]
+
         # Higher-Timeframe (60m) Trend Invariance: 240 bars on 5m = 20-period EMA on 60m chart
         htf_ema = MultiIndicatorMath.calculate_ema(c5m["close"], 240)[-1] if len(c5m["close"]) >= 240 else (MultiIndicatorMath.calculate_ema(c15m["close"], 80)[-1] if len(c15m["close"]) >= 80 else ema200)
         htf_bull = spot > htf_ema
@@ -422,7 +530,7 @@ class UltraHighConvictionRelianceEngine:
         if htf_bear:
             v1_bear += 3.0  # 60m Macro Trend Invariance Confirmation
 
-        # VECTOR 2: Institutional VWAP & OBV Order Flow (18 pts)
+        # VECTOR 2: Institutional VWAP, OBV & Cumulative Volume Delta (CVD) Order Flow (18 pts)
         vwap, vwap_plus_15sigma, vwap_minus_sigma = MultiIndicatorMath.calculate_vwap_bands(
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("date")
         )
@@ -430,93 +538,120 @@ class UltraHighConvictionRelianceEngine:
         vol_avg20 = sum(c5m["volume"][-20:]) / 20.0 if len(c5m["volume"]) >= 20 else c5m["volume"][-1]
         vol_surge = c5m["volume"][-1] >= 1.70 * vol_avg20
         obv_val, obv_ema, obv_bias = MultiIndicatorMath.calculate_obv(c5m["close"], c5m["volume"], 20)
+        latest_cvd, cvd_ema, cvd_bias = MultiIndicatorMath.calculate_volume_delta(
+            c5m.get("open"), c5m["high"], c5m["low"], c5m["close"], c5m["volume"], 20
+        )
 
         # Bullish V2
         v2_bull = 0.0
         if spot >= vwap_plus_15sigma:
-            v2_bull += 8.0 if vwap_z <= 2.2 else 4.0  # Climax guard: penalize if overextended
+            v2_bull += 7.0 if vwap_z <= 2.2 else 3.0  # Climax guard: penalize if overextended
         elif spot > vwap:
-            v2_bull += 5.0
+            v2_bull += 4.0
         if vol_surge:
-            v2_bull += 5.0
+            v2_bull += 4.0
         elif c5m["volume"][-1] > vol_avg20:
             v2_bull += 2.0
         if obv_bias == "BUYER_AGGRESSION":
-            v2_bull += 5.0
+            v2_bull += 4.0
+        if cvd_bias == "AGGRESSIVE_BUYING":
+            v2_bull += 3.0  # Institutional Buyer Absorption Confirmation
 
         # Bearish V2
         v2_bear = 0.0
         if spot <= vwap_minus_sigma:
-            v2_bear += 8.0 if vwap_z >= -2.2 else 4.0  # Oversold climax guard
+            v2_bear += 7.0 if vwap_z >= -2.2 else 3.0  # Oversold climax guard
         elif spot < vwap:
-            v2_bear += 5.0
+            v2_bear += 4.0
         if vol_surge:
-            v2_bear += 5.0
+            v2_bear += 4.0
         elif c5m["volume"][-1] > vol_avg20:
             v2_bear += 2.0
         if obv_bias == "SELLER_AGGRESSION":
-            v2_bear += 5.0
+            v2_bear += 4.0
+        if cvd_bias == "AGGRESSIVE_SELLING":
+            v2_bear += 3.0  # Institutional Seller Absorption Confirmation
 
         # Strike & OI Telemetry (Strict 10-point Strike Interval for RELIANCE)
         strike_step = 10
         atm_strike = int(round(spot / strike_step) * strike_step)
         chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True)
         opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True)
+        is_synthetic_feed = opt_telemetry.get("is_synthetic", False) or chain_oi.get("is_synthetic", False)
 
         call_wall = float(chain_oi.get("call_wall", atm_strike + 10))
         put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
-        pcr = chain_oi['overall_pcr']
+        pcr = chain_oi.get("overall_pcr", 1.0)
 
-        # VECTOR 3: Short Gamma Squeeze & Strike OI Walls (20 pts)
+        # Dealer Net Gamma Exposure (GEX) Calculation
+        net_gex, gex_regime = MultiIndicatorMath.calculate_dealer_gamma_exposure(spot, chain_oi.get("chain", []))
+
+        # VECTOR 3: Short Gamma Squeeze, Strike OI Walls & Dealer GEX (20 pts)
         call_unwinding = opt_telemetry['call_oi_change_pct'] < -10.0
         put_writing = opt_telemetry['put_oi_change_pct'] > 20.0
         put_unwinding = opt_telemetry['put_oi_change_pct'] < -10.0
         call_writing = opt_telemetry['call_oi_change_pct'] > 20.0
 
         v3_bull = 0.0
-        if call_unwinding:
-            v3_bull += 8.0
-        elif opt_telemetry['call_oi_change_pct'] < 0:
-            v3_bull += 4.0
-        if put_writing:
-            v3_bull += 6.0
-        elif opt_telemetry['put_oi_change_pct'] > 10.0:
-            v3_bull += 3.0
-        if pcr >= 1.25:
-            v3_bull += 6.0
-        elif pcr >= 1.05:
-            v3_bull += 3.0
-        # Call Wall resistance proximity clamp: if spot within 2 pts of Call Wall and no covering, deduct 4 pts
-        if abs(spot - call_wall) <= 2.0 and opt_telemetry['call_oi_change_pct'] >= 0:
-            v3_bull = max(0.0, v3_bull - 4.0)
-
         v3_bear = 0.0
-        if put_unwinding:
-            v3_bear += 8.0
-        elif opt_telemetry['put_oi_change_pct'] < 0:
-            v3_bear += 4.0
-        if call_writing:
-            v3_bear += 6.0
-        elif opt_telemetry['call_oi_change_pct'] > 10.0:
-            v3_bear += 3.0
-        if pcr <= 0.85:
-            v3_bear += 6.0
-        elif pcr <= 0.95:
-            v3_bear += 3.0
-        # Put Wall support proximity clamp
-        if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
-            v3_bear = max(0.0, v3_bear - 4.0)
 
-        # VECTOR 4: Volatility & Choppiness Index (CHOP) Regime (15 pts)
+        # Strict Data Integrity Gate: award 0 derivative trap points if running on offline fallback
+        if not is_synthetic_feed:
+            if call_unwinding:
+                v3_bull += 7.0
+            elif opt_telemetry['call_oi_change_pct'] < 0:
+                v3_bull += 3.0
+            if put_writing:
+                v3_bull += 5.0
+            elif opt_telemetry['put_oi_change_pct'] > 10.0:
+                v3_bull += 2.0
+            if pcr >= 1.25:
+                v3_bull += 5.0
+            elif pcr >= 1.05:
+                v3_bull += 2.0
+            # Dealer GEX boost/penalty
+            if gex_regime == "SHORT_GAMMA_SQUEEZE_EXPANSION":
+                v3_bull += 3.0  # Dealers forced to buy higher on breakout
+            elif gex_regime == "POSITIVE_GAMMA_PINNING":
+                v3_bull = max(0.0, v3_bull - 3.0)  # Pinning resistance
+            # Call Wall resistance proximity clamp
+            if abs(spot - call_wall) <= 2.0 and opt_telemetry['call_oi_change_pct'] >= 0:
+                v3_bull = max(0.0, v3_bull - 4.0)
+
+            if put_unwinding:
+                v3_bear += 7.0
+            elif opt_telemetry['put_oi_change_pct'] < 0:
+                v3_bear += 3.0
+            if call_writing:
+                v3_bear += 5.0
+            elif opt_telemetry['call_oi_change_pct'] > 10.0:
+                v3_bear += 2.0
+            if pcr <= 0.85:
+                v3_bear += 5.0
+            elif pcr <= 0.95:
+                v3_bear += 2.0
+            if gex_regime == "SHORT_GAMMA_SQUEEZE_EXPANSION":
+                v3_bear += 3.0  # Dealers forced to sell lower on breakdown
+            elif gex_regime == "POSITIVE_GAMMA_PINNING":
+                v3_bear = max(0.0, v3_bear - 3.0)
+            # Put Wall support proximity clamp
+            if abs(spot - put_wall) <= 2.0 and opt_telemetry['put_oi_change_pct'] >= 0:
+                v3_bear = max(0.0, v3_bear - 4.0)
+
+        # VECTOR 4: Volatility, Parkinson Estimator & Choppiness Index (CHOP) Regime (15 pts)
         _, bb_upper, bb_lower, bb_width = MultiIndicatorMath.calculate_bollinger_bands(c5m["close"], 20, 2.0)
         atr_15m = MultiIndicatorMath.calculate_atr(c15m["high"], c15m["low"], c15m["close"], 14)[-1]
+        parkinson_vol = MultiIndicatorMath.calculate_parkinson_volatility(c5m["high"], c5m["low"], 14)
         chop_idx = MultiIndicatorMath.calculate_choppiness(c5m["high"], c5m["low"], c5m["close"], 14)
         is_trending_regime = chop_idx < 45.0
         is_choppy_regime = chop_idx > 61.8
 
+        # Dynamically adapt Target and SL based on 15m ATR and realized volatility
+        self.risk.adapt_to_volatility(atr_15m)
+
         v4_bull = 0.0
         v4_bear = 0.0
-        atr_pts = 8.0 if atr_15m >= 7.5 else (5.0 if atr_15m >= 6.0 else 0.0)
+        atr_pts = 7.0 if atr_15m >= 7.5 else (4.0 if atr_15m >= 5.5 else 0.0)
         v4_bull += atr_pts
         v4_bear += atr_pts
 
@@ -527,10 +662,14 @@ class UltraHighConvictionRelianceEngine:
             v4_bull += 2.0
             v4_bear += 2.0
 
+        if parkinson_vol >= 16.0:  # Healthy intraday expansion regime
+            v4_bull += 2.0
+            v4_bear += 2.0
+
         if spot >= bb_upper[-1] * 0.999 and bb_width[-1] >= 1.5:
-            v4_bull += 3.0
+            v4_bull += 2.0
         if spot <= bb_lower[-1] * 1.001 and bb_width[-1] >= 1.5:
-            v4_bear += 3.0
+            v4_bear += 2.0
 
         # VECTOR 5: Zero-Divergence Momentum Velocity (15 pts)
         rsi_series = MultiIndicatorMath.calculate_rsi(c5m["close"], 14)
@@ -578,7 +717,10 @@ class UltraHighConvictionRelianceEngine:
         # VECTOR 6: Dynamic Greek Delta, Expiry Shield & Liquidity (12 pts)
         T_val = dte_val / 365.0
         r_rate = 0.0675
-        iv = 0.212
+        # Dynamic IV extraction with safe historical fallback
+        telemetry_iv = float(opt_telemetry.get("iv", 0.0))
+        iv = (telemetry_iv / 100.0) if telemetry_iv > 5.0 else 0.212
+
         if T_val > 0:
             d1_val = (math.log(spot / atm_strike) + (r_rate + 0.5 * (iv ** 2)) * T_val) / (iv * math.sqrt(T_val))
             delta_ce = (1.0 + math.erf(d1_val / math.sqrt(2.0))) / 2.0
@@ -629,7 +771,14 @@ class UltraHighConvictionRelianceEngine:
             recommended_type = "PE"
 
         total_probability = dominant_score
-        is_tradable = (total_probability >= self.trade_regime_threshold) and time_allowed and not auto_sq_active and not is_choppy_regime
+        # Strict Execution Gate: Must NOT be running on synthetic fallback
+        is_tradable = (
+            (total_probability >= self.trade_regime_threshold)
+            and time_allowed
+            and not auto_sq_active
+            and not is_choppy_regime
+            and not is_synthetic_feed
+        )
 
         # Dynamic Dual ATM Corridor Resolution & Best Strike Suggestion
         corridor = NSEIndiaFetcher.get_atm_corridor(spot)
@@ -652,18 +801,19 @@ class UltraHighConvictionRelianceEngine:
         current_option_ltp = active_data["call_ltp"] if recommended_type == "CE" else active_data["put_ltp"]
         entry_premium = round(current_option_ltp + 1.20, 2)
         contract_name = f"RELIANCE {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | {self.risk.num_lots} Lot / {self.risk.total_quantity} Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
-        tp_premium = entry_premium + self.risk.target_pts
-        sl_premium = entry_premium - self.risk.stop_loss_pts
+        tp_premium = round(entry_premium + self.risk.target_pts, 2)
+        sl_premium = round(entry_premium - self.risk.stop_loss_pts, 2)
 
-        status_text = (
-            f"TRADABLE DAY / ACTIVE {dominant_side} SETUP"
-            if is_tradable
-            else ("CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)" if is_choppy_regime else (
-                f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Market Closed)"
-                if (total_probability >= self.trade_regime_threshold and not time_allowed)
-                else "NON-TRADABLE DAY / STAND DOWN"
-            ))
-        )
+        if is_synthetic_feed:
+            status_text = "OFFLINE / AWAITING LIVE BROKER FEED (STAND DOWN)"
+        elif is_tradable:
+            status_text = f"TRADABLE DAY / ACTIVE {dominant_side} SETUP"
+        elif is_choppy_regime:
+            status_text = "CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)"
+        elif total_probability >= self.trade_regime_threshold and not time_allowed:
+            status_text = f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Market Closed)"
+        else:
+            status_text = "NON-TRADABLE DAY / STAND DOWN"
 
         target_text = (
             f"TARGET: Rs. {tp_premium:.2f} (+{self.risk.target_pts:.1f} pts | +Rs. {self.risk.target_reward_rupees:,.0f}) | "
@@ -680,16 +830,22 @@ class UltraHighConvictionRelianceEngine:
             "5. ENTRY PRICE": f"On Breakout above Rs. {entry_premium:.2f} (Option Premium)" if is_tradable else "N/A",
             "6. TARGET | STOP LOSS": target_text,
             "7. RATIONALE & CONFLUENCE": {
-                "Price vs. VWAP & OBV": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}).",
-                "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
-                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). ATR(14)={atr_15m:.2f} pts with BB Width={bb_width[-1]:.2f}%.",
+                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}).",
+                "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
+                "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). ATR(14)={atr_15m:.2f} pts | Parkinson Realized Vol={parkinson_vol:.1f}% | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
                 "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stochastic %K={stoch_k:.1f}.",
-                "Volume & Strike OI Walls": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi['overall_pcr']:.2f}. ATM Call shift: {opt_telemetry['call_oi_change_pct']:+.1f}% | ATM Put shift: {opt_telemetry['put_oi_change_pct']:+.1f}%."
+                "Volume, Strike OI & Dealer GEX": f"Dual ATM Corridor (Rs. {lower_atm} & Rs. {upper_atm}): Call Wall at Rs. {call_wall:.0f}, Put Wall at Rs. {put_wall:.0f}. PCR={chain_oi.get('overall_pcr', 1.0):.2f}. Dealer GEX: {net_gex:+.1f} Cr [{gex_regime}]. Feed Status: {'Live Broker' if not is_synthetic_feed else 'Synthetic Fallback'}."
             },
             "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else "NONE — Stand down (Conditions do not satisfy 90% A+ threshold)",
             "dominant_score": dominant_score,
             "bullish_score": bullish_score,
-            "bearish_score": bearish_score
+            "bearish_score": bearish_score,
+            "is_synthetic_feed": is_synthetic_feed,
+            "target_pts": self.risk.target_pts,
+            "sl_pts": self.risk.stop_loss_pts,
+            "parkinson_vol": parkinson_vol,
+            "cvd_bias": cvd_bias,
+            "gex_regime": gex_regime
         }
 
 

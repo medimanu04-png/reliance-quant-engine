@@ -409,23 +409,21 @@ class NSEIndiaFetcher:
                     "call_ltp": atm_contract.get("call_ltp", 37.65),
                     "put_ltp": atm_contract.get("put_ltp", 18.20),
                     "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
-                    "source": "Groww API (0-Delay Real-Time Feed)"
+                    "source": "Groww API (0-Delay Real-Time Feed)",
+                    "is_synthetic": False
                 }
         except Exception:
             pass
 
-        import random
-        seed_val = int(time.time() * 1000) if force_refresh else int(time.time() // 300) + int(atm_strike)
-        rng = random.Random(seed_val)
-
-        call_vol = int(rng.randint(78000, 118000))
-        put_vol = int(rng.randint(62000, 95000))
-        call_oi = int(rng.randint(2150000, 2750000))
-        put_oi = int(rng.randint(3100000, 3950000))
-        call_oi_change = round(rng.uniform(-24.5, -15.2), 1)
-        put_oi_change = round(rng.uniform(32.0, 49.5), 1)
-        pcr_oi = round(put_oi / call_oi, 2)
-        pcr_vol = round(put_vol / call_vol, 2)
+        # Neutral un-biased baseline fallback when broker feed is offline
+        call_vol = 85000
+        put_vol = 85000
+        call_oi = 2500000
+        put_oi = 2500000
+        call_oi_change = 0.0  # Neutral - never fake short gamma unwinding
+        put_oi_change = 0.0   # Neutral - never fake put writing
+        pcr_oi = 1.00
+        pcr_vol = 1.00
 
         return {
             "atm_strike": atm_strike,
@@ -437,8 +435,11 @@ class NSEIndiaFetcher:
             "put_oi_change_pct": put_oi_change,
             "pcr_oi": pcr_oi,
             "pcr_volume": pcr_vol,
+            "call_ltp": 37.65,
+            "put_ltp": 18.20,
             "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
-            "source": "Groww API (0-Delay Real-Time Feed)"
+            "source": "Neutral Baseline Fallback (Broker Offline)",
+            "is_synthetic": True
         }
 
     @classmethod
@@ -511,15 +512,13 @@ class NSEIndiaFetcher:
                         "atm_call_shift": atm_row["call_oi_chg_pct"],
                         "atm_put_shift": atm_row["put_oi_chg_pct"],
                         "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
-                        "source": "Groww API (0-Delay Real-Time Feed)"
+                        "source": "Groww API (0-Delay Real-Time Feed)",
+                        "is_synthetic": False
                     }
         except Exception:
             pass
 
-        import random
-        seed_val = int(time.time() * 1000) if force_refresh else int(time.time() // 300) + int(atm_strike)
-        rng = random.Random(seed_val)
-
+        # Neutral baseline option chain distribution (Broker Offline)
         strikes = [atm_strike + (step * 10) for step in range(-4, 5)]
         chain = []
         total_call_oi = 0
@@ -530,10 +529,10 @@ class NSEIndiaFetcher:
             base_call = int(2200000 * math.exp(-0.15 * max(0.0, -dist)))
             base_put = int(2500000 * math.exp(-0.15 * max(0.0, dist)))
 
-            c_oi = int(base_call * rng.uniform(0.92, 1.15))
-            p_oi = int(base_put * rng.uniform(0.92, 1.15))
-            c_chg = round(rng.uniform(-25.0, -12.0) if k <= atm_strike else rng.uniform(-5.0, 15.0), 1)
-            p_chg = round(rng.uniform(25.0, 48.0) if k <= atm_strike else rng.uniform(5.0, 18.0), 1)
+            c_oi = base_call
+            p_oi = base_put
+            c_chg = 0.0  # Neutral baseline
+            p_chg = 0.0  # Neutral baseline
 
             total_call_oi += c_oi
             total_put_oi += p_oi
@@ -576,7 +575,8 @@ class NSEIndiaFetcher:
             "atm_call_shift": atm_row["call_oi_chg_pct"],
             "atm_put_shift": atm_row["put_oi_chg_pct"],
             "timestamp": datetime.now(IST).strftime("%I:%M:%S %p IST"),
-            "source": "Groww API (0-Delay Real-Time Feed)"
+            "source": "Neutral Baseline Fallback (Broker Offline)",
+            "is_synthetic": True
         }
 
     @classmethod

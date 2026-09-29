@@ -19,6 +19,7 @@ import math
 import json
 import logging
 import argparse
+import threading
 from datetime import datetime, time as dt_time, timedelta
 from typing import Dict, Any, Optional, Tuple, List
 
@@ -52,6 +53,7 @@ from trade_journal_manager import (
     TradeJournalManager,
     SequentialTradeEngine,
     ShadowMonitoringEngine,
+    SignalTracker,
     STARTING_CAPITAL
 )
 from fo_quant_engine import MultiIndicatorMath, UltraHighConvictionRelianceEngine
@@ -253,8 +255,18 @@ class RelianceQuantAlertDaemon:
         if dominant_score <= 0.0:
             dominant_score = 75.0
 
-        # Strict Institutional Gate: Confluence Score must be >= 75.0%
-        is_tradable = "TRADABLE" in status_text.upper() and "NON-TRADABLE" not in status_text.upper() and (dominant_score >= 75.0)
+        dynamic_target_pts = float(confluence_eval.get("target_pts", 10.0))
+        dynamic_sl_pts = float(confluence_eval.get("sl_pts", 4.5))
+        is_synthetic_feed = bool(confluence_eval.get("is_synthetic_feed", False))
+
+        # Strict Institutional Gate: Confluence Score must be >= 75.0% and NOT on synthetic fallback
+        is_tradable = (
+            "TRADABLE" in status_text.upper()
+            and "NON-TRADABLE" not in status_text.upper()
+            and "STAND DOWN" not in status_text.upper()
+            and (dominant_score >= 75.0)
+            and not is_synthetic_feed
+        )
         is_chop = "CHOP" in status_text.upper()
 
         dominant_side = "CALL (CE)" if "BULLISH" in prob_str.upper() else "PUT (PE)"
@@ -420,8 +432,8 @@ class RelianceQuantAlertDaemon:
                         contract=contract_label,
                         direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
                         entry_price=active_option_ltp,
-                        target_pts=10.0,
-                        sl_pts=4.5,
+                        target_pts=dynamic_target_pts,
+                        sl_pts=dynamic_sl_pts,
                         num_lots=2,
                         lot_size=500,
                         win_prob=round(dominant_score, 1),
@@ -445,8 +457,8 @@ class RelianceQuantAlertDaemon:
                         "strike": recommended_strike,
                         "expiry": expiry_date,
                         "suggested_entry": active_option_ltp,
-                        "suggested_exit": round(active_option_ltp + 10.0, 2),
-                        "suggested_sl": round(active_option_ltp - 4.5, 2),
+                        "suggested_exit": round(active_option_ltp + dynamic_target_pts, 2),
+                        "suggested_sl": round(max(0.05, active_option_ltp - dynamic_sl_pts), 2),
                         "confluence_score": round(dominant_score, 1)
                     })
                 except Exception as e:
@@ -457,8 +469,8 @@ class RelianceQuantAlertDaemon:
                         symbol=f"RELIANCE26OCT{recommended_strike}{contract_type}",
                         action=f"BUY {contract_type}",
                         entry=active_option_ltp,
-                        target=round(active_option_ltp + 10.0, 2),
-                        sl=round(active_option_ltp - 4.5, 2),
+                        target=round(active_option_ltp + dynamic_target_pts, 2),
+                        sl=round(max(0.05, active_option_ltp - dynamic_sl_pts), 2),
                         date_str=today_date,
                         time_str=time_str,
                         instrument=contract_label,
@@ -483,8 +495,8 @@ class RelianceQuantAlertDaemon:
                         current_ltp=active_option_ltp,
                         breakout_trigger=breakout_level,
                         distance_pts=gap_pts,
-                        target_pts=10.0,
-                        sl_pts=4.5,
+                        target_pts=dynamic_target_pts,
+                        sl_pts=dynamic_sl_pts,
                         num_lots=2,
                         lot_size=500,
                         win_prob=70.0,
