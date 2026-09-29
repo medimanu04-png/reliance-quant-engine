@@ -439,6 +439,22 @@ class RelianceQuantAlertDaemon:
                 except Exception as e:
                     logger.debug(f"SignalTracker save error in daemon: {e}")
 
+                try:
+                    ShadowMonitoringEngine.log_signal(
+                        symbol=f"RELIANCE26OCT{recommended_strike}{contract_type}",
+                        action=f"BUY {contract_type}",
+                        entry=active_option_ltp,
+                        target=round(active_option_ltp + 10.0, 2),
+                        sl=round(active_option_ltp - 4.5, 2),
+                        date_str=today_date,
+                        time_str=time_str,
+                        instrument=contract_label,
+                        confluence_score=75.0,
+                        user_executed=False
+                    )
+                except Exception as e:
+                    logger.debug(f"ShadowMonitoringEngine save error in daemon: {e}")
+
                 logger.info(
                     f"[{time_str}] 🔥 ENTRY TRIGGER CONFIRMED! Contract: {contract_label} | "
                     f"LTP: ₹{active_option_ltp:.2f} >= Trigger: ₹{breakout_level:.2f} | Awaiting user execution in Groww..."

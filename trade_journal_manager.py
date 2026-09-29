@@ -612,8 +612,7 @@ class ShadowMonitoringEngine:
                 with open(SHADOW_SIGNALS_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        # Strict Rule: Only make / keep entries that are executed in Groww (or verified audit screenshot)!
-                        return [r for r in data if r.get("user_executed") or r.get("screenshot") or r.get("screenshot_data_uri")]
+                        return data
             except Exception as e:
                 logger.debug(f"Error loading shadow signals log: {e}")
         return cls._bootstrap_from_existing()
@@ -705,28 +704,24 @@ class ShadowMonitoringEngine:
         time_str = time_str or datetime.now(IST).strftime("%I:%M:%S %p IST")
         records = cls.load_records()
         
-        # Strict Rule: Only make an entry if trade is executed in Groww (no other entries should be made)
-        if not user_executed:
-            return None
         def _parse_mins(t_val) -> Optional[float]:
             if not t_val:
                 return None
             t_str = str(t_val).strip()
-            try:
-                if "T" in t_str:
-                    t_part = t_str.split("T")[1].replace("Z", "")
+            clean = t_str.replace("IST", "").strip()
+            if "T" in clean:
+                try:
+                    t_part = clean.split("T")[1].replace("Z", "")
                     p = t_part.split(":")
                     return int(p[0]) * 60 + int(p[1]) + (float(p[2]) / 60.0 if len(p) > 2 else 0.0)
-                clean = t_str.replace("IST", "").strip()
-                dt = datetime.strptime(clean, "%I:%M:%S %p")
-                return dt.hour * 60 + dt.minute + dt.second / 60.0
-            except Exception:
-                pass
-            try:
-                dt = datetime.strptime(clean, "%I:%M %p")
-                return dt.hour * 60 + dt.minute
-            except Exception:
-                pass
+                except Exception:
+                    pass
+            for fmt in ["%I:%M:%S %p", "%I:%M %p", "%H:%M:%S", "%H:%M"]:
+                try:
+                    dt = datetime.strptime(clean, fmt)
+                    return dt.hour * 60 + dt.minute + (dt.second / 60.0 if hasattr(dt, "second") else 0.0)
+                except Exception:
+                    pass
             return None
 
         time_mins = _parse_mins(time_str)
@@ -807,21 +802,20 @@ class ShadowMonitoringEngine:
             if not t_val:
                 return None
             t_str = str(t_val).strip()
-            try:
-                if "T" in t_str:
-                    t_part = t_str.split("T")[1].replace("Z", "")
+            clean = t_str.replace("IST", "").strip()
+            if "T" in clean:
+                try:
+                    t_part = clean.split("T")[1].replace("Z", "")
                     p = t_part.split(":")
                     return int(p[0]) * 60 + int(p[1]) + (float(p[2]) / 60.0 if len(p) > 2 else 0.0)
-                clean = t_str.replace("IST", "").strip()
-                dt = datetime.strptime(clean, "%I:%M:%S %p")
-                return dt.hour * 60 + dt.minute + dt.second / 60.0
-            except Exception:
-                pass
-            try:
-                dt = datetime.strptime(clean, "%I:%M %p")
-                return dt.hour * 60 + dt.minute
-            except Exception:
-                pass
+                except Exception:
+                    pass
+            for fmt in ["%I:%M:%S %p", "%I:%M %p", "%H:%M:%S", "%H:%M"]:
+                try:
+                    dt = datetime.strptime(clean, fmt)
+                    return dt.hour * 60 + dt.minute + (dt.second / 60.0 if hasattr(dt, "second") else 0.0)
+                except Exception:
+                    pass
             return None
 
         # 1. Collect verified executed trades for today from live Groww API and/or journal
@@ -1028,15 +1022,16 @@ class ShadowMonitoringEngine:
             claimed_trades.add(idx)
             updated_any = True
 
-        # Strict Rule: Only make / keep entries that are executed in Groww (or verified audit screenshot)! No other entries should be made!
-        orig_count = len(records)
-        records = [r for r in records if r.get("user_executed") or r.get("screenshot") or r.get("screenshot_data_uri")]
-        if len(records) != orig_count:
+        # Deduplicate records by unique key (id or date + symbol + timestamp)
+        unique_recs = {}
+        for r in records:
+            key = r.get("id") or f"{r.get('date')}_{r.get('symbol')}_{r.get('timestamp')}"
+            unique_recs[key] = r
+        if len(unique_recs) != len(records):
             updated_any = True
+        records = list(unique_recs.values())
 
-        if updated_any:
-            cls.save_records(records)
-
+        cls.save_records(records)
         return records
 
     @classmethod
@@ -1093,7 +1088,6 @@ class ShadowMonitoringEngine:
     @classmethod
     def get_records_by_date(cls, selected_date: Optional[str] = None) -> List[Dict[str, Any]]:
         records = cls.load_records()
-        records = [r for r in records if r.get("user_executed") or r.get("screenshot") or r.get("screenshot_data_uri")]
         def _get_sort_key(r):
             t_str = str(r.get("timestamp", ""))
             mins = 0.0
