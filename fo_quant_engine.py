@@ -27,6 +27,7 @@ The 6-Vector Institutional Invariance Framework for >90% Win Rate:
 """
 
 import sys
+import os
 import math
 import json
 from dataclasses import dataclass
@@ -2719,6 +2720,19 @@ class UltraHighConvictionRelianceEngine:
     def __init__(self, quant_config: Optional[QuantConfig] = None):
         self.risk = RelianceRiskBudget()
         self.config = quant_config or QuantConfig()
+        
+        # Auto-load empirical calibration if calibrated_quant_config.json exists
+        cal_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibrated_quant_config.json")
+        if os.path.exists(cal_path) and quant_config is None:
+            try:
+                with open(cal_path, "r", encoding="utf-8") as f:
+                    cal_data = json.load(f)
+                    if isinstance(cal_data, dict) and cal_data.get("status") == "SUCCESSFULLY_CALIBRATED":
+                        self.config.sigmoid_k = float(cal_data.get("calibrated_sigmoid_k", self.config.sigmoid_k))
+                        self.config.sigmoid_s0 = float(cal_data.get("calibrated_sigmoid_s0", self.config.sigmoid_s0))
+            except Exception:
+                pass
+
         self.trade_regime_threshold = 75.0  # Trade if Prob >= 75%, else Stand Down
 
     def evaluate_90plus_confluence(
@@ -3537,10 +3551,10 @@ class UltraHighConvictionRelianceEngine:
             raw_bear = max(0.0, raw_bear - 2.5)
 
         # Calibrated Institutional Logistic Sigmoid Probability Mapping
-        # Calibrated: s0=42.0 centers 50% on moderate trend; k=0.10 sharpens discrimination between genuine A+ vs chop
+        # Uses dynamically tuned parameters from QuantConfig (can be calibrated via EmpiricalCalibrationEngine)
         def calibrate_prob(score: float) -> float:
-            k = 0.10
-            s0 = 42.0
+            k = self.config.sigmoid_k
+            s0 = self.config.sigmoid_s0
             return round(100.0 / (1.0 + math.exp(-k * (score - s0))), 1)
 
         bullish_score = min(96.0, max(10.0, calibrate_prob(raw_bull)))
@@ -3774,6 +3788,16 @@ class UltraHighConvictionRelianceEngine:
             "max_pain_gravity": mp_gravity,
             "yang_zhang_vol": yang_zhang_vol,
             "effective_rv": effective_rv,
+            "vector_scores": {
+                "v1_bull": round(v1_bull, 2), "v1_bear": round(v1_bear, 2),
+                "v2_bull": round(v2_bull, 2), "v2_bear": round(v2_bear, 2),
+                "v3_bull": round(v3_bull, 2), "v3_bear": round(v3_bear, 2),
+                "v4_bull": round(v4_bull, 2), "v4_bear": round(v4_bear, 2),
+                "v5_bull": round(v5_bull, 2), "v5_bear": round(v5_bear, 2),
+                "v6_bull": round(v6_bull, 2), "v6_bear": round(v6_bear, 2),
+                "macro_bull": round(macro_bull, 2), "macro_bear": round(macro_bear, 2),
+                "raw_bull": round(raw_bull, 2), "raw_bear": round(raw_bear, 2)
+            },
             "kama": round(kama_latest, 2),
             "kaufman_efficiency_ratio": ker_val,
             "ker_regime": ker_regime,

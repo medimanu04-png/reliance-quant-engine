@@ -1,0 +1,31 @@
+[
+  {
+    "id": "TRD-20260929-01-RELIANCE26OCT1200PE",
+    "timestamp": "2026-09-29 09:15:43 AM IST",
+    "date": "2026-09-29",
+    "instrument": "RELIANCE 1200 PE (27-OCT-2026)",
+    "direction": "BUY PE",
+    "planned_entry": 29.25,
+    "target": 39.25,
+    "sl": 24.75,
+    "features": {
+      "v1_trend": 15.7,
+      "v2_order_flow": 19.6,
+      "v3_gamma_oi": 15.7,
+      "v4_volatility": 11.8,
+      "v5_momentum": 7.9,
+      "v6_greeks": 7.9,
+      "v7_macro": 2.0,
+      "raw_score": 78.5,
+      "engine_probability": 78.5,
+      "win_expectancy": 58.0
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 1,
+      "realized_pnl": 6375.0,
+      "realized_pts": 6.37,
+      "exit_reason": "Verified Broker Trade"
+    }
+  }
+]

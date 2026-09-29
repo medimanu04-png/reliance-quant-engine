@@ -1492,7 +1492,7 @@ class SequentialTradeEngine:
         state["active_trade"] = active_trade
         cls.save_state(state)
 
-        # Also register in SignalTracker
+        # Also register in SignalTracker and EmpiricalCalibrationEngine
         try:
             SignalTracker.save_signal({
                 "date": datetime.now(IST).strftime("%Y-%m-%d"),
@@ -1508,6 +1508,20 @@ class SequentialTradeEngine:
                 "suggested_sl": sl,
                 "confluence_score": confluence
             })
+        except Exception:
+            pass
+
+        try:
+            from empirical_calibration_engine import EmpiricalCalibrationEngine
+            EmpiricalCalibrationEngine.record_signal_snapshot(
+                signal_id=f"TRD-{datetime.now(IST).strftime('%Y%m%d')}-{next_trade_num:02d}-{contract}",
+                engine_eval={"dominant_score": confluence, "win_expectancy_pct": 58.0},
+                instrument=instrument,
+                direction=direction,
+                planned_entry=planned_entry,
+                target=target,
+                sl=sl
+            )
         except Exception:
             pass
 
@@ -1791,6 +1805,19 @@ class SequentialTradeEngine:
         # Only record into authentic daily trade ledger if genuinely executed on Groww!
         if active.get("executed") == "Yes" and active.get("actual_entry"):
             TradeJournalManager.add_or_update_entry(journal_rec, starting_cash=starting_cash)
+
+        # Label outcome in empirical calibration dataset
+        try:
+            from empirical_calibration_engine import EmpiricalCalibrationEngine
+            EmpiricalCalibrationEngine.resolve_trade_outcome(
+                signal_id=journal_rec["id"],
+                target_hit=(pnl > 0 or status == "Target Hit"),
+                realized_pnl=pnl,
+                realized_pts=pts,
+                exit_reason=status
+            )
+        except Exception:
+            pass
 
         # Transition state
         closed_summary = {
