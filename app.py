@@ -1360,10 +1360,12 @@ else:
     time_gate_msg = "Prime Intraday Entry Window"
     time_gate_pass = True
 
+time_gate_allowed = time_gate_pass
+
 # Circuit Breaker Status
 is_circuit_breaker_tripped = st.session_state.get("session_sl_count", 0) >= max_daily_sl_allowed
 
-# Simulation flags
+# Simulation flags & Mode Resolution
 is_live_flow = (sim_scenario == "🟢 Live Market Flow")
 is_armed_scenario = ("1. Setup ARMED" in sim_scenario)
 is_entry_ce_scenario = ("2. Trade Entry Confirmed — BUY CALL" in sim_scenario)
@@ -1374,7 +1376,39 @@ is_trailing_sl_scenario = ("6. Trailing SL" in sim_scenario)
 is_auto_sq_scenario = ("7. Auto-Square-Off" in sim_scenario)
 is_chop_scenario = ("8. Choppiness Stand Down" in sim_scenario)
 is_circuit_breaker_scenario = ("9. Max Daily Drawdown" in sim_scenario)
-is_sim_active = not is_live_flow
+
+if is_entry_ce_scenario:
+    sim_mode = "ENTRY_CE"
+elif is_armed_scenario:
+    sim_mode = "ARMED"
+elif is_entry_pe_scenario:
+    sim_mode = "ENTRY_PE"
+elif is_target_hit_scenario:
+    sim_mode = "TARGET_HIT"
+elif is_stop_loss_scenario:
+    sim_mode = "STOP_LOSS"
+elif is_trailing_sl_scenario:
+    sim_mode = "TRAILING_SL"
+elif is_auto_sq_scenario:
+    sim_mode = "AUTO_SQ"
+elif is_chop_scenario:
+    sim_mode = "CHOP_STANDDOWN"
+elif is_circuit_breaker_scenario:
+    sim_mode = "CIRCUIT_BREAKER"
+else:
+    sim_mode = "LIVE"
+
+simulate_entry_trigger = (sim_mode in ["ENTRY_CE", "ENTRY_PE"])
+simulate_armed_state = (sim_mode == "ARMED")
+sim_force_fire = st.session_state.get("sim_force_fire", False)
+is_sim_active = (sim_mode != "LIVE") or sim_force_fire
+
+tg_config = TelegramNotifier.load_config()
+tg_bot_token = tg_config.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
+tg_chat_id = tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
+tg_enabled = bool(tg_config.get("enabled", True))
+parsed_recipients = TelegramNotifier.parse_chat_ids(tg_chat_id)
+
 def fetch_global_news_and_macro(force_key: str = ""):
     """Fetches latest real-time news and macro telemetry for Reliance."""
     news_items = []
@@ -4559,6 +4593,8 @@ if df is not None and not df.empty:
     p_win = dominant_score / 100.0
     q_loss = 1.0 - p_win
     b_ratio = effective_target_pts / max(1.0, effective_sl_pts)
+    eff_rr_ratio = b_ratio
+    actual_risk_pct = risk_pct_of_capital
     raw_kelly = (p_win * b_ratio - q_loss) / max(0.01, b_ratio)
     half_kelly = max(0.0, raw_kelly * 0.5)
     kelly_risk_capital = account_cash * min(0.04, half_kelly) if half_kelly > 0 else account_cash * 0.04
@@ -4737,14 +4773,14 @@ if df is not None and not df.empty:
             <div style="display: flex; align-items: center; gap: 12px;">
                 <div>
                     <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🎯 PROFIT TARGET (NET)</span>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: #34D399;">+{effective_target_pts:.1f} pts (+₹{net_reward_val:,.0f})</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #34D399;">+{effective_target_pts:.1f} pts (+₹{net_actual_reward:,.0f} Net)</div>
                     <div style="font-size: 0.68rem; color: #64748B; margin-top: 1px;">Gross: +₹{round(actual_reward):,} | Min 1:2 R:R Guarded</div>
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 12px;">
                 <div style="text-align: center;">
                     <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">🛑 STOP LOSS (NET)</span>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{effective_sl_pts:.1f} pts (-₹{net_risk_val:,.0f})</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #F87171;">-{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f} Net)</div>
                     <div style="font-size: 0.68rem; color: #64748B;">Gross Loss: -₹{round(actual_risk):,} | R:R = {eff_rr_ratio:.2f}</div>
                 </div>
             </div>
