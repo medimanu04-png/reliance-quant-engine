@@ -1147,8 +1147,8 @@ if manual_rescan:
     st.session_state["manual_rescan_clicked"] = False
 st.session_state["just_rescanned"] = False
 
-# 6 Sleek Live Market Cards with 1-Second Dynamic Streaming Fragment (Zero-Flicker Continuous Running Numbers)
-@st.fragment(run_every="1s")
+# 6 Sleek Live Market Cards with Dynamic Streaming Fragment
+@st.fragment(run_every="3s")
 def render_live_macro_benchmarks_strip():
     tick_payload = NSEIndiaFetcher.get_dynamic_market_ticks()
     benchmarks = tick_payload["benchmarks"]
@@ -3853,7 +3853,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 """)
 
 
-@st.fragment(run_every="2s")
+@st.fragment(run_every="3s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
     # Dynamically pull current real-time spot from Groww live feed on each 1-sec tick
     try:
@@ -5060,7 +5060,7 @@ if df is not None and not df.empty:
         bias_badge_label = f"⚪ Neutral / Mild {active_side_name} Lean ({active_side_conviction:.1f}%)"
         bias_narrative = "Sub-threshold directional drift"
 
-    @st.fragment(run_every="1s")
+    @st.fragment(run_every="3s")
     def render_reliance_spot_hero():
         from groww_market_feed import GrowwMarketFeed
         spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
@@ -5124,7 +5124,7 @@ if df is not None and not df.empty:
             </div>
             """)
 
-    @st.fragment(run_every="2s")
+    @st.fragment(run_every="3s")
     def render_quant_radar_kpis():
         from groww_market_feed import GrowwMarketFeed
         spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
