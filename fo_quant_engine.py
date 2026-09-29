@@ -49,7 +49,7 @@ if sys.stdout.encoding != 'utf-8':
 # ============================================================================
 @dataclass
 class RelianceRiskBudget:
-    total_capital: float = 66274.0
+    total_capital: float = 73643.72
     lot_size: int = 500
     num_lots: int = 1
     target_pts: float = 10.0

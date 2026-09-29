@@ -1153,8 +1153,8 @@ st.markdown("---")
 # ==============================================================================
 st.sidebar.markdown("### ⚡ Groww Integration (Mandatory)")
 # Real-time broker account telemetry
-live_wallet = groww_feed.get_wallet_balance() if groww_feed.is_connected else {}
-live_pos = groww_feed.get_live_positions() if groww_feed.is_connected else {}
+live_wallet = groww_feed.get_wallet_balance()
+live_pos = groww_feed.get_live_positions()
 net_today_pnl = live_pos.get("total_pnl", 0.0)
 pnl_sign_str = "+" if net_today_pnl >= 0 else ""
 
@@ -1163,7 +1163,7 @@ if groww_feed.is_connected:
 
     st.sidebar.info(
         f"👤 **Account**: `{ucc_val}` ({name_val})\n\n"
-        f"💳 **Broker Wallet**: `₹{live_wallet.get('clear_cash', 66274.02):,.2f}`\n\n"
+        f"💳 **Broker Wallet**: `₹{live_wallet.get('clear_cash', 73643.72):,.2f}`\n\n"
         f"📈 **Today's P&L**: `{pnl_sign_str}₹{net_today_pnl:,.2f}`\n\n"
         f"🔒 **2FA Status**: Automated Session Active\n\n"
         f"📡 **Data Dependency**: 100% Direct Groww API Feed"
@@ -1330,12 +1330,33 @@ st.sidebar.caption(f"📦 Total Sizing: **500 Qty** × **{num_lots} Lots** = **{
 # Account Cash Balance & Margin Risk Buffer
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 💳 Account Cash & Margin Buffer")
-default_wallet_cash = float(live_wallet.get("clear_cash", 66274.02)) if (live_wallet and live_wallet.get("clear_cash", 0) > 0) else 66274.02
+
+live_wallet_cash = float(live_wallet.get("clear_cash", 73643.72)) if (live_wallet and live_wallet.get("clear_cash", 0) > 0) else 73643.72
+
+# Auto-sync session state when live wallet balance updates from Groww
+if "synced_wallet_cash" not in st.session_state:
+    st.session_state["synced_wallet_cash"] = live_wallet_cash
+    st.session_state["account_cash_val"] = live_wallet_cash
+elif live_wallet_cash > 0 and abs(st.session_state.get("synced_wallet_cash", 0.0) - live_wallet_cash) > 0.01:
+    st.session_state["synced_wallet_cash"] = live_wallet_cash
+    st.session_state["account_cash_val"] = live_wallet_cash
+
+sync_col1, sync_col2 = st.sidebar.columns([3, 2])
+with sync_col1:
+    st.caption(f"Broker: ₹{live_wallet_cash:,.2f}")
+with sync_col2:
+    if st.button("🔄 Sync", key="btn_sync_wallet_sidebar", help="Force immediate sync with Groww API balance"):
+        fresh_wallet = groww_feed.get_wallet_balance(force_refresh=True)
+        fresh_val = float(fresh_wallet.get("clear_cash", live_wallet_cash))
+        st.session_state["synced_wallet_cash"] = fresh_val
+        st.session_state["account_cash_val"] = fresh_val
+        st.rerun()
+
 account_cash = st.sidebar.number_input(
     "Live Account Cash Balance (₹)",
     min_value=1000.0,
     max_value=10000000.0,
-    value=default_wallet_cash,
+    key="account_cash_val",
     step=500.0,
     help="Live clear cash automatically synchronized from your connected Groww account."
 )
@@ -2850,7 +2871,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 alert_msg = TelegramNotifier.format_circuit_breaker_alert(
                     sl_count=tp.get('session_sl_count', 2),
                     max_allowed=tp.get('max_daily_sl_allowed', 2),
-                    capital_preserved=tp.get('account_cash', 66274.0),
+                    capital_preserved=tp.get('account_cash', 73643.72),
                     spot=spot_tick
                 )
                 buttons = TelegramNotifier.get_circuit_breaker_buttons()
@@ -2929,7 +2950,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 </div>
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Capital Preserved</div>
-                    <div style="font-size: 1.35rem; font-weight: 900; color: #34D399; margin-top: 2px;">₹{tp.get('account_cash', 66274):,.0f}</div>
+                    <div style="font-size: 1.35rem; font-weight: 900; color: #34D399; margin-top: 2px;">₹{tp.get('account_cash', 73644):,.0f}</div>
                     <div style="font-size: 0.72rem; color: #A7F3D0;">Survives to Trade Tomorrow</div>
                 </div>
                 <div>
@@ -5981,7 +6002,7 @@ if df is not None and not df.empty:
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; border-radius: 6px; padding: 4px 14px; text-align: right;">
                         <span style="font-size: 0.65rem; color: #94A3B8; text-transform: uppercase;">Clear Cash Wallet</span>
-                        <div style="font-size: 1.10rem; font-weight: 800; color: #38BDF8;">₹{live_wallet_telemetry.get('clear_cash', 66274.02):,.2f}</div>
+                        <div style="font-size: 1.10rem; font-weight: 800; color: #38BDF8;">₹{live_wallet_telemetry.get('clear_cash', 73643.72):,.2f}</div>
                     </div>
                     <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid {'rgba(16, 185, 129, 0.4)' if net_live_pnl_val >= 0 else 'rgba(239, 68, 68, 0.4)'}; border-radius: 6px; padding: 4px 14px; text-align: right;">
                         <span style="font-size: 0.65rem; color: #94A3B8; text-transform: uppercase;">Today's Net Realized P&L</span>

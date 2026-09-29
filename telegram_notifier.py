@@ -760,7 +760,7 @@ class TelegramNotifier:
         cls,
         sl_count: int = 2,
         max_allowed: int = 2,
-        capital_preserved: float = 66274.0,
+        capital_preserved: float = 73643.72,
         spot: float = 1226.40,
         account_name: str = "Teja",
         **kwargs
