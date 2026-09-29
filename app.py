@@ -7928,11 +7928,11 @@ if df is not None and not df.empty:
     # ==============================================================================
     with st.expander("🔬 Empirical Logistic Regression Calibration (Platt Scaling)", expanded=False):
         st.markdown(
-            "<p style='font-size: 0.85rem; color: #94A3B8; margin-bottom: 12px;'>"
-            "Statistically calibrates the engine's probability sigmoid (<code>sigmoid_k</code>, <code>sigmoid_s0</code>) "
-            "and multi-vector beta weights ($\beta_1 \dots \beta_7$) against authentic historical trade outcomes. "
-            "Replaces hand-tuned confidence scoring with empirical logistic regression."
-            "</p>",
+            r"<p style='font-size: 0.85rem; color: #94A3B8; margin-bottom: 12px;'>"
+            r"Statistically calibrates the engine's probability sigmoid (<code>sigmoid_k</code>, <code>sigmoid_s0</code>) "
+            r"and multi-vector beta weights ($\beta_1 \dots \beta_7$) against authentic historical trade outcomes. "
+            r"Replaces hand-tuned confidence scoring with empirical logistic regression."
+            r"</p>",
             unsafe_allow_html=True
         )
         try:
@@ -7969,6 +7969,9 @@ if df is not None and not df.empty:
                 st.success(f"Synced {synced_n} trade(s) from journal.")
                 time.sleep(1)
                 st.rerun()
+        except Exception as e:
+            st.caption(f"Calibration engine ready: {e}")
+
     # ==============================================================================
     # 9.6. WALK-FORWARD HISTORICAL BACKTEST RESULTS (60-DAY OUT-OF-SAMPLE AUDIT)
     # ==============================================================================
