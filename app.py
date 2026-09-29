@@ -5220,14 +5220,18 @@ if df is not None and not df.empty:
         active_ltp = float(current_option_ltp if current_option_ltp > 0 else active_trade.get("actual_entry", 30.0))
         if groww_feed.is_connected:
             try:
-                gw_chain_live = groww_feed.get_reliance_live_option_chain()
-                if gw_chain_live:
-                    for rw in gw_chain_live:
-                        if abs(rw.get("strike", 0) - active_trade.get("strike", atm_strike)) < 0.5:
-                            if "PE" in active_contract and rw.get("put_ltp"):
-                                active_ltp = float(rw["put_ltp"])
-                            elif "CE" in active_contract and rw.get("call_ltp"):
-                                active_ltp = float(rw["call_ltp"])
+                resolved_ltp = groww_feed.get_option_contract_ltp(active_contract)
+                if resolved_ltp and resolved_ltp > 0:
+                    active_ltp = float(resolved_ltp)
+                else:
+                    gw_chain_live = groww_feed.get_reliance_live_option_chain()
+                    if gw_chain_live:
+                        for rw in gw_chain_live:
+                            if abs(rw.get("strike", 0) - active_trade.get("strike", atm_strike)) < 0.5:
+                                if "PE" in active_contract and rw.get("put_ltp"):
+                                    active_ltp = float(rw["put_ltp"])
+                                elif "CE" in active_contract and rw.get("call_ltp"):
+                                    active_ltp = float(rw["call_ltp"])
             except Exception:
                 pass
 
@@ -6390,7 +6394,7 @@ if df is not None and not df.empty:
         st.write("") # spacing
         if st.button("🤖 Auto-Verify & Sync Groww", use_container_width=True, help="Cross-verifies today's RELIANCE orders & positions from Groww API against model recommendations"):
             with st.spinner("Connecting to Groww broker API & extracting RELIANCE fills..."):
-                gw_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                gw_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE", force_refresh=True)
                 if gw_trades:
                     synced = TradeJournalManager.sync_groww_trades(
                         groww_executed_trades=gw_trades,

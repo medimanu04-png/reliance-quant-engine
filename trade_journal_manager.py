@@ -819,6 +819,15 @@ class SequentialTradeEngine:
         qty = int(active.get("qty", 1000))
         contract = active.get("contract", "")
 
+        # Resolve real-time live LTP from Groww broker feed if connected (absolute zero latency)
+        if groww_feed and getattr(groww_feed, "is_connected", False) and hasattr(groww_feed, "get_option_contract_ltp"):
+            try:
+                gw_ltp = groww_feed.get_option_contract_ltp(contract)
+                if gw_ltp and gw_ltp > 0:
+                    current_ltp = float(gw_ltp)
+            except Exception:
+                pass
+
         # Update high-water mark & Trailing SL (lock 50% gains above +5 pts)
         if current_ltp > active.get("highest_price", actual_entry):
             active["highest_price"] = round(current_ltp, 2)
