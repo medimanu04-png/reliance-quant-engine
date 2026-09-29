@@ -42,6 +42,7 @@ class GrowwMarketFeed:
     _shared_session = None
 
     # In-memory zero-latency cache continuously refreshed by background streaming workers
+    _cache_lock = threading.RLock()
     _cached_benchmarks = None
     _last_benchmarks_ts = 0.0
     _cached_reliance_spot = None
@@ -684,9 +685,10 @@ class GrowwMarketFeed:
         except Exception as e:
             logger.debug(f"Groww benchmark parallel fetch error: {e}")
 
-        self._cached_benchmarks = benchmarks
-        self._last_benchmarks_ts = time.time()
-        return benchmarks
+        with self._cache_lock:
+            self._cached_benchmarks = benchmarks
+            self._last_benchmarks_ts = time.time()
+            return benchmarks.copy()
 
     def _get_fallback_wallet(self) -> Dict[str, Any]:
         """Provides verified fallback wallet so balance is immediately available in 0ms."""
@@ -833,12 +835,50 @@ class GrowwMarketFeed:
                     "fo_holidays": [],
                     "raw_quote": d
                 }
-                self._cached_reliance_spot = data
-                self._last_reliance_spot_ts = time.time()
+                with self._cache_lock:
+                    self._cached_reliance_spot = data
+                    self._last_reliance_spot_ts = time.time()
                 return data
         except Exception as e:
             logger.debug(f"Groww reliance spot fetch error: {e}")
-        return self._cached_reliance_spot
+        with self._cache_lock:
+            return self._cached_reliance_spot.copy() if self._cached_reliance_spot else None
+
+    def get_reliance_historical_candles(self, interval: str = "5m", days: int = 5) -> Optional[Any]:
+        """
+        Retrieves authentic NSE Reliance intraday candles directly from Groww's official charting API.
+        Returns a pandas DataFrame indexed by IST DateTime with Open, High, Low, Close, Volume.
+        Completely eliminates yfinance throttling and synthetic polynomial candle hallucinations.
+        """
+        try:
+            import pandas as pd
+            end_time = int(time.time() * 1000)
+            start_time = end_time - (days * 24 * 3600 * 1000)
+            interval_mins = 15 if "15" in str(interval) else 5
+            url = f"https://groww.in/v1/api/charting_service/v2/chart/exchange/NSE/segment/CASH/RELIANCE?endTimeInMillis={end_time}&intervalInMinutes={interval_mins}&startTimeInMillis={start_time}"
+            sess = self._get_session()
+            r = sess.get(url, timeout=3.5)
+            if r.status_code == 200:
+                data = r.json()
+                candles = data.get("candles", [])
+                if candles and len(candles) >= 15:
+                    records = []
+                    for c in candles:
+                        dt = datetime.fromtimestamp(c[0], tz=IST)
+                        vol = float(c[5]) if len(c) > 5 and c[5] is not None else 10000.0
+                        records.append({
+                            "Date": dt,
+                            "Open": float(c[1]),
+                            "High": float(c[2]),
+                            "Low": float(c[3]),
+                            "Close": float(c[4]),
+                            "Volume": vol
+                        })
+                    df = pd.DataFrame(records).set_index("Date")
+                    return df
+        except Exception as e:
+            logger.debug(f"Groww charting candle fetch error: {e}")
+        return None
 
     def _fetch_reliance_chain_now(self, expiry_iso: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
         """Fetches live Reliance Option Chain for the active mandate expiry from Groww."""
@@ -887,11 +927,12 @@ class GrowwMarketFeed:
                             "expiry": expiry_iso
                         })
                     if parsed_chain:
-                        if not hasattr(self, "_cached_chains_by_expiry"):
-                            self._cached_chains_by_expiry = {}
-                        self._cached_chains_by_expiry[expiry_iso] = parsed_chain
-                        self._cached_reliance_chain = parsed_chain
-                        self._last_reliance_chain_ts = time.time()
+                        with self._cache_lock:
+                            if not hasattr(self, "_cached_chains_by_expiry"):
+                                self._cached_chains_by_expiry = {}
+                            self._cached_chains_by_expiry[expiry_iso] = parsed_chain
+                            self._cached_reliance_chain = parsed_chain
+                            self._last_reliance_chain_ts = time.time()
                         return parsed_chain
         except Exception as e:
             logger.debug(f"Groww option chain fetch error for {expiry_iso}: {e}")
@@ -925,26 +966,29 @@ class GrowwMarketFeed:
                         "expiry": expiry_iso
                     })
                 if parsed_chain:
-                    if not hasattr(self, "_cached_chains_by_expiry"):
-                        self._cached_chains_by_expiry = {}
-                    self._cached_chains_by_expiry[expiry_iso] = parsed_chain
-                    self._cached_reliance_chain = parsed_chain
-                    self._last_reliance_chain_ts = time.time()
+                    with self._cache_lock:
+                        if not hasattr(self, "_cached_chains_by_expiry"):
+                            self._cached_chains_by_expiry = {}
+                        self._cached_chains_by_expiry[expiry_iso] = parsed_chain
+                        self._cached_reliance_chain = parsed_chain
+                        self._last_reliance_chain_ts = time.time()
                     return parsed_chain
         except Exception as e:
             logger.debug(f"Groww fallback chain error: {e}")
 
         # Guard: Never clobber an already populated 43-strike live cache with static fallback
-        if hasattr(self, "_cached_chains_by_expiry") and expiry_iso in self._cached_chains_by_expiry:
-            existing = self._cached_chains_by_expiry[expiry_iso]
-            if existing and len(existing) > 11:
-                return existing
+        with self._cache_lock:
+            if hasattr(self, "_cached_chains_by_expiry") and expiry_iso in self._cached_chains_by_expiry:
+                existing = self._cached_chains_by_expiry[expiry_iso]
+                if existing and len(existing) > 11:
+                    return existing
 
         fallback = self._get_fallback_reliance_chain(expiry_iso)
-        if not hasattr(self, "_cached_chains_by_expiry"):
-            self._cached_chains_by_expiry = {}
-        self._cached_chains_by_expiry[expiry_iso] = fallback
-        self._cached_reliance_chain = fallback
+        with self._cache_lock:
+            if not hasattr(self, "_cached_chains_by_expiry"):
+                self._cached_chains_by_expiry = {}
+            self._cached_chains_by_expiry[expiry_iso] = fallback
+            self._cached_reliance_chain = fallback
         return fallback
 
     def get_reliance_live_data(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -954,16 +998,21 @@ class GrowwMarketFeed:
         Otherwise returns from 200ms background poller stream in 0.000ms.
         """
         now = time.time()
+        with self._cache_lock:
+            cached = self._cached_reliance_spot
+            last_ts = self._last_reliance_spot_ts
+
         if (
             force_refresh
-            or not self._cached_reliance_spot
-            or (now - self._last_reliance_spot_ts > 4.0)
+            or not cached
+            or (now - last_ts > 4.0)
         ):
             res = self._fetch_reliance_spot_now()
             if res and res.get("spot_ltp", 0) > 0:
                 return res
 
-        return self._cached_reliance_spot or self._get_fallback_reliance_spot()
+        with self._cache_lock:
+            return (self._cached_reliance_spot or self._get_fallback_reliance_spot()).copy()
 
     def get_dynamic_reliance_spot_tick(self) -> Dict[str, Any]:
         """
@@ -1016,16 +1065,24 @@ class GrowwMarketFeed:
         Non-blocking: returns immediately in 0.000s, refreshes asynchronously in background.
         """
         now = time.time()
-        if not self._cached_benchmarks or self._cached_benchmarks.get("NIFTY 50", {}).get("price") == 23140.50:
+        with self._cache_lock:
+            cached_b = self._cached_benchmarks
+            last_b_ts = self._last_benchmarks_ts
+            is_static_placeholder = not cached_b or cached_b.get("NIFTY 50", {}).get("price") == 23140.50
+
+        if is_static_placeholder:
             res = self._execute_live_benchmark_fetch()
             if res and len(res) >= 4:
                 return res
-            self._cached_benchmarks = self._get_fallback_benchmarks()
-            self._last_benchmarks_ts = now
-        elif force_refresh and (now - self._last_benchmarks_ts > 5.0):
+            with self._cache_lock:
+                self._cached_benchmarks = self._get_fallback_benchmarks()
+                self._last_benchmarks_ts = now
+                return self._cached_benchmarks.copy()
+        elif force_refresh and (now - last_b_ts > 5.0):
             threading.Thread(target=self._execute_live_benchmark_fetch, daemon=True).start()
 
-        return self._cached_benchmarks
+        with self._cache_lock:
+            return (self._cached_benchmarks or self._get_fallback_benchmarks()).copy()
 
     def get_reliance_live_option_chain(self, expiry: Optional[str] = None, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """
@@ -1045,18 +1102,21 @@ class GrowwMarketFeed:
             self._cached_chains_by_expiry = {}
 
         now = time.time()
-        chain = self._cached_chains_by_expiry.get(expiry)
+        with self._cache_lock:
+            if not hasattr(self, "_cached_chains_by_expiry"):
+                self._cached_chains_by_expiry = {}
+            chain = self._cached_chains_by_expiry.get(expiry)
+            last_ts = self._last_reliance_chain_ts
+
         # If cache is missing, or force_refresh requested, or older than 4.0s:
-        if chain is None or (force_refresh and (now - self._last_reliance_chain_ts > 4.0)):
+        if chain is None or (force_refresh and (now - last_ts > 4.0)):
             res = self._fetch_reliance_chain_now(expiry)
             if res and len(res) > 0:
-                return res
+                return [dict(x) for x in res]
         if chain and len(chain) > 0:
-            return chain
+            return [dict(x) for x in chain]
         fallback = self._get_fallback_reliance_chain(expiry_iso=expiry)
-        return fallback
-
-        return chain
+        return [dict(x) for x in fallback]
 
     def get_option_contract_ltp(
         self,
@@ -1132,7 +1192,10 @@ class GrowwMarketFeed:
             realised_pnl = float(p.get("realised_pnl", 0.0))
             
             sym_orders = [o for o in executed_orders if o.get("trading_symbol") == sym]
-            if not sym_orders and credit_qty == 0 and debit_qty == 0:
+            # Strictly filter for trades executed TODAY:
+            # If there are no order book fills today for this symbol, this is a prior-session position
+            # awaiting overnight settlement clearance. Exclude to prevent ghost duplicate journaling!
+            if not sym_orders:
                 continue
                 
             buy_orders = [o for o in sym_orders if str(o.get("transaction_type", "")).upper() == "BUY"]
@@ -1222,14 +1285,16 @@ class GrowwMarketFeed:
                 fno = margin_res.get("fno_margin_details", {})
                 opt_buy = float(fno.get("option_buy_balance_available", clear_cash))
                 used = float(margin_res.get("net_margin_used", 0.0))
-                self._cached_wallet = {
+                wallet_dict = {
                     "status": "SUCCESS",
                     "clear_cash": clear_cash,
                     "available_fno_margin": opt_buy,
                     "net_margin_used": used,
                     "raw": margin_res
                 }
-                self._last_wallet_ts = time.time()
+                with self._cache_lock:
+                    self._cached_wallet = wallet_dict
+                    self._last_wallet_ts = time.time()
                 self._save_last_wallet_balance(clear_cash)
 
             # 2. Update live positions
@@ -1251,7 +1316,7 @@ class GrowwMarketFeed:
                     total_unrealised += unrealised
                     if qty != 0:
                         open_positions.append(p)
-                self._cached_positions = {
+                pos_dict = {
                     "status": "SUCCESS",
                     "positions": positions,
                     "open_positions": open_positions,
@@ -1259,7 +1324,9 @@ class GrowwMarketFeed:
                     "total_unrealised_pnl": round(total_unrealised, 2),
                     "total_pnl": round(total_realised + total_unrealised, 2)
                 }
-                self._last_positions_ts = time.time()
+                with self._cache_lock:
+                    self._cached_positions = pos_dict
+                    self._last_positions_ts = time.time()
 
             # 3. Update executed trades
             orders = []
@@ -1270,8 +1337,9 @@ class GrowwMarketFeed:
 
             if isinstance(positions, list) and isinstance(orders, list):
                 parsed = self._parse_executed_trades(positions, orders)
-                self._cached_executed_trades = parsed
-                self._last_executed_trades_ts = time.time()
+                with self._cache_lock:
+                    self._cached_executed_trades = parsed
+                    self._last_executed_trades_ts = time.time()
 
         except Exception as e:
             logger.debug(f"Groww live parallel fetch error: {e}")
@@ -1283,18 +1351,24 @@ class GrowwMarketFeed:
         Sub-millisecond latency via background cache (refreshed every 1.0s), with zero-latency on-demand refresh.
         """
         now = time.time()
+        with self._cache_lock:
+            cached_w = self._cached_wallet
+            last_w_ts = self._last_wallet_ts
+
         # If cache is valid, fresh (<1.0s), and force_refresh not set, return in 0.000ms
-        if not force_refresh and self._cached_wallet and (now - self._last_wallet_ts < 1.0):
-            return self._cached_wallet
+        if not force_refresh and cached_w and (now - last_w_ts < 1.0):
+            return cached_w.copy()
 
         if self._is_connected and self._groww_api:
             self._fetch_live_wallet_and_positions()
-            if self._cached_wallet and self._cached_wallet.get("status") == "SUCCESS":
-                return self._cached_wallet
+            with self._cache_lock:
+                if self._cached_wallet and self._cached_wallet.get("status") == "SUCCESS":
+                    return self._cached_wallet.copy()
 
         # If disconnected or fetch failed, return cached wallet or fallback from config
-        if self._cached_wallet:
-            return self._cached_wallet
+        with self._cache_lock:
+            if self._cached_wallet:
+                return self._cached_wallet.copy()
 
         fallback_cash = 73643.72
         if os.path.exists(CONFIG_FILE):
@@ -1319,15 +1393,20 @@ class GrowwMarketFeed:
         Sub-millisecond latency via background cache (refreshed every 1.0s), with zero-latency on-demand refresh.
         """
         now = time.time()
-        if not force_refresh and self._cached_positions and (now - self._last_positions_ts < 1.0):
-            return self._cached_positions
+        with self._cache_lock:
+            cached_p = self._cached_positions
+            last_p_ts = self._last_positions_ts
+
+        if not force_refresh and cached_p and (now - last_p_ts < 1.0):
+            return cached_p.copy()
 
         if not self._is_connected or not self._groww_api:
-            return self._cached_positions or {"status": "ERROR", "positions": [], "open_positions": [], "total_realised_pnl": 0.0, "total_unrealised_pnl": 0.0, "total_pnl": 0.0}
+            return cached_p.copy() if cached_p else {"status": "ERROR", "positions": [], "open_positions": [], "total_realised_pnl": 0.0, "total_unrealised_pnl": 0.0, "total_pnl": 0.0}
         
         self._fetch_live_wallet_and_positions()
-        if self._cached_positions:
-            return self._cached_positions
+        with self._cache_lock:
+            if self._cached_positions:
+                return self._cached_positions.copy()
 
         return {"status": "ERROR", "positions": [], "open_positions": [], "total_realised_pnl": 0.0, "total_unrealised_pnl": 0.0, "total_pnl": 0.0}
 
@@ -1366,23 +1445,29 @@ class GrowwMarketFeed:
         or refreshes immediately if force_refresh=True or cache is older.
         """
         now = time.time()
+        with self._cache_lock:
+            cached_trades = self._cached_executed_trades
+            last_t_ts = self._last_executed_trades_ts
+
         if (
             not force_refresh
-            and self._cached_executed_trades is not None
-            and (now - self._last_executed_trades_ts < 1.0)
+            and cached_trades is not None
+            and (now - last_t_ts < 1.0)
         ):
             if symbol_filter:
-                return [t for t in self._cached_executed_trades if symbol_filter.upper() in t.get("symbol", "").upper()]
-            return self._cached_executed_trades
+                return [dict(t) for t in cached_trades if symbol_filter.upper() in t.get("symbol", "").upper()]
+            return [dict(t) for t in cached_trades]
 
         if not self._is_connected or not self._groww_api:
             return []
 
         self._fetch_live_wallet_and_positions()
-        if self._cached_executed_trades is not None:
+        with self._cache_lock:
+            cached_trades = self._cached_executed_trades
+        if cached_trades is not None:
             if symbol_filter:
-                return [t for t in self._cached_executed_trades if symbol_filter.upper() in t.get("symbol", "").upper()]
-            return self._cached_executed_trades
+                return [dict(t) for t in cached_trades if symbol_filter.upper() in t.get("symbol", "").upper()]
+            return [dict(t) for t in cached_trades]
 
         return []
 

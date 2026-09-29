@@ -50,23 +50,27 @@ if sys.stdout.encoding != 'utf-8':
 @dataclass
 class RelianceRiskBudget:
     total_capital: float = 73643.72
-    lot_size: int = 250  # Revised NSE standard contract lot size for RELIANCE (configurable)
-    num_lots: int = 1
-    target_pts: float = 10.0
-    stop_loss_pts: float = 4.5  # Dynamic 1.5x 5m ATR (Strictly <= 4.0% of Capital)
+    lot_size: int = 500  # Revised standard contract lot size for RELIANCE post-bonus
+    num_lots: int = 1    # Strictly 1 lot for institutional capital preservation (<= 4.0% risk cap)
+    target_pts: float = 6.5
+    stop_loss_pts: float = 3.2
     limit_collar_pts: float = 0.35  # Strict Stop-Limit execution collar (prevents market spike slippage)
     estimated_tax_per_lot: float = 65.0  # Estimated statutory charges (STT, GST, Exchange turnover & brokerage)
 
-    def adapt_to_volatility(self, atr_15m: float):
+    def adapt_to_volatility(self, atr_15m: float, delta: float = 0.52):
         """
         Dynamically adapts target and stop-loss points to realized intraday volatility
-        while strictly enforcing the 1:2.0 to 1:2.2 R:R ratio and <= 4% capital risk budget.
+        and option contract Delta.
+        Expected option move = ATR(15m) * Delta.
+        Maintains an institutional 1:2.0 to 1:2.2 R:R ratio while setting achievable targets.
         """
         if atr_15m and atr_15m > 0:
-            # Dynamic SL based on 0.9x 15m ATR, clamped between 3.5 and 5.0 pts
-            dynamic_sl = round(min(5.0, max(3.5, atr_15m * 0.9)), 1)
-            # Dynamic Target maintaining ~1:2.2 R:R ratio, clamped between 8.0 and 14.0 pts
-            dynamic_tgt = round(min(14.0, max(8.0, dynamic_sl * 2.2)), 1)
+            eff_delta = max(0.35, min(0.70, delta if delta else 0.52))
+            opt_expected_move = atr_15m * eff_delta
+            # Realistic option SL: clamped between 2.5 and 4.2 pts
+            dynamic_sl = round(min(4.2, max(2.5, opt_expected_move * 0.75)), 1)
+            # Realistic option Target: ~2.0-2.2x SL, clamped between 5.5 and 9.0 pts
+            dynamic_tgt = round(min(9.0, max(5.5, dynamic_sl * 2.1)), 1)
             self.stop_loss_pts = dynamic_sl
             self.target_pts = dynamic_tgt
 
@@ -952,6 +956,55 @@ class MultiIndicatorMath:
         else:
             return 0.0, "NEUTRAL_SECTOR_ALIGNMENT"
 
+    @staticmethod
+    def calculate_vpin(
+        closes: List[float],
+        highs: List[float],
+        lows: List[float],
+        volumes: List[float],
+        bucket_count: int = 20
+    ) -> Tuple[float, str]:
+        """
+        Volume-Synchronized Probability of Toxicity (VPIN) Estimator (Easley, Lopez de Prado, O'Hara).
+        Measures order flow toxicity and the presence of informed institutional aggression.
+        VPIN > 0.45 => High Toxicity / Informed Dumping / Liquidity Flight (Stand Down)
+        VPIN in [0.20, 0.40] => Healthy Institutional Participation
+        VPIN < 0.20 => Low Activity / Retail Drift
+        Returns: (vpin_value, regime)
+        """
+        if not closes or not volumes or len(closes) < bucket_count:
+            return 0.28, "NORMAL_TOXICITY"
+
+        total_vol = sum(volumes[-bucket_count:])
+        if total_vol <= 0:
+            return 0.28, "NORMAL_TOXICITY"
+
+        order_imbalances = []
+        for i in range(len(closes) - bucket_count, len(closes)):
+            h = highs[i]
+            l = lows[i]
+            c = closes[i]
+            v = volumes[i]
+            rng = max(0.10, h - l)
+            buyer_ratio = (c - l) / rng
+            v_buy = v * buyer_ratio
+            v_sell = v * (1.0 - buyer_ratio)
+            order_imbalances.append(abs(v_buy - v_sell))
+
+        vpin = sum(order_imbalances) / total_vol if total_vol > 0 else 0.28
+        vpin = round(min(1.0, max(0.0, vpin)), 3)
+
+        if vpin >= 0.50:
+            regime = "HIGH_TOXICITY_LIQUIDITY_FLIGHT"
+        elif vpin >= 0.38:
+            regime = "ELEVATED_INFORMED_FLOW"
+        elif vpin >= 0.22:
+            regime = "BALANCED_HEALTHY_LIQUIDITY"
+        else:
+            regime = "LOW_TOXICITY_BENIGN"
+
+        return vpin, regime
+
 
 
 # ============================================================================
@@ -1087,6 +1140,17 @@ class UltraHighConvictionRelianceEngine:
             v2_bear += 2.5  # Institutional Seller Absorption Confirmation
         if vp_bias == "BELOW_VAL":
             v2_bear += 1.5  # Breakdown below Value Area Low
+
+        # Volume-Synchronized Probability of Toxicity (VPIN - Easley, López de Prado & O'Hara)
+        vpin_val, vpin_regime = MultiIndicatorMath.calculate_vpin(
+            c5m["close"], c5m["high"], c5m["low"], c5m["volume"]
+        )
+        if vpin_regime in ("BALANCED_HEALTHY_LIQUIDITY", "LOW_TOXICITY_BENIGN"):
+            v2_bull += 1.5
+            v2_bear += 1.5
+        elif vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT":
+            v2_bull = max(0.0, v2_bull - 5.0)
+            v2_bear = max(0.0, v2_bear - 5.0)
 
         # Strike & OI Telemetry (Strict 10-point Strike Interval for RELIANCE)
         strike_step = 10
@@ -1423,7 +1487,7 @@ class UltraHighConvictionRelianceEngine:
             tier_rating = "TIER 4 (STAND DOWN / CAPITAL PRESERVATION)"
 
         total_probability = dominant_score
-        # Strict Execution Gate: Must NOT be running on synthetic fallback, in opening cooldown, or wide spread
+        # Strict Execution Gate: Must NOT be running on synthetic fallback, in opening cooldown, wide spread, or toxic VPIN
         is_tradable = (
             (total_probability >= self.trade_regime_threshold)
             and time_allowed
@@ -1432,6 +1496,7 @@ class UltraHighConvictionRelianceEngine:
             and not is_choppy_regime
             and not is_synthetic_feed
             and not spread_stand_down
+            and not (vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT")
         )
 
         # Dynamic Dual ATM Corridor Resolution & Best Strike Suggestion
@@ -1459,12 +1524,49 @@ class UltraHighConvictionRelianceEngine:
         tp_premium = round(entry_premium + self.risk.target_pts, 2)
         sl_premium = round(entry_premium - self.risk.stop_loss_pts, 2)
 
+        # Defined-Risk Debit Spread Recommendation (ATM Long + OTM Short Hedge)
+        spread_step = 20
+        chain_rows = chain_oi.get("chain", [])
+        if recommended_type == "CE":
+            otm_strike = atm_strike + spread_step
+            otm_row = next((r for r in chain_rows if r.get("strike") == otm_strike), None)
+            short_ltp = float(otm_row.get("call_ltp", current_option_ltp * 0.45)) if otm_row else round(current_option_ltp * 0.45, 2)
+            net_debit = round(max(0.5, current_option_ltp - short_ltp), 2)
+            max_spread_profit_pts = round(spread_step - net_debit, 2)
+            spread_max_profit_rs = round(max_spread_profit_pts * self.risk.total_quantity, 2)
+            spread_max_loss_rs = round(net_debit * self.risk.total_quantity, 2)
+            spread_name = f"BULL CALL DEBIT SPREAD (+1 {atm_strike} CE @ Rs. {current_option_ltp:.2f} / -1 {otm_strike} CE @ Rs. {short_ltp:.2f})"
+        else:
+            otm_strike = atm_strike - spread_step
+            otm_row = next((r for r in chain_rows if r.get("strike") == otm_strike), None)
+            short_ltp = float(otm_row.get("put_ltp", current_option_ltp * 0.45)) if otm_row else round(current_option_ltp * 0.45, 2)
+            net_debit = round(max(0.5, current_option_ltp - short_ltp), 2)
+            max_spread_profit_pts = round(spread_step - net_debit, 2)
+            spread_max_profit_rs = round(max_spread_profit_pts * self.risk.total_quantity, 2)
+            spread_max_loss_rs = round(net_debit * self.risk.total_quantity, 2)
+            spread_name = f"BEAR PUT DEBIT SPREAD (+1 {atm_strike} PE @ Rs. {current_option_ltp:.2f} / -1 {otm_strike} PE @ Rs. {short_ltp:.2f})"
+
+        debit_spread_rec = {
+            "strategy_type": "DEFINED_RISK_DEBIT_SPREAD",
+            "spread_name": spread_name,
+            "long_leg": f"{atm_strike} {recommended_type} @ Rs. {current_option_ltp:.2f}",
+            "short_leg": f"{otm_strike} {recommended_type} @ Rs. {short_ltp:.2f}",
+            "net_debit_pts": net_debit,
+            "max_risk_rupees": spread_max_loss_rs,
+            "max_reward_rupees": spread_max_profit_rs,
+            "hedged_against_theta": True,
+            "hedged_against_iv_crush": True,
+            "recommended_allocation": f"{self.risk.num_lots} Lot ({self.risk.total_quantity} Units)"
+        }
+
         if is_synthetic_feed:
             status_text = "OFFLINE / AWAITING LIVE BROKER FEED (STAND DOWN)"
         elif opening_cooldown_active:
             status_text = "OPENING COOLDOWN ACTIVE (09:15-09:30 AM IST) — BUILDING INITIAL BALANCE / ORB"
         elif spread_stand_down:
             status_text = f"STAND DOWN — WIDE BID-ASK SPREAD (Spread Rs. {opt_spread:.2f} > Rs. 0.35 threshold)"
+        elif vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT":
+            status_text = f"STAND DOWN — HIGH ORDER FLOW TOXICITY (VPIN {vpin_val:.3f} >= 0.50 | Toxic Flow)"
         elif is_tradable:
             status_text = f"TRADABLE DAY / ACTIVE {dominant_side} SETUP [{tier_rating}]"
         elif is_choppy_regime:
@@ -1494,7 +1596,7 @@ class UltraHighConvictionRelianceEngine:
             "5. ENTRY PRICE": f"On Breakout above Rs. {entry_premium:.2f} (SL-LMT Limit Cap: Rs. {limit_entry_premium:.2f})" if is_tradable else "N/A",
             "6. TARGET | STOP LOSS": target_text,
             "7. RATIONALE & CONFLUENCE": {
-                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. AVWAP Extremes: {avwap_stance} (HOD AVWAP Rs. {avwap_hod:.2f} | LOD AVWAP Rs. {avwap_lod:.2f}). Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. Micro-Price OBI: {obi:+.3f} [{obi_bias}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}).",
+                "Price vs. VWAP & Order Flow": f"Spot (Rs. {spot:,.2f}) at Z-score {vwap_z:+.2f}σ vs Session VWAP (Rs. {vwap:,.2f}) [{z_status}]. AVWAP Extremes: {avwap_stance} (HOD AVWAP Rs. {avwap_hod:.2f} | LOD AVWAP Rs. {avwap_lod:.2f}). Volume Profile: POC=Rs. {poc_price:.2f}, VAH=Rs. {vah_price:.2f}, VAL=Rs. {val_price:.2f} [{vp_bias}]. Micro-Price OBI: {obi:+.3f} [{obi_bias}]. OBV Flow: {obv_bias} ({obv_val:,.0f} vs EMA {obv_ema:,.0f}) | CVD Delta: {cvd_bias} ({latest_cvd:,.0f} vs EMA {cvd_ema:,.0f}) | VPIN: {vpin_val:.3f} [{vpin_regime}].",
                 "SuperTrend, EMA & ORB-15": f"Multi-timeframe EMA stack (9: {ema9:.1f} | 20: {ema20:.1f} | 50: {ema50:.1f} | 200: {ema200:.1f}) with SuperTrend dir {st_dir[-1]}. ADX={adx:.1f} (+DI: {pdi:.1f} | -DI: {mdi:.1f}). 15m ORB Range: Rs. {orb_low:.2f} - Rs. {orb_high:.2f} (Spot {'Above ORB High' if spot >= orb_high else ('Below ORB Low' if spot <= orb_low else 'Inside ORB Range')}).",
                 "Volatility & Choppiness": f"Choppiness Index (CHOP-14) at {chop_idx:.1f} ({'Trending Directional Expansion' if is_trending_regime else ('Consolidation Chop Stand Down' if is_choppy_regime else 'Neutral Zone')}). TTM Squeeze: {squeeze_state} (Ratio: {squeeze_ratio:.2f} | Mom: {squeeze_mom:+.2f}). RV/IV Spread: {rv_iv_spread:+.1f}% [{vol_edge}]. ATR(14)={atr_15m:.2f} pts | Parkinson RV={parkinson_vol:.1f}% | IVP={iv_percentile:.1f}% [{iv_regime}] | BB Width={bb_width[-1]:.2f}%. Adaptive SL={self.risk.stop_loss_pts:.1f} pts / TGT={self.risk.target_pts:.1f} pts.",
                 "Momentum (RSI/MACD/Stoch)": f"RSI(14)={rsi:.1f} | MACD Hist={hist[-1]:+.2f} | Stochastic %K={stoch_k:.1f}.",
@@ -1519,6 +1621,9 @@ class UltraHighConvictionRelianceEngine:
             "avwap_stance": avwap_stance,
             "parkinson_vol": parkinson_vol,
             "cvd_bias": cvd_bias,
+            "vpin": vpin_val,
+            "vpin_regime": vpin_regime,
+            "debit_spread": debit_spread_rec,
             "gex_regime": gex_regime,
             "volume_profile_poc": poc_price,
             "vah": vah_price,
@@ -1533,7 +1638,12 @@ class UltraHighConvictionRelianceEngine:
             "squeeze_state": squeeze_state,
             "squeeze_ratio": squeeze_ratio,
             "rv_iv_spread": rv_iv_spread,
-            "vol_edge": vol_edge
+            "vol_edge": vol_edge,
+            "orb_high": orb_high,
+            "orb_low": orb_low,
+            "vwap": vwap,
+            "vwap_plus_15sigma": vwap_plus_15sigma,
+            "vwap_minus_sigma": vwap_minus_sigma
         }
 
 

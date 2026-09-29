@@ -118,56 +118,58 @@ class StandaloneBreakoutManager:
 # ==============================================================================
 # STANDALONE RELIANCE CANDLE FETCHER
 # ==============================================================================
+# ==============================================================================
 class RelianceCandleFetcher:
-    """Fetches and caches Reliance 5m/15m candles with fallback synthesis."""
+    """Fetches and caches Reliance 5m/15m authentic candles directly from Groww API."""
     _cache_5m: Optional[pd.DataFrame] = None
     _last_fetch_5m: float = 0.0
+    _cache_15m: Optional[pd.DataFrame] = None
+    _last_fetch_15m: float = 0.0
 
     @classmethod
-    def get_5m_candles(cls, spot: float, max_age_secs: float = 60.0) -> Dict[str, List[float]]:
+    def get_5m_candles(cls, spot: float, max_age_secs: float = 60.0) -> Dict[str, Any]:
         now = time.time()
+        df = None
         if cls._cache_5m is not None and (now - cls._last_fetch_5m) < max_age_secs:
             df = cls._cache_5m
         else:
+            # 1. Primary: Direct official NSE candles via Groww Charting Service
             try:
-                t = yf.Ticker("RELIANCE.NS")
-                df = t.history(period="5d", interval="5m")
+                gw_feed = GrowwMarketFeed.get_instance()
+                df = gw_feed.get_reliance_historical_candles(interval="5m", days=5)
                 if df is not None and not df.empty and len(df) >= 30:
-                    last_c = float(df['Close'].iloc[-1])
-                    # Verify true unadjusted split discrepancy: only halve if candle is ~2x live spot
-                    if last_c > 2000 and spot > 0 and (last_c / spot) > 1.7:
-                        df['Close'] = df['Close'] / 2.0
-                        df['Open'] = df['Open'] / 2.0
-                        df['High'] = df['High'] / 2.0
-                        df['Low'] = df['Low'] / 2.0
                     cls._cache_5m = df
                     cls._last_fetch_5m = now
             except Exception as e:
-                logger.debug(f"yfinance fetch error: {e}")
-                df = cls._cache_5m
+                logger.debug(f"Groww charting candle fetch error: {e}")
 
-        # Real market fallback anchored to Groww live quotes if yfinance is throttled or empty
+            # 2. Secondary fallback: Yahoo Finance
+            if df is None or df.empty or len(df) < 30:
+                try:
+                    t = yf.Ticker("RELIANCE.NS")
+                    df_yf = t.history(period="5d", interval="5m")
+                    if df_yf is not None and not df_yf.empty and len(df_yf) >= 30:
+                        last_c = float(df_yf['Close'].iloc[-1])
+                        if last_c > 2000 and spot > 0 and (last_c / spot) > 1.7:
+                            df_yf['Close'] = df_yf['Close'] / 2.0
+                            df_yf['Open'] = df_yf['Open'] / 2.0
+                            df_yf['High'] = df_yf['High'] / 2.0
+                            df_yf['Low'] = df_yf['Low'] / 2.0
+                        df = df_yf
+                        cls._cache_5m = df
+                        cls._last_fetch_5m = now
+                except Exception as e:
+                    logger.debug(f"yfinance fetch error: {e}")
+
         if df is None or df.empty or len(df) < 30:
-            try:
-                gw_feed = GrowwMarketFeed.get_instance()
-                gw_data = gw_feed.get_reliance_live_data() if gw_feed else {}
-                base_p = float(gw_data.get("spot_ltp", spot if (0 < spot < 2000) else 1226.00))
-                open_p = float(gw_data.get("open", base_p - 4.50))
-            except Exception:
-                base_p = spot if (0 < spot < 2000) else 1226.00
-                open_p = base_p - 4.50
-
-            t_steps = np.linspace(0, 1, 60)
-            closes = open_p + (base_p - open_p) * (t_steps ** 1.1)
-            highs = closes + 1.20
-            lows = closes - 1.20
-            volumes = [100000.0] * 60
+            logger.warning("Live market candles unavailable from both Groww & Yahoo. Gating execution to preserve capital.")
             return {
-                "high": list(highs),
-                "low": list(lows),
-                "close": list(closes),
-                "volume": volumes,
-                "date": [datetime.now(IST).date()] * 60
+                "high": [],
+                "low": [],
+                "close": [],
+                "volume": [],
+                "date": [],
+                "is_synthetic": True
             }
 
         return {
@@ -175,7 +177,47 @@ class RelianceCandleFetcher:
             "low": df["Low"].tolist(),
             "close": df["Close"].tolist(),
             "volume": df["Volume"].tolist(),
-            "date": df.index.date.tolist() if hasattr(df.index, 'date') else []
+            "date": df.index.date.tolist() if hasattr(df.index, 'date') else [],
+            "is_synthetic": False
+        }
+
+    @classmethod
+    def get_15m_candles(cls, spot: float, max_age_secs: float = 120.0) -> Dict[str, Any]:
+        now = time.time()
+        df = None
+        if cls._cache_15m is not None and (now - cls._last_fetch_15m) < max_age_secs:
+            df = cls._cache_15m
+        else:
+            try:
+                gw_feed = GrowwMarketFeed.get_instance()
+                df = gw_feed.get_reliance_historical_candles(interval="15m", days=10)
+                if df is not None and not df.empty and len(df) >= 20:
+                    cls._cache_15m = df
+                    cls._last_fetch_15m = now
+            except Exception as e:
+                logger.debug(f"Groww 15m candle fetch error: {e}")
+
+            if df is None or df.empty or len(df) < 20:
+                try:
+                    t = yf.Ticker("RELIANCE.NS")
+                    df_yf = t.history(period="10d", interval="15m")
+                    if df_yf is not None and not df_yf.empty and len(df_yf) >= 20:
+                        df = df_yf
+                        cls._cache_15m = df
+                        cls._last_fetch_15m = now
+                except Exception:
+                    pass
+
+        if df is None or df.empty or len(df) < 20:
+            return cls.get_5m_candles(spot, max_age_secs=max_age_secs)
+
+        return {
+            "high": df["High"].tolist(),
+            "low": df["Low"].tolist(),
+            "close": df["Close"].tolist(),
+            "volume": df["Volume"].tolist(),
+            "date": df.index.date.tolist() if hasattr(df.index, 'date') else [],
+            "is_synthetic": False
         }
 
 
@@ -185,9 +227,10 @@ class RelianceCandleFetcher:
 class RelianceQuantAlertDaemon:
     """Autonomous market monitor & Telegram alert dispatcher."""
 
-    def __init__(self, interval_seconds: float = 5.0, force_run: bool = False):
+    def __init__(self, interval_seconds: float = 5.0, force_run: bool = False, require_candle_close: bool = False):
         self.interval = max(2.0, interval_seconds)
         self.force_run = force_run
+        self.require_candle_close = require_candle_close
         self.quant_engine = UltraHighConvictionRelianceEngine()
         self.groww_feed = GrowwMarketFeed.get_instance()
         self.running = True
@@ -195,6 +238,7 @@ class RelianceQuantAlertDaemon:
         self.last_seen_state = None
         self.last_chop_alert_sent = False
         self.last_git_sync_ts = time.time()
+        self.breakout_tick_counts: Dict[str, int] = {}
 
     def is_market_hours(self) -> Tuple[bool, str]:
         """Checks if current time is within Indian NSE trading hours."""
@@ -318,7 +362,7 @@ class RelianceQuantAlertDaemon:
         active_branch = low_data if recommended_strike == corridor["lower_strike"] else high_data
         active_option_ltp = active_branch["call_ltp"] if contract_type == "CE" else active_branch["put_ltp"]
 
-        # 4. Breakout Trigger Pinning
+        # 4. Breakout Trigger Pinning & Bar Confirmation Gate
         breakout_level = StandaloneBreakoutManager.get_or_set_trigger(
             strike=recommended_strike,
             contract_type=contract_type,
@@ -326,7 +370,35 @@ class RelianceQuantAlertDaemon:
             buffer_pts=1.20
         )
         gap_pts = round(breakout_level - active_option_ltp, 2)
-        entry_confirmed = (active_option_ltp >= breakout_level) and is_tradable
+
+        # Microstructure Confirmation Gate (Anti-Wick & Candle-Maturity Protocol)
+        sec_into_bar = (now_dt.minute % 5) * 60 + now_dt.second
+        is_bar_mature = (sec_into_bar >= 45)  # Filters noise spikes during the first 45s of candle formation
+
+        breakout_key = f"{today_date}_{recommended_strike}_{contract_type}"
+        if active_option_ltp >= breakout_level:
+            self.breakout_tick_counts[breakout_key] = self.breakout_tick_counts.get(breakout_key, 0) + 1
+        else:
+            self.breakout_tick_counts[breakout_key] = 0
+
+        consecutive_ticks = self.breakout_tick_counts.get(breakout_key, 0)
+        # Require price to hold at/above breakout level for at least 2 consecutive daemon scan ticks
+        tick_persistence_passed = (consecutive_ticks >= 2) or self.force_run
+
+        candle_gate_passed = is_bar_mature and tick_persistence_passed
+        if self.require_candle_close:
+            # Strict closed candle requirement (must be within last 30s of 5m bar or completed)
+            candle_gate_passed = (sec_into_bar >= 270) and tick_persistence_passed
+
+        entry_confirmed = (active_option_ltp >= breakout_level) and is_tradable and candle_gate_passed
+
+        if (active_option_ltp >= breakout_level) and is_tradable and not candle_gate_passed:
+            logger.info(
+                f"[{time_str}] ⏳ BREAKOUT DETECTED — Awaiting Confirmation Gate: "
+                f"LTP ₹{active_option_ltp:.2f} >= Trigger ₹{breakout_level:.2f} | "
+                f"Bar Progress: {sec_into_bar}s/300s ({'Mature' if is_bar_mature else 'Opening Wick Guard'}) | "
+                f"Consecutive Ticks: {consecutive_ticks}/2"
+            )
 
         # 5. Telegram Configuration & Dispatch Check
         tg_config = TelegramNotifier.load_config()
@@ -365,8 +437,12 @@ class RelianceQuantAlertDaemon:
                 except Exception:
                     pass
 
+            trade_qty = int(active_trade.get("qty", 250))
+            trade_num_lots = int(active_trade.get("num_lots", 1))
+            trade_lot_size = int(active_trade.get("lot_size", 250))
+
             unreal_pts = round(cur_trade_ltp - act_entry, 2)
-            unreal_pnl = round(unreal_pts * int(active_trade.get("qty", 1000)), 2)
+            unreal_pnl = round(unreal_pts * trade_qty, 2)
 
             logger.info(
                 f"[{time_str}] 🟢 IN-TRADE #{trade_num} ({inst_sym}) | LTP: ₹{cur_trade_ltp:.2f} | "
@@ -403,10 +479,10 @@ class RelianceQuantAlertDaemon:
                             trailing_sl=new_trail,
                             secured_pts=5.0,
                             direction=active_trade.get("direction", "BULLISH (CALL / CE)"),
-                            secured_pnl=round(unreal_pts * 500),
+                            secured_pnl=round(unreal_pts * trade_qty),
                             entry_price=act_entry,
-                            num_lots=active_trade.get("num_lots", 1),
-                            lot_size=500,
+                            num_lots=trade_num_lots,
+                            lot_size=trade_lot_size,
                             spot=spot
                         )
                         buttons = TelegramNotifier.get_trailing_sl_buttons()
@@ -420,15 +496,15 @@ class RelianceQuantAlertDaemon:
                 target_key = f"tg_sent_target_{today_date}_{trade_num}_{recommended_strike}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(target_key):
                     profit_pts = round(cur_trade_ltp - act_entry, 2)
-                    tot_pnl = round(profit_pts * int(active_trade.get("qty", 500)), 2)
+                    tot_pnl = round(profit_pts * trade_qty, 2)
                     tgt_msg = TelegramNotifier.format_target_hit_alert(
                         contract=inst_sym,
                         entry_price=act_entry,
                         exit_price=cur_trade_ltp,
                         profit_pts=profit_pts,
                         total_pnl=tot_pnl,
-                        num_lots=active_trade.get("num_lots", 1),
-                        lot_size=500,
+                        num_lots=trade_num_lots,
+                        lot_size=trade_lot_size,
                         spot=spot
                     )
                     buttons = TelegramNotifier.get_target_hit_buttons()
@@ -442,15 +518,15 @@ class RelianceQuantAlertDaemon:
                 sl_key = f"tg_sent_sl_{today_date}_{trade_num}_{recommended_strike}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(sl_key):
                     loss_pts = round(act_entry - cur_trade_ltp, 2)
-                    tot_loss = round(loss_pts * int(active_trade.get("qty", 500)), 2)
+                    tot_loss = round(loss_pts * trade_qty, 2)
                     sl_msg = TelegramNotifier.format_stop_loss_alert(
                         contract=inst_sym,
                         entry_price=act_entry,
                         sl_price=cur_trade_ltp,
                         loss_pts=loss_pts,
                         total_loss=tot_loss,
-                        num_lots=active_trade.get("num_lots", 1),
-                        lot_size=500,
+                        num_lots=trade_num_lots,
+                        lot_size=trade_lot_size,
                         spot=spot
                     )
                     buttons = TelegramNotifier.get_stop_loss_buttons()
@@ -476,7 +552,7 @@ class RelianceQuantAlertDaemon:
                         entry_price=act_entry,
                         current_ltp=cur_trade_ltp,
                         elapsed_minutes=elapsed_mins,
-                        unrealized_pnl=round(stag_pts * int(active_trade.get("qty", 500)), 2),
+                        unrealized_pnl=round(stag_pts * trade_qty, 2),
                         spot=spot
                     )
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, stag_alert)
@@ -681,6 +757,7 @@ def main():
     parser.add_argument("--now", action="store_true", help="Force scan immediately regardless of market hours / weekends")
     parser.add_argument("--interval", type=float, default=5.0, help="Polling interval in seconds (default: 5.0)")
     parser.add_argument("--test-tg", action="store_true", help="Send a test notification to Telegram and exit")
+    parser.add_argument("--require-candle-close", action="store_true", help="Require 5-minute candle close confirmation before triggering entry")
     args = parser.parse_args()
 
     if args.test_tg:
@@ -695,7 +772,11 @@ def main():
             print(f"❌ Failed: {msg}")
         return
 
-    daemon = RelianceQuantAlertDaemon(interval_seconds=args.interval, force_run=args.now)
+    daemon = RelianceQuantAlertDaemon(
+        interval_seconds=args.interval,
+        force_run=args.now,
+        require_candle_close=args.require_candle_close
+    )
     daemon.start()
 
 

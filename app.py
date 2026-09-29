@@ -981,7 +981,7 @@ def render_quant_desk_clock():
 </script>
 </body>
 </html>"""
-    components.html(html_code, height=142, scrolling=False)
+    components.html(html_code, height=148, scrolling=False)
 
 # Active Groww Account Profile (Mandatory Link)
 prof = groww_feed.user_profile or {}
@@ -1076,7 +1076,7 @@ def render_auto_rescan_controller():
     if "last_auto_rescan_ts" not in st.session_state:
         st.session_state["last_auto_rescan_ts"] = now
 
-    col_rb, col_cb = st.columns([1.5, 1.0])
+    col_rb, col_cb = st.columns([1.8, 1.0])
     with col_rb:
         rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key="btn_instant_rescan")
     with col_cb:
@@ -1111,6 +1111,12 @@ def render_auto_rescan_controller():
             <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
             <span>Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
             <span>⚡ <b style="color: #34D399;">~4ms</b></span>
+        </div>
+        <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+            <span>⚡ <b style="color: #FFFFFF;">RELIANCE.NS</b> (500 Qty/Lot)</span>
+            <span>🎯 Target: <b style="color: #34D399;">+10.0 pts</b></span>
+            <span>🛑 SL: <b style="color: #F87171;">-4.5 pts</b></span>
+            <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
         </div>
     """)
 
@@ -1241,6 +1247,17 @@ render_live_macro_benchmarks_strip()
 
 st.markdown("---")
 
+# ==============================================================================
+# 1.6. FAST RESCAN CONTROLLER & LIVE REAL-TIME QUANT DESK CLOCK WATCH
+# ==============================================================================
+top_ctrl_col, top_clock_col = st.columns([2.3, 1.7])
+with top_ctrl_col:
+    render_auto_rescan_controller()
+with top_clock_col:
+    render_quant_desk_clock()
+
+st.markdown("---")
+
 
 # ==============================================================================
 # 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR
@@ -1296,7 +1313,9 @@ timeframe = st.sidebar.selectbox("Candle Timeframe", ["5m", "15m"], index=0, key
 
 st.sidebar.markdown("---")
 st.sidebar.caption("⏱️ **FAST MARKET RESCAN**")
-render_auto_rescan_controller()
+if st_sidebar_button_stretch("🔄 Rescan Market Feed", key="sb_rescan_btn"):
+    st.session_state["manual_rescan_clicked"] = True
+    st.rerun(scope="app")
 
 st.sidebar.markdown("---")
 st.sidebar.html("""
@@ -4986,9 +5005,6 @@ if df is not None and not df.empty:
     ])
 
     with tab_cockpit:
-        # Top Ribbon: Live Benchmarks Strip
-        render_live_macro_benchmarks_strip()
-
         # Reliance Live Spot Hero
         render_reliance_spot_hero()
 

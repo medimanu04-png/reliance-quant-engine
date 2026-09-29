@@ -600,8 +600,8 @@ class TelegramNotifier:
         profit_pts: float = 10.0,
         direction: str = "BULLISH (CALL / CE)",
         total_pnl: Optional[float] = None,
-        num_lots: int = 2,
-        lot_size: int = 500,
+        num_lots: int = 1,
+        lot_size: int = 250,
         spot: float = 1226.40,
         **kwargs
     ) -> str:
@@ -641,8 +641,8 @@ class TelegramNotifier:
         loss_pts: float = 9.0,
         direction: str = "BULLISH (CALL / CE)",
         total_loss: Optional[float] = None,
-        num_lots: int = 2,
-        lot_size: int = 500,
+        num_lots: int = 1,
+        lot_size: int = 250,
         spot: float = 1226.40,
         **kwargs
     ) -> str:
@@ -684,8 +684,8 @@ class TelegramNotifier:
         direction: str = "BULLISH (CALL / CE)",
         secured_pnl: Optional[float] = None,
         entry_price: Optional[float] = None,
-        num_lots: int = 2,
-        lot_size: int = 500,
+        num_lots: int = 1,
+        lot_size: int = 250,
         spot: float = 1226.40,
         **kwargs
     ) -> str:

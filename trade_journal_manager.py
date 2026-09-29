@@ -1648,13 +1648,19 @@ class SequentialTradeEngine:
                             # Position closed in Groww!
                             exit_p = float(ex_tr.get("exit_price", current_ltp))
                             exit_t = ex_tr.get("exit_time", datetime.now(IST).strftime("%I:%M:%S %p IST"))
-                            real_pnl = float(ex_tr.get("realised_pnl", (exit_p - actual_entry) * qty))
-                            status = "Target Hit" if real_pnl >= 0 else "SL Hit"
+                            if exit_p >= (target - 0.25):
+                                status = "Target Hit"
+                            elif exit_p <= (effective_sl + 0.25):
+                                status = "SL Hit"
+                            elif real_pnl > 0:
+                                status = "Discretionary Exit (+Profit)"
+                            else:
+                                status = "Discretionary Exit (-Loss)"
                             return cls.close_trade(
                                 exit_price=exit_p,
                                 status=status,
                                 exit_time=exit_t,
-                                notes=f"Auto-synced Groww Position Exit @ ₹{exit_p:.2f}",
+                                notes=f"Auto-synced Groww Position Exit @ ₹{exit_p:.2f} ({status})",
                                 starting_cash=starting_cash
                             )
             except Exception as e:
