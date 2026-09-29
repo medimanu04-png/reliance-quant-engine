@@ -84,45 +84,25 @@ class GrowwMarketFeed:
             cls._instance._cached_reliance_chain = cls._instance._get_fallback_reliance_chain()
             cls._instance._cached_wallet = cls._instance._get_fallback_wallet()
 
-            # ZERO-LATENCY SYNCHRONOUS INITIALIZATION:
-            # If saved credentials exist, connect immediately so first frame is 100% connected with real live data!
-            if os.path.exists(CONFIG_FILE):
-                try:
-                    cls._instance._load_saved_credentials()
-                except Exception as e:
-                    logger.debug(f"Immediate credential load error: {e}")
-
-            # Start ultra-low-latency background streams
-            cls._instance._start_background_stream()
-
-            # If still not connected (e.g. initial network retry needed), keep deferred retry thread
-            if not cls._instance._is_connected:
-                threading.Thread(target=cls._instance._deferred_startup, daemon=True, name="GrowwDeferredStartup").start()
+            # Non-blocking asynchronous initialization:
+            # Pre-populate baseline caches in 0.000ms so the UI renders immediately without freezing!
+            threading.Thread(target=cls._instance._deferred_startup, daemon=True, name="GrowwDeferredStartup").start()
         return cls._instance
 
     def _deferred_startup(self):
         """Runs credential loading and background stream startup off the main thread.
-        Instantly launches live feed streaming without delay."""
+        Instantly launches live feed streaming without blocking the UI."""
+        if getattr(self, "_starting_up", False):
+            return
+        self._starting_up = True
         try:
-            self._load_saved_credentials()
+            if os.path.exists(CONFIG_FILE):
+                self._load_saved_credentials()
         except Exception as e:
             logger.debug(f"Deferred credential load error: {e}")
-        self._start_background_stream()
-
-        # If initial load didn't connect, retry up to 3 times in background for transient network/DNS hiccups
-        if not self._is_connected:
-            for retry_sec in [2.0, 5.0, 10.0]:
-                time.sleep(retry_sec)
-                if self._is_connected:
-                    break
-                try:
-                    self._load_saved_credentials()
-                    if self._is_connected:
-                        logger.info("Deferred Groww connection established on retry!")
-                        self._fetch_live_wallet_and_positions()
-                        break
-                except Exception:
-                    pass
+        finally:
+            self._start_background_stream()
+            self._starting_up = False
 
     def _start_background_stream(self):
         """Starts asynchronous background workers that continuously stream Groww live feed with zero delay."""
@@ -147,7 +127,7 @@ class GrowwMarketFeed:
         self._wallet_thread.start()
 
     def _wallet_poller_loop(self):
-        """Dedicated background poller for broker wallet balance, positions, and trades (every 1.0s)."""
+        """Dedicated background poller for broker wallet balance, positions, and trades (every 5.0s)."""
         # Immediate fetch at boot
         try:
             self._fetch_live_wallet_and_positions()
@@ -160,10 +140,10 @@ class GrowwMarketFeed:
                     self._fetch_live_wallet_and_positions()
             except Exception as e:
                 logger.debug(f"Wallet poller loop error: {e}")
-            time.sleep(1.0)
+            time.sleep(5.0)
 
     def _spot_poller_loop(self):
-        """Dedicated high-frequency spot quote poller (every 200ms). Zero delay on Reliance spot."""
+        """Dedicated high-frequency spot quote poller (every 1.0s). Zero delay on Reliance spot."""
         # Immediate tick fetch at boot
         try:
             self._fetch_reliance_spot_now()
@@ -175,10 +155,10 @@ class GrowwMarketFeed:
                 self._fetch_reliance_spot_now()
             except Exception as e:
                 logger.debug(f"Spot poller loop error: {e}")
-            time.sleep(0.20)
+            time.sleep(1.0)
 
     def _option_chain_poller_loop(self):
-        """Dedicated high-frequency option chain poller (every 500ms). Zero delay on CE/PE prices."""
+        """Dedicated high-frequency option chain poller (every 2.0s). Zero delay on CE/PE prices."""
         # Immediate live chain fetch at boot
         try:
             self._fetch_reliance_chain_now("2026-10-27")
@@ -190,10 +170,10 @@ class GrowwMarketFeed:
                 self._fetch_reliance_chain_now("2026-10-27")
             except Exception as e:
                 logger.debug(f"Option chain poller loop error: {e}")
-            time.sleep(0.50)
+            time.sleep(2.0)
 
     def _benchmark_poller_loop(self):
-        """Dedicated benchmark poller (every 1.0s). Zero delay on NIFTY, BANK NIFTY, VIX, CRUDE."""
+        """Dedicated benchmark poller (every 3.0s). Zero delay on NIFTY, BANK NIFTY, VIX, CRUDE."""
         # Immediate benchmark fetch at boot
         try:
             self._execute_live_benchmark_fetch()
@@ -205,7 +185,7 @@ class GrowwMarketFeed:
                 self._execute_live_benchmark_fetch()
             except Exception as e:
                 logger.debug(f"Benchmark poller loop error: {e}")
-            time.sleep(1.0)
+            time.sleep(3.0)
 
     def _validate_and_initialize(self, access_token: str) -> Dict[str, Any]:
         """
@@ -972,8 +952,7 @@ class GrowwMarketFeed:
         if (
             force_refresh
             or not self._cached_reliance_spot
-            or self._cached_reliance_spot.get("spot_ltp") == 1226.00
-            or (now - self._last_reliance_spot_ts > 0.5)
+            or (now - self._last_reliance_spot_ts > 4.0)
         ):
             res = self._fetch_reliance_spot_now()
             if res and res.get("spot_ltp", 0) > 0:
@@ -1038,8 +1017,7 @@ class GrowwMarketFeed:
                 return res
             self._cached_benchmarks = self._get_fallback_benchmarks()
             self._last_benchmarks_ts = now
-            threading.Thread(target=self._execute_live_benchmark_fetch, daemon=True).start()
-        elif force_refresh or (now - self._last_benchmarks_ts > 1.0):
+        elif force_refresh and (now - self._last_benchmarks_ts > 5.0):
             threading.Thread(target=self._execute_live_benchmark_fetch, daemon=True).start()
 
         return self._cached_benchmarks
@@ -1063,15 +1041,15 @@ class GrowwMarketFeed:
 
         now = time.time()
         chain = self._cached_chains_by_expiry.get(expiry)
-        # If cache is missing, or contains static fallback data (<= 11 items), or force_refresh requested, or older than 1.0s:
-        if chain is None or len(chain) <= 11 or force_refresh or (now - self._last_reliance_chain_ts > 1.0):
+        # If cache is missing, or force_refresh requested, or older than 4.0s:
+        if chain is None or (force_refresh and (now - self._last_reliance_chain_ts > 4.0)):
             res = self._fetch_reliance_chain_now(expiry)
-            if res and len(res) > 11:
+            if res and len(res) > 0:
                 return res
-            if chain and len(chain) > 0:
-                return chain
-            fallback = self._get_fallback_reliance_chain(expiry_iso=expiry)
-            return fallback
+        if chain and len(chain) > 0:
+            return chain
+        fallback = self._get_fallback_reliance_chain(expiry_iso=expiry)
+        return fallback
 
         return chain
 

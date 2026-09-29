@@ -2010,7 +2010,7 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
     return df
 
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_reliance_data(interval: str, force_key: str = ""):
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     df = pd.DataFrame()
@@ -2020,7 +2020,7 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
             return t.history(period="5d", interval=interval)
         with ThreadPoolExecutor(max_workers=1) as ex:
             fut = ex.submit(_get_hist)
-            df = fut.result(timeout=4.0)  # Low timeout prevents UI stalls
+            df = fut.result(timeout=1.5)  # Fast timeout prevents UI stalls
     except Exception:
         df = pd.DataFrame()
 
@@ -3988,7 +3988,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 """)
 
 
-@st.fragment(run_every="1s")
+@st.fragment(run_every="2s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
     # Dynamically pull current real-time spot from Groww live feed on each 1-sec tick
     try:
