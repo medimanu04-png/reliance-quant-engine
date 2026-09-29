@@ -43,7 +43,7 @@
   "2026-09-29_RELIANCE26OCT1190PE": {
     "date": "2026-09-29",
     "trade_given_time": "02:29:42 PM IST",
-    "full_contract": "RELIANCE 1190 PE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91180 & \u20b91190] | 1 Lots / 500 Qty | Current Price: \u20b926.00 (Spot: \u20b91188.90)",
+    "full_contract": "RELIANCE 1190 PE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91180 & \u20b91190] | 1 Lots / 500 Qty | Current Price: \u20b926.10 (Spot: \u20b91189.30)",
     "symbol": "RELIANCE26OCT1190PE",
     "contract_type": "PE",
     "action": "BUY PE",
@@ -52,6 +52,6 @@
     "suggested_entry": 26.7,
     "suggested_exit": 33.7,
     "suggested_sl": 24.2,
-    "confluence_score": 87.2
+    "confluence_score": 85.1
   }
 }
