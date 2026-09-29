@@ -1,0 +1,17 @@
+{
+  "current_state": "IDLE / SCANNING",
+  "active_trade": null,
+  "last_closed_trade": {
+    "trade_num": 1,
+    "instrument": "RELIANCE 1200 PE (27-OCT-2026)",
+    "planned_entry": 29.25,
+    "actual_entry": 29.38,
+    "executed": "Yes",
+    "sl": 24.75,
+    "target": 39.25,
+    "status": "Target Hit",
+    "pnl": "+\u20b96,375.00"
+  },
+  "today_trade_count": 1,
+  "updated_at": "2026-09-29 11:52:32 AM IST"
+}

@@ -14,7 +14,7 @@ import pytz
 IST = pytz.timezone("Asia/Kolkata")
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
-from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR
+from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR, SequentialTradeEngine
 
 class IndianFOTransactionCostEngine:
     """
@@ -5186,377 +5186,582 @@ if df is not None and not df.empty:
 
     st.markdown("---")
 
-    if is_tradable:
-        if recommended_contract_type == "CE":
-            st.html(f'''
-            <div class="trade-status-card status-tradable-bullish">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; box-shadow: 0 0 12px #10B981; display: inline-block;"></span>
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
-                            🚀 TRADE STATUS: TRADABLE DAY &bull; A+ BULLISH (CE / CALL) SETUP
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="background: rgba(16, 185, 129, 0.20); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.40); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
-                            ⚡ HIGH-PROBABILITY SIGNAL
-                        </span>
-                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
-                            RELIANCE {atm_strike} CE
-                        </span>
-                    </div>
-                </div>
+    # ==============================================================================
+    # 6. STRICT SEQUENTIAL TRADING ASSISTANT ENGINE (ONE-TRADE-AT-A-TIME DISCIPLINE)
+    # ==============================================================================
+    seq_state = SequentialTradeEngine.get_state()
+    current_seq_state = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
+    active_trade = seq_state.get("active_trade")
+    last_closed = seq_state.get("last_closed_trade")
 
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">DIRECTIONAL CONFLUENCE</div>
-                        <div style="font-size: 1.10rem; font-weight: 900; color: #34D399; margin-top: 3px;">
-                            🟢 {bullish_score}% Bullish
-                        </div>
-                        <div style="font-size: 0.70rem; color: #6EE7B7; margin-top: 2px;">&gt;{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
-                    </div>
+    # Target symbol for matching
+    target_contract_sym = f"RELIANCE26OCT{atm_strike}{recommended_contract_type}" if (atm_strike and recommended_contract_type) else ""
 
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
-                        <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
-                            <span style="color: #34D399;">Bullish: {bullish_score}%</span>
-                            <span style="color: #F87171;">Bearish: {bearish_score}%</span>
-                        </div>
-                        <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
-                            <div style="width: {bullish_score}%; background: #10B981;"></div>
-                            <div style="width: {bearish_score}%; background: #EF4444;"></div>
-                        </div>
-                    </div>
+    # Auto-verify active or pending trade with Groww broker feed if connected
+    if groww_feed.is_connected:
+        try:
+            gw_executed = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+            if current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
+                for ex_tr in gw_executed:
+                    if active_trade.get("contract", "") in ex_tr.get("symbol", ""):
+                        SequentialTradeEngine.confirm_groww_fill(
+                            confirmed=True,
+                            actual_price=float(ex_tr.get("entry_price", active_trade["planned_entry"])),
+                            actual_time=ex_tr.get("entry_time", datetime.now(IST).strftime("%I:%M:%S %p IST"))
+                        )
+                        st.rerun()
+        except Exception as e:
+            logger.debug(f"Auto-verify sequential check error: {e}")
 
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
-                            RELIANCE {atm_strike} CE
-                        </div>
-                        <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
-                    </div>
-
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
-                            +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
-                        </div>
-                        <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
-                    </div>
-                </div>
-
-                <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
-                    <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
-                    <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #34D399;">{bullish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} CE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
-                    </div>
-                </div>
-            </div>
-            ''')
-        else:
-            st.html(f'''
-            <div class="trade-status-card status-tradable-bearish">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 12px #EF4444; display: inline-block;"></span>
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
-                            🚀 TRADE STATUS: TRADABLE DAY &bull; A+ BEARISH (PE / PUT) SETUP
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="background: rgba(239, 68, 68, 0.20); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.40); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
-                            ⚡ HIGH-PROBABILITY SIGNAL
-                        </span>
-                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
-                            RELIANCE {atm_strike} PE
-                        </span>
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">DIRECTIONAL CONFLUENCE</div>
-                        <div style="font-size: 1.10rem; font-weight: 900; color: #F87171; margin-top: 3px;">
-                            🔴 {bearish_score}% Bearish
-                        </div>
-                        <div style="font-size: 0.70rem; color: #FECACA; margin-top: 2px;">&gt;{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
-                    </div>
-
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
-                        <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
-                            <span style="color: #F87171;">Bearish: {bearish_score}%</span>
-                            <span style="color: #34D399;">Bullish: {bullish_score}%</span>
-                        </div>
-                        <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
-                            <div style="width: {bearish_score}%; background: #EF4444;"></div>
-                            <div style="width: {bullish_score}%; background: #10B981;"></div>
-                        </div>
-                    </div>
-
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
-                            RELIANCE {atm_strike} PE
-                        </div>
-                        <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
-                    </div>
-
-                    <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
-                        <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
-                            +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
-                        </div>
-                        <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
-                    </div>
-                </div>
-
-                <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
-                    <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
-                    <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                        <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence has cleared the institutional threshold (<b style="color: #F87171;">{bearish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Monitor option premium closely. Execute <b style="color: #38BDF8;">RELIANCE {atm_strike} PE</b> immediately upon 5m candle close confirmation above the breakout trigger level.
-                    </div>
-                </div>
-            </div>
-            ''')
-
-        # ======================================================================
-        # IMMEDIATE GROWW EXECUTION CROSS-VERIFICATION
-        # Cross-verify immediately whether the user has taken the suggested entry on Groww
-        # ======================================================================
-        target_contract_sym = f"RELIANCE26OCT{atm_strike}{recommended_contract_type}"
-        is_order_filled_groww = False
-        matching_gw_fill = None
-
+    # Render according to Strict Sequential States
+    if current_seq_state == SequentialTradeEngine.STATE_IN_TRADE and active_trade:
+        # Determine live option LTP for active trade
+        active_contract = active_trade.get("contract", "")
+        active_ltp = float(current_option_ltp if current_option_ltp > 0 else active_trade.get("actual_entry", 30.0))
         if groww_feed.is_connected:
             try:
-                gw_today_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
-                for ex_tr in gw_today_trades:
-                    sym_ex = ex_tr.get("symbol", "")
-                    if target_contract_sym in sym_ex or (str(atm_strike) in sym_ex and recommended_contract_type in sym_ex):
-                        is_order_filled_groww = True
-                        matching_gw_fill = ex_tr
-                        break
+                gw_chain_live = groww_feed.get_reliance_live_option_chain()
+                if gw_chain_live:
+                    for rw in gw_chain_live:
+                        if abs(rw.get("strike", 0) - active_trade.get("strike", atm_strike)) < 0.5:
+                            if "PE" in active_contract and rw.get("put_ltp"):
+                                active_ltp = float(rw["put_ltp"])
+                            elif "CE" in active_contract and rw.get("call_ltp"):
+                                active_ltp = float(rw["call_ltp"])
             except Exception:
                 pass
 
-        if is_order_filled_groww and matching_gw_fill:
-            fill_p = float(matching_gw_fill.get("entry_price", 0.0))
-            fill_t = matching_gw_fill.get("entry_time", "")
-            slip_pts = round(fill_p - estimated_premium, 2)
-            slip_color = "#10B981" if slip_pts <= 0 else "#F59E0B"
-            slip_sign = "+" if slip_pts > 0 else ""
-            pos_is_closed = matching_gw_fill.get("is_closed", False)
-            pnl_val = float(matching_gw_fill.get("realised_pnl", 0.0))
-            pnl_str = f" • Realized P&L: {'+' if pnl_val >= 0 else ''}₹{pnl_val:,.2f}" if pos_is_closed else ""
+        # Update active trade engine telemetry (checks Target Hit, SL Hit, Trailing SL, Broker exit)
+        tr_update = SequentialTradeEngine.update_active_trade(
+            current_ltp=active_ltp,
+            groww_feed=groww_feed,
+            starting_cash=account_cash
+        )
+        if tr_update.get("closed_trade"):
+            st.rerun()
 
-            st.html(f'''
-            <div style="background: rgba(16, 185, 129, 0.12); border: 2px solid #10B981; border-radius: 10px; padding: 14px 18px; margin-top: 10px; margin-bottom: 12px; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.25);">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 1.2rem;">🟢</span>
-                        <div>
-                            <span style="font-size: 0.90rem; font-weight: 900; color: #34D399; letter-spacing: 0.4px;">
-                                GROWW EXECUTION VERIFIED: YOU HAVE TAKEN THIS SUGGESTED ENTRY ON GROWW
-                            </span>
-                            <div style="font-size: 0.78rem; color: #CBD5E1; margin-top: 2px;">
-                                <b>Broker Fill:</b> ₹{fill_p:.2f} @ {fill_t} | <b>Suggested Entry:</b> ₹{estimated_premium:.2f} | <b>Execution Slippage:</b> <b style="color: {slip_color};">{slip_sign}{slip_pts:.2f} pts</b>{pnl_str}
-                            </div>
+        act_entry = float(active_trade.get("actual_entry", active_trade.get("planned_entry", 30.0)))
+        target_p = float(active_trade.get("target", act_entry + 10.0))
+        sl_p = float(active_trade.get("sl", act_entry - 4.5))
+        trail_sl = float(active_trade.get("trailing_sl", sl_p))
+        qty_val = int(active_trade.get("qty", 1000))
+        unreal_pnl = round((active_ltp - act_entry) * qty_val, 2)
+        pnl_col = "#10B981" if unreal_pnl >= 0 else "#EF4444"
+        pnl_sign = "+" if unreal_pnl >= 0 else ""
+
+        st.html(f'''
+        <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.45) 0%, rgba(15, 23, 42, 0.85) 100%); border: 2px solid #10B981; border-radius: 12px; padding: 18px 22px; margin-bottom: 14px; box-shadow: 0 0 24px rgba(16, 185, 129, 0.20);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="width: 12px; height: 12px; border-radius: 50%; background: #10B981; box-shadow: 0 0 16px #10B981; display: inline-block;"></span>
+                    <div>
+                        <div style="font-size: 1.22rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                            🟢 IN-TRADE (ACTIVE MONITORING) • TRADE #{active_trade.get('trade_num', 1)}
+                        </div>
+                        <div style="font-size: 0.78rem; color: #6EE7B7; font-weight: 600; margin-top: 2px;">
+                            Strict Rule #1 & #3 Active: Zero Parallel Setups • Tracking Active Contract to Target or SL
                         </div>
                     </div>
-                    <span style="background: rgba(16, 185, 129, 0.25); color: #6EE7B7; font-size: 0.74rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #10B981;">
-                        {'CLOSED & AUDITED' if pos_is_closed else 'ACTIVE MONITORING (IN-TRADE)'}
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="background: rgba(16, 185, 129, 0.25); color: #6EE7B7; border: 1.5px solid #10B981; padding: 4px 14px; border-radius: 6px; font-size: 0.78rem; font-weight: 800;">
+                        ACTIVE POSITION ({active_trade.get('executed', 'Yes')})
+                    </span>
+                    <span style="background: rgba(15, 23, 42, 0.9); color: {pnl_col}; border: 1px solid #334155; padding: 4px 14px; border-radius: 6px; font-size: 0.92rem; font-weight: 900;">
+                        Live P&L: {pnl_sign}₹{unreal_pnl:,.2f}
                     </span>
                 </div>
             </div>
-            ''')
-        else:
-            st.html(f'''
-            <div style="background: rgba(245, 158, 11, 0.12); border: 2px solid #F59E0B; border-radius: 10px; padding: 14px 18px; margin-top: 10px; margin-bottom: 12px; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.20);">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 1.2rem;">🟡</span>
-                        <div>
-                            <span style="font-size: 0.90rem; font-weight: 900; color: #FBBF24; letter-spacing: 0.4px;">
-                                GROWW EXECUTION CHECK: ENTRY PENDING / WAITING FOR BROKER FILL
-                            </span>
-                            <div style="font-size: 0.80rem; color: #FDE68A; margin-top: 3px;">
-                                <b>Suggested Entry Trigger:</b> ₹{estimated_premium:.2f} on <b>RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str})</b><br>
-                                📡 <i>Groww API Audit: No order fill detected yet for {target_contract_sym} on your Groww account.</i>
-                            </div>
-                            <div style="font-size: 0.82rem; font-weight: 800; color: #FFFFFF; margin-top: 4px;">
-                                👉 Did your order fill on Groww at ₹{estimated_premium:.2f}? (Waiting for broker confirmation...)
-                            </div>
-                        </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px;">
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase;">ACTIVE INSTRUMENT</div>
+                    <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF; margin-top: 3px;">
+                        {active_trade.get('instrument', active_contract)}
                     </div>
-                    <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.74rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #F59E0B;">
-                        ENTRY PENDING
-                    </span>
+                    <div style="font-size: 0.74rem; color: #38BDF8; margin-top: 2px;">
+                        Qty: {qty_val:,} ({active_trade.get('num_lots', 2)} Lots)
+                    </div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase;">ACTUAL GROWW ENTRY</div>
+                    <div style="font-size: 1.15rem; font-weight: 900; color: #FBBF24; margin-top: 3px;">
+                        ₹{act_entry:.2f}
+                    </div>
+                    <div style="font-size: 0.72rem; color: #CBD5E1; margin-top: 2px;">
+                        Filled @ {active_trade.get('actual_entry_time', '09:15 AM')} (Planned: ₹{active_trade.get('planned_entry', act_entry):.2f})
+                    </div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase;">LIVE LTP / DISTANCE</div>
+                    <div style="font-size: 1.15rem; font-weight: 900; color: #38BDF8; margin-top: 3px;">
+                        ₹{active_ltp:.2f}
+                    </div>
+                    <div style="font-size: 0.72rem; color: #34D399; margin-top: 2px;">
+                        Target: ₹{target_p:.2f} ({'+' if target_p >= active_ltp else ''}{round(target_p - active_ltp, 2)} pts)
+                    </div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase;">PROTECTIVE STOP LOSS</div>
+                    <div style="font-size: 1.15rem; font-weight: 900; color: #F87171; margin-top: 3px;">
+                        ₹{trail_sl:.2f}
+                    </div>
+                    <div style="font-size: 0.72rem; color: #FCA5A5; margin-top: 2px;">
+                        Initial SL: ₹{sl_p:.2f} &bull; Trailing Buffer: {round(active_ltp - trail_sl, 2)} pts
+                    </div>
                 </div>
             </div>
-            ''')
+
+            <div style="background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(16, 185, 129, 0.35); border-left: 4px solid #10B981; border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; color: #CBD5E1;">
+                🔒 <b>Strict Operating Discipline:</b> Zero parallel signals permitted. Trade #{active_trade.get('trade_num', 1)} is actively managed until Target or Stop-Loss is reached.
+            </div>
+        </div>
+        ''')
+
+        # In-Trade Actions Bar
+        it_c1, it_c2, it_c3 = st.columns([1.2, 1.2, 1.6])
+        with it_c1:
+            if st.button("🎯 Mark Target Hit & Close", use_container_width=True, help="Record target hit outcome and close trade"):
+                SequentialTradeEngine.close_trade(exit_price=active_ltp, status="Target Hit", notes="Target reached in active monitoring", starting_cash=account_cash)
+                st.rerun()
+        with it_c2:
+            if st.button("🛑 Mark SL Hit & Close", use_container_width=True, help="Record stop-loss outcome and close trade"):
+                SequentialTradeEngine.close_trade(exit_price=active_ltp, status="SL Hit", notes="Stop loss hit in active monitoring", starting_cash=account_cash)
+                st.rerun()
+        with it_c3:
+            if st.button("🔄 Sync with Groww Positions", use_container_width=True):
+                SequentialTradeEngine.update_active_trade(current_ltp=active_ltp, groww_feed=groww_feed, starting_cash=account_cash)
+                st.rerun()
+
+    elif current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
+        # ENTRY PENDING: Verification with Groww
+        planned_p = float(active_trade.get("planned_entry", 30.0))
+        inst_name = active_trade.get("instrument", active_trade.get("contract", "RELIANCE Contract"))
+
+        st.html(f'''
+        <div style="background: rgba(245, 158, 11, 0.12); border: 2px solid #F59E0B; border-radius: 12px; padding: 18px 22px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(245, 158, 11, 0.20);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.3rem;">🟡</span>
+                    <div>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FBBF24; letter-spacing: 0.4px;">
+                            ENTRY PENDING: VERIFICATION & EXECUTION CHECK (GROWW)
+                        </span>
+                        <div style="font-size: 0.78rem; color: #FDE68A; margin-top: 2px;">
+                            Strict Rule #2 Active: Before assuming a trade is active, verify if order was filled on Groww at planned entry.
+                        </div>
+                    </div>
+                </div>
+                <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.76rem; font-weight: 800; padding: 4px 14px; border-radius: 6px; border: 1px solid #F59E0B;">
+                    TRADE #{active_trade.get('trade_num', 1)} WAITING FOR FILL
+                </span>
+            </div>
+
+            <div style="background: rgba(0, 0, 0, 0.50); border: 1px solid rgba(245, 158, 11, 0.40); border-radius: 8px; padding: 14px 18px; margin-bottom: 12px;">
+                <div style="font-size: 1.02rem; font-weight: 800; color: #FFFFFF;">
+                    👉 Did your order fill on Groww at ₹{planned_p:.2f}?
+                </div>
+                <div style="font-size: 0.82rem; color: #CBD5E1; margin-top: 4px; line-height: 1.5;">
+                    • <b>Instrument:</b> {inst_name}<br>
+                    • <b>Planned Entry:</b> <b style="color: #FBBF24;">₹{planned_p:.2f}</b> &bull; <b>SL:</b> ₹{active_trade.get('sl', 0.0):.2f} &bull; <b>Target:</b> ₹{active_trade.get('target', 0.0):.2f}<br>
+                    • <b>Status:</b> Waiting for your Groww execution confirmation.
+                </div>
+            </div>
+        </div>
+        ''')
+
+        # Interactive Confirmation Controls
+        ep_c1, ep_c2, ep_c3, ep_c4 = st.columns([1.3, 1.2, 1.2, 1.4])
+        with ep_c1:
+            actual_fill_input = st.number_input("Actual Groww Fill (₹)", value=float(planned_p), step=0.05, format="%.2f", key="groww_actual_fill_p")
+        with ep_c2:
+            if st.button("✅ Yes, Filled on Groww", use_container_width=True, help="Confirm order filled on Groww at this price"):
+                SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=actual_fill_input)
+                st.success(f"✅ Trade #{active_trade.get('trade_num', 1)} execution confirmed!")
+                st.rerun()
+        with ep_c3:
+            if st.button("❌ No / Cancel Setup", use_container_width=True, help="Cancel trade setup and return to scanning"):
+                SequentialTradeEngine.confirm_groww_fill(confirmed=False)
+                st.info("ℹ️ Setup cancelled. Returned to scanning.")
+                st.rerun()
+        with ep_c4:
+            if st.button("🤖 Auto-Verify via Groww", use_container_width=True, help="Check Groww API for executed orders"):
+                if groww_feed.is_connected:
+                    gw_tr = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                    matched = False
+                    for x in gw_tr:
+                        if active_trade.get("contract", "") in x.get("symbol", ""):
+                            SequentialTradeEngine.confirm_groww_fill(
+                                confirmed=True,
+                                actual_price=float(x.get("entry_price", planned_p)),
+                                actual_time=x.get("entry_time")
+                            )
+                            matched = True
+                            st.success(f"✅ Found Groww fill @ ₹{x.get('entry_price', planned_p):.2f}!")
+                            st.rerun()
+                    if not matched:
+                        st.info("ℹ️ No fill detected in Groww orders today for this contract.")
+                else:
+                    st.warning("Groww API disconnected.")
+
+    elif current_seq_state == SequentialTradeEngine.STATE_TRADE_CLOSED and last_closed:
+        # TRADE CLOSED & AUDITED: Wait for user acknowledgement
+        st_color = "#10B981" if "Hit" in last_closed.get("status", "") and "SL" not in last_closed.get("status", "") else "#EF4444"
+        st.html(f'''
+        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 2px solid #334155; border-radius: 12px; padding: 18px 22px; margin-bottom: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.3rem;">🎯</span>
+                    <div>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                            TRADE #{last_closed.get('trade_num', 1)} CLOSED & AUDITED
+                        </span>
+                        <div style="font-size: 0.78rem; color: #94A3B8; margin-top: 2px;">
+                            Strict Rule #5 Active: Wait for closure before planning the next trade.
+                        </div>
+                    </div>
+                </div>
+                <span style="background: rgba(16, 185, 129, 0.20); color: {st_color}; font-size: 0.78rem; font-weight: 800; padding: 4px 14px; border-radius: 6px; border: 1px solid {st_color};">
+                    {last_closed.get('status', 'Target Hit')} • {last_closed.get('pnl', '')}
+                </span>
+            </div>
+
+            <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid #334155; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.84rem; color: #CBD5E1; line-height: 1.6;">
+                • <b>Instrument:</b> {last_closed.get('instrument')}<br>
+                • <b>Planned Entry:</b> ₹{last_closed.get('planned_entry', 0.0):.2f} | <b>Actual Groww Entry:</b> ₹{last_closed.get('actual_entry', 0.0):.2f}<br>
+                • <b>Stop Loss:</b> ₹{last_closed.get('sl', 0.0):.2f} | <b>Target:</b> ₹{last_closed.get('target', 0.0):.2f}<br>
+                • <b>Outcome Recorded:</b> Audited & logged to daily trade journal ledger.
+            </div>
+        </div>
+        ''')
+
+        if st.button("🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)", use_container_width=True):
+            SequentialTradeEngine.acknowledge_and_reset()
+            st.rerun()
+
     else:
-        is_bull_lean = bullish_score >= bearish_score
-        bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if is_bull_lean else f"🔴 Mild Bearish Lean ({bearish_score}%)"
-        lean_color = "#34D399" if is_bull_lean else "#F87171"
-        lean_border = "rgba(16, 185, 129, 0.45)" if is_bull_lean else "rgba(239, 68, 68, 0.45)"
-        lean_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(6, 95, 70, 0.15) 100%)" if is_bull_lean else "linear-gradient(135deg, rgba(127, 29, 29, 0.40) 0%, rgba(153, 27, 27, 0.15) 100%)"
-        lean_shadow = "0 0 16px rgba(16, 185, 129, 0.15)" if is_bull_lean else "0 0 16px rgba(239, 68, 68, 0.15)"
+        # STATE_IDLE: Standard High-Probability Scanner
+        if is_tradable:
+            next_t_num = int(seq_state.get("today_trade_count", 0)) + 1
+            if recommended_contract_type == "CE":
+                st.html(f'''
+                <div class="trade-status-card status-tradable-bullish">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; box-shadow: 0 0 12px #10B981; display: inline-block;"></span>
+                            <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                                🚀 TRADE STATUS: TRADABLE DAY &bull; A+ BULLISH (CE / CALL) SETUP &bull; TRADE #{next_t_num}
+                            </span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: rgba(16, 185, 129, 0.20); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.40); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
+                                ⚡ HIGH-PROBABILITY SIGNAL
+                            </span>
+                            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
+                                RELIANCE {atm_strike} CE
+                            </span>
+                        </div>
+                    </div>
 
-        score_cleared = dominant_score > MIN_HIT_PERCENTAGE
-        gate_surplus = round(dominant_score - MIN_HIT_PERCENTAGE, 1)
-        deficit_val = max(0.0, round(MIN_HIT_PERCENTAGE - dominant_score, 1))
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">DIRECTIONAL CONFLUENCE</div>
+                            <div style="font-size: 1.10rem; font-weight: 900; color: #34D399; margin-top: 3px;">
+                                🟢 {bullish_score}% Bullish
+                            </div>
+                            <div style="font-size: 0.70rem; color: #6EE7B7; margin-top: 2px;">&gt;{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
+                        </div>
 
-        # Dynamic Institutional Classification of Exact Stand Down Cause
-        if is_choppy_regime:
-            stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
-            stand_down_badge = f"🛑 CONSOLIDATION CHOP FILTER ACTIVE (CHOP: {chop_val:.1f} &gt; 61.8)"
-            stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
-            stand_down_sub = "Fractal dimension confirms extreme sideways consolidation &bull; Strict capital preservation enforced &bull; 0 trades permitted in chop regime"
-            gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
-            gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
-            gate_card_title = "CHOPPINESS FILTER"
-            gate_card_val = f"CHOP: {chop_val:.1f}"
-            gate_card_sub = "🛑 Exceeds 61.8 Threshold"
-            why_stand_down_html = f"""
-            <b style="color: #FFFFFF;">Why Stand Down?</b> The Choppiness Index (CHOP-14) is at <b>{chop_val:.1f}</b>, exceeding the <b>61.8 extreme fractal consolidation threshold</b>. In this regime, false breakout traps and rapid option theta decay occur. Capital is strictly preserved until market transitions into a directional expansion regime (CHOP &lt; 45).
-            """
-        elif not time_gate_allowed:
-            if score_cleared:
-                stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; EXECUTION LOCKED (OFF-HOURS)"
-                stand_down_badge = "🌙 SESSION CLOSED &bull; OPENS 09:15 AM IST"
-                stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(180, 83, 9, 0.35) 100%); color: #FEF08A; border: 1.5px solid rgba(245, 158, 11, 0.65); box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);"
-                stand_down_sub = f"Directional confluence cleared institutional threshold ({dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%) &bull; Live order routing locked until official NSE F&O session (09:15 AM - 03:10 PM IST)"
-                gate_card_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(15, 23, 42, 0.75) 100%)"
-                gate_card_border = "1.5px solid rgba(16, 185, 129, 0.55)"
-                gate_card_title = "MANDATORY EXECUTION GATE"
-                gate_card_val = f"🟢 Gate Cleared (+{gate_surplus:.1f}%)"
-                gate_card_sub = f"Confluence {dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}% Gate"
-                why_stand_down_html = f"""
-                <b style="color: #FFFFFF;">Why is Execution Locked?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. However, live order routing is locked because the exchange is currently <b>CLOSED</b> (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST &bull; {time_gate_msg}</b>). Institutional trading hours for Reliance F&O are strictly <b>09:15 AM to 03:10 PM IST</b> (02:45 PM cutoff). This setup is <b>ARMED</b> and ready for the next market open.<br><span style="color: #94A3B8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">💡 <b>Testing Tip:</b> To test live order execution, audio chimes, and Telegram alerts right now, select <b>'🔥 Trigger BUY NOW Entry'</b> or toggle <b>'Simulate Session Time'</b> in the left sidebar.</span>
-                """
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
+                            <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
+                                <span style="color: #34D399;">Bullish: {bullish_score}%</span>
+                                <span style="color: #F87171;">Bearish: {bearish_score}%</span>
+                            </div>
+                            <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
+                                <div style="width: {bullish_score}%; background: #10B981;"></div>
+                                <div style="width: {bearish_score}%; background: #EF4444;"></div>
+                            </div>
+                        </div>
+
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
+                                RELIANCE {atm_strike} CE
+                            </div>
+                            <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
+                        </div>
+
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
+                                +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
+                            </div>
+                            <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
+                        </div>
+                    </div>
+
+                    <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                        <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
+                        <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
+                            <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence cleared threshold (<b style="color: #34D399;">{bullish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Suggesting <b style="color: #38BDF8;">RELIANCE {atm_strike} CE</b> at ₹{estimated_premium:.2f}. Click Arm Trade to enter ENTRY PENDING state.
+                        </div>
+                    </div>
+                </div>
+                ''')
             else:
+                st.html(f'''
+                <div class="trade-status-card status-tradable-bearish">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 12px #EF4444; display: inline-block;"></span>
+                            <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                                🚀 TRADE STATUS: TRADABLE DAY &bull; A+ BEARISH (PE / PUT) SETUP &bull; TRADE #{next_t_num}
+                            </span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: rgba(239, 68, 68, 0.20); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.40); padding: 4px 12px; border-radius: 6px; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.5px;">
+                                ⚡ HIGH-PROBABILITY SIGNAL
+                            </span>
+                            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
+                                RELIANCE {atm_strike} PE
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">DIRECTIONAL CONFLUENCE</div>
+                            <div style="font-size: 1.10rem; font-weight: 900; color: #F87171; margin-top: 3px;">
+                                🔴 {bearish_score}% Bearish
+                            </div>
+                            <div style="font-size: 0.70rem; color: #FECACA; margin-top: 2px;">&gt;{MIN_HIT_PERCENTAGE:.0f}% Institutional Gate Cleared</div>
+                        </div>
+
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
+                            <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
+                                <span style="color: #F87171;">Bearish: {bearish_score}%</span>
+                                <span style="color: #34D399;">Bullish: {bullish_score}%</span>
+                            </div>
+                            <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
+                                <div style="width: {bearish_score}%; background: #EF4444;"></div>
+                                <div style="width: {bullish_score}%; background: #10B981;"></div>
+                            </div>
+                        </div>
+
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
+                                RELIANCE {atm_strike} PE
+                            </div>
+                            <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
+                        </div>
+
+                        <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
+                            <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
+                                +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
+                            </div>
+                            <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
+                        </div>
+                    </div>
+
+                    <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                        <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
+                        <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
+                            <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence cleared threshold (<b style="color: #F87171;">{bearish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Suggesting <b style="color: #38BDF8;">RELIANCE {atm_strike} PE</b> at ₹{estimated_premium:.2f}. Click Arm Trade to enter ENTRY PENDING state.
+                        </div>
+                    </div>
+                </div>
+                ''')
+
+            # Propose Setup Button
+            prop_c1, prop_c2 = st.columns([2.5, 1.5])
+            with prop_c1:
+                st.caption(f"Strict Sequential Mode: Clicking will propose Trade #{next_t_num} and request Groww execution verification.")
+            with prop_c2:
+                if st.button(f"🚀 Arm & Propose Trade #{next_t_num}", use_container_width=True):
+                    SequentialTradeEngine.propose_trade(
+                        contract=f"RELIANCE26OCT{atm_strike}{recommended_contract_type}",
+                        instrument=rec_instrument,
+                        planned_entry=float(estimated_premium),
+                        sl=float(sl_premium),
+                        target=float(target_premium),
+                        direction=f"BUY {recommended_contract_type}",
+                        expiry=expiry_date_str,
+                        confluence=float(dominant_score),
+                        qty=total_trading_qty,
+                        num_lots=num_lots
+                    )
+                    st.rerun()
+
+        else:
+            is_bull_lean = bullish_score >= bearish_score
+            bias_label = f"🟢 Mild Bullish Lean ({bullish_score}%)" if is_bull_lean else f"🔴 Mild Bearish Lean ({bearish_score}%)"
+            lean_color = "#34D399" if is_bull_lean else "#F87171"
+            lean_border = "rgba(16, 185, 129, 0.45)" if is_bull_lean else "rgba(239, 68, 68, 0.45)"
+            lean_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(6, 95, 70, 0.15) 100%)" if is_bull_lean else "linear-gradient(135deg, rgba(127, 29, 29, 0.40) 0%, rgba(153, 27, 27, 0.15) 100%)"
+            lean_shadow = "0 0 16px rgba(16, 185, 129, 0.15)" if is_bull_lean else "0 0 16px rgba(239, 68, 68, 0.15)"
+
+            score_cleared = dominant_score > MIN_HIT_PERCENTAGE
+            gate_surplus = round(dominant_score - MIN_HIT_PERCENTAGE, 1)
+            deficit_val = max(0.0, round(MIN_HIT_PERCENTAGE - dominant_score, 1))
+
+            # Dynamic Institutional Classification of Exact Stand Down Cause
+            if is_choppy_regime:
                 stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
-                stand_down_badge = "🌙 MARKET CLOSED & SUB-THRESHOLD"
-                stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.30) 0%, rgba(153, 27, 27, 0.40) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.60); box-shadow: 0 0 12px rgba(239, 68, 68, 0.20);"
-                stand_down_sub = f"Exchange is closed ({time_gate_msg}) and directional confluence is sub-threshold ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+                stand_down_badge = f"🛑 CONSOLIDATION CHOP FILTER ACTIVE (CHOP: {chop_val:.1f} &gt; 61.8)"
+                stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+                stand_down_sub = "Fractal dimension confirms extreme sideways consolidation &bull; Strict capital preservation enforced &bull; 0 trades permitted in chop regime"
+                gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                gate_card_title = "CHOPPINESS FILTER"
+                gate_card_val = f"CHOP: {chop_val:.1f}"
+                gate_card_sub = "🛑 Exceeds 61.8 Threshold"
+                why_stand_down_html = f"""
+                <b style="color: #FFFFFF;">Why Stand Down?</b> The Choppiness Index (CHOP-14) is at <b>{chop_val:.1f}</b>, exceeding the <b>61.8 extreme fractal consolidation threshold</b>. In this regime, false breakout traps and rapid option theta decay occur. Capital is strictly preserved until market transitions into a directional expansion regime (CHOP &lt; 45).
+                """
+            elif not time_gate_allowed:
+                if score_cleared:
+                    stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; EXECUTION LOCKED (OFF-HOURS)"
+                    stand_down_badge = "🌙 SESSION CLOSED &bull; OPENS 09:15 AM IST"
+                    stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(180, 83, 9, 0.35) 100%); color: #FEF08A; border: 1.5px solid rgba(245, 158, 11, 0.65); box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);"
+                    stand_down_sub = f"Directional confluence cleared institutional threshold ({dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%) &bull; Live order routing locked until official NSE F&O session (09:15 AM - 03:10 PM IST)"
+                    gate_card_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(15, 23, 42, 0.75) 100%)"
+                    gate_card_border = "1.5px solid rgba(16, 185, 129, 0.55)"
+                    gate_card_title = "MANDATORY EXECUTION GATE"
+                    gate_card_val = f"🟢 Gate Cleared (+{gate_surplus:.1f}%)"
+                    gate_card_sub = f"Confluence {dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}% Gate"
+                    why_stand_down_html = f"""
+                    <b style="color: #FFFFFF;">Why is Execution Locked?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. However, live order routing is locked because the exchange is currently <b>CLOSED</b> (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST &bull; {time_gate_msg}</b>). Institutional trading hours for Reliance F&O are strictly <b>09:15 AM to 03:10 PM IST</b> (02:45 PM cutoff). This setup is <b>ARMED</b> and ready for the next market open.<br><span style="color: #94A3B8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">💡 <b>Testing Tip:</b> To test live order execution, audio chimes, and Telegram alerts right now, select <b>'🔥 Trigger BUY NOW Entry'</b> or toggle <b>'Simulate Session Time'</b> in the left sidebar.</span>
+                    """
+                else:
+                    stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
+                    stand_down_badge = "🌙 MARKET CLOSED & SUB-THRESHOLD"
+                    stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.30) 0%, rgba(153, 27, 27, 0.40) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.60); box-shadow: 0 0 12px rgba(239, 68, 68, 0.20);"
+                    stand_down_sub = f"Exchange is closed ({time_gate_msg}) and directional confluence is sub-threshold ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+                    gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                    gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                    gate_card_title = "MANDATORY EXECUTION GATE"
+                    gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
+                    gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
+                    why_stand_down_html = f"""
+                    <b style="color: #FFFFFF;">Why Stand Down?</b> Market is currently <b>CLOSED</b> ({time_gate_msg}) and prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Both time gate and directional criteria must be satisfied to trade.
+                    """
+            elif not score_cleared:
+                stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
+                stand_down_badge = f"⚠️ SUB-THRESHOLD CONFLUENCE ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+                stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+                stand_down_sub = "Directional edge is insufficient &bull; Strict capital preservation enforced &bull; 0 trades permitted without institutional confirmation"
                 gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
                 gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
                 gate_card_title = "MANDATORY EXECUTION GATE"
                 gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
                 gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
                 why_stand_down_html = f"""
-                <b style="color: #FFFFFF;">Why Stand Down?</b> Market is currently <b>CLOSED</b> ({time_gate_msg}) and prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Both time gate and directional criteria must be satisfied to trade.
+                <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory <span style="background: rgba(251, 191, 36, 0.15); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.35); padding: 1px 7px; border-radius: 4px; font-weight: 800;">&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</span> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
                 """
-        elif not score_cleared:
-            stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
-            stand_down_badge = f"⚠️ SUB-THRESHOLD CONFLUENCE ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
-            stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
-            stand_down_sub = "Directional edge is insufficient &bull; Strict capital preservation enforced &bull; 0 trades permitted without institutional confirmation"
-            gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
-            gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
-            gate_card_title = "MANDATORY EXECUTION GATE"
-            gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
-            gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
-            why_stand_down_html = f"""
-            <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory <span style="background: rgba(251, 191, 36, 0.15); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.35); padding: 1px 7px; border-radius: 4px; font-weight: 800;">&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</span> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
-            """
-        else:
-            stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
-            stand_down_badge = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"
-            stand_down_badge_style = "background: rgba(239, 68, 68, 0.35); color: #FEE2E2; border: 1px solid #EF4444;"
-            stand_down_sub = "Capital preservation enforced"
-            gate_card_bg = "rgba(15, 23, 42, 0.80)"
-            gate_card_border = "1px solid rgba(255, 255, 255, 0.12)"
-            gate_card_title = "MANDATORY EXECUTION GATE"
-            gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
-            gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
-            why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Stand Down?</b> Current prevailing bias is {bias_label}. Strict capital preservation active."
+            else:
+                stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
+                stand_down_badge = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"
+                stand_down_badge_style = "background: rgba(239, 68, 68, 0.35); color: #FEE2E2; border: 1px solid #EF4444;"
+                stand_down_sub = "Capital preservation enforced"
+                gate_card_bg = "rgba(15, 23, 42, 0.80)"
+                gate_card_border = "1px solid rgba(255, 255, 255, 0.12)"
+                gate_card_title = "MANDATORY EXECUTION GATE"
+                gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
+                gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
+                why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Stand Down?</b> Current prevailing bias is {bias_label}. Strict capital preservation active."
 
-        dot_color = "#F59E0B" if (score_cleared and not time_gate_allowed) else "#EF4444"
-        cap_badge_title = "🛡️ PRE-SESSION LOCK (OFF-HOURS)" if (score_cleared and not time_gate_allowed) else "🛡️ CAPITAL PRESERVATION ACTIVE"
-        cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FDE68A; border: 1.5px solid rgba(245, 158, 11, 0.50);" if (score_cleared and not time_gate_allowed) else "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
-        cap_sub_desc = "🛡️ Protected off-hours &bull; Armed for open" if (score_cleared and not time_gate_allowed) else "🛡️ Protected from chop & theta decay"
+            dot_color = "#F59E0B" if (score_cleared and not time_gate_allowed) else "#EF4444"
+            cap_badge_title = "🛡️ PRE-SESSION LOCK (OFF-HOURS)" if (score_cleared and not time_gate_allowed) else "🛡️ CAPITAL PRESERVATION ACTIVE"
+            cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FDE68A; border: 1.5px solid rgba(245, 158, 11, 0.50);" if (score_cleared and not time_gate_allowed) else "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
+            cap_sub_desc = "🛡️ Protected off-hours &bull; Armed for open" if (score_cleared and not time_gate_allowed) else "🛡️ Protected from chop & theta decay"
 
-        st.html(f'''
-        <div class="trade-status-card status-standdown">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <span style="width: 12px; height: 12px; border-radius: 50%; background: {dot_color}; box-shadow: 0 0 16px {dot_color}; display: inline-block;"></span>
-                    <div>
-                        <div style="font-size: 1.18rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                            <span>{stand_down_status_title}</span>
-                            <span style="{stand_down_badge_style} padding: 3px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 900; letter-spacing: 0.6px;">
-                                {stand_down_badge}
-                            </span>
-                        </div>
-                        <div style="font-size: 0.76rem; color: {'#FDE68A' if (score_cleared and not time_gate_allowed) else '#FCA5A5'}; font-weight: 600; margin-top: 3px;">
-                            {stand_down_sub}
+            st.html(f'''
+            <div class="trade-status-card status-standdown">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="width: 12px; height: 12px; border-radius: 50%; background: {dot_color}; box-shadow: 0 0 16px {dot_color}; display: inline-block;"></span>
+                        <div>
+                            <div style="font-size: 1.18rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <span>{stand_down_status_title}</span>
+                                <span style="{stand_down_badge_style} padding: 3px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 900; letter-spacing: 0.6px;">
+                                    {stand_down_badge}
+                                </span>
+                            </div>
+                            <div style="font-size: 0.76rem; color: {'#FDE68A' if (score_cleared and not time_gate_allowed) else '#FCA5A5'}; font-weight: 600; margin-top: 3px;">
+                                {stand_down_sub}
+                            </div>
                         </div>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="{cap_badge_style} padding: 5px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 0 14px rgba(0, 0, 0, 0.25);">
+                            {cap_badge_title}
+                        </span>
+                        <span style="background: rgba(15, 23, 42, 0.85); color: #CBD5E1; border: 1px solid rgba(255, 255, 255, 0.15); padding: 5px 12px; border-radius: 6px; font-size: 0.76rem; font-weight: 800;">
+                            0 Orders Placed
+                        </span>
+                    </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="{cap_badge_style} padding: 5px 14px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 0 14px rgba(0, 0, 0, 0.25);">
-                        {cap_badge_title}
-                    </span>
-                    <span style="background: rgba(15, 23, 42, 0.85); color: #CBD5E1; border: 1px solid rgba(255, 255, 255, 0.15); padding: 5px 12px; border-radius: 6px; font-size: 0.76rem; font-weight: 800;">
-                        0 Orders Placed
-                    </span>
+
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px;">
+                    <div style="background: {lean_bg}; border: 1.5px solid {lean_border}; border-radius: 8px; padding: 12px 14px; box-shadow: {lean_shadow};">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">PREVAILING MARKET BIAS</div>
+                        <div style="font-size: 1.05rem; font-weight: 900; color: {lean_color}; margin-top: 4px; text-shadow: 0 0 10px {lean_color}40;">
+                            {bias_label}
+                        </div>
+                        <div style="font-size: 0.72rem; color: #CBD5E1; margin-top: 3px;">
+                            {'Directional bullish lean' if is_bull_lean else 'Directional bearish lean'}
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(15, 23, 42, 0.80); border: 1.5px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 12px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
+                        <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
+                            <span style="color: #34D399; background: rgba(16, 185, 129, 0.18); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.35);">🟢 Bullish: {bullish_score}%</span>
+                            <span style="color: #F87171; background: rgba(239, 68, 68, 0.18); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.35);">🔴 Bearish: {bearish_score}%</span>
+                        </div>
+                        <div style="width: 100%; height: 8px; background: #1E293B; border-radius: 4px; overflow: hidden; margin-top: 8px; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
+                            <div style="width: {bullish_score}%; background: #10B981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);"></div>
+                            <div style="width: {bearish_score}%; background: #EF4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);"></div>
+                        </div>
+                    </div>
+
+                    <div style="background: {gate_card_bg}; border: {gate_card_border}; border-radius: 8px; padding: 12px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">{gate_card_title}</div>
+                        <div style="font-size: 1.05rem; font-weight: 900; color: {'#34D399' if (score_cleared and not is_choppy_regime) else '#FBBF24'}; margin-top: 4px; text-shadow: 0 0 10px rgba(52, 211, 153, 0.30);">
+                            {gate_card_val}
+                        </div>
+                        <div style="font-size: 0.72rem; color: {'#A7F3D0' if (score_cleared and not is_choppy_regime) else '#FCA5A5'}; margin-top: 3px; font-weight: 700;">
+                            {gate_card_sub}
+                        </div>
+                    </div>
+
+                    <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.65) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 12px 14px;">
+                        <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">CAPITAL ALLOCATION</div>
+                        <div style="font-size: 1.05rem; font-weight: 900; color: #34D399; margin-top: 4px; text-shadow: 0 0 10px rgba(52, 211, 153, 0.35);">
+                            100% Cash Preserved
+                        </div>
+                        <div style="font-size: 0.72rem; color: #A7F3D0; margin-top: 3px; font-weight: 600;">
+                            {cap_sub_desc}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.45); border: 1px solid {'rgba(245, 158, 11, 0.45)' if (score_cleared and not time_gate_allowed) else 'rgba(239, 68, 68, 0.35)'}; border-left: 4px solid {'#F59E0B' if (score_cleared and not time_gate_allowed) else '#EF4444'}; border-radius: 8px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px;">
+                    <span style="font-size: 1.25rem; line-height: 1;">💡</span>
+                    <div style="font-size: 0.85rem; color: #E2E8F0; line-height: 1.6;">
+                        {why_stand_down_html}
+                    </div>
                 </div>
             </div>
+            ''')
 
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px;">
-                <div style="background: {lean_bg}; border: 1.5px solid {lean_border}; border-radius: 8px; padding: 12px 14px; box-shadow: {lean_shadow};">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">PREVAILING MARKET BIAS</div>
-                    <div style="font-size: 1.05rem; font-weight: 900; color: {lean_color}; margin-top: 4px; text-shadow: 0 0 10px {lean_color}40;">
-                        {bias_label}
-                    </div>
-                    <div style="font-size: 0.72rem; color: #CBD5E1; margin-top: 3px;">
-                        {'Directional bullish lean' if is_bull_lean else 'Directional bearish lean'}
-                    </div>
-                </div>
-
-                <div style="background: rgba(15, 23, 42, 0.80); border: 1.5px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 12px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">CONFLUENCE SPREAD</div>
-                    <div style="font-size: 0.88rem; font-weight: 800; margin-top: 4px; display: flex; justify-content: space-between;">
-                        <span style="color: #34D399; background: rgba(16, 185, 129, 0.18); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.35);">🟢 Bullish: {bullish_score}%</span>
-                        <span style="color: #F87171; background: rgba(239, 68, 68, 0.18); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.35);">🔴 Bearish: {bearish_score}%</span>
-                    </div>
-                    <div style="width: 100%; height: 8px; background: #1E293B; border-radius: 4px; overflow: hidden; margin-top: 8px; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
-                        <div style="width: {bullish_score}%; background: #10B981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);"></div>
-                        <div style="width: {bearish_score}%; background: #EF4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);"></div>
-                    </div>
-                </div>
-
-                <div style="background: {gate_card_bg}; border: {gate_card_border}; border-radius: 8px; padding: 12px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">{gate_card_title}</div>
-                    <div style="font-size: 1.05rem; font-weight: 900; color: {'#34D399' if (score_cleared and not is_choppy_regime) else '#FBBF24'}; margin-top: 4px; text-shadow: 0 0 10px rgba(52, 211, 153, 0.30);">
-                        {gate_card_val}
-                    </div>
-                    <div style="font-size: 0.72rem; color: {'#A7F3D0' if (score_cleared and not is_choppy_regime) else '#FCA5A5'}; margin-top: 3px; font-weight: 700;">
-                        {gate_card_sub}
-                    </div>
-                </div>
-
-                <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.65) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 8px; padding: 12px 14px;">
-                    <div style="font-size: 0.68rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.6px;">CAPITAL ALLOCATION</div>
-                    <div style="font-size: 1.05rem; font-weight: 900; color: #34D399; margin-top: 4px; text-shadow: 0 0 10px rgba(52, 211, 153, 0.35);">
-                        100% Cash Preserved
-                    </div>
-                    <div style="font-size: 0.72rem; color: #A7F3D0; margin-top: 3px; font-weight: 600;">
-                        {cap_sub_desc}
-                    </div>
-                </div>
-            </div>
-
-            <div style="background: rgba(0, 0, 0, 0.45); border: 1px solid {'rgba(245, 158, 11, 0.45)' if (score_cleared and not time_gate_allowed) else 'rgba(239, 68, 68, 0.35)'}; border-left: 4px solid {'#F59E0B' if (score_cleared and not time_gate_allowed) else '#EF4444'}; border-radius: 8px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px;">
-                <span style="font-size: 1.25rem; line-height: 1;">💡</span>
-                <div style="font-size: 0.85rem; color: #E2E8F0; line-height: 1.6;">
-                    {why_stand_down_html}
-                </div>
-            </div>
-        </div>
-        ''')
 
     # 4 Execution Blocks (Solid Dark High-Contrast Cards - Symmetrically Aligned)
     b1, b2, b3, b4 = st.columns(4)
@@ -5779,7 +5984,7 @@ if df is not None and not df.empty:
         except Exception:
             pass
 
-    with st.expander(matrix_title, expanded=True):
+    with st.expander(matrix_title, expanded=(current_seq_state == SequentialTradeEngine.STATE_IDLE)):
         st.html(f"""
         <div style="background: #0B1120 !important; border: 1px solid #1E293B !important; border-left: 4px solid {rec_box_border_left} !important; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);">
             <div style="display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px;">
@@ -5937,7 +6142,8 @@ if df is not None and not df.empty:
     }
 
     # Automatically persist Quant Engine trade recommendation for daily Groww cross-verification
-    if is_tradable and recommended_contract_type:
+    # STRICT SEQUENTIAL RULE: Only record signal when engine is IDLE / SCANNING (zero parallel signals)
+    if is_tradable and recommended_contract_type and current_seq_state == SequentialTradeEngine.STATE_IDLE:
         try:
             SignalTracker.save_signal({
                 "date": datetime.now(IST).strftime("%Y-%m-%d"),
@@ -5954,6 +6160,7 @@ if df is not None and not df.empty:
             })
         except Exception:
             pass
+
 
     if stream_live_1s:
         render_dynamic_1s_atm_feed(spot, live_broker_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, trade_plan=trade_plan)
@@ -6225,6 +6432,30 @@ if df is not None and not df.empty:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ==============================================================================
+    # 9.0. RUNNING SEQUENTIAL TRADE LOG TABLE (STRICT OPERATING DISCIPLINE)
+    # ==============================================================================
+    st.markdown("<h4 style='color: #F8FAFC; margin-top: 15px; margin-bottom: 6px;'>📋 Running Sequential Trade Log</h4>", unsafe_allow_html=True)
+    st.caption("Strict Sequential Trading Operating Discipline • One Trade at a Time • Verified Groww Executions")
+    running_rows = SequentialTradeEngine.get_running_trade_log_rows()
+    if running_rows:
+        df_running = pd.DataFrame(running_rows)
+        st_dataframe_stretch(
+            df_running,
+            height=min(240, 55 + (len(running_rows) * 40)),
+            column_config={
+                "Trade #": st.column_config.TextColumn("Trade #", width="small"),
+                "Instrument": st.column_config.TextColumn("Instrument", width="medium"),
+                "Planned Entry": st.column_config.TextColumn("Planned Entry", width="small"),
+                "Actual Groww Entry": st.column_config.TextColumn("Actual Groww Entry", width="medium"),
+                "Executed (Yes/No)": st.column_config.TextColumn("Executed (Yes/No)", width="small"),
+                "SL": st.column_config.TextColumn("SL", width="small"),
+                "Target": st.column_config.TextColumn("Target", width="small"),
+                "Status": st.column_config.TextColumn("Status (Open / Target Hit / SL Hit)", width="medium"),
+                "P&L": st.column_config.TextColumn("P&L", width="small"),
+            }
+        )
 
     # Filter Controls & Export
     ctl_col1, ctl_col2, ctl_col3 = st.columns([1.5, 2, 1])
