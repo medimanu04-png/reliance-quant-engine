@@ -258,10 +258,28 @@ class EmpiricalCalibrationEngine:
         # Brier Score Calculation: Brier = (1/N) * sum((prob - actual)^2)
         # Closer to 0 is better (0.0 = perfect probabilistic foresight; 0.25 = coin toss)
         brier_sum = 0.0
+        log_loss_sum = 0.0
         for i in range(sample_size):
             prob = 1.0 / (1.0 + math.exp(-calibrated_k * (raw_scores[i] - calibrated_s0)))
             brier_sum += (prob - y[i]) ** 2
+            p_clipped = max(1e-6, min(1.0 - 1e-6, prob))
+            log_loss_sum += -(y[i] * math.log(p_clipped) + (1 - y[i]) * math.log(1.0 - p_clipped))
         brier_score = round(brier_sum / sample_size, 4)
+        log_loss = round(log_loss_sum / sample_size, 4)
+
+        # Leave-One-Out Cross-Validation (LOOCV) to prevent in-sample overfitting (Efron 1982)
+        loocv_brier_sum = 0.0
+        for i in range(sample_size):
+            loocv_wins = [raw_scores[j] for j in range(sample_size) if j != i and y[j] == 1]
+            loocv_losses = [raw_scores[j] for j in range(sample_size) if j != i and y[j] == 0]
+            avg_w = sum(loocv_wins) / max(1, len(loocv_wins)) if loocv_wins else 55.0
+            avg_l = sum(loocv_losses) / max(1, len(loocv_losses)) if loocv_losses else 35.0
+            s0_i = (avg_w + avg_l) / 2.0
+            spread_i = max(2.0, avg_w - avg_l)
+            k_i = min(0.25, max(0.05, 2.0 / spread_i))
+            p_out = 1.0 / (1.0 + math.exp(-k_i * (raw_scores[i] - s0_i)))
+            loocv_brier_sum += (p_out - y[i]) ** 2
+        loocv_brier = round(loocv_brier_sum / sample_size, 4)
 
         result = {
             "status": "SUCCESSFULLY_CALIBRATED",
@@ -270,7 +288,9 @@ class EmpiricalCalibrationEngine:
             "calibrated_sigmoid_k": calibrated_k,
             "calibrated_sigmoid_s0": calibrated_s0,
             "brier_score": brier_score,
-            "calibration_quality": "HIGH" if brier_score <= 0.18 else ("MODERATE" if brier_score <= 0.23 else "LOW"),
+            "loocv_brier_score": loocv_brier,
+            "log_loss": log_loss,
+            "calibration_quality": "HIGH" if loocv_brier <= 0.18 else ("MODERATE" if loocv_brier <= 0.23 else "LOW"),
             "vector_importance_weights": {
                 "v1_trend": round(weights[0], 3),
                 "v2_order_flow": round(weights[1], 3),

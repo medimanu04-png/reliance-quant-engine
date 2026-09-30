@@ -981,7 +981,7 @@ def render_quant_desk_clock():
 </script>
 </body>
 </html>"""
-    components.html(html_code, height=148, scrolling=False)
+    st.html(html_code)
 
 # Active Groww Account Profile (Mandatory Link)
 prof = groww_feed.user_profile or {}
@@ -1110,7 +1110,6 @@ def render_auto_rescan_controller():
         st.session_state["last_auto_rescan_ts"] = now
         st.session_state["just_rescanned"] = False
         st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
-        st.rerun(scope="app")
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     st.html(f"""

@@ -225,7 +225,25 @@ class RelianceQuantBacktester:
                         "volume": slice_5m["Volume"].tolist(),
                         "date": slice_5m.index.tolist()
                     }
-                    c15m = c5m  # Proxy for 15m aggregation
+                    # Strict point-in-time 15m resampled candles (fixes Look-Ahead & Multi-TF Bias)
+                    try:
+                        resampled_15m = slice_5m.resample("15min").agg({
+                            "Open": "first",
+                            "High": "max",
+                            "Low": "min",
+                            "Close": "last",
+                            "Volume": "sum"
+                        }).dropna()
+                        c15m = {
+                            "open": resampled_15m["Open"].tolist(),
+                            "high": resampled_15m["High"].tolist(),
+                            "low": resampled_15m["Low"].tolist(),
+                            "close": resampled_15m["Close"].tolist(),
+                            "volume": resampled_15m["Volume"].tolist(),
+                            "date": resampled_15m.index.tolist()
+                        }
+                    except Exception:
+                        c15m = c5m  # Fallback if resample fails
 
                     eval_res = engine.evaluate_90plus_confluence(current_time, c5m, c15m)
                     dom_score = float(eval_res.get("dominant_score", 0.0))
