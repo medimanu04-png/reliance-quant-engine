@@ -307,7 +307,7 @@ class RelianceQuantAlertDaemon:
         curr_time = now_dt.time()
         confluence_eval = self.quant_engine.evaluate_90plus_confluence(curr_time, candles_5m, candles_15m)
 
-        prob_str = confluence_eval.get("3. PROBABILITY SCORE", "")
+        prob_str = confluence_eval.get("3. CONFLUENCE SCORE", confluence_eval.get("3. PROBABILITY SCORE", ""))
         status_text = confluence_eval.get("2. TRADE STATUS", "")
         dominant_score = float(confluence_eval.get("dominant_score", 0.0))
         if dominant_score <= 0.0 and prob_str:

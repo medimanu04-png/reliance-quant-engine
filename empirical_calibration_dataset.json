@@ -27,5 +27,315 @@
       "realized_pts": 6.37,
       "exit_reason": "Verified Broker Trade"
     }
+  },
+  {
+    "id": "BT-20260908-BUY_CE",
+    "timestamp": "2026-09-08 13:40:00",
+    "date": "2026-09-08",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1291.300048828125,
+    "target": 1300.92,
+    "sl": 1286.88,
+    "features": {
+      "v1_trend": 19.1,
+      "v2_order_flow": 23.9,
+      "v3_gamma_oi": 19.1,
+      "v4_volatility": 14.3,
+      "v5_momentum": 9.6,
+      "v6_greeks": 9.6,
+      "v7_macro": 2.0,
+      "raw_score": 95.5,
+      "engine_probability": 95.5,
+      "win_expectancy": 62.0,
+      "intraday_regime": "NEUTRAL_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 1,
+      "realized_pnl": 52.5,
+      "realized_pts": 0.21,
+      "exit_reason": "AUTO_SQUAREOFF"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260910-BUY_CE",
+    "timestamp": "2026-09-10 09:30:00",
+    "date": "2026-09-10",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1275.199951171875,
+    "target": 1285.78,
+    "sl": 1270.2,
+    "features": {
+      "v1_trend": 19.2,
+      "v2_order_flow": 24.0,
+      "v3_gamma_oi": 19.2,
+      "v4_volatility": 14.4,
+      "v5_momentum": 9.6,
+      "v6_greeks": 9.6,
+      "v7_macro": 2.0,
+      "raw_score": 96.0,
+      "engine_probability": 96.0,
+      "win_expectancy": 62.0,
+      "intraday_regime": "TRENDING_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 0,
+      "realized_pnl": -650.0,
+      "realized_pts": -2.6,
+      "exit_reason": "SL_HIT"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260911-BUY_CE",
+    "timestamp": "2026-09-11 10:50:00",
+    "date": "2026-09-11",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1254.300048828125,
+    "target": 1264.3,
+    "sl": 1260.0692795973557,
+    "features": {
+      "v1_trend": 16.6,
+      "v2_order_flow": 20.8,
+      "v3_gamma_oi": 16.6,
+      "v4_volatility": 12.5,
+      "v5_momentum": 8.3,
+      "v6_greeks": 8.3,
+      "v7_macro": 2.0,
+      "raw_score": 83.2,
+      "engine_probability": 83.2,
+      "win_expectancy": 62.0,
+      "intraday_regime": "NEUTRAL_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 1,
+      "realized_pnl": 1875.0,
+      "realized_pts": 7.5,
+      "exit_reason": "TARGET_HIT"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260917-BUY_CE",
+    "timestamp": "2026-09-17 13:40:00",
+    "date": "2026-09-17",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1241.4000244140625,
+    "target": 1251.21,
+    "sl": 1236.78,
+    "features": {
+      "v1_trend": 17.9,
+      "v2_order_flow": 22.4,
+      "v3_gamma_oi": 17.9,
+      "v4_volatility": 13.4,
+      "v5_momentum": 9.0,
+      "v6_greeks": 9.0,
+      "v7_macro": 2.0,
+      "raw_score": 89.6,
+      "engine_probability": 89.6,
+      "win_expectancy": 62.0,
+      "intraday_regime": "NEUTRAL_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 1,
+      "realized_pnl": 300.0,
+      "realized_pts": 1.2,
+      "exit_reason": "AUTO_SQUAREOFF"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260921-BUY_CE",
+    "timestamp": "2026-09-21 13:50:00",
+    "date": "2026-09-21",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1243.300048828125,
+    "target": 1252.92,
+    "sl": 1238.88,
+    "features": {
+      "v1_trend": 19.0,
+      "v2_order_flow": 23.8,
+      "v3_gamma_oi": 19.0,
+      "v4_volatility": 14.2,
+      "v5_momentum": 9.5,
+      "v6_greeks": 9.5,
+      "v7_macro": 2.0,
+      "raw_score": 95.0,
+      "engine_probability": 95.0,
+      "win_expectancy": 62.0,
+      "intraday_regime": "NEUTRAL_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 1,
+      "realized_pnl": 480.0,
+      "realized_pts": 1.92,
+      "exit_reason": "AUTO_SQUAREOFF"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260922-BUY_CE",
+    "timestamp": "2026-09-22 10:30:00",
+    "date": "2026-09-22",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1249.0999755859375,
+    "target": 1258.91,
+    "sl": 1244.48,
+    "features": {
+      "v1_trend": 18.6,
+      "v2_order_flow": 23.2,
+      "v3_gamma_oi": 18.6,
+      "v4_volatility": 13.9,
+      "v5_momentum": 9.3,
+      "v6_greeks": 9.3,
+      "v7_macro": 2.0,
+      "raw_score": 93.0,
+      "engine_probability": 93.0,
+      "win_expectancy": 62.0,
+      "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 0,
+      "realized_pnl": -600.0,
+      "realized_pts": -2.4,
+      "exit_reason": "SL_HIT"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260924-BUY_CE",
+    "timestamp": "2026-09-24 11:00:00",
+    "date": "2026-09-24",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1235.0999755859375,
+    "target": 1244.72,
+    "sl": 1230.68,
+    "features": {
+      "v1_trend": 16.8,
+      "v2_order_flow": 21.0,
+      "v3_gamma_oi": 16.8,
+      "v4_volatility": 12.6,
+      "v5_momentum": 8.4,
+      "v6_greeks": 8.4,
+      "v7_macro": 2.0,
+      "raw_score": 83.9,
+      "engine_probability": 83.9,
+      "win_expectancy": 62.0,
+      "intraday_regime": "NEUTRAL_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 0,
+      "realized_pnl": -575.0,
+      "realized_pts": -2.3,
+      "exit_reason": "SL_HIT"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260925-BUY_CE",
+    "timestamp": "2026-09-25 09:40:00",
+    "date": "2026-09-25",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1220.9000244140625,
+    "target": 1231.09,
+    "sl": 1216.09,
+    "features": {
+      "v1_trend": 17.2,
+      "v2_order_flow": 21.4,
+      "v3_gamma_oi": 17.2,
+      "v4_volatility": 12.9,
+      "v5_momentum": 8.6,
+      "v6_greeks": 8.6,
+      "v7_macro": 2.0,
+      "raw_score": 85.8,
+      "engine_probability": 85.8,
+      "win_expectancy": 62.0,
+      "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 0,
+      "realized_pnl": -625.0,
+      "realized_pts": -2.5,
+      "exit_reason": "SL_HIT"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260928-BUY_CE",
+    "timestamp": "2026-09-28 09:40:00",
+    "date": "2026-09-28",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1209.5,
+    "target": 1219.88,
+    "sl": 1204.69,
+    "features": {
+      "v1_trend": 19.2,
+      "v2_order_flow": 24.0,
+      "v3_gamma_oi": 19.2,
+      "v4_volatility": 14.4,
+      "v5_momentum": 9.6,
+      "v6_greeks": 9.6,
+      "v7_macro": 2.0,
+      "raw_score": 96.0,
+      "engine_probability": 96.0,
+      "win_expectancy": 62.0,
+      "intraday_regime": "TRENDING_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 0,
+      "realized_pnl": -625.0,
+      "realized_pts": -2.5,
+      "exit_reason": "SL_HIT"
+    },
+    "is_synthetic_backfill": true
+  },
+  {
+    "id": "BT-20260929-BUY_CE",
+    "timestamp": "2026-09-29 13:50:00",
+    "date": "2026-09-29",
+    "instrument": "RELIANCE BUY CE (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 1189.0,
+    "target": 1198.81,
+    "sl": 1184.38,
+    "features": {
+      "v1_trend": 16.9,
+      "v2_order_flow": 21.1,
+      "v3_gamma_oi": 16.9,
+      "v4_volatility": 12.7,
+      "v5_momentum": 8.5,
+      "v6_greeks": 8.5,
+      "v7_macro": 2.0,
+      "raw_score": 84.6,
+      "engine_probability": 84.6,
+      "win_expectancy": 62.0,
+      "intraday_regime": "NEUTRAL_REGIME"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 0,
+      "realized_pnl": -105.0,
+      "realized_pts": -0.42,
+      "exit_reason": "AUTO_SQUAREOFF"
+    },
+    "is_synthetic_backfill": true
   }
 ]

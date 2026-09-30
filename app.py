@@ -8162,15 +8162,15 @@ if df is not None and not df.empty:
             if (score_cleared and not time_gate_allowed)
             else f"NON-TRADABLE DAY / STAND DOWN (Dominant Bias: {dominant_side} {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
         ),
-        "3. PROBABILITY SCORE & DIRECTIONAL BREAKDOWN": {
-            "Bullish Probability (Call / CE)": f"{bullish_score}%",
-            "Bearish Probability (Put / PE)": f"{bearish_score}%",
+        "3. CONFLUENCE SCORE & DIRECTIONAL BREAKDOWN": {
+            "Bullish Confluence (Call / CE)": f"{bullish_score}%",
+            "Bearish Confluence (Put / PE)": f"{bearish_score}%",
             "Prevailing Bias": dominant_side,
             "Execution Threshold": f">{MIN_HIT_PERCENTAGE:.0f}% required on either side",
             "Gate Decision": "APPROVED FOR EXECUTION" if is_tradable else (
                 gate_decision_desc
                 if (score_cleared and not time_gate_allowed)
-                else f"STAND DOWN (Insufficient Directional Confluence: {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+                else f"STAND DOWN (Insufficient Directional Confluence: {dominant_score}% \u2264 {MIN_HIT_PERCENTAGE:.0f}%)"
             )
         },
         "4. RECOMMENDED INSTRUMENT": rec_instrument if (is_tradable or score_cleared) else f"N/A — STAND DOWN (Dominant bias {dominant_side} is {dominant_score}%, below {MIN_HIT_PERCENTAGE:.0f}% threshold)",

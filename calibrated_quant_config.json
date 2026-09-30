@@ -1,0 +1,35 @@
+{
+  "status": "SUCCESSFULLY_CALIBRATED",
+  "calibration_model": "ISOTONIC_REGRESSION_PAVA",
+  "sample_size": 11,
+  "empirical_win_rate": 45.5,
+  "calibrated_sigmoid_k": 0.1,
+  "calibrated_sigmoid_s0": 89.2,
+  "brier_score": 0.2455,
+  "log_loss": 0.684,
+  "calibration_quality": "ACCEPTABLE_FOR_SMALL_N",
+  "isotonic_lookup_table": [
+    {
+      "score_range": [
+        78.5,
+        85.8
+      ],
+      "calibrated_p_win": 0.4
+    },
+    {
+      "score_range": [
+        89.6,
+        93.0
+      ],
+      "calibrated_p_win": 0.5
+    },
+    {
+      "score_range": [
+        95.0,
+        96.0
+      ],
+      "calibrated_p_win": 0.5
+    }
+  ],
+  "calibrated_at": "2026-09-30 11:28:47 PM IST"
+}

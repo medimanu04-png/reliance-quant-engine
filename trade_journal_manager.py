@@ -224,6 +224,27 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
             else:
                 e["status"] = e.get("status", "STAND DOWN")
 
+        # Gap 4: Live Slippage Tracking & Execution Variance Analysis
+        planned_ep = float(e.get("suggested_entry", ep))
+        actual_ep = ep
+        entry_slippage_pts = round(actual_ep - planned_ep, 2) if planned_ep > 0 else 0.0
+
+        planned_xp = float(e.get("suggested_exit", 0.0))
+        actual_xp = float(e.get("exit_price", e.get("actual_exit_price", 0.0)))
+        exit_slippage_pts = round(planned_xp - actual_xp, 2) if (planned_xp > 0 and actual_xp > 0) else 0.0
+
+        total_slippage_pts = round(entry_slippage_pts + exit_slippage_pts, 2)
+        total_slippage_drag = round(total_slippage_pts * qty, 2)
+
+        e["planned_entry_price"] = planned_ep
+        e["actual_fill_price"] = actual_ep
+        e["entry_slippage_pts"] = entry_slippage_pts
+        e["planned_exit_price"] = planned_xp
+        e["actual_exit_price"] = actual_xp
+        e["exit_slippage_pts"] = exit_slippage_pts
+        e["total_slippage_pts"] = total_slippage_pts
+        e["total_slippage_drag_rupees"] = total_slippage_drag
+
         # Estimate statutory charges (STT, GST, Exchange fees, SEBI, Brokerage ~Rs. 65 per lot)
         statutory_charges = round(65.0 * num_lots, 2) if ep > 0 else 0.0
         net_after_charges = round(net - statutory_charges, 2) if e.get("is_closed") else net
@@ -576,6 +597,11 @@ class TradeJournalManager:
         
         avg_capital_deployed = round(sum(e.get("capital_deployed", 0.0) for e in traded_days) / len(traded_days), 2) if traded_days else 0.0
         
+        # Gap 4: Slippage drag aggregation across executed trades
+        all_slippages = [float(e.get("entry_slippage_pts", 0.0)) for e in traded_days if e.get("entry_slippage_pts") is not None]
+        avg_entry_slippage = round(sum(all_slippages) / len(all_slippages), 2) if all_slippages else 0.0
+        total_slippage_drag = round(sum(float(e.get("total_slippage_drag_rupees", 0.0)) for e in traded_days), 2)
+
         return {
             "starting_capital": starting_capital,
             "today_2lot_capital": today_2lot_capital,
@@ -592,7 +618,9 @@ class TradeJournalManager:
             "hits": len(hits),
             "fails": len(fails),
             "open_trades": len(open_trades),
-            "stand_downs": len(stand_down_days)
+            "stand_downs": len(stand_down_days),
+            "avg_entry_slippage_pts": avg_entry_slippage,
+            "total_slippage_drag_rupees": total_slippage_drag
         }
 
 

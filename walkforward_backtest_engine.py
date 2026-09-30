@@ -57,15 +57,40 @@ class RelianceQuantBacktester:
 
         engine = UltraHighConvictionRelianceEngine()
 
-        # Download 5m data
-        print("Downloading historical 5m RELIANCE.NS data...")
-        df_raw = yf.download("RELIANCE.NS", period=self.period, interval="5m", progress=False)
-        if df_raw.empty:
-            return {"error": "Failed to download market data from Yahoo Finance"}
+        # Gap 3: Data Caching Layer (Allows building 6-12 month historical buffer over time)
+        cache_dir = os.path.join(BASE_DIR, "data_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, "reliance_5m_cache.parquet")
 
-        # Handle multi-level columns if present
-        if isinstance(df_raw.columns, pd.MultiIndex):
-            df_raw.columns = df_raw.columns.get_level_values(0)
+        df_raw = pd.DataFrame()
+        cached_df = pd.DataFrame()
+        if os.path.exists(cache_file):
+            try:
+                cached_df = pd.read_parquet(cache_file)
+            except Exception:
+                pass
+
+        print("Downloading historical 5m RELIANCE.NS data...")
+        try:
+            df_new = yf.download("RELIANCE.NS", period=self.period, interval="5m", progress=False)
+            if isinstance(df_new.columns, pd.MultiIndex):
+                df_new.columns = df_new.columns.get_level_values(0)
+            if not df_new.empty:
+                if not cached_df.empty:
+                    combined = pd.concat([cached_df, df_new])
+                    df_raw = combined[~combined.index.duplicated(keep="last")].sort_index()
+                else:
+                    df_raw = df_new
+                try:
+                    df_raw.to_parquet(cache_file)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"yfinance download warning: {e}")
+            df_raw = cached_df
+
+        if df_raw.empty:
+            return {"error": "Failed to download market data from Yahoo Finance and no cache found"}
 
         df = df_raw.dropna().copy()
         unique_dates = sorted(list(set(df.index.date)))
@@ -317,6 +342,21 @@ class RelianceQuantBacktester:
         return_pct = round((total_pnl / self.capital) * 100.0, 1)
         max_dd_pct = round((max_drawdown_rs / self.capital) * 100.0, 1)
 
+        # Gap 3: Regime-Stratified Performance Metrics (Trending, Mean-Reverting, Volatile, Low-Vol)
+        regime_metrics = {}
+        for reg in ["TRENDING", "MEAN_REVERTING", "VOLATILE", "LOW_VOL", "EXPANSION", "PINNING"]:
+            reg_trades = [t for t in trades if reg in str(t.get("regime", "")).upper()]
+            if reg_trades:
+                reg_wins = len([t for t in reg_trades if t.get("pnl", 0) > 0])
+                reg_total = len(reg_trades)
+                reg_pnl = round(sum(t.get("pnl", 0) for t in reg_trades), 2)
+                regime_metrics[reg] = {
+                    "trades": reg_total,
+                    "wins": reg_wins,
+                    "win_rate_pct": round((reg_wins / reg_total) * 100.0, 1),
+                    "net_pnl_rs": reg_pnl
+                }
+
         results = {
             "symbol": "RELIANCE.NS",
             "period": self.period,
@@ -336,6 +376,7 @@ class RelianceQuantBacktester:
             "avg_loss_pts": avg_loss_pts,
             "max_drawdown_rs": round(max_drawdown_rs, 2),
             "max_drawdown_pct": max_dd_pct,
+            "regime_stratified_metrics": regime_metrics,
             "rule_adherence": "1 Trade Per Day / Tiered Breakeven Escalator / Half-Kelly 1 Lot Sizing",
             "recent_trades": trades[-10:] if len(trades) >= 10 else trades
         }
@@ -345,6 +386,18 @@ class RelianceQuantBacktester:
                 json.dump(results, f, indent=2)
         except Exception as e:
             print(f"Error saving backtest results: {e}")
+
+        # Gap 1: Auto-Inject walk-forward outcomes into empirical calibration dataset
+        try:
+            from empirical_calibration_engine import EmpiricalCalibrationEngine
+            injected = EmpiricalCalibrationEngine.backfill_from_walkforward_backtest(BACKTEST_RESULTS_FILE)
+            if injected > 0:
+                print(f"Auto-injected {injected} backtest outcomes into empirical calibration dataset.")
+                # Run calibration update
+                cal_res = EmpiricalCalibrationEngine.fit_logistic_calibration()
+                print(f"Calibration updated: {cal_res.get('status')} (N={cal_res.get('sample_size')})")
+        except Exception as e:
+            print(f"Calibration auto-inject notice: {e}")
 
         return results
 
