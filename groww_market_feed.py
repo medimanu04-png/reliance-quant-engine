@@ -637,6 +637,12 @@ class GrowwMarketFeed:
                                         "change": round(day_chg, 2), "pct_change": round(pct_chg, 2),
                                         "currency": "INR", "prefix": "₹", "unit": "pts", "icon": "🏦", "category": "Groww Banking Live"
                                     }
+                                elif sym in ("CNXENERGY", "NIFTYENERGY", "ENERGY"):
+                                    res["NIFTY ENERGY"] = {
+                                        "name": "NIFTY ENERGY", "symbol": "NSE:CNXENERGY", "price": round(val, 2),
+                                        "change": round(day_chg, 2), "pct_change": round(pct_chg, 2),
+                                        "currency": "INR", "prefix": "₹", "unit": "pts", "icon": "⚡", "category": "Groww Sectoral Live"
+                                    }
                                 elif sym == "INDIAVIX":
                                     res["INDIA VIX"] = {
                                         "name": "INDIA VIX", "symbol": "NSE:INDIAVIX", "price": round(val, 2),

@@ -57,7 +57,7 @@
   "2026-09-30_RELIANCE26OCT1190CE": {
     "date": "2026-09-30",
     "trade_given_time": "09:40:33 AM IST",
-    "full_contract": "RELIANCE 1190 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91190 & \u20b91200] | 1 Lots / 250 Qty | Current Price: \u20b937.05 (Spot: \u20b91193.50)",
+    "full_contract": "RELIANCE 1190 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91190 & \u20b91200] | 1 Lots / 250 Qty | Current Price: \u20b935.95 (Spot: \u20b91192.90)",
     "symbol": "RELIANCE26OCT1190CE",
     "contract_type": "CE",
     "action": "BUY CE",
@@ -71,7 +71,7 @@
   "2026-09-30": {
     "date": "2026-09-30",
     "trade_given_time": "09:40:33 AM IST",
-    "full_contract": "RELIANCE 1190 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91190 & \u20b91200] | 1 Lots / 250 Qty | Current Price: \u20b937.05 (Spot: \u20b91193.50)",
+    "full_contract": "RELIANCE 1190 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91190 & \u20b91200] | 1 Lots / 250 Qty | Current Price: \u20b935.95 (Spot: \u20b91192.90)",
     "symbol": "RELIANCE26OCT1190CE",
     "contract_type": "CE",
     "action": "BUY CE",
@@ -81,5 +81,19 @@
     "suggested_exit": 45.9,
     "suggested_sl": 34.4,
     "confluence_score": 96.0
+  },
+  "2026-09-30_RELIANCE26OCT1200PE": {
+    "date": "2026-09-30",
+    "trade_given_time": "10:04:05 AM IST",
+    "full_contract": "RELIANCE 1200 PE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91190 & \u20b91200] | 1 Lots / 250 Qty | Current Price: \u20b930.80 (Spot: \u20b91190.10)",
+    "symbol": "RELIANCE26OCT1200PE",
+    "contract_type": "PE",
+    "action": "BUY PE",
+    "strike": 1200,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 32.0,
+    "suggested_exit": 40.0,
+    "suggested_sl": 28.5,
+    "confluence_score": 61.8
   }
 }
