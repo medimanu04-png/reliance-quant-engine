@@ -750,6 +750,16 @@ st.markdown("""
         padding: 12px 15px !important;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
     }
+
+    /* Hide Developer Diagnostics Expanders from Main Interface */
+    div[data-testid="stExpander"]:has(summary:has(span:contains("Empirical Logistic Regression Calibration"))),
+    div[data-testid="stExpander"]:has(summary:has(span:contains("60-Day Historical Walk-Forward Backtest Results"))),
+    div[data-testid="stExpander"]:has(summary:has(span:contains("GitHub Synchronization"))),
+    div[data-testid="stExpander"]:has(summary [data-testid="stMarkdownContainer"]:has(p:contains("Empirical Logistic Regression Calibration"))),
+    div[data-testid="stExpander"]:has(summary [data-testid="stMarkdownContainer"]:has(p:contains("60-Day Historical Walk-Forward Backtest Results"))),
+    div[data-testid="stExpander"]:has(summary [data-testid="stMarkdownContainer"]:has(p:contains("GitHub Synchronization"))) {
+        display: none !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
