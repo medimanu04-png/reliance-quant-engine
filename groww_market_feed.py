@@ -85,10 +85,44 @@ class GrowwMarketFeed:
             cls._instance._cached_reliance_chain = cls._instance._get_fallback_reliance_chain()
             cls._instance._cached_wallet = cls._instance._get_fallback_wallet()
 
+            # Fast synchronous restoration of verified credentials and profile from local config (< 1ms):
+            cls._instance._fast_preload_credentials()
+
             # Non-blocking asynchronous initialization:
             # Pre-populate baseline caches in 0.000ms so the UI renders immediately without freezing!
             threading.Thread(target=cls._instance._deferred_startup, daemon=True, name="GrowwDeferredStartup").start()
         return cls._instance
+
+    def _fast_preload_credentials(self):
+        """Instantly restores cached broker session and profile from local storage in < 1ms."""
+        if not os.path.exists(CONFIG_FILE):
+            return
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                cfg = json.load(f)
+            token = cfg.get("access_token")
+            totp_secret = cfg.get("totp_secret")
+            totp_token = cfg.get("totp_token") or cfg.get("api_key")
+            prof = cfg.get("user_profile")
+
+            if totp_secret:
+                self._totp_secret = totp_secret
+            if totp_token:
+                self._totp_token = totp_token
+                self._api_key = totp_token
+            if token:
+                self._access_token = token
+                try:
+                    from growwapi import GrowwAPI
+                    self._groww_api = GrowwAPI(token=token)
+                except Exception:
+                    pass
+            if prof and token:
+                self._user_profile = prof
+                self._is_connected = True
+                self._last_error = None
+        except Exception as e:
+            logger.debug(f"Fast credential preload error: {e}")
 
     def _deferred_startup(self):
         """Runs credential loading and background stream startup off the main thread.
@@ -353,6 +387,8 @@ class GrowwMarketFeed:
                 "totp_secret": self._totp_secret,
                 "updated_at": datetime.now(IST).isoformat()
             })
+            if self._user_profile:
+                data["user_profile"] = self._user_profile
             if self._cached_wallet and float(self._cached_wallet.get("clear_cash", 0)) > 0:
                 data["last_wallet_balance"] = float(self._cached_wallet["clear_cash"])
             with open(CONFIG_FILE, "w") as f:

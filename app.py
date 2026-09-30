@@ -987,8 +987,9 @@ def render_quant_desk_clock():
 prof = groww_feed.user_profile or {}
 ucc_val = prof.get("ucc") or prof.get("client_id") or prof.get("user_id") or "5697793414"
 name_val = prof.get("name") or prof.get("user_name") or prof.get("client_name") or "Verified Trader"
+is_groww_active = groww_feed.is_connected or bool(groww_feed.user_profile) or bool(groww_feed._access_token)
 
-if groww_feed.is_connected:
+if is_groww_active:
     st.html(f"""
     <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -1322,10 +1323,18 @@ st.sidebar.html("""
 timeframe = st.sidebar.selectbox("Candle Timeframe", ["5m", "15m"], index=0, key="sb_timeframe")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("⏱️ **FAST MARKET RESCAN**")
+st.sidebar.caption("⏱️ **FAST MARKET RESCAN & TIMING**")
 if st_sidebar_button_stretch("🔄 Rescan Market Feed", key="sb_rescan_btn"):
     st.session_state["manual_rescan_clicked"] = True
     st.rerun(scope="app")
+
+sb_early_entry = st.sidebar.checkbox(
+    "⚡ Allow Early Entry (09:15-09:30 AM)",
+    value=st.session_state.get("allow_orb_early_entry", True),
+    key="sb_early_entry_cb",
+    help="When enabled, allows trade execution during the 09:15-09:30 AM opening range breakout formation when confluence exceeds institutional threshold."
+)
+st.session_state["allow_orb_early_entry"] = sb_early_entry
 
 st.sidebar.markdown("---")
 st.sidebar.html("""
@@ -1361,6 +1370,10 @@ live_broker_ltp = float(st.session_state.get("live_broker_ltp", 0.0))
 custom_trigger_override = float(st.session_state.get("custom_trigger_override", 0.0))
 contract_expiry_label = "Next Monthly Expiry"
 
+if "allow_orb_early_entry" not in st.session_state:
+    st.session_state["allow_orb_early_entry"] = True
+allow_orb_early_entry = bool(st.session_state.get("allow_orb_early_entry", True))
+
 # Live broker balance
 live_wallet = groww_feed.get_wallet_balance()
 live_pos = groww_feed.get_live_positions()
@@ -1379,13 +1392,22 @@ m_close = time(15, 30)
 sq_off = time(15, 5)
 orb_window_end = time(9, 30)
 
-if current_time < m_open or current_time > m_close:
+is_pre_market = (current_time < m_open)
+is_post_market = (current_time > m_close)
+is_orb_cooldown_window = (m_open <= current_time < orb_window_end)
+is_eod_squareoff = (current_time >= sq_off and current_time <= m_close)
+
+if is_pre_market or is_post_market:
     time_gate_msg = "Market Closed (09:15 AM - 03:30 PM IST Only)"
     time_gate_pass = False
-elif current_time < orb_window_end:
-    time_gate_msg = "Opening 15m Cooldown (ORB-15 formation until 09:30 AM)"
-    time_gate_pass = False
-elif current_time >= sq_off:
+elif is_orb_cooldown_window:
+    if allow_orb_early_entry:
+        time_gate_msg = "Opening Range Window (09:15 - 09:30 AM • Early Entry Active)"
+        time_gate_pass = True
+    else:
+        time_gate_msg = "Opening 15m Cooldown (ORB-15 formation until 09:30 AM)"
+        time_gate_pass = False
+elif is_eod_squareoff:
     time_gate_msg = "EOD Square-Off Phase (After 03:05 PM)"
     time_gate_pass = False
 else:
@@ -3427,24 +3449,40 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         hero_is_off_hours = not plan_time_allowed and not (sim_entry or sim_armed or sim_mode != "LIVE")
 
         if hero_is_off_hours and hero_score_cleared:
+            if "ORB-15" in plan_time_msg or "Opening 15m" in plan_time_msg:
+                hero_badge = "UNLOCKS 09:30 AM"
+                hero_title = "SETUP ARMED &bull; ORB-15 FORMATION COOLDOWN"
+                hero_desc = f"Directional confluence is <b style='color: #34D399;'>{plan_score:.1f}%</b>, which <b>clears the mandatory &gt;{plan_gate:.0f}% Institutional Execution Gate (+{hero_surplus:.1f}% surplus)</b>. The exchange is <b>OPEN</b>. Live order routing is holding during the 15m Opening Range Breakout (ORB) formation until 09:30 AM to filter false whipsaws. Unlocks at 09:30 AM IST (or enable 'Allow Early Entry' in the sidebar to trade now)."
+                hero_stat = "📡 <b>Status:</b> Exchange Open &bull; ORB-15 Cooldown &bull; Enable 'Allow Early Entry' in sidebar to execute immediately"
+            elif "EOD" in plan_time_msg or "After" in plan_time_msg:
+                hero_badge = "SESSION CLOSED"
+                hero_title = "SETUP ARMED &bull; POST-MARKET EOD CUTOFF"
+                hero_desc = f"Directional confluence was <b style='color: #34D399;'>{plan_score:.1f}%</b>. Trading session has ended for the day ({plan_time_msg}). Live orders will unlock tomorrow at 09:15 AM IST."
+                hero_stat = "📡 <b>Status:</b> Session Closed &bull; Positions Preserved"
+            else:
+                hero_badge = "OPENS 09:15 AM IST"
+                hero_title = f"SETUP ARMED &bull; PRE-MARKET ({plan_time_msg})"
+                hero_desc = f"Directional confluence is <b style='color: #34D399;'>{plan_score:.1f}%</b>, which <b>clears the mandatory &gt;{plan_gate:.0f}% Institutional Execution Gate (+{hero_surplus:.1f}% surplus)</b>. However, live order routing is locked before market open (09:15 AM IST). Setup is armed and ready for the 09:15 AM open."
+                hero_stat = "📡 <b>Status:</b> Setup Validated Pre-Market &bull; Toggle 'Simulate Session Time' in sidebar to test live orders now"
+
             st.html(f"""
             <div class="trigger-armed-box" style="border: 1.5px solid #F59E0B; background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 1.2rem;">🟡</span>
                         <span style="font-size: 1.0rem; font-weight: 800; color: #FBBF24; letter-spacing: 0.4px;">
-                            SETUP ARMED &bull; MARKET CLOSED ({plan_time_msg})
+                            {hero_title}
                         </span>
                     </div>
                     <span style="background: rgba(245, 158, 11, 0.25); color: #FDE68A; font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.4);">
-                        OPENS 09:15 AM IST
+                        {hero_badge}
                     </span>
                 </div>
                 <div style="font-size: 0.82rem; color: #E2E8F0; margin-top: 6px; line-height: 1.5;">
-                    Directional confluence is <b style="color: #34D399;">{plan_score:.1f}%</b>, which <b>clears the mandatory &gt;{plan_gate:.0f}% Institutional Execution Gate (+{hero_surplus:.1f}% surplus)</b>. However, live order routing is locked outside official NSE F&O hours (09:15 AM - 03:10 PM IST). Setup is armed and ready for the next trading session.
+                    {hero_desc}
                 </div>
                 <div style="margin-top: 6px; border-top: 1px solid rgba(245, 158, 11, 0.25); padding-top: 5px; font-size: 0.70rem; color: #94A3B8;">
-                    📡 <b>Status:</b> Setup Validated Off-Hours &bull; Toggle 'Simulate Session Time' in sidebar to test live orders now
+                    {hero_stat}
                 </div>
             </div>
             """)
@@ -5759,32 +5797,74 @@ if df is not None and not df.empty:
                     <b style="color: #FFFFFF;">Why Stand Down?</b> The Choppiness Index (CHOP-14) is at <b>{chop_val:.1f}</b>, exceeding the <b>61.8 extreme fractal consolidation threshold</b>. In this regime, false breakout traps and rapid option theta decay occur. Capital is strictly preserved until market transitions into a directional expansion regime (CHOP &lt; 45).
                     """
                 elif not time_gate_allowed:
-                    if score_cleared:
-                        stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; EXECUTION LOCKED (OFF-HOURS)"
-                        stand_down_badge = "🌙 SESSION CLOSED &bull; OPENS 09:15 AM IST"
+                    if is_orb_cooldown_window:
+                        stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; ORB-15 FORMATION COOLDOWN"
+                        stand_down_badge = "⏳ ORB-15 COOLDOWN &bull; UNLOCKS 09:30 AM"
                         stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(180, 83, 9, 0.35) 100%); color: #FEF08A; border: 1.5px solid rgba(245, 158, 11, 0.65); box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);"
-                        stand_down_sub = f"Directional confluence cleared institutional threshold ({dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%) &bull; Live order routing locked until official NSE F&O session (09:15 AM - 03:10 PM IST)"
+                        stand_down_sub = f"Exchange is OPEN (09:15 AM - 03:10 PM IST) &bull; Directional confluence cleared institutional threshold ({dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%) &bull; Initial 15-minute Opening Range forming until 09:30 AM"
                         gate_card_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(15, 23, 42, 0.75) 100%)"
                         gate_card_border = "1.5px solid rgba(16, 185, 129, 0.55)"
                         gate_card_title = "MANDATORY EXECUTION GATE"
                         gate_card_val = f"🟢 Gate Cleared (+{gate_surplus:.1f}%)"
                         gate_card_sub = f"Confluence {dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}% Gate"
                         why_stand_down_html = f"""
-                        <b style="color: #FFFFFF;">Why is Execution Locked?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. However, live order routing is locked because the exchange is currently <b>CLOSED</b> (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST &bull; {time_gate_msg}</b>). Institutional trading hours for Reliance F&O are strictly <b>09:15 AM to 03:10 PM IST</b> (02:45 PM cutoff). This setup is <b>ARMED</b> and ready for the next market open.<br><span style="color: #94A3B8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">💡 <b>Testing Tip:</b> To test live order execution, audio chimes, and Telegram alerts right now, select <b>'🔥 Trigger BUY NOW Entry'</b> or toggle <b>'Simulate Session Time'</b> in the left sidebar.</span>
+                        <b style="color: #FFFFFF;">Why is Execution Holding?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. The exchange is <b>OPEN</b> (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST</b>). Order execution is currently holding in the <b>Opening 15m Cooldown (ORB-15 formation until 09:30 AM)</b> to protect against opening whipsaws. Live orders unlock automatically at <b>09:30 AM IST</b>.<br><span style="color: #38BDF8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">⚡ <b>Want to trade opening momentum now?</b> Enable <b>'Allow Early Entry (09:15 - 09:30 AM)'</b> in the left sidebar or Tab 5.</span>
                         """
+                        dot_color = "#F59E0B"
+                        cap_badge_title = "⏳ ORB-15 COOLDOWN ACTIVE"
+                        cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FDE68A; border: 1.5px solid rgba(245, 158, 11, 0.50);"
+                        cap_sub_desc = "🛡️ Protected from opening whipsaws &bull; Unlocks 09:30 AM"
+                    elif is_eod_squareoff or is_post_market:
+                        stand_down_status_title = "🛑 TRADE STATUS: SESSION CONCLUDED &bull; STAND DOWN"
+                        stand_down_badge = "🌙 SESSION CLOSED &bull; POST-MARKET"
+                        stand_down_badge_style = "background: linear-gradient(135deg, rgba(148, 163, 184, 0.25) 0%, rgba(100, 116, 139, 0.35) 100%); color: #CBD5E1; border: 1.5px solid rgba(148, 163, 184, 0.50); box-shadow: 0 0 12px rgba(148, 163, 184, 0.20);"
+                        stand_down_sub = f"Official NSE F&O intraday trading session has ended ({time_gate_msg}) &bull; Next session opens at 09:15 AM IST"
+                        gate_card_bg = "linear-gradient(135deg, rgba(30, 41, 59, 0.50) 0%, rgba(15, 23, 42, 0.75) 100%)"
+                        gate_card_border = "1.5px solid rgba(148, 163, 184, 0.40)"
+                        gate_card_title = "SESSION STATUS"
+                        gate_card_val = "EOD Cutoff Reached"
+                        gate_card_sub = "Intraday Square-off Enforced"
+                        why_stand_down_html = f"""
+                        <b style="color: #FFFFFF;">Session Concluded:</b> Trading for the day has ended ({time_gate_msg}). All intraday positions are squared off to avoid overnight gap risk. The engine will resume scanning for A+ setups tomorrow at 09:15 AM IST.
+                        """
+                        dot_color = "#94A3B8"
+                        cap_badge_title = "🛡️ POST-SESSION LOCK"
+                        cap_badge_style = "background: linear-gradient(135deg, rgba(148, 163, 184, 0.20) 0%, rgba(100, 116, 139, 0.30) 100%); color: #CBD5E1; border: 1.5px solid rgba(148, 163, 184, 0.40);"
+                        cap_sub_desc = "🛡️ 100% Cash Preserved &bull; Overnight risk avoided"
+                    elif score_cleared:
+                        stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; EXECUTION LOCKED (PRE-MARKET)"
+                        stand_down_badge = "🌙 PRE-MARKET &bull; OPENS 09:15 AM IST"
+                        stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(180, 83, 9, 0.35) 100%); color: #FEF08A; border: 1.5px solid rgba(245, 158, 11, 0.65); box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);"
+                        stand_down_sub = f"Directional confluence cleared institutional threshold ({dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%) &bull; Live order routing unlocks at official NSE open (09:15 AM IST)"
+                        gate_card_bg = "linear-gradient(135deg, rgba(6, 78, 59, 0.40) 0%, rgba(15, 23, 42, 0.75) 100%)"
+                        gate_card_border = "1.5px solid rgba(16, 185, 129, 0.55)"
+                        gate_card_title = "MANDATORY EXECUTION GATE"
+                        gate_card_val = f"🟢 Gate Cleared (+{gate_surplus:.1f}%)"
+                        gate_card_sub = f"Confluence {dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}% Gate"
+                        why_stand_down_html = f"""
+                        <b style="color: #FFFFFF;">Why is Execution Locked?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. However, live order routing is locked because the exchange has not opened yet (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST</b>). Institutional trading hours for Reliance F&O are strictly <b>09:15 AM to 03:10 PM IST</b>. This setup is <b>ARMED</b> and ready for market open at 09:15 AM.<br><span style="color: #94A3B8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">💡 <b>Testing Tip:</b> To test live order execution, audio chimes, and Telegram alerts right now, select <b>'🔥 Trigger BUY NOW Entry'</b> or toggle <b>'Simulate Session Time'</b> in the left sidebar.</span>
+                        """
+                        dot_color = "#F59E0B"
+                        cap_badge_title = "🛡️ PRE-SESSION LOCK (OFF-HOURS)"
+                        cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FDE68A; border: 1.5px solid rgba(245, 158, 11, 0.50);"
+                        cap_sub_desc = "🛡️ Protected off-hours &bull; Armed for open at 09:15 AM"
                     else:
                         stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
-                        stand_down_badge = "🌙 MARKET CLOSED & SUB-THRESHOLD"
+                        stand_down_badge = "🌙 PRE-MARKET & SUB-THRESHOLD"
                         stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.30) 0%, rgba(153, 27, 27, 0.40) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.60); box-shadow: 0 0 12px rgba(239, 68, 68, 0.20);"
-                        stand_down_sub = f"Exchange is closed ({time_gate_msg}) and directional confluence is sub-threshold ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
+                        stand_down_sub = f"Exchange has not opened yet ({time_gate_msg}) and directional confluence is sub-threshold ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
                         gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
                         gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
                         gate_card_title = "MANDATORY EXECUTION GATE"
                         gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
                         gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
                         why_stand_down_html = f"""
-                        <b style="color: #FFFFFF;">Why Stand Down?</b> Market is currently <b>CLOSED</b> ({time_gate_msg}) and prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Both time gate and directional criteria must be satisfied to trade.
+                        <b style="color: #FFFFFF;">Why Stand Down?</b> Market has not opened yet ({time_gate_msg}) and prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Both time gate and directional criteria must be satisfied to trade.
                         """
+                        dot_color = "#EF4444"
+                        cap_badge_title = "🛡️ CAPITAL PRESERVATION ACTIVE"
+                        cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
+                        cap_sub_desc = "🛡️ Protected from chop & theta decay"
                 elif not score_cleared:
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
                     stand_down_badge = f"⚠️ SUB-THRESHOLD CONFLUENCE ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
@@ -5798,6 +5878,10 @@ if df is not None and not df.empty:
                     why_stand_down_html = f"""
                     <b style="color: #FFFFFF;">Why Stand Down?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which falls below the mandatory <span style="background: rgba(251, 191, 36, 0.15); color: #FBBF24; border: 1px solid rgba(251, 191, 36, 0.35); padding: 1px 7px; border-radius: 4px; font-weight: 800;">&gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate</span> ({dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}% | Deficit: -{deficit_val:.1f}%). Taking either a Call or Put trade here carries elevated chop/decay risk. Capital is preserved until directional confluence clears {MIN_HIT_PERCENTAGE:.0f}%.
                     """
+                    dot_color = "#EF4444"
+                    cap_badge_title = "🛡️ CAPITAL PRESERVATION ACTIVE"
+                    cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
+                    cap_sub_desc = "🛡️ Protected from chop & theta decay"
                 else:
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
                     stand_down_badge = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"
@@ -5809,11 +5893,10 @@ if df is not None and not df.empty:
                     gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
                     gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
                     why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Stand Down?</b> Current prevailing bias is {bias_label}. Strict capital preservation active."
-
-                dot_color = "#F59E0B" if (score_cleared and not time_gate_allowed) else "#EF4444"
-                cap_badge_title = "🛡️ PRE-SESSION LOCK (OFF-HOURS)" if (score_cleared and not time_gate_allowed) else "🛡️ CAPITAL PRESERVATION ACTIVE"
-                cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FDE68A; border: 1.5px solid rgba(245, 158, 11, 0.50);" if (score_cleared and not time_gate_allowed) else "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
-                cap_sub_desc = "🛡️ Protected off-hours &bull; Armed for open" if (score_cleared and not time_gate_allowed) else "🛡️ Protected from chop & theta decay"
+                    dot_color = "#EF4444"
+                    cap_badge_title = "🛡️ CAPITAL PRESERVATION ACTIVE"
+                    cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
+                    cap_sub_desc = "🛡️ Protected from chop & theta decay"
 
                 st.html(f'''
                 <div class="trade-status-card status-standdown">
@@ -7738,10 +7821,18 @@ if df is not None and not df.empty:
             </div>
             """)
 
-            st.markdown("### 🔒 Policy Safeguards")
+            st.markdown("### 🔒 Policy Safeguards & Market Timing")
             st.success("✅ **STRIKE**: Strictly At-The-Money (ATM)")
             st.success("✅ **EXPIRY**: Strictly Next Monthly Expiry (Non-Near)")
             
+            c_early_entry = st.checkbox(
+                "⚡ Allow Early Entry (09:15 - 09:30 AM Opening Window)",
+                value=st.session_state.get("allow_orb_early_entry", True),
+                key="ui_early_entry_cb",
+                help="When enabled, allows trade execution during the 09:15-09:30 AM opening range breakout formation when confluence exceeds institutional threshold."
+            )
+            st.session_state["allow_orb_early_entry"] = c_early_entry
+
             c_strike_pref = st.radio("Strike Selection Override", ["Auto-Detect Best Strike", "Lower ATM", "Upper ATM"], index=["Auto-Detect Best Strike", "Lower ATM", "Upper ATM"].index(st.session_state.get("strike_selection_pref", "Auto-Detect Best Strike")), key="ui_strike_pref")
             st.session_state["strike_selection_pref"] = c_strike_pref
 
@@ -7873,10 +7964,20 @@ if df is not None and not df.empty:
                             st.error(f"Error: {msg}")
     # 8. BACKEND TELEMETRY & INSTITUTIONAL SPECIFICATION (RUNS IN-MEMORY)
     # ==============================================================================
+    if is_orb_cooldown_window and not time_gate_allowed:
+        gate_status_desc = f"SETUP ARMED / ORB-15 COOLDOWN (Dominant Bias: {dominant_side} {dominant_score}% > {MIN_HIT_PERCENTAGE:.0f}% | Execution Locked: {time_gate_msg})"
+        gate_decision_desc = f"ARMED / ORB-15 COOLDOWN (Confluence {dominant_score}% cleared {MIN_HIT_PERCENTAGE:.0f}% gate; unlocks 09:30 AM)"
+    elif is_eod_squareoff or is_post_market:
+        gate_status_desc = f"SETUP ARMED / POST-MARKET (Dominant Bias: {dominant_side} {dominant_score}% > {MIN_HIT_PERCENTAGE:.0f}% | Session Ended)"
+        gate_decision_desc = f"SESSION CLOSED (Trading ended for the day; unlocks 09:15 AM tomorrow)"
+    else:
+        gate_status_desc = f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% > {MIN_HIT_PERCENTAGE:.0f}% | Opens 09:15 AM IST)"
+        gate_decision_desc = f"ARMED / PRE-MARKET READY (Confluence {dominant_score}% cleared {MIN_HIT_PERCENTAGE:.0f}% gate; awaiting 09:15 AM market open)"
+
     json_data = {
         "1. SCRIP NAME": "RELIANCE (NSE: RELIANCE)",
         "2. TRADE STATUS": f"TRADABLE DAY / A+ {dominant_side} SETUP (>{MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY)" if is_tradable else (
-            f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% > {MIN_HIT_PERCENTAGE:.0f}% | Execution Locked: {time_gate_msg})"
+            gate_status_desc
             if (score_cleared and not time_gate_allowed)
             else f"NON-TRADABLE DAY / STAND DOWN (Dominant Bias: {dominant_side} {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
         ),
@@ -7886,7 +7987,7 @@ if df is not None and not df.empty:
             "Prevailing Bias": dominant_side,
             "Execution Threshold": f">{MIN_HIT_PERCENTAGE:.0f}% required on either side",
             "Gate Decision": "APPROVED FOR EXECUTION" if is_tradable else (
-                f"ARMED / PRE-MARKET READY (Confluence {dominant_score}% cleared {MIN_HIT_PERCENTAGE:.0f}% gate; awaiting market open)"
+                gate_decision_desc
                 if (score_cleared and not time_gate_allowed)
                 else f"STAND DOWN (Insufficient Directional Confluence: {dominant_score}% ≤ {MIN_HIT_PERCENTAGE:.0f}%)"
             )

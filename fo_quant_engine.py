@@ -2856,7 +2856,8 @@ class UltraHighConvictionRelianceEngine:
         self,
         current_time: time,
         c5m: Dict[str, List[float]],
-        c15m: Dict[str, List[float]]
+        c15m: Dict[str, List[float]],
+        allow_orb_early_entry: bool = True
     ) -> Dict[str, Any]:
         """
         Evaluates the 6-Vector Confluence Model to reach >= 90.0% probability:
@@ -2869,12 +2870,14 @@ class UltraHighConvictionRelianceEngine:
         Total = 100 Points.
         """
         # Strict Execution Timing Gates:
-        # 1. 09:15 - 09:30 AM: Opening Price Discovery & ORB Formation (Stand Down / Capital Preservation)
+        # 1. 09:15 - 09:30 AM: Opening Price Discovery & ORB Formation (Tradable if allow_orb_early_entry=True)
         # 2. 09:30 - 14:45 PM: Active High-Probability Execution Window
         # 3. 14:45 - 15:05 PM: Intraday Expiry / Square-off Cooldown
         # 4. 15:05+ PM: Auto Square-off Enforcement
-        opening_cooldown_active = time(9, 15) <= current_time < time(9, 30)
-        market_open, market_close = time(9, 30), time(15, 10)
+        in_orb_window = time(9, 15) <= current_time < time(9, 30)
+        opening_cooldown_active = in_orb_window and not allow_orb_early_entry
+        market_open = time(9, 15) if allow_orb_early_entry else time(9, 30)
+        market_close = time(15, 10)
         cutoff, auto_sq = time(14, 45), time(15, 5)
 
         time_allowed = market_open <= current_time <= market_close and current_time <= cutoff
@@ -3847,7 +3850,12 @@ class UltraHighConvictionRelianceEngine:
         elif is_choppy_regime:
             status_text = "CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)"
         elif total_probability >= self.trade_regime_threshold and not time_allowed:
-            status_text = f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Market Closed)"
+            if current_time < time(9, 15):
+                status_text = f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Opens 09:15 AM IST)"
+            elif current_time >= auto_sq:
+                status_text = f"SETUP ARMED / POST-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Session Ended)"
+            else:
+                status_text = f"SETUP ARMED / ORB-15 COOLDOWN (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Unlocks 09:30 AM)"
         else:
             status_text = "NON-TRADABLE DAY / STAND DOWN"
 
@@ -4003,6 +4011,8 @@ class UltraHighConvictionRelianceEngine:
             "alpha_spread": alpha_spread,
             "spread_stand_down": spread_stand_down,
             "opening_cooldown_active": opening_cooldown_active,
+            "in_orb_window": in_orb_window,
+            "allow_orb_early_entry": allow_orb_early_entry,
             "squeeze_state": squeeze_state,
             "squeeze_ratio": squeeze_ratio,
             "rv_iv_spread": rv_iv_spread,
