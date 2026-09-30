@@ -3778,6 +3778,168 @@ class MultiIndicatorMath:
             cvar_adj
         )
 
+    @staticmethod
+    def calculate_hawkes_order_flow_intensity(
+        volumes: List[float],
+        closes: List[float],
+        decay_beta: float = 0.5,
+        lookback: int = 15
+    ) -> Tuple[float, float, str]:
+        """
+        Univariate Hawkes Self-Exciting Process for Order Flow Cascade Intensity.
+        Reference: Hawkes (1971) "Spectra of Some Self-Exciting Point Processes";
+        Bacry, Delattre, Hoffmann & Muzy (2015) "Hawkes Processes in Finance".
+
+        Intensity lambda(t) = mu + sum_{t_i < t} alpha * exp(-beta * (t - t_i))
+        Branching Ratio eta = alpha / beta
+        When eta >= 0.70: Orders trigger cascading algorithmic buying/selling (genuine breakout).
+        When eta < 0.40: Solitary volume burst without follow-through (false breakout trap).
+
+        Returns: (branching_ratio, current_intensity, cascade_regime)
+        """
+        if len(volumes) < lookback or len(closes) < lookback:
+            return 0.50, 1.0, "INSUFFICIENT_DATA"
+
+        recent_v = volumes[-lookback:]
+        recent_c = closes[-lookback:]
+
+        # Base arrival intensity (average relative volume)
+        avg_v = sum(recent_v) / len(recent_v) if recent_v else 1.0
+        v_ratios = [v / max(1.0, avg_v) for v in recent_v]
+
+        # Calculate directional tick arrivals weighted by volume
+        arrivals = []
+        for i in range(1, len(recent_c)):
+            tick_dir = 1.0 if recent_c[i] > recent_c[i - 1] else (-1.0 if recent_c[i] < recent_c[i - 1] else 0.0)
+            arrivals.append(abs(tick_dir) * v_ratios[i])
+
+        if not arrivals:
+            return 0.50, 1.0, "NORMAL_FLOW"
+
+        # Discrete exponential kernel convolution
+        intensity = 1.0
+        alpha_sum = 0.0
+        n = len(arrivals)
+        for i, a in enumerate(arrivals):
+            lag = n - 1 - i
+            decay = math.exp(-decay_beta * lag)
+            kernel_contrib = a * decay
+            intensity += kernel_contrib
+            if lag > 0:
+                alpha_sum += kernel_contrib / max(0.1, arrivals[i - 1] if i > 0 else 1.0)
+
+        alpha_est = max(0.05, min(0.95, alpha_sum / max(1, n - 1)))
+        branching_ratio = round(min(0.98, max(0.05, alpha_est / max(0.1, decay_beta))), 2)
+
+        if branching_ratio >= 0.70:
+            regime = "SELF_EXCITING_CASCADE_BREAKOUT"
+        elif branching_ratio >= 0.45:
+            regime = "MODERATE_FOLLOW_THROUGH"
+        else:
+            regime = "SOLITARY_BURST_EXHAUSTION_RISK"
+
+        return branching_ratio, round(intensity, 2), regime
+
+    @staticmethod
+    def calculate_clayton_copula_tail_dependence(
+        asset_returns: List[float],
+        benchmark_returns: List[float],
+        lookback: int = 15
+    ) -> Tuple[float, float, str]:
+        """
+        Bivariate Clayton Copula Lower-Tail Dependence for Sector / Market Crash Coupling.
+        Reference: Embrechts, McNeil & Straumann (2002) "Correlation and Dependence in Risk Management";
+        Nelsen (2006) "An Introduction to Copulas".
+
+        Unlike linear Pearson correlation, the Clayton copula explicitly captures
+        asymmetric tail dependence: assets crash together much more tightly than they rally.
+        Clayton generator: C_theta(u, v) = max(u^(-theta) + v^(-theta) - 1, 0)^(-1/theta)
+        Lower tail dependence: lambda_L = 2^(-1/theta) for theta > 0.
+
+        Returns: (tail_dependence_lambda_L, kendalls_tau, copula_regime)
+        """
+        min_required = min(10, lookback)
+        if len(asset_returns) < min_required or len(benchmark_returns) < min_required:
+            return 0.0, 0.50, "INSUFFICIENT_DATA"
+
+        actual_lb = min(lookback, min(len(asset_returns), len(benchmark_returns)))
+        x = asset_returns[-actual_lb:]
+        y = benchmark_returns[-actual_lb:]
+        n = len(x)
+
+        # Compute empirical Kendall's Tau: tau = (c - d) / (0.5 * n * (n - 1))
+        concordant = 0
+        discordant = 0
+        for i in range(n):
+            for j in range(i + 1, n):
+                dx = x[i] - x[j]
+                dy = y[i] - y[j]
+                prod = dx * dy
+                if prod > 0:
+                    concordant += 1
+                elif prod < 0:
+                    discordant += 1
+
+        total_pairs = 0.5 * n * (n - 1)
+        tau = (concordant - discordant) / max(1.0, total_pairs)
+        tau = max(-0.95, min(0.95, tau))
+
+        # Relationship between Kendall's tau and Clayton parameter: theta = 2 * tau / (1 - tau)
+        if tau > 0.05:
+            theta = max(0.10, (2.0 * tau) / max(0.01, 1.0 - tau))
+            # Lower tail dependence lambda_L = 2^(-1 / theta)
+            lambda_L = round(math.pow(2.0, -1.0 / theta), 3)
+        else:
+            theta = 0.0
+            lambda_L = 0.0
+
+        if lambda_L >= 0.60:
+            regime = "EXTREME_LOWER_TAIL_CONTAGION"
+        elif lambda_L >= 0.35:
+            regime = "SIGNIFICANT_TAIL_DEPENDENCE"
+        else:
+            regime = "INDEPENDENT_TAIL_ASYMMETRY"
+
+        return lambda_L, round(tau, 3), regime
+
+    @staticmethod
+    def calculate_dynamic_triple_barrier_scaling(
+        spot: float,
+        intraday_gk_rv: float,
+        delta: float = 0.52,
+        horizon_minutes: int = 45,
+        base_target_pts: float = 7.5,
+        base_sl_pts: float = 3.5,
+        reward_risk_ratio: float = 2.14
+    ) -> Tuple[float, float, str]:
+        """
+        Dynamic Triple Barrier Volatility Scaling.
+        Reference: Marcos López de Prado (2018) "Advances in Financial Machine Learning", Ch. 3.
+
+        Dynamically scales the upper and lower profit/loss barriers at the precise time of breakout
+        using the intraday Garman-Klass / Parkinson realized volatility:
+          Target Pts = max(5.0, min(12.5, base_tgt * (RV / baseline_RV)^0.65 * sqrt(horizon / 45)))
+          SL Pts = max(2.5, min(5.0, Target Pts / reward_risk_ratio))
+
+        Returns: (dynamic_target_pts, dynamic_sl_pts, barrier_regime)
+        """
+        eff_rv = max(8.0, min(40.0, intraday_gk_rv if intraday_gk_rv > 0 else 18.0))
+        rv_multiplier = math.pow(eff_rv / 18.0, 0.65)
+        time_scaling = math.sqrt(max(0.5, horizon_minutes / 45.0))
+
+        scaled_target = base_target_pts * rv_multiplier * time_scaling
+        dyn_target = round(min(12.5, max(5.0, scaled_target)), 1)
+        dyn_sl = round(min(5.0, max(2.5, dyn_target / max(1.5, reward_risk_ratio))), 1)
+
+        if rv_multiplier >= 1.25:
+            regime = "HIGH_EXPANSION_EXTENDED_BARRIER"
+        elif rv_multiplier <= 0.80:
+            regime = "COMPRESSED_DEFENSIVE_BARRIER"
+        else:
+            regime = "OPTIMAL_STANDARD_BARRIER"
+
+        return dyn_target, dyn_sl, regime
+
 
 # ============================================================================
 # 2b. QUANTITATIVE CONFIGURATION (Centralized Threshold Management)
@@ -4421,6 +4583,17 @@ class UltraHighConvictionRelianceEngine:
             v2_bull = max(0.0, v2_bull - 3.0)  # Severe adverse selection penalty
             v2_bear = max(0.0, v2_bear - 3.0)
 
+        # Hawkes Self-Exciting Jump Process for Order Flow Cascade (Bacry et al. 2015)
+        branching_ratio, hawkes_intensity, hawkes_regime = MultiIndicatorMath.calculate_hawkes_order_flow_intensity(
+            c5m["volume"], c5m["close"], decay_beta=0.5, lookback=15
+        )
+        if hawkes_regime == "SELF_EXCITING_CASCADE_BREAKOUT":
+            v2_bull += 2.0  # Algorithmic cascades driving aggressive buying
+            v2_bear += 2.0
+        elif hawkes_regime == "SOLITARY_BURST_EXHAUSTION_RISK":
+            v2_bull = max(0.0, v2_bull - 1.5)  # Exhaustion burst with zero follow-through
+            v2_bear = max(0.0, v2_bear - 1.5)
+
         # V2 Cluster-Based Capping (Gap 5 Fix: Eliminates score saturation from 19 sub-signals)
         # Cluster A (Volume Intensity): RVOL + TVOP + OBV + EOM = max 6 pts
         # Cluster B (Order Flow Direction): CVD + PVT + CMF + Sweeps + Tick Imbalance = max 5 pts
@@ -4631,6 +4804,19 @@ class UltraHighConvictionRelianceEngine:
 
         # Dynamically adapt Target and SL based on 15m ATR, Delta and India VIX regime
         self.risk.adapt_to_volatility(atr_15m, delta=0.52, india_vix=india_vix)
+
+        # Dynamic Triple Barrier Volatility Scaling (López de Prado 2018, AFML Ch. 3)
+        dyn_tgt_barrier, dyn_sl_barrier, barrier_regime = MultiIndicatorMath.calculate_dynamic_triple_barrier_scaling(
+            spot=spot,
+            intraday_gk_rv=effective_rv,
+            delta=0.52,
+            horizon_minutes=45,
+            base_target_pts=self.risk.target_pts,
+            base_sl_pts=self.risk.stop_loss_pts,
+            reward_risk_ratio=2.14
+        )
+        self.risk.target_pts = dyn_tgt_barrier
+        self.risk.stop_loss_pts = dyn_sl_barrier
 
         v4_bull = 0.0
         v4_bear = 0.0
@@ -4995,6 +5181,21 @@ class UltraHighConvictionRelianceEngine:
             macro_bull -= 2.0
             macro_bear += 2.0
 
+        # Bivariate Clayton Copula Lower-Tail Dependence Guard (Embrechts et al. 2002)
+        rel_returns = [
+            (c5m["close"][i] - c5m["close"][i - 1]) / max(0.1, c5m["close"][i - 1])
+            for i in range(1, len(c5m["close"]))
+        ] if len(c5m["close"]) >= 5 else [0.0]
+        # Benchmark returns proxy from session trajectory
+        sec_returns = [r * (energy_pct / max(0.01, abs(reliance_pct) if abs(reliance_pct) > 0 else 1.0)) for r in rel_returns]
+        lambda_L, kendall_tau, copula_regime = MultiIndicatorMath.calculate_clayton_copula_tail_dependence(
+            rel_returns, sec_returns, lookback=20
+        )
+        is_tail_contagion_active = (lambda_L >= 0.60) and (energy_pct < -0.20 or nifty_pct < -0.30)
+        if is_tail_contagion_active:
+            macro_bull = max(0.0, macro_bull - 4.5)  # Severe tail-dependence contagion penalty
+            macro_bear += 3.0
+
         # Sector Divergence Filter (Suggestion 2 Institutional Rule) — Uses direct spot-vs-open comparison
         is_bullish_lean = spot > c5m["close"][0]
         is_bearish_lean = spot < c5m["close"][0]
@@ -5002,6 +5203,8 @@ class UltraHighConvictionRelianceEngine:
             (is_bullish_lean and energy_pct < -0.15 and reliance_pct > 0.10)
         ) or (
             (is_bearish_lean and energy_pct > 0.15 and reliance_pct < -0.10)
+        ) or (
+            is_bullish_lean and is_tail_contagion_active  # Copula tail risk vetoes long setups
         )
         is_high_market_impact = (kyle_regime == "LIQUIDITY_VACUUM_TRAP")
 
@@ -5566,6 +5769,16 @@ class UltraHighConvictionRelianceEngine:
             "bars_since_changepoint": bars_since_cp,
             "changepoint_regime": cp_regime,
             "cvar_tail_adjustment": cvar_adjustment,
+            # Institutional V4 Upgrades: Hawkes Process, Clayton Copula, Dynamic Triple Barrier
+            "hawkes_branching_ratio": branching_ratio,
+            "hawkes_intensity": hawkes_intensity,
+            "hawkes_regime": hawkes_regime,
+            "clayton_copula_lambda_L": lambda_L,
+            "clayton_kendall_tau": kendall_tau,
+            "clayton_copula_regime": copula_regime,
+            "dynamic_barrier_regime": barrier_regime,
+            "dynamic_target_pts": dyn_tgt_barrier,
+            "dynamic_sl_pts": dyn_sl_barrier,
             # Slippage Tracking Stub (Gap 4: Placeholder for live fill comparison)
             "planned_entry_price": entry_premium if is_tradable else None,
             "actual_fill_price": None,  # Populated post-execution by trade journal
