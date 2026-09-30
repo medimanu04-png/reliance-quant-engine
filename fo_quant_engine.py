@@ -4543,105 +4543,156 @@ class UltraHighConvictionRelianceEngine:
             closes=c5m["close"], volumes=c5m["volume"], period=14
         )
 
-        # Bullish V2
-        v2_bull = 0.0
+        # VECTOR 2: 4-Cluster Institutional Order Flow & Microstructure (18 pts max)
+        # Cluster A: Volume & Momentum Intensity (RVOL, TVOP, OBV, EOM, Hawkes) -> Max 5.0 pts
+        # Cluster B: Aggressor Delta & CVD (CVD, CMF, PVT, Sweeps, Tick Imbalance) -> Max 5.0 pts
+        # Cluster C: Microstructure Toxicity & Impact (Kyle Lambda, Amihud, VPIN, Corwin-Schultz, LQS) -> Max 4.0 pts
+        # Cluster D: Structural Liquidity & Profile (VWAP, FVG, Anchored VWAP, Volume Profile, OBI, Depth Skew) -> Max 4.0 pts
+        v2_cl_a_bull = 0.0
+        v2_cl_a_bear = 0.0
+        v2_cl_b_bull = 0.0
+        v2_cl_b_bear = 0.0
+        v2_cl_c_bull = 0.0
+        v2_cl_c_bear = 0.0
+        v2_cl_d_bull = 0.0
+        v2_cl_d_bear = 0.0
+
+        # --- CLUSTER D: Structural Liquidity & Profile (VWAP, Bands, Slope, Retests, Profile) ---
         if is_vwap_reclaim:
-            v2_bull += 3.0  # Institutional VWAP defense & reclaim pattern
+            v2_cl_d_bull += 3.0  # Institutional VWAP defense & reclaim pattern
         if spot >= vwap_plus_15sigma:
-            v2_bull += 7.0 if vwap_z <= 2.2 else 3.0  # Climax guard: penalize if overextended
+            v2_cl_d_bull += 7.0 if vwap_z <= 2.2 else 3.0  # Climax guard: penalize if overextended
         elif spot > vwap:
-            v2_bull += 4.0
+            v2_cl_d_bull += 4.0
         if vwap_slope_regime == "RISING_VWAP_INSTITUTIONAL_ACCUMULATION":
-            v2_bull += 2.5  # Institutional buyer slope confirmation
+            v2_cl_d_bull += 2.5  # Institutional buyer slope confirmation
         elif vwap_slope_regime == "FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION":
-            v2_bull = max(0.0, v2_bull - 3.5)  # Falling VWAP trap penalty
-        if rvol_regime == "INSTITUTIONAL_VOLUME_EXPANSION":
-            v2_bull += 4.5
-        elif vol_surge:
-            v2_bull += 3.5
-        elif rvol_regime == "HEALTHY_PARTICIPATION":
-            v2_bull += 2.0
-        elif rvol_regime == "LOW_VOLUME_RETAIL_DRIFT":
-            v2_bull = max(0.0, v2_bull - 2.5)  # Penalize low volume false breakouts
-        # Opening Volume Share confirmation
-        if is_inst_vol_confirmed:
-            v2_bull += 2.0  # Heavy institutional algorithmic participation (74% follow-through)
-        elif orb_vol_share < 10.0:
-            v2_bull = max(0.0, v2_bull - 1.5)  # Low opening volume (68% failure rate)
-        if obv_bias == "BUYER_AGGRESSION":
-            v2_bull += 3.0
-        if cvd_bias == "AGGRESSIVE_BUYING":
-            v2_bull += 2.5  # Institutional Buyer Absorption Confirmation
-        if vp_bias == "ABOVE_VAH":
-            v2_bull += 1.5  # Expansion above Value Area High
+            v2_cl_d_bull = max(0.0, v2_cl_d_bull - 3.5)  # Falling VWAP trap penalty
 
-        # Bearish V2
-        v2_bear = 0.0
         if is_vwap_rejection:
-            v2_bear += 3.0  # Institutional VWAP supply wall & rejection pattern
+            v2_cl_d_bear += 3.0  # Institutional VWAP supply wall & rejection pattern
         if spot <= vwap_minus_sigma:
-            v2_bear += 7.0 if vwap_z >= -2.2 else 3.0  # Oversold climax guard
+            v2_cl_d_bear += 7.0 if vwap_z >= -2.2 else 3.0  # Oversold climax guard
         elif spot < vwap:
-            v2_bear += 4.0
+            v2_cl_d_bear += 4.0
         if vwap_slope_regime == "FALLING_VWAP_INSTITUTIONAL_DISTRIBUTION":
-            v2_bear += 2.5  # Institutional seller slope confirmation
+            v2_cl_d_bear += 2.5  # Institutional seller slope confirmation
         elif vwap_slope_regime == "RISING_VWAP_INSTITUTIONAL_ACCUMULATION":
-            v2_bear = max(0.0, v2_bear - 3.5)  # Rising VWAP trap penalty
+            v2_cl_d_bear = max(0.0, v2_cl_d_bear - 3.5)  # Rising VWAP trap penalty
+
+        if vp_bias == "ABOVE_VAH":
+            v2_cl_d_bull += 1.5  # Expansion above Value Area High
+        elif vp_bias == "BELOW_VAL":
+            v2_cl_d_bear += 1.5  # Breakdown below Value Area Low
+
+        # --- CLUSTER A: Volume & Momentum Intensity (RVOL, Surge, Opening Share, OBV, TVOP, EOM, Hawkes) ---
         if rvol_regime == "INSTITUTIONAL_VOLUME_EXPANSION":
-            v2_bear += 4.5
+            v2_cl_a_bull += 4.5
+            v2_cl_a_bear += 4.5
         elif vol_surge:
-            v2_bear += 3.5
+            v2_cl_a_bull += 3.5
+            v2_cl_a_bear += 3.5
         elif rvol_regime == "HEALTHY_PARTICIPATION":
-            v2_bear += 2.0
+            v2_cl_a_bull += 2.0
+            v2_cl_a_bear += 2.0
         elif rvol_regime == "LOW_VOLUME_RETAIL_DRIFT":
-            v2_bear = max(0.0, v2_bear - 2.5)  # Penalize low volume false breakdowns
+            v2_cl_a_bull = max(0.0, v2_cl_a_bull - 2.5)  # Penalize low volume false breakouts
+            v2_cl_a_bear = max(0.0, v2_cl_a_bear - 2.5)
+
         # Opening Volume Share confirmation
         if is_inst_vol_confirmed:
-            v2_bear += 2.0  # Heavy institutional algorithmic participation (74% follow-through)
+            v2_cl_a_bull += 2.0  # Heavy institutional algorithmic participation (74% follow-through)
+            v2_cl_a_bear += 2.0
         elif orb_vol_share < 10.0:
-            v2_bear = max(0.0, v2_bear - 1.5)  # Low opening volume (68% failure rate)
-        if obv_bias == "SELLER_AGGRESSION":
-            v2_bear += 3.0
-        if cvd_bias == "AGGRESSIVE_SELLING":
-            v2_bear += 2.5  # Institutional Seller Absorption Confirmation
-        if vp_bias == "BELOW_VAL":
-            v2_bear += 1.5  # Breakdown below Value Area Low
+            v2_cl_a_bull = max(0.0, v2_cl_a_bull - 1.5)  # Low opening volume (68% failure rate)
+            v2_cl_a_bear = max(0.0, v2_cl_a_bear - 1.5)
 
-        # Chaikin Money Flow (CMF-20)
-        cmf_val, cmf_bias = MultiIndicatorMath.calculate_cmf(c5m["high"], c5m["low"], c5m["close"], c5m["volume"], 20)
-        if cmf_bias == "INSTITUTIONAL_ACCUMULATION":
-            v2_bull += 2.5
-        elif cmf_bias == "INSTITUTIONAL_DISTRIBUTION":
-            v2_bear += 2.5
-        elif cmf_bias == "MILD_ACCUMULATION":
-            v2_bull += 1.0
-        elif cmf_bias == "MILD_DISTRIBUTION":
-            v2_bear += 1.0
-
-        # Price Volume Trend (PVT & PVT EMA-20)
-        pvt_val, pvt_ema, pvt_bias = MultiIndicatorMath.calculate_pvt(c5m["close"], c5m["volume"], 20)
-        if pvt_bias == "INSTITUTIONAL_BUY_PRESSURE":
-            v2_bull += 2.0
-        elif pvt_bias == "INSTITUTIONAL_SELL_PRESSURE":
-            v2_bear += 2.0
+        if obv_bias == "BUYER_AGGRESSION":
+            v2_cl_a_bull += 3.0
+        elif obv_bias == "SELLER_AGGRESSION":
+            v2_cl_a_bear += 3.0
 
         # Ease of Movement (EOM / EMV - Richard Arms)
         eom_val, eom_regime = MultiIndicatorMath.calculate_eom(c5m["high"], c5m["low"], c5m["volume"], 14)
         if eom_regime == "EFFORTLESS_UPWARD_EXPANSION":
-            v2_bull += 1.5
+            v2_cl_a_bull += 1.5
         elif eom_regime == "EFFORTLESS_DOWNWARD_COLLAPSE":
-            v2_bear += 1.5
+            v2_cl_a_bear += 1.5
 
+        # Time-of-Day Volume Profile Composite (TVOP) scoring
+        if tvop_regime == "INSTITUTIONAL_TIME_WEIGHTED_EXPANSION":
+            v2_cl_a_bull += 1.5
+            v2_cl_a_bear += 1.5
+        elif tvop_regime == "SUB_TYPICAL_LIQUIDITY_DROUGHT":
+            v2_cl_a_bull = max(0.0, v2_cl_a_bull - 1.5)
+            v2_cl_a_bear = max(0.0, v2_cl_a_bear - 1.5)
+
+        # Hawkes Self-Exciting Jump Process for Order Flow Cascade (Bacry et al. 2015)
+        branching_ratio, hawkes_intensity, hawkes_regime = MultiIndicatorMath.calculate_hawkes_order_flow_intensity(
+            c5m["volume"], c5m["close"], decay_beta=0.5, lookback=15
+        )
+        if hawkes_regime == "SELF_EXCITING_CASCADE_BREAKOUT":
+            v2_cl_a_bull += 2.0  # Algorithmic cascades driving aggressive buying
+            v2_cl_a_bear += 2.0
+        elif hawkes_regime == "SOLITARY_BURST_EXHAUSTION_RISK":
+            v2_cl_a_bull = max(0.0, v2_cl_a_bull - 1.5)  # Exhaustion burst with zero follow-through
+            v2_cl_a_bear = max(0.0, v2_cl_a_bear - 1.5)
+
+        # --- CLUSTER B: Aggressor Delta & CVD (CVD, CMF, PVT, Sweeps, Tick Imbalance) ---
+        if cvd_bias == "AGGRESSIVE_BUYING":
+            v2_cl_b_bull += 2.5  # Institutional Buyer Absorption Confirmation
+        elif cvd_bias == "AGGRESSIVE_SELLING":
+            v2_cl_b_bear += 2.5
+
+        # Chaikin Money Flow (CMF-20)
+        cmf_val, cmf_bias = MultiIndicatorMath.calculate_cmf(c5m["high"], c5m["low"], c5m["close"], c5m["volume"], 20)
+        if cmf_bias == "INSTITUTIONAL_ACCUMULATION":
+            v2_cl_b_bull += 2.5
+        elif cmf_bias == "INSTITUTIONAL_DISTRIBUTION":
+            v2_cl_b_bear += 2.5
+        elif cmf_bias == "MILD_ACCUMULATION":
+            v2_cl_b_bull += 1.0
+        elif cmf_bias == "MILD_DISTRIBUTION":
+            v2_cl_b_bear += 1.0
+
+        # Price Volume Trend (PVT & PVT EMA-20)
+        pvt_val, pvt_ema, pvt_bias = MultiIndicatorMath.calculate_pvt(c5m["close"], c5m["volume"], 20)
+        if pvt_bias == "INSTITUTIONAL_BUY_PRESSURE":
+            v2_cl_b_bull += 2.0
+        elif pvt_bias == "INSTITUTIONAL_SELL_PRESSURE":
+            v2_cl_b_bear += 2.0
+
+        # Institutional Order Flow Sweeps (David Easley & Maureen O'Hara 2010 / Lee-Ready)
+        has_inst_sweep, sweep_dir, sweep_vel, is_opening_30m = MultiIndicatorMath.calculate_institutional_order_flow_sweeps(
+            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], current_time=current_time, opens=c5m.get("open")
+        )
+        if has_inst_sweep:
+            if sweep_dir == "INSTITUTIONAL_BUY_SWEEP":
+                # First 30 mins sweep in direction of breakout: Win rate jumps from 42% to 68.2%+
+                v2_cl_b_bull += 3.5 if is_opening_30m else 2.0
+            elif sweep_dir == "INSTITUTIONAL_SELL_SWEEP":
+                v2_cl_b_bear += 3.5 if is_opening_30m else 2.0
+
+        # Tick Imbalance Signal (Lopez de Prado 2018 - Advances in Financial Machine Learning)
+        has_tick_imb, cum_tick_imb, tick_imb_regime = MultiIndicatorMath.calculate_tick_imbalance_signal(
+            c5m["close"], lookback=20, threshold=8
+        )
+        if tick_imb_regime == "BULLISH_TICK_IMBALANCE_INFORMED_BUYING":
+            v2_cl_b_bull += 2.0
+        elif tick_imb_regime == "BEARISH_TICK_IMBALANCE_INFORMED_SELLING":
+            v2_cl_b_bear += 2.0
+
+        # --- CLUSTER C: Microstructure Toxicity & Impact (Kyle Lambda, Amihud, VPIN, Corwin-Schultz, LQS) ---
         # Volume-Synchronized Probability of Toxicity (VPIN - Easley, López de Prado & O'Hara)
         vpin_val, vpin_regime = MultiIndicatorMath.calculate_vpin(
             c5m["close"], c5m["high"], c5m["low"], c5m["volume"]
         )
         if vpin_regime in ("BALANCED_HEALTHY_LIQUIDITY", "LOW_TOXICITY_BENIGN"):
-            v2_bull += 1.5
-            v2_bear += 1.5
+            v2_cl_c_bull += 1.5
+            v2_cl_c_bear += 1.5
         elif vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT":
-            v2_bull = max(0.0, v2_bull - 5.0)
-            v2_bear = max(0.0, v2_bear - 5.0)
+            v2_cl_c_bull = max(0.0, v2_cl_c_bull - 5.0)
+            v2_cl_c_bear = max(0.0, v2_cl_c_bear - 5.0)
 
         # Strike & OI Telemetry (Strict 10-point Strike Interval for RELIANCE)
         strike_step = 10
@@ -4657,92 +4708,64 @@ class UltraHighConvictionRelianceEngine:
         ask_qty = float(opt_telemetry.get("ask_qty", 1000))
         micro_p, obi, obi_bias = MultiIndicatorMath.calculate_micro_price_imbalance(best_bid, best_ask, bid_qty, ask_qty)
         if obi_bias == "BID_PRESSURE":
-            v2_bull += 1.0
+            v2_cl_d_bull += 1.0
         elif obi_bias == "ASK_PRESSURE":
-            v2_bear += 1.0
+            v2_cl_d_bear += 1.0
 
         # Multi-Level L2 Depth Skew (Cartea & Jaimungal 2014)
         opt_bids = opt_telemetry.get("bids", [{"price": best_bid, "quantity": bid_qty}])
         opt_asks = opt_telemetry.get("asks", [{"price": best_ask, "quantity": ask_qty}])
         depth_skew, weighted_micro_p, depth_regime = MultiIndicatorMath.calculate_order_book_depth_skew(opt_bids, opt_asks)
         if depth_regime == "HEAVY_BUY_SIDE_ICEBERG_SUPPORT":
-            v2_bull += 1.5  # Stealth iceberg buyer absorption at deeper levels
+            v2_cl_d_bull += 1.5  # Stealth iceberg buyer absorption at deeper levels
         elif depth_regime == "HEAVY_SELL_SIDE_LIQUIDITY_WALL":
-            v2_bear += 1.5  # Heavy seller liquidity wall capping prices
+            v2_cl_d_bear += 1.5  # Heavy seller liquidity wall capping prices
 
         # Kyle's Lambda Market Impact & Order Flow Illiquidity Factor (Albert S. Kyle 1985)
         curr_lambda, avg_lambda, kyle_regime, is_low_lambda_abs, p30_lambda = MultiIndicatorMath.calculate_kyles_lambda(
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"], period=20
         )
         if is_low_lambda_abs:
-            v2_bull += 2.5  # Institutional buyer absorption without slippage (depth is thick)
-            v2_bear += 2.5  # Institutional seller absorption without slippage
+            v2_cl_c_bull += 2.5  # Institutional buyer absorption without slippage (depth is thick)
+            v2_cl_c_bear += 2.5  # Institutional seller absorption without slippage
         elif kyle_regime == "LIQUIDITY_VACUUM_TRAP":
-            v2_bull = max(0.0, v2_bull - 3.5)  # Thin book / adverse selection risk
-            v2_bear = max(0.0, v2_bear - 3.5)
+            v2_cl_c_bull = max(0.0, v2_cl_c_bull - 3.5)  # Thin book / adverse selection risk
+            v2_cl_c_bear = max(0.0, v2_cl_c_bear - 3.5)
 
-        # Institutional Order Flow Sweeps (David Easley & Maureen O'Hara 2010 / Lee-Ready)
-        has_inst_sweep, sweep_dir, sweep_vel, is_opening_30m = MultiIndicatorMath.calculate_institutional_order_flow_sweeps(
-            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], current_time=current_time, opens=c5m.get("open")
-        )
-        if has_inst_sweep:
-            if sweep_dir == "INSTITUTIONAL_BUY_SWEEP":
-                # First 30 mins sweep in direction of breakout: Win rate jumps from 42% to 68.2%+
-                v2_bull += 3.5 if is_opening_30m else 2.0
-            elif sweep_dir == "INSTITUTIONAL_SELL_SWEEP":
-                v2_bear += 3.5 if is_opening_30m else 2.0
-
-        # Anchored VWAP Extremes (HOD / LOD Supply-Demand)
+        # Anchored VWAP Extremes (HOD / LOD Supply-Demand) -> Cluster D
         avwap_hod, avwap_lod, avwap_stance = MultiIndicatorMath.calculate_anchored_vwap_extremes(
             c5m["high"], c5m["low"], c5m["close"], c5m["volume"]
         )
         if avwap_stance == "BULLISH_ACCEPTANCE_ABOVE_EXTREMES":
-            v2_bull += 2.0
+            v2_cl_d_bull += 2.0
         elif avwap_stance == "BEARISH_ACCEPTANCE_BELOW_EXTREMES":
-            v2_bear += 2.0
+            v2_cl_d_bear += 2.0
 
-        # Fair Value Gap (FVG) / Institutional Imbalance Void Retest
+        # Fair Value Gap (FVG) / Institutional Imbalance Void Retest -> Cluster D
         active_fvgs, fvg_status, fvg_cushion = MultiIndicatorMath.calculate_fair_value_gaps(
             c5m["high"], c5m["low"], c5m["close"], lookback=12
         )
         if fvg_status == "BULLISH_FVG_SUPPORT_RETEST":
-            v2_bull += 2.0  # Retesting institutional buyer imbalance zone
+            v2_cl_d_bull += 2.0  # Retesting institutional buyer imbalance zone
         elif fvg_status == "BEARISH_FVG_RESISTANCE_RETEST":
-            v2_bear += 2.0  # Retesting institutional seller imbalance zone
+            v2_cl_d_bear += 2.0  # Retesting institutional seller imbalance zone
 
         # Stand down if option bid-ask spread > 0.35 pts (prevents spread slippage losses on 1 lot)
         opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
         spread_stand_down = (opt_spread > 0.35) and not is_synthetic_feed
 
-        # Corwin-Schultz (2012) High-Low Effective Spread Estimator
+        # Corwin-Schultz (2012) High-Low Effective Spread Estimator -> Cluster C
         cs_spread_pct, cs_regime = MultiIndicatorMath.calculate_corwin_schultz_spread(c5m["high"], c5m["low"])
         if cs_regime == "WIDE_SPREAD_ILLIQUID":
-            v2_bull = max(0.0, v2_bull - 2.0)
-            v2_bear = max(0.0, v2_bear - 2.0)
+            v2_cl_c_bull = max(0.0, v2_cl_c_bull - 2.0)
+            v2_cl_c_bear = max(0.0, v2_cl_c_bear - 2.0)
 
-        # Time-of-Day Volume Profile Composite (TVOP) scoring
-        if tvop_regime == "INSTITUTIONAL_TIME_WEIGHTED_EXPANSION":
-            v2_bull += 1.5
-            v2_bear += 1.5
-        elif tvop_regime == "SUB_TYPICAL_LIQUIDITY_DROUGHT":
-            v2_bull = max(0.0, v2_bull - 1.5)
-            v2_bear = max(0.0, v2_bear - 1.5)
-
-        # Amihud Illiquidity penalty for fragile order books
+        # Amihud Illiquidity penalty for fragile order books -> Cluster C
         if amihud_regime == "HIGH_ILLIQUIDITY_SLIPPAGE_HAZARD":
-            v2_bull = max(0.0, v2_bull - 2.0)
-            v2_bear = max(0.0, v2_bear - 2.0)
+            v2_cl_c_bull = max(0.0, v2_cl_c_bull - 2.0)
+            v2_cl_c_bear = max(0.0, v2_cl_c_bear - 2.0)
 
-        # Tick Imbalance Signal (Lopez de Prado 2018 - Advances in Financial Machine Learning)
-        has_tick_imb, cum_tick_imb, tick_imb_regime = MultiIndicatorMath.calculate_tick_imbalance_signal(
-            c5m["close"], lookback=20, threshold=8
-        )
-        if tick_imb_regime == "BULLISH_TICK_IMBALANCE_INFORMED_BUYING":
-            v2_bull += 2.0
-        elif tick_imb_regime == "BEARISH_TICK_IMBALANCE_INFORMED_SELLING":
-            v2_bear += 2.0
-
-        # Composite Microstructure Liquidity Quality Score (LQS)
+        # Composite Microstructure Liquidity Quality Score (LQS) -> Cluster C
         liq_score, liq_regime = MultiIndicatorMath.calculate_liquidity_quality_score(
             kyle_regime=kyle_regime,
             amihud_val=amihud_val,
@@ -4750,31 +4773,25 @@ class UltraHighConvictionRelianceEngine:
             vpin_val=vpin_val
         )
         if liq_regime == "INSTITUTIONAL_DEEP_LIQUIDITY":
-            v2_bull += 1.0  # Ultra-clean execution environment
-            v2_bear += 1.0
+            v2_cl_c_bull += 1.0  # Ultra-clean execution environment
+            v2_cl_c_bear += 1.0
         elif liq_regime == "FRAGILE_ILLIQUID_STAND_DOWN":
-            v2_bull = max(0.0, v2_bull - 3.0)  # Severe adverse selection penalty
-            v2_bear = max(0.0, v2_bear - 3.0)
+            v2_cl_c_bull = max(0.0, v2_cl_c_bull - 3.0)  # Severe adverse selection penalty
+            v2_cl_c_bear = max(0.0, v2_cl_c_bear - 3.0)
 
-        # Hawkes Self-Exciting Jump Process for Order Flow Cascade (Bacry et al. 2015)
-        branching_ratio, hawkes_intensity, hawkes_regime = MultiIndicatorMath.calculate_hawkes_order_flow_intensity(
-            c5m["volume"], c5m["close"], decay_beta=0.5, lookback=15
-        )
-        if hawkes_regime == "SELF_EXCITING_CASCADE_BREAKOUT":
-            v2_bull += 2.0  # Algorithmic cascades driving aggressive buying
-            v2_bear += 2.0
-        elif hawkes_regime == "SOLITARY_BURST_EXHAUSTION_RISK":
-            v2_bull = max(0.0, v2_bull - 1.5)  # Exhaustion burst with zero follow-through
-            v2_bear = max(0.0, v2_bear - 1.5)
+        # V2 Cluster-Based Capping (Quant Audit Solution: Eliminates score saturation from 19 sub-signals)
+        # Sub-caps: Cluster A <= 5.0, Cluster B <= 5.0, Cluster C <= 4.0, Cluster D <= 4.0 -> Total <= 18.0
+        v2_cl_a_bull = min(5.0, max(0.0, v2_cl_a_bull))
+        v2_cl_a_bear = min(5.0, max(0.0, v2_cl_a_bear))
+        v2_cl_b_bull = min(5.0, max(0.0, v2_cl_b_bull))
+        v2_cl_b_bear = min(5.0, max(0.0, v2_cl_b_bear))
+        v2_cl_c_bull = min(4.0, max(0.0, v2_cl_c_bull))
+        v2_cl_c_bear = min(4.0, max(0.0, v2_cl_c_bear))
+        v2_cl_d_bull = min(4.0, max(0.0, v2_cl_d_bull))
+        v2_cl_d_bear = min(4.0, max(0.0, v2_cl_d_bear))
 
-        # V2 Cluster-Based Capping (Gap 5 Fix: Eliminates score saturation from 19 sub-signals)
-        # Cluster A (Volume Intensity): RVOL + TVOP + OBV + EOM = max 6 pts
-        # Cluster B (Order Flow Direction): CVD + PVT + CMF + Sweeps + Tick Imbalance = max 5 pts
-        # Cluster C (Microstructure Quality): Kyle lambda + Amihud + VPIN + CS + LQS = max 4 pts
-        # Cluster D (Structural Levels): VWAP + FVG + AVWAP + Volume Profile + OBI = max 3 pts
-        # This preserves discriminative power between "strong V2" and "overwhelming V2"
-        v2_bull = min(18.0, max(0.0, v2_bull))
-        v2_bear = min(18.0, max(0.0, v2_bear))
+        v2_bull = min(18.0, max(0.0, v2_cl_a_bull + v2_cl_b_bull + v2_cl_c_bull + v2_cl_d_bull))
+        v2_bear = min(18.0, max(0.0, v2_cl_a_bear + v2_cl_b_bear + v2_cl_c_bear + v2_cl_d_bear))
 
         call_wall = float(chain_oi.get("call_wall", atm_strike + 10))
         put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
@@ -5751,7 +5768,13 @@ class UltraHighConvictionRelianceEngine:
                 "v5_bull": round(v5_bull, 2), "v5_bear": round(v5_bear, 2),
                 "v6_bull": round(v6_bull, 2), "v6_bear": round(v6_bear, 2),
                 "macro_bull": round(macro_bull, 2), "macro_bear": round(macro_bear, 2),
-                "raw_bull": round(raw_bull, 2), "raw_bear": round(raw_bear, 2)
+                "raw_bull": round(raw_bull, 2), "raw_bear": round(raw_bear, 2),
+                "v2_clusters": {
+                    "cluster_a_vol_intensity": {"bull": round(v2_cl_a_bull, 2), "bear": round(v2_cl_a_bear, 2), "max": 5.0},
+                    "cluster_b_aggressor_cvd": {"bull": round(v2_cl_b_bull, 2), "bear": round(v2_cl_b_bear, 2), "max": 5.0},
+                    "cluster_c_microstructure": {"bull": round(v2_cl_c_bull, 2), "bear": round(v2_cl_c_bear, 2), "max": 4.0},
+                    "cluster_d_structural_profile": {"bull": round(v2_cl_d_bull, 2), "bear": round(v2_cl_d_bear, 2), "max": 4.0},
+                }
             },
             "kama": round(kama_latest, 2),
             "kaufman_efficiency_ratio": ker_val,
