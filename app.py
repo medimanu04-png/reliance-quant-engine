@@ -2136,79 +2136,29 @@ df = fetch_reliance_data(timeframe)
 # ==============================================================================
 # 4.5. LIVE 1-SECOND DYNAMIC STREAMING FRAGMENT FOR DUAL ATM CORRIDOR
 # ==============================================================================
-def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, is_streaming: bool = True, trade_plan: dict = None):
+# REUSABLE EXECUTION TRIGGER & SETUP ARMED ENGINE (RENDERED IN COCKPIT & CORRIDOR)
+# ==============================================================================
+def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp: float = 0.0, corridor: dict = None, low: dict = None, high: dict = None, spot_tick: float = None):
     tp = trade_plan or {}
     plan_contract_type = tp.get("recommended_contract_type", "CE")
     is_pe_dominant = (plan_contract_type == "PE")
 
-    dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
-    dyn_atm = dyn_corridor["lower_strike"]
-
-    stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
-        atm_strike=dyn_atm, 
-        spot=spot, 
-        broker_call_ltp=broker_call_ltp,
-        selected_strike=selected_strike,
-        bias="BEARISH" if is_pe_dominant else "BULLISH"
-    )
-    corridor = stream["corridor"]
-    best = stream["best_strike"]
-    low = stream["lower"]
-    high = stream["upper"]
-    call = stream["call"]
-    put = stream["put"]
-    comp = stream["comparative"]
-    spot_tick = stream["spot_tick"]
-    ts = stream["timestamp"]
-    tape = stream.get("tape", [])
-
-    status_tag = "🟢 DYNAMIC TICKING (1s)" if is_streaming else "⏸️ STREAM PAUSED"
-
-    active_side_data = high if is_pe_dominant else low
-    best_ltp = active_side_data['put_ltp'] if is_pe_dominant else active_side_data['call_ltp']
-    best_delta = active_side_data['delta_pe'] if is_pe_dominant else active_side_data['delta_ce']
-    best_spot_move = active_side_data['spot_move_needed_pe'] if is_pe_dominant else active_side_data['spot_move_needed_ce']
-    move_sign = "-" if is_pe_dominant else "+"
-    best_oi_chg = active_side_data['put_oi_change_pct'] if is_pe_dominant else active_side_data['call_oi_change_pct']
-    best_oi_narrative = "institutional put writing support" if is_pe_dominant else "trapped call unwinding momentum"
-    best_intrinsic = max(0.0, corridor['upper_strike'] - spot_tick) if is_pe_dominant else active_side_data['intrinsic_ce']
-
-    # Header and Quantitatively Suggested Best Strike Banner
-    st.html(f"""
-    <div style="background: #0F172A !important; border: 1px solid #334155 !important; border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1E293B; padding-bottom: 10px; margin-bottom: 12px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="live-dot"></span>
-                <span style="font-weight: 800; color: #10B981; font-size: 0.95rem; letter-spacing: 0.5px;">LIVE 1-SECOND DUAL ATM CORRIDOR STREAM</span>
-                <span style="background: #064E3B; color: #6EE7B7; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 700; border: 1px solid #10B981;">{status_tag}</span>
-                <span style="background: #0C4A6E; color: #7DD3FC; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 700; border: 1px solid #0284C7;">Corridor: ₹{corridor['lower_strike']} & ₹{corridor['upper_strike']}</span>
-            </div>
-            <div style="font-size: 0.82rem; color: #CBD5E1;">
-                ⏱️ Feed Time: <b style="color: #FFFFFF;">{ts}</b> &nbsp;|&nbsp; RELIANCE Spot: <b style="color: #38BDF8;">₹{spot_tick:.2f}</b>
-            </div>
-        </div>
-        
-        <div style="background: #111827 !important; border: 1px solid {'#EF4444' if is_pe_dominant else '#10B981'} !important; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
-            <div>
-                <span style="font-size: 0.74rem; color: {'#F87171' if is_pe_dominant else '#34D399'}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">🏆 Quantitatively Suggested Best Strike to Trade</span>
-                <div style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; margin-top: 2px;">
-                    {best['instrument']} &nbsp;<span style="font-size: 0.80rem; background: {'#DC2626' if is_pe_dominant else '#059669'}; color: #FFFFFF; padding: 2px 10px; border-radius: 4px; font-weight: 700;">Score: {best['score']}/100</span>
-                </div>
-                <div style="font-size: 0.80rem; color: #E2E8F0; margin-top: 4px;">
-                    Delta <b style="color: #38BDF8;">{abs(best_delta):.2f}</b> requires only <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{move_sign}{best_spot_move} pts</b> spot move to hit target (within daily ATR 17.8 pts) • <b style="color: #FFFFFF;">₹{best_intrinsic:.2f}</b> intrinsic cushion • <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{best_oi_chg:+.1f}%</b> {best_oi_narrative}
-                </div>
-                <div style="font-size: 0.69rem; color: #94A3B8; margin-top: 5px;">
-                    📡 <b>Source:</b> Black-Scholes Greeks (Delta/Intrinsic) & Groww Live Option Chain (0-Delay Stream)
-                </div>
-            </div>
-            <div style="text-align: right; min-width: 140px;">
-                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 600;">Best Strike LTP</span>
-                <div style="font-size: 1.7rem; font-weight: 800; color: {'#C084FC' if is_pe_dominant else '#38BDF8'};">₹{best_ltp:.2f}</div>
-                <div style="font-size: 0.67rem; color: #64748B;">Src: Groww 0-Delay Feed</div>
-            </div>
-        </div>
-    </div>
-    """)
+    if corridor is None or low is None or high is None:
+        dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+        dyn_atm = dyn_corridor["lower_strike"]
+        stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
+            atm_strike=dyn_atm, 
+            spot=spot, 
+            broker_call_ltp=broker_call_ltp,
+            bias="BEARISH" if is_pe_dominant else "BULLISH"
+        )
+        corridor = stream["corridor"]
+        low = stream["lower"]
+        high = stream["upper"]
+        if spot_tick is None:
+            spot_tick = stream.get("spot_tick", spot)
+    elif spot_tick is None:
+        spot_tick = spot
 
     # ==========================================================================
     # REAL-TIME DYNAMIC "WHEN TO BUY" SIGNAL & EXECUTION TRIGGER ENGINE
@@ -2298,7 +2248,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         profit_rs = round(costs_target_sim["net_pnl"])
         gross_profit_rs = round(costs_target_sim["gross_pnl"])
         target_tax_charges = costs_target_sim["total_charges"]
-        
+
         # Telegram Alert Dispatch
         tg_status_html = ""
         if tg_on and tg_token and tg_chat:
@@ -3185,7 +3135,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
             elif TelegramNotifier.is_alert_sent(alert_sent_key):
                 st.session_state[alert_sent_key] = True
-            
+
             last_status = st.session_state.get("last_tg_status", "✅ Telegram Alert Dispatched!")
             tg_status_html = f"""
             <div style="background: rgba(16, 185, 129, 0.25); border: 1px solid #10B981; border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.76rem; color: #6EE7B7; display: flex; justify-content: space-between; align-items: center;">
@@ -3522,6 +3472,94 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 </div>
             </div>
             """)
+
+
+
+# ==============================================================================
+def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, is_streaming: bool = True, trade_plan: dict = None):
+    tp = trade_plan or {}
+    plan_contract_type = tp.get("recommended_contract_type", "CE")
+    is_pe_dominant = (plan_contract_type == "PE")
+
+    dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+    dyn_atm = dyn_corridor["lower_strike"]
+
+    stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
+        atm_strike=dyn_atm, 
+        spot=spot, 
+        broker_call_ltp=broker_call_ltp,
+        selected_strike=selected_strike,
+        bias="BEARISH" if is_pe_dominant else "BULLISH"
+    )
+    corridor = stream["corridor"]
+    best = stream["best_strike"]
+    low = stream["lower"]
+    high = stream["upper"]
+    call = stream["call"]
+    put = stream["put"]
+    comp = stream["comparative"]
+    spot_tick = stream["spot_tick"]
+    ts = stream["timestamp"]
+    tape = stream.get("tape", [])
+
+    status_tag = "🟢 DYNAMIC TICKING (1s)" if is_streaming else "⏸️ STREAM PAUSED"
+
+    active_side_data = high if is_pe_dominant else low
+    best_ltp = active_side_data['put_ltp'] if is_pe_dominant else active_side_data['call_ltp']
+    best_delta = active_side_data['delta_pe'] if is_pe_dominant else active_side_data['delta_ce']
+    best_spot_move = active_side_data['spot_move_needed_pe'] if is_pe_dominant else active_side_data['spot_move_needed_ce']
+    move_sign = "-" if is_pe_dominant else "+"
+    best_oi_chg = active_side_data['put_oi_change_pct'] if is_pe_dominant else active_side_data['call_oi_change_pct']
+    best_oi_narrative = "institutional put writing support" if is_pe_dominant else "trapped call unwinding momentum"
+    best_intrinsic = max(0.0, corridor['upper_strike'] - spot_tick) if is_pe_dominant else active_side_data['intrinsic_ce']
+
+    # Header and Quantitatively Suggested Best Strike Banner
+    st.html(f"""
+    <div style="background: #0F172A !important; border: 1px solid #334155 !important; border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1E293B; padding-bottom: 10px; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="live-dot"></span>
+                <span style="font-weight: 800; color: #10B981; font-size: 0.95rem; letter-spacing: 0.5px;">LIVE 1-SECOND DUAL ATM CORRIDOR STREAM</span>
+                <span style="background: #064E3B; color: #6EE7B7; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 700; border: 1px solid #10B981;">{status_tag}</span>
+                <span style="background: #0C4A6E; color: #7DD3FC; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 700; border: 1px solid #0284C7;">Corridor: ₹{corridor['lower_strike']} & ₹{corridor['upper_strike']}</span>
+            </div>
+            <div style="font-size: 0.82rem; color: #CBD5E1;">
+                ⏱️ Feed Time: <b style="color: #FFFFFF;">{ts}</b> &nbsp;|&nbsp; RELIANCE Spot: <b style="color: #38BDF8;">₹{spot_tick:.2f}</b>
+            </div>
+        </div>
+        
+        <div style="background: #111827 !important; border: 1px solid {'#EF4444' if is_pe_dominant else '#10B981'} !important; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
+            <div>
+                <span style="font-size: 0.74rem; color: {'#F87171' if is_pe_dominant else '#34D399'}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">🏆 Quantitatively Suggested Best Strike to Trade</span>
+                <div style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; margin-top: 2px;">
+                    {best['instrument']} &nbsp;<span style="font-size: 0.80rem; background: {'#DC2626' if is_pe_dominant else '#059669'}; color: #FFFFFF; padding: 2px 10px; border-radius: 4px; font-weight: 700;">Score: {best['score']}/100</span>
+                </div>
+                <div style="font-size: 0.80rem; color: #E2E8F0; margin-top: 4px;">
+                    Delta <b style="color: #38BDF8;">{abs(best_delta):.2f}</b> requires only <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{move_sign}{best_spot_move} pts</b> spot move to hit target (within daily ATR 17.8 pts) • <b style="color: #FFFFFF;">₹{best_intrinsic:.2f}</b> intrinsic cushion • <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{best_oi_chg:+.1f}%</b> {best_oi_narrative}
+                </div>
+                <div style="font-size: 0.69rem; color: #94A3B8; margin-top: 5px;">
+                    📡 <b>Source:</b> Black-Scholes Greeks (Delta/Intrinsic) & Groww Live Option Chain (0-Delay Stream)
+                </div>
+            </div>
+            <div style="text-align: right; min-width: 140px;">
+                <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 600;">Best Strike LTP</span>
+                <div style="font-size: 1.7rem; font-weight: 800; color: {'#C084FC' if is_pe_dominant else '#38BDF8'};">₹{best_ltp:.2f}</div>
+                <div style="font-size: 0.67rem; color: #64748B;">Src: Groww 0-Delay Feed</div>
+            </div>
+        </div>
+    </div>
+    """)
+
+    # Execution Trigger & Setup Armed Card (Delegated to reusable engine)
+    render_execution_trigger_card(
+        trade_plan=tp,
+        spot=spot,
+        broker_call_ltp=broker_call_ltp,
+        corridor=corridor,
+        low=low,
+        high=high,
+        spot_tick=spot_tick
+    )
 
     # Dynamic styling and badges based on whether CE or PE is dominant
     if is_pe_dominant:
@@ -6062,6 +6100,164 @@ if df is not None and not df.empty:
                 </div>
                 ''')
 
+
+                # ==============================================================================
+        # 5.4B. REAL-TIME SETUP ARMED & EXECUTION TRIGGER ENGINE (DIRECT COCKPIT VIEW)
+        # ==============================================================================
+        # Build or reference active trade_plan for instant execution in Live Cockpit
+        _cockpit_trade_plan = locals().get("trade_plan", None)
+        if _cockpit_trade_plan is None:
+            _active_plan_ltp = live_broker_ltp if live_broker_ltp > 0 else (c1_live_ltp if atm_strike == lower_atm else c2_live_ltp) if ('c1_live_ltp' in locals() and 'lower_atm' in locals()) else 18.0
+            _var_greeks = MultiIndicatorMath.calculate_value_at_risk_and_greeks_neutrality(
+                spot=spot,
+                option_ltp=_active_plan_ltp if _active_plan_ltp > 0 else 18.0,
+                num_lots=kelly_recommended_lots,
+                lot_size=lot_size,
+                delta=0.52,
+                iv=float(latest.get('Parkinson_Vol', 21.0)) / 100.0,
+                dte=expiry_plan.get("dte", 30),
+                contract_type=recommended_contract_type if recommended_contract_type else "CE",
+                confidence_level=0.99
+            )
+            _pegged_routing = MultiIndicatorMath.calculate_passive_limit_pegging_and_vwap_slicing(
+                bid_price=float(opt_telemetry.get("best_bid", _active_plan_ltp - 0.15)) if 'opt_telemetry' in locals() else _active_plan_ltp - 0.15,
+                ask_price=float(opt_telemetry.get("best_ask", _active_plan_ltp + 0.15)) if 'opt_telemetry' in locals() else _active_plan_ltp + 0.15,
+                bid_qty=int(opt_telemetry.get("bid_qty", 1000)) if 'opt_telemetry' in locals() else 1000,
+                ask_qty=int(opt_telemetry.get("ask_qty", 1000)) if 'opt_telemetry' in locals() else 1000,
+                target_lots=kelly_recommended_lots,
+                lot_size=lot_size,
+                urgency="COLLAR_TRIGGER" if (orb_breakout or orb_breakdown) else "PASSIVE",
+                entry_trigger=_active_plan_ltp + 1.20,
+                max_collar_pts=0.65
+            )
+            _cockpit_trade_plan = {
+                "is_tradable": is_tradable,
+                "dominant_side": dominant_side,
+                "dominant_score": dominant_score,
+                "bullish_score": bullish_score,
+                "bearish_score": bearish_score,
+                "recommended_contract_type": recommended_contract_type,
+                "atm_strike": atm_strike,
+                "target_pts": effective_target_pts,
+                "sl_pts": effective_sl_pts,
+                "is_sl_dynamic": is_sl_dynamic,
+                "atr_dynamic_sl": atr_dynamic_sl,
+                "iv_percentile": iv_percentile,
+                "iv_gate_failed": iv_gate_failed,
+                "crude_pct": crude_pct,
+                "crude_gate_failed": crude_gate_failed,
+                "num_lots": num_lots,
+                "lot_size": lot_size,
+                "total_trading_qty": total_trading_qty,
+                "expiry_date_str": expiry_date_str,
+                "min_hit_percentage": MIN_HIT_PERCENTAGE,
+                "tg_bot_token": tg_bot_token,
+                "tg_chat_id": tg_chat_id,
+                "tg_enabled": tg_enabled,
+                "simulate_entry": simulate_entry_trigger,
+                "simulate_armed": simulate_armed_state,
+                "sim_mode": sim_mode,
+                "sim_run_id": st.session_state.get("sim_run_id", "0"),
+                "time_gate_allowed": time_gate_allowed,
+                "time_gate_msg": time_gate_msg,
+                "is_choppy_regime": is_choppy_regime,
+                "chop_val": chop_val,
+                "estimated_premium": estimated_premium,
+                "custom_trigger_override": custom_trigger_override,
+                "is_target_dynamic": is_target_dynamic,
+                "static_target_pts": target_pts,
+                "stock_atr": stock_atr,
+                "trailing_activation_pts": trailing_activation_pts,
+                "risk_pct_of_capital": risk_pct_of_capital,
+                "capital_risk_safe": capital_risk_safe,
+                "capital_risk_warning": capital_risk_warning,
+                "capital_risk_critical": capital_risk_critical,
+                "account_cash": account_cash,
+                "est_entry_cost": est_entry_cost,
+                "midday_penalty_active": midday_penalty_active,
+                "is_midday_chop_zone": is_midday_chop_zone,
+                "is_circuit_breaker_tripped": is_circuit_breaker_tripped,
+                "session_sl_count": st.session_state.get("session_sl_count", 0),
+                "max_daily_sl_allowed": max_daily_sl_allowed,
+                "alpha_spread": alpha_spread,
+                "vix_scaler": vix_scaler,
+                "orb_low_vol_trap": orb_low_vol_trap,
+                "costs_target": costs_target,
+                "kelly_recommended_lots": kelly_recommended_lots,
+                "half_kelly_pct": half_kelly_pct,
+                "kelly_status": kelly_status,
+                "is_synthetic_feed": is_synthetic_feed,
+                "mtf_matrix": mtf_matrix,
+                "cvd_val": cvd_val,
+                "cvd_slope": cvd_slope,
+                "cvd_bull_divergence": cvd_bull_divergence,
+                "cvd_bear_divergence": cvd_bear_divergence,
+                "avwap_orb": avwap_orb,
+                "avwap_retest_support": avwap_retest_support,
+                "w_avwap": float(latest.get('W_AVWAP', spot)),
+                "cpr_pivot": float(latest.get('CPR_P', spot)),
+                "cpr_bc": float(latest.get('CPR_BC', spot)),
+                "cpr_tc": float(latest.get('CPR_TC', spot)),
+                "cpr_regime": str(latest.get('CPR_Regime', 'NORMAL_CPR')),
+                "donchian_upper": float(latest.get('Donchian_High', spot)),
+                "donchian_lower": float(latest.get('Donchian_Low', spot)),
+                "cmf": float(latest.get('CMF_20', 0.0)),
+                "pvt": float(latest.get('PVT', 0.0)),
+                "eom": float(latest.get('EOM_14', 0.0)),
+                "basis_pts": basis_pts,
+                "basis_regime": basis_regime,
+                "pcr_vol": pcr_vol,
+                "pcr_divergence": pcr_div,
+                "pcr_flow_bias": pcr_flow_bias,
+                "chaikin_volatility": float(latest.get('Chaikin_Vol', 0.0)),
+                "mass_index": float(latest.get('Mass_Index', 25.0)),
+                "straddle_expected_move": exp_move_pts,
+                "straddle_regime": straddle_regime,
+                "cmo": float(latest.get('CMO_14', 0.0)),
+                "stc": float(latest.get('STC', 50.0)),
+                "fisher_transform": float(latest.get('Fisher_Transform', 0.0)),
+                "connors_rsi": float(latest.get('Connors_RSI', 50.0)),
+                "rec_limit_premium": mtf_matrix['m1']['rec_limit_premium_ce'] if recommended_contract_type == "CE" else mtf_matrix['m1']['rec_limit_premium_pe'],
+                "premium_savings_pts": mtf_matrix['m1']['premium_savings_pts'],
+                "is_orb_confirmed": is_orb_confirmed,
+                "wick_guard_passed": wick_guard_passed,
+                "tick_persistence_passed": tick_persistence_passed,
+                "orb_persistence_regime": orb_persistence_regime,
+                "var_95_rupees": _var_greeks["var_95_rupees"],
+                "var_99_rupees": _var_greeks["var_99_rupees"],
+                "var_95_pts": _var_greeks["var_95_pts"],
+                "var_99_pts": _var_greeks["var_99_pts"],
+                "portfolio_delta_shares": _var_greeks["portfolio_delta_shares"],
+                "portfolio_gamma": _var_greeks["portfolio_gamma"],
+                "portfolio_theta_daily_rs": _var_greeks["portfolio_theta_daily_rs"],
+                "portfolio_vega_rs": _var_greeks["portfolio_vega_rs"],
+                "neutrality_regime": _var_greeks["neutrality_regime"],
+                "pegged_limit_price": _pegged_routing["pegged_limit_price"],
+                "routing_mode": _pegged_routing["routing_mode"],
+                "slicing_regime": _pegged_routing["slicing_regime"],
+                "slippage_saved_rupees": _pegged_routing["slippage_saved_rupees"],
+                "tg_rationale": (
+                    f"• <b>M15 Structure:</b> {mtf_matrix['m15']['regime'].replace('_', ' ')} (9/20/50 EMA stack)\n"
+                    f"• <b>M5 Trigger:</b> {mtf_matrix['m5']['trigger'].replace('_', ' ')} | CPR: {str(latest.get('CPR_Regime', 'NORMAL_CPR')).replace('_', ' ')}\n"
+                    f"• <b>W-AVWAP & Donchian:</b> W-AVWAP ₹{float(latest.get('W_AVWAP', spot)):.1f} | Donchian [₹{float(latest.get('Donchian_Low', spot)):.1f} - ₹{float(latest.get('Donchian_High', spot)):.1f}]\n"
+                    f"• <b>M1 Limit Execution:</b> Optimal Bid ₹{mtf_matrix['m1']['rec_limit_premium_ce'] if recommended_contract_type == 'CE' else mtf_matrix['m1']['rec_limit_premium_pe']:.2f} (Saves ₹{mtf_matrix['m1']['premium_savings_pts']:.2f}/unit)\n"
+                    f"• <b>CVD Flow & CMF:</b> CVD {cvd_val:+,.0f} | CMF-20 {float(latest.get('CMF_20', 0.0)):+.3f} ({'🟢 Bullish Ask Absorption' if cvd_bull_divergence else ('🔴 Bearish Distribution' if cvd_bear_divergence else 'Synchronous')})\n"
+                    f"• <b>Momentum Matrix:</b> CMO {float(latest.get('CMO_14', 0.0)):+.1f} | STC {float(latest.get('STC', 50.0)):.1f} | CRSI {float(latest.get('Connors_RSI', 50.0)):.1f} | Fisher {float(latest.get('Fisher_Transform', 0.0)):+.2f}\n"
+                    f"• <b>IV & Basis:</b> IVP {iv_percentile:.1f}% | Basis {basis_pts:+.2f} pts | Straddle Move ±₹{exp_move_pts:.1f}\n"
+                    f"• <b>Brent/MCX Crude:</b> {crude_pct:+.2f}% ({'🟢 Refining Tailwind' if crude_rallying else ('🔴 Severe O2C Drag' if crude_dumping_severe else 'Steady')})\n"
+                    f"• <b>Half-Kelly Sizing:</b> {half_kelly_pct:.1f}% ({kelly_recommended_lots} Lots | {kelly_status}) | 1.5× ATR SL: -{effective_sl_pts:.1f} pts ({risk_pct_of_capital:.1f}% of Capital ≤ 4%)\n"
+                    f"• <b>Risk Management & VaR:</b> VaR-99% ₹{_var_greeks['var_99_rupees']:,.0f} | Portfolio Delta {_var_greeks['portfolio_delta_shares']:+.1f} Sh ({_var_greeks['neutrality_regime']})\n"
+                    f"• <b>Execution Routing:</b> {_pegged_routing['routing_mode']} @ ₹{_pegged_routing['pegged_limit_price']:.2f} | {_pegged_routing['slicing_regime']}\n"
+                    f"• <b>ORB & Wick Guard:</b> {'🟢 Confirmed' if is_orb_confirmed else '⏳ ' + orb_persistence_regime}"
+                )
+            }
+        
+        # Render the Armed Setup / Execution Trigger Card directly in Live Cockpit
+        render_execution_trigger_card(
+            trade_plan=_cockpit_trade_plan,
+            spot=spot,
+            broker_call_ltp=live_broker_ltp
+        )
 
         # 5.5. INSTITUTIONAL MULTI-TIMEFRAME MATRIX (M15 + M5 + M1)
         # ==============================================================================
