@@ -3940,6 +3940,170 @@ class MultiIndicatorMath:
 
         return dyn_target, dyn_sl, regime
 
+    @staticmethod
+    def calculate_order_book_depth_skew(
+        bids: List[Dict[str, float]],
+        asks: List[Dict[str, float]],
+        decay_factor: float = 0.5
+    ) -> Tuple[float, float, str]:
+        """
+        Multi-Level L2 Order Book Depth Skew & Weighted Micro-Price.
+        Reference: Cartea & Jaimungal (2014) "Risk Metrics and Fine Tuning of High-Frequency Trading Strategies".
+
+        Weights up to 5 book levels with exponential decay: w_k = exp(-decay * (k-1)).
+        Depth Skew I_depth = sum(w_k * (Q_b^k - Q_a^k)) / sum(w_k * (Q_b^k + Q_a^k))
+
+        Returns: (depth_skew, weighted_micro_price, depth_regime)
+        """
+        if not bids or not asks:
+            return 0.0, 0.0, "INSUFFICIENT_L2_DEPTH"
+
+        levels = min(5, min(len(bids), len(asks)))
+        weighted_bid_qty = 0.0
+        weighted_ask_qty = 0.0
+        weighted_bid_val = 0.0
+        weighted_ask_val = 0.0
+
+        for k in range(levels):
+            w = math.exp(-decay_factor * k)
+            bq = float(bids[k].get("quantity", bids[k].get("qty", 100)))
+            bp = float(bids[k].get("price", 0.0))
+            aq = float(asks[k].get("quantity", asks[k].get("qty", 100)))
+            ap = float(asks[k].get("price", 0.0))
+
+            weighted_bid_qty += w * bq
+            weighted_ask_qty += w * aq
+            weighted_bid_val += w * bq * bp
+            weighted_ask_val += w * aq * ap
+
+        tot_qty = weighted_bid_qty + weighted_ask_qty
+        depth_skew = round((weighted_bid_qty - weighted_ask_qty) / max(1.0, tot_qty), 3)
+
+        # Multi-level weighted micro-price
+        weighted_micro_price = round(
+            (weighted_bid_qty * (asks[0].get("price", 0.0)) + weighted_ask_qty * (bids[0].get("price", 0.0))) / max(1.0, tot_qty),
+            2
+        ) if (bids[0].get("price", 0) > 0 and asks[0].get("price", 0) > 0) else 0.0
+
+        if depth_skew >= 0.35:
+            regime = "HEAVY_BUY_SIDE_ICEBERG_SUPPORT"
+        elif depth_skew <= -0.35:
+            regime = "HEAVY_SELL_SIDE_LIQUIDITY_WALL"
+        elif depth_skew >= 0.15:
+            regime = "MILD_BUY_PRESSURE"
+        elif depth_skew <= -0.15:
+            regime = "MILD_SELL_PRESSURE"
+        else:
+            regime = "BALANCED_ORDER_BOOK"
+
+        return depth_skew, weighted_micro_price, regime
+
+    @staticmethod
+    def calculate_ou_momentum_half_life_barrier(
+        closes: List[float],
+        time_elapsed_minutes: int,
+        unrealized_profit_pts: float,
+        lookback: int = 30
+    ) -> Tuple[bool, float, str]:
+        """
+        Ornstein-Uhlenbeck (OU) Dynamic Momentum Half-Life Time Barrier.
+        Reference: Uhlenbeck & Ornstein (1930) "On the Theory of the Brownian Motion";
+        López de Prado (2018) "Advances in Financial Machine Learning".
+
+        Computes mean-reversion rate kappa and momentum half-life: t_half = ln(2) / kappa.
+        If trade has been active > (2.5 * t_half minutes) without reaching Milestone 1 (+3.5 pts),
+        directional momentum has decayed and an early market exit is advised.
+
+        Returns: (should_exit_early, half_life_mins, exit_recommendation)
+        """
+        if len(closes) < 15:
+            return False, 30.0, "MAINTAIN_POSITION"
+
+        recent = closes[-lookback:] if len(closes) >= lookback else closes
+        returns = [(recent[i] - recent[i - 1]) for i in range(1, len(recent))]
+
+        # Regress delta_r_t against r_{t-1}: delta_r_t = -kappa * (r_{t-1} - theta) + epsilon
+        x = returns[:-1]
+        y = returns[1:]
+        n = len(x)
+
+        if n < 5:
+            return False, 30.0, "MAINTAIN_POSITION"
+
+        mean_x = sum(x) / n
+        mean_y = sum(y) / n
+        var_x = sum((xi - mean_x) ** 2 for xi in x)
+        cov_xy = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y))
+
+        beta = cov_xy / max(1e-8, var_x)
+        # kappa = -ln(beta) / dt, assuming dt = 5 mins
+        if 0.0 < beta < 0.999:
+            kappa = -math.log(beta) / 5.0
+            half_life_mins = round(math.log(2.0) / max(0.001, kappa), 1)
+        else:
+            half_life_mins = 25.0
+
+        half_life_mins = max(10.0, min(60.0, half_life_mins))
+        max_allowed_holding_mins = 2.5 * half_life_mins
+
+        should_exit = (time_elapsed_minutes >= max_allowed_holding_mins) and (unrealized_profit_pts < 3.5)
+
+        if should_exit:
+            rec = f"OU_TIME_BARRIER_BREACHED (Held {time_elapsed_minutes}m > {max_allowed_holding_mins:.0f}m threshold with gain < +3.5 pts — Exit at market to free capital)"
+        else:
+            rec = f"MOMENTUM_HEALTHY (Holding {time_elapsed_minutes}m within {max_allowed_holding_mins:.0f}m OU window)"
+
+        return should_exit, half_life_mins, rec
+
+    @staticmethod
+    def evaluate_metalabeling_trade_filter(
+        primary_confluence_score: float,
+        hawkes_branching_ratio: float,
+        vpin_val: float,
+        kyle_regime: str,
+        is_synthetic_feed: bool,
+        copula_lambda_L: float
+    ) -> Tuple[bool, float, str]:
+        """
+        Secondary Metalabeling Classifier Layer (López de Prado 2018).
+        Decouples directional forecasting from sizing and execution filtering.
+
+        Given a primary trade direction, evaluates whether the trade should actually be
+        executed (Bet Sizing = 1.0 vs 0.0) based on secondary microstructure features.
+
+        Returns: (metalabel_approved, execution_confidence, metalabel_regime)
+        """
+        # Baseline confidence from primary confluence score
+        conf = (primary_confluence_score - 50.0) / 50.0  # Scale 0.0 to 1.0
+        conf = max(0.0, min(1.0, conf))
+
+        penalties = 0.0
+
+        # Secondary Microstructure Filters
+        if hawkes_branching_ratio < 0.40:
+            penalties += 0.25  # Solitary order burst lacks cascade follow-through
+        if vpin_val >= 0.35:
+            penalties += 0.30  # High toxicity flight risk
+        if kyle_regime == "LIQUIDITY_VACUUM_TRAP":
+            penalties += 0.35  # Adverse selection risk in thin book
+        if is_synthetic_feed:
+            penalties += 0.40  # Missing live option chain
+        if copula_lambda_L >= 0.60:
+            penalties += 0.30  # Tail contagion risk
+
+        adjusted_conf = round(max(0.0, min(1.0, conf - penalties)), 2)
+        metalabel_approved = (adjusted_conf >= 0.45) and (primary_confluence_score >= 80.0)
+
+        if adjusted_conf >= 0.75:
+            regime = "METALABEL_HIGH_CONFIDENCE_FULL_SIZE"
+        elif metalabel_approved:
+            regime = "METALABEL_APPROVED_STANDARD_SIZE"
+        else:
+            regime = f"METALABEL_VETOED_HIGH_MICROSTRUCTURE_NOISE (Confidence: {adjusted_conf:.2f} < 0.45)"
+
+        return metalabel_approved, adjusted_conf, regime
+
+
 
 # ============================================================================
 # 2b. QUANTITATIVE CONFIGURATION (Centralized Threshold Management)
@@ -4496,6 +4660,15 @@ class UltraHighConvictionRelianceEngine:
             v2_bull += 1.0
         elif obi_bias == "ASK_PRESSURE":
             v2_bear += 1.0
+
+        # Multi-Level L2 Depth Skew (Cartea & Jaimungal 2014)
+        opt_bids = opt_telemetry.get("bids", [{"price": best_bid, "quantity": bid_qty}])
+        opt_asks = opt_telemetry.get("asks", [{"price": best_ask, "quantity": ask_qty}])
+        depth_skew, weighted_micro_p, depth_regime = MultiIndicatorMath.calculate_order_book_depth_skew(opt_bids, opt_asks)
+        if depth_regime == "HEAVY_BUY_SIDE_ICEBERG_SUPPORT":
+            v2_bull += 1.5  # Stealth iceberg buyer absorption at deeper levels
+        elif depth_regime == "HEAVY_SELL_SIDE_LIQUIDITY_WALL":
+            v2_bear += 1.5  # Heavy seller liquidity wall capping prices
 
         # Kyle's Lambda Market Impact & Order Flow Illiquidity Factor (Albert S. Kyle 1985)
         curr_lambda, avg_lambda, kyle_regime, is_low_lambda_abs, p30_lambda = MultiIndicatorMath.calculate_kyles_lambda(
@@ -5335,6 +5508,18 @@ class UltraHighConvictionRelianceEngine:
 
         total_probability = dominant_score
         midday_cleared = (not is_midday_lull) or vol_surge
+
+        # Secondary Metalabeling Classifier Layer (López de Prado 2018)
+        # Conditioned on primary confluence, Hawkes branching, VPIN, Kyle regime, and Copula lower tail
+        metalabel_approved, metalabel_conf, metalabel_regime = MultiIndicatorMath.evaluate_metalabeling_trade_filter(
+            primary_confluence_score=dominant_score,
+            hawkes_branching_ratio=branching_ratio,
+            vpin_val=vpin_val,
+            kyle_regime=kyle_regime,
+            is_synthetic_feed=is_synthetic_feed,
+            copula_lambda_L=lambda_L
+        )
+
         # Strict Execution Gate: Must NOT be running on synthetic fallback, in opening cooldown, wide spread, toxic VPIN, or blocked by Virgin VWAP
         is_tradable = (
             (total_probability >= (82.0 if is_midday_lull else self.trade_regime_threshold))
@@ -5349,6 +5534,7 @@ class UltraHighConvictionRelianceEngine:
             and not is_target_blocked_by_virgin_vwap
             and not is_sector_divergence_trap
             and not is_high_market_impact
+            and metalabel_approved  # Secondary Metalabeling veto for high microstructure noise
         )
 
         # Dynamic Dual ATM Corridor Resolution & Best Strike Suggestion
@@ -5779,6 +5965,13 @@ class UltraHighConvictionRelianceEngine:
             "dynamic_barrier_regime": barrier_regime,
             "dynamic_target_pts": dyn_tgt_barrier,
             "dynamic_sl_pts": dyn_sl_barrier,
+            # Institutional V5 Upgrades: L2 Depth Skew, Metalabeling Layer, OU Half-Life
+            "order_book_depth_skew": depth_skew,
+            "weighted_micro_price": weighted_micro_p,
+            "order_book_depth_regime": depth_regime,
+            "metalabel_approved": metalabel_approved,
+            "metalabel_confidence": metalabel_conf,
+            "metalabel_regime": metalabel_regime,
             # Slippage Tracking Stub (Gap 4: Placeholder for live fill comparison)
             "planned_entry_price": entry_premium if is_tradable else None,
             "actual_fill_price": None,  # Populated post-execution by trade journal

@@ -251,6 +251,26 @@ class RelianceQuantAlertDaemon:
         self.last_chop_alert_sent = False
         self.last_git_sync_ts = time.time()
         self.breakout_tick_counts: Dict[str, int] = {}
+        # Pre-Market Warmup & Kalman Seeding (Suggestion 4)
+        self._premarket_preload_and_seed_kalman()
+
+    def _premarket_preload_and_seed_kalman(self):
+        """
+        Pre-Market Historical Cache Pre-Loader & Kalman Filter State Seeder (Suggestion 4).
+        Pre-loads 5-minute candles from local Parquet cache or Groww/YFinance at startup
+        to eliminate 09:15 AM cold-start latency and pre-seed the Kalman state-space filter.
+        """
+        try:
+            cache_file = os.path.join(BASE_DIR, "data_cache", "reliance_5m_cache.parquet")
+            if os.path.exists(cache_file):
+                cached_df = pd.read_parquet(cache_file)
+                if not cached_df.empty:
+                    closes = cached_df["Close"].dropna().tolist()
+                    if len(closes) >= 15:
+                        kal_price, kal_slope, kal_gain, kal_reg = MultiIndicatorMath.calculate_kalman_trend(closes[-30:])
+                        logger.info(f"⚡ Pre-Market Kalman Filter seeded: Filtered Rs. {kal_price:.2f} | Slope: {kal_slope:+.3f} [{kal_reg}]")
+        except Exception as e:
+            logger.debug(f"Premarket preloader notice: {e}")
 
     def is_market_hours(self) -> Tuple[bool, str]:
         """Checks if current time is within Indian NSE trading hours."""
@@ -587,7 +607,7 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(sl_key)
                         logger.info(f"🛑 STOP LOSS ALERT DISPATCHED TO TELEGRAM: {fb}")
 
-            # Theta Stagnation Time-Stop Check (45-Minute Stagnation Rule)
+            # Theta Stagnation & Ornstein-Uhlenbeck Dynamic Half-Life Time-Stop Check (Suggestion 2)
             entry_time_val = str(active_trade.get("actual_entry_time") or active_trade.get("proposed_at") or "")
             is_stagnant, elapsed_mins, stag_pts, stag_msg = SequentialTradeEngine.check_theta_stagnation(
                 entry_time_str=entry_time_val,
@@ -596,7 +616,17 @@ class RelianceQuantAlertDaemon:
                 max_hold_minutes=45,
                 decay_tolerance_pts=1.2
             )
-            if is_stagnant:
+
+            # OU Half-Life Dynamic Time Barrier check
+            unrealized_pts = round(cur_trade_ltp - act_entry, 2) if "CE" in inst_sym else round(act_entry - cur_trade_ltp, 2)
+            ou_exit, ou_half_life, ou_msg = MultiIndicatorMath.calculate_ou_momentum_half_life_barrier(
+                closes=candles_5m.get("close", []),
+                time_elapsed_minutes=elapsed_mins,
+                unrealized_profit_pts=unrealized_pts,
+                lookback=25
+            )
+
+            if is_stagnant or ou_exit:
                 stag_key = f"tg_sent_stag_{today_date}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(stag_key):
                     stag_alert = TelegramNotifier.format_theta_stagnation_alert(
@@ -604,13 +634,15 @@ class RelianceQuantAlertDaemon:
                         entry_price=act_entry,
                         current_ltp=cur_trade_ltp,
                         elapsed_minutes=elapsed_mins,
-                        unrealized_pnl=round(stag_pts * trade_qty, 2),
+                        unrealized_pnl=round((stag_pts if is_stagnant else unrealized_pts) * trade_qty, 2),
                         spot=spot
                     )
+                    if ou_exit:
+                        stag_alert += f"\n\n⏱️ *OU Half-Life Decay Alert*: Momentum half-life estimated at {ou_half_life:.1f}m. Directional edge exhausted; market exit advised."
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, stag_alert)
                     if ok:
                         TelegramNotifier.record_alert_sent(stag_key)
-                        logger.info(f"⏳ 📲 THETA STAGNATION ALERT DISPATCHED TO TELEGRAM: {fb}")
+                        logger.info(f"⏳ 📲 OU/THETA STAGNATION ALERT DISPATCHED TO TELEGRAM: {fb}")
 
         # ----------------------------------------------------------------------
         # STATE B: IDLE / ENTRY PENDING (Looking for Fresh Breakout Entry)
