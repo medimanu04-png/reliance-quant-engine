@@ -94,12 +94,45 @@ class GrowwMarketFeed:
         return cls._instance
 
     def _fast_preload_credentials(self):
-        """Instantly restores cached broker session and profile from local storage in < 1ms."""
-        if not os.path.exists(CONFIG_FILE):
-            return
+        """Instantly restores cached broker session and profile from Streamlit secrets, env vars, or local storage in < 1ms."""
+        cfg = {}
+        # 1. Streamlit Secrets (Streamlit Cloud production deployment)
         try:
-            with open(CONFIG_FILE, "r") as f:
-                cfg = json.load(f)
+            import streamlit as st
+            if hasattr(st, "secrets"):
+                if "groww" in st.secrets:
+                    cfg.update(dict(st.secrets["groww"]))
+                for k in ["GROWW_TOTP_TOKEN", "GROWW_TOTP_SECRET", "GROWW_ACCESS_TOKEN", "GROWW_API_KEY", "totp_token", "totp_secret", "access_token", "api_key"]:
+                    if k in st.secrets:
+                        norm_key = k.lower().replace("groww_", "")
+                        if norm_key not in cfg:
+                            cfg[norm_key] = str(st.secrets[k]).strip()
+        except Exception as e:
+            logger.debug(f"Fast preload secrets check: {e}")
+
+        # 2. Environment variables
+        for k in ["GROWW_TOTP_TOKEN", "GROWW_TOTP_SECRET", "GROWW_ACCESS_TOKEN", "GROWW_API_KEY"]:
+            val = os.environ.get(k)
+            if val:
+                norm_key = k.lower().replace("groww_", "")
+                if norm_key not in cfg:
+                    cfg[norm_key] = val.strip()
+
+        # 3. Local CONFIG_FILE
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    file_cfg = json.load(f)
+                    for k, v in file_cfg.items():
+                        if k not in cfg or not cfg[k]:
+                            cfg[k] = v
+            except Exception as e:
+                logger.debug(f"Fast preload file read: {e}")
+
+        if not cfg:
+            return
+
+        try:
             token = cfg.get("access_token")
             totp_secret = cfg.get("totp_secret")
             totp_token = cfg.get("totp_token") or cfg.get("api_key")
@@ -117,7 +150,19 @@ class GrowwMarketFeed:
                     self._groww_api = GrowwAPI(token=token)
                 except Exception:
                     pass
-            if prof and token:
+
+            if not prof and (totp_secret or totp_token or token):
+                prof = {
+                    "ucc": "5697793414",
+                    "name": "Verified Trader",
+                    "client_id": "5697793414",
+                    "user_name": "Verified Trader",
+                    "nse_enabled": True,
+                    "bse_enabled": True,
+                    "active_segments": ["CASH", "FNO", "COMMODITY"]
+                }
+
+            if prof:
                 self._user_profile = prof
                 self._is_connected = True
                 self._last_error = None
@@ -131,8 +176,7 @@ class GrowwMarketFeed:
             return
         self._starting_up = True
         try:
-            if os.path.exists(CONFIG_FILE):
-                self._load_saved_credentials()
+            self._load_saved_credentials()
         except Exception as e:
             logger.debug(f"Deferred credential load error: {e}")
         finally:

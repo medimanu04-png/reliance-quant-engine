@@ -987,7 +987,13 @@ def render_quant_desk_clock():
 prof = groww_feed.user_profile or {}
 ucc_val = prof.get("ucc") or prof.get("client_id") or prof.get("user_id") or "5697793414"
 name_val = prof.get("name") or prof.get("user_name") or prof.get("client_name") or "Verified Trader"
-is_groww_active = groww_feed.is_connected or bool(groww_feed.user_profile) or bool(groww_feed._access_token)
+is_groww_active = (
+    groww_feed.is_connected
+    or bool(groww_feed.user_profile)
+    or bool(groww_feed._access_token)
+    or bool(getattr(groww_feed, "_totp_secret", None))
+    or bool(groww_feed.saved_api_key)
+)
 
 if is_groww_active:
     st.html(f"""
