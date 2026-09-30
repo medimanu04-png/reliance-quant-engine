@@ -196,13 +196,13 @@ class GrowwMarketFeed:
         """Dedicated high-frequency option chain poller (every 2.0s). Zero delay on CE/PE prices."""
         # Immediate live chain fetch at boot
         try:
-            self._fetch_reliance_chain_now("2026-10-27")
+            self._fetch_reliance_chain_now()
         except Exception as e:
             logger.debug(f"Initial option chain fetch error: {e}")
 
         while self._bg_active:
             try:
-                self._fetch_reliance_chain_now("2026-10-27")
+                self._fetch_reliance_chain_now()
             except Exception as e:
                 logger.debug(f"Option chain poller loop error: {e}")
             time.sleep(2.0)
@@ -927,11 +927,54 @@ class GrowwMarketFeed:
             except Exception:
                 expiry_iso = "2026-10-27"
 
-        # 1. Fetch live option chain from Groww for this specific expiry
+        # 1. PRIMARY ULTRA-FAST METHOD: Direct Groww JSON REST API (sub-350ms, zero HTML parsing)
+        try:
+            sess = self._get_session()
+            url = f"https://groww.in/v1/api/option_chain_service/v1/option_chain/reliance-industries-ltd?expiry={expiry_iso}"
+            r = sess.get(url, timeout=2.5)
+            if r.status_code == 200:
+                d = r.json().get("optionChain", {})
+                contracts = d.get("optionChains", [])
+                parsed_chain = []
+                for c in contracts:
+                    raw_strike = float(c.get("strikePrice", 0))
+                    strike = round(raw_strike / 100.0, 1) if raw_strike > 10000 else round(raw_strike, 1)
+                    ce = c.get("callOption", {})
+                    pe = c.get("putOption", {})
+                    parsed_chain.append({
+                        "strike": strike,
+                        "call_ltp": float(ce.get("ltp", 0.0) or 0.0),
+                        "call_oi": int(ce.get("openInterest", 0) or 0),
+                        "call_change": float(ce.get("dayChange", 0.0) or 0.0),
+                        "call_close": float(ce.get("close", 0.0) or 0.0),
+                        "call_volume": int(ce.get("volume", 0) or 0),
+                        "call_delta": float(ce.get("delta", 0.5) or 0.5) if ce.get("delta") is not None else 0.5,
+                        "put_ltp": float(pe.get("ltp", 0.0) or 0.0),
+                        "put_oi": int(pe.get("openInterest", 0) or 0),
+                        "put_change": float(pe.get("dayChange", 0.0) or 0.0),
+                        "put_close": float(pe.get("close", 0.0) or 0.0),
+                        "put_volume": int(pe.get("volume", 0) or 0),
+                        "put_delta": float(pe.get("delta", -0.5) or -0.5) if pe.get("delta") is not None else -0.5,
+                        "groww_contract_ce": ce.get("growwContractId"),
+                        "groww_contract_pe": pe.get("growwContractId"),
+                        "expiry": expiry_iso
+                    })
+                if parsed_chain:
+                    with self._cache_lock:
+                        if not hasattr(self, "_cached_chains_by_expiry"):
+                            self._cached_chains_by_expiry = {}
+                        self._cached_chains_by_expiry[expiry_iso] = parsed_chain
+                        self._cached_reliance_chain = parsed_chain
+                        self._last_reliance_chain_ts = time.time()
+                    return parsed_chain
+        except Exception as e:
+            logger.debug(f"Direct Groww option chain API error: {e}")
+
+        # 2. Secondary fallback via HTML scraping (__NEXT_DATA__)
         try:
             sess = self._get_session()
             url = f"https://groww.in/options/reliance-industries-ltd?expiry={expiry_iso}"
-            r = sess.get(url, timeout=4)
+            r = sess.get(url, timeout=3.5)
             if r.status_code == 200 and "__NEXT_DATA__" in r.text:
                 soup = BeautifulSoup(r.text, "html.parser")
                 tag = soup.find("script", id="__NEXT_DATA__")
@@ -973,46 +1016,7 @@ class GrowwMarketFeed:
                             self._last_reliance_chain_ts = time.time()
                         return parsed_chain
         except Exception as e:
-            logger.debug(f"Groww option chain fetch error for {expiry_iso}: {e}")
-
-        # 2. Secondary fallback via Groww REST API
-        try:
-            sess = self._get_session()
-            url = "https://groww.in/v1/api/option_chain_service/v1/option_chain/reliance-industries-ltd"
-            r = sess.get(url, timeout=4)
-            if r.status_code == 200:
-                d = r.json().get("optionChain", {})
-                contracts = d.get("optionChains", [])
-                parsed_chain = []
-                for c in contracts:
-                    raw_strike = float(c.get("strikePrice", 0))
-                    strike = round(raw_strike / 100.0, 1) if raw_strike > 10000 else round(raw_strike, 1)
-                    ce = c.get("callOption", {})
-                    pe = c.get("putOption", {})
-                    parsed_chain.append({
-                        "strike": strike,
-                        "call_ltp": float(ce.get("ltp", 0.0) or 0.0),
-                        "call_oi": int(ce.get("openInterest", 0) or 0),
-                        "call_change": float(ce.get("dayChange", 0.0) or 0.0),
-                        "call_close": float(ce.get("close", 0.0) or 0.0),
-                        "call_volume": int(ce.get("volume", 0) or 0),
-                        "put_ltp": float(pe.get("ltp", 0.0) or 0.0),
-                        "put_oi": int(pe.get("openInterest", 0) or 0),
-                        "put_change": float(pe.get("dayChange", 0.0) or 0.0),
-                        "put_close": float(pe.get("close", 0.0) or 0.0),
-                        "put_volume": int(pe.get("volume", 0) or 0),
-                        "expiry": expiry_iso
-                    })
-                if parsed_chain:
-                    with self._cache_lock:
-                        if not hasattr(self, "_cached_chains_by_expiry"):
-                            self._cached_chains_by_expiry = {}
-                        self._cached_chains_by_expiry[expiry_iso] = parsed_chain
-                        self._cached_reliance_chain = parsed_chain
-                        self._last_reliance_chain_ts = time.time()
-                    return parsed_chain
-        except Exception as e:
-            logger.debug(f"Groww fallback chain error: {e}")
+            logger.debug(f"Groww option chain HTML fallback error: {e}")
 
         # Guard: Never clobber an already populated 43-strike live cache with static fallback
         with self._cache_lock:
@@ -1040,11 +1044,8 @@ class GrowwMarketFeed:
             cached = self._cached_reliance_spot
             last_ts = self._last_reliance_spot_ts
 
-        if (
-            force_refresh
-            or not cached
-            or (now - last_ts > 4.0)
-        ):
+        # If cache is missing, or force_refresh requested AND cache > 1.5s old, or cache > 4.0s old:
+        if not cached or (force_refresh and (now - last_ts > 1.5)) or (now - last_ts > 4.0):
             res = self._fetch_reliance_spot_now()
             if res and res.get("spot_ltp", 0) > 0:
                 return res
@@ -1116,7 +1117,7 @@ class GrowwMarketFeed:
                 self._cached_benchmarks = self._get_fallback_benchmarks()
                 self._last_benchmarks_ts = now
                 return self._cached_benchmarks.copy()
-        elif force_refresh and (now - last_b_ts > 5.0):
+        elif force_refresh and (now - last_b_ts > 3.0):
             threading.Thread(target=self._execute_live_benchmark_fetch, daemon=True).start()
 
         with self._cache_lock:
@@ -1146,8 +1147,8 @@ class GrowwMarketFeed:
             chain = self._cached_chains_by_expiry.get(expiry)
             last_ts = self._last_reliance_chain_ts
 
-        # If cache is missing, or force_refresh requested, or older than 4.0s:
-        if chain is None or (force_refresh and (now - last_ts > 4.0)):
+        # If cache is missing, or force_refresh requested AND cache > 2.0s old, or older than 5.0s:
+        if chain is None or (force_refresh and (now - last_ts > 2.0)) or (now - last_ts > 5.0):
             res = self._fetch_reliance_chain_now(expiry)
             if res and len(res) > 0:
                 return [dict(x) for x in res]

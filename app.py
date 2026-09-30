@@ -1081,19 +1081,21 @@ def render_auto_rescan_controller():
     with col_rb:
         rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key="btn_instant_rescan")
     with col_cb:
-        auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", False), key="cb_auto_rescan_5s")
+        auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", True), key="cb_auto_rescan_5s")
         st.session_state["auto_rescan_active"] = auto_active
 
     elapsed = now - st.session_state["last_auto_rescan_ts"]
-    should_auto = auto_active and (elapsed >= 4.8)
+    should_auto = auto_active and (elapsed >= 4.5)
 
     if rescan_btn:
+        from concurrent.futures import ThreadPoolExecutor
         try:
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
-            gw._fetch_reliance_spot_now()
-            gw._fetch_reliance_chain_now()
-            gw._execute_live_benchmark_fetch()
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                ex.submit(gw._fetch_reliance_spot_now)
+                ex.submit(gw._fetch_reliance_chain_now)
+                ex.submit(gw._execute_live_benchmark_fetch)
         except Exception:
             pass
         from nse_data_fetcher import NSEIndiaFetcher
@@ -1105,16 +1107,10 @@ def render_auto_rescan_controller():
         st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
         st.rerun(scope="app")
     elif should_auto:
-        import threading
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            gw = GrowwMarketFeed.get_instance()
-            threading.Thread(target=gw._fetch_reliance_spot_now, daemon=True).start()
-            threading.Thread(target=gw._fetch_reliance_chain_now, daemon=True).start()
-            threading.Thread(target=gw._execute_live_benchmark_fetch, daemon=True).start()
-        except Exception:
-            pass
         st.session_state["last_auto_rescan_ts"] = now
+        st.session_state["just_rescanned"] = False
+        st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
+        st.rerun(scope="app")
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     st.html(f"""
@@ -1462,7 +1458,8 @@ tg_bot_token = tg_config.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
 tg_chat_id = tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
 tg_enabled = bool(tg_config.get("enabled", True))
 parsed_recipients = TelegramNotifier.parse_chat_ids(tg_chat_id)
-
+ 
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_global_news_and_macro(force_key: str = ""):
     """Fetches latest real-time news and macro telemetry for Reliance."""
     news_items = []
@@ -1843,15 +1840,26 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
 def fetch_reliance_data(interval: str, force_key: str = ""):
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     df = pd.DataFrame()
+
+    # 1. Try Groww official charting API first (fastest, authentic NSE intraday candles, ~60ms)
     try:
-        def _get_hist():
-            t = yf.Ticker("RELIANCE.NS")
-            return t.history(period="5d", interval=interval)
-        with ThreadPoolExecutor(max_workers=1) as ex:
-            fut = ex.submit(_get_hist)
-            df = fut.result(timeout=1.5)  # Fast timeout prevents UI stalls
+        from groww_market_feed import GrowwMarketFeed
+        gw_feed = GrowwMarketFeed.get_instance()
+        df = gw_feed.get_reliance_historical_candles(interval=interval, days=5)
     except Exception:
         df = pd.DataFrame()
+
+    # 2. Secondary fallback via yfinance
+    if df is None or df.empty or len(df) < 30:
+        try:
+            def _get_hist():
+                t = yf.Ticker("RELIANCE.NS")
+                return t.history(period="5d", interval=interval)
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                fut = ex.submit(_get_hist)
+                df = fut.result(timeout=1.5)  # Fast timeout prevents UI stalls
+        except Exception:
+            df = pd.DataFrame()
 
     # Anchor directly to authentic Reliance spot price from Groww API
     gw_spot = 1210.00
