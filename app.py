@@ -6256,7 +6256,11 @@ if df is not None and not df.empty:
         render_execution_trigger_card(
             trade_plan=_cockpit_trade_plan,
             spot=spot,
-            broker_call_ltp=live_broker_ltp
+            broker_call_ltp=live_broker_ltp,
+            corridor=corridor,
+            low=low_data,
+            high=high_data,
+            spot_tick=spot
         )
 
         # 5.5. INSTITUTIONAL MULTI-TIMEFRAME MATRIX (M15 + M5 + M1)
