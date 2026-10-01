@@ -4103,6 +4103,49 @@ class MultiIndicatorMath:
 
         return metalabel_approved, adjusted_conf, regime
 
+    @staticmethod
+    def calculate_index_beta_drag(
+        reliance_pct: float,
+        nifty_pct: float,
+        rolling_beta: float = 1.15
+    ) -> Tuple[bool, float, str]:
+        """
+        Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry (Upgrade 2).
+        Reference: Kyle (1985), Biais et al. (1995) Order Flow Fragmentation & Index Arbitrage.
+
+        Reliance constitutes ~9-10% of NIFTY 50. If NIFTY breaks down by > 0.60% (or breaks out by > 0.60%)
+        while Reliance holds artificially or lags, Reliance almost invariably suffers a delayed
+        "catch-up" liquidation or short squeeze.
+
+        Expected Reliance Move = rolling_beta * nifty_pct
+        Drag Discrepancy = reliance_pct - Expected Move
+
+        Returns: (is_drag_active, penalty_pts, regime)
+        """
+        expected_move = rolling_beta * nifty_pct
+        drag = reliance_pct - expected_move
+
+        # Case 1: Broader market institutional liquidation (NIFTY drops heavily, Reliance hasn't dropped yet)
+        if nifty_pct <= -0.60 and reliance_pct > (nifty_pct * 0.50):
+            penalty = 4.0
+            regime = "SEVERE_INDEX_DOWNWARD_DRAG_LIQUIDATION_RISK"
+            return True, penalty, regime
+
+        # Case 2: Broad market upward rally (NIFTY surges heavily, Reliance lagging)
+        if nifty_pct >= 0.60 and reliance_pct < (nifty_pct * 0.50):
+            penalty = 4.0
+            regime = "SEVERE_INDEX_UPWARD_LAG_SQUEEZE_RISK"
+            return True, penalty, regime
+
+        # Case 3: Moderate Index Drag
+        if nifty_pct <= -0.35 and reliance_pct >= 0.0:
+            penalty = 2.0
+            regime = "MODERATE_INDEX_DIVERGENCE_DRAG"
+            return True, penalty, regime
+
+        return False, 0.0, "INDEX_BETA_ALIGNED"
+
+
 
 
 # ============================================================================
@@ -4638,7 +4681,20 @@ class UltraHighConvictionRelianceEngine:
             v2_cl_a_bull = max(0.0, v2_cl_a_bull - 1.5)  # Exhaustion burst with zero follow-through
             v2_cl_a_bear = max(0.0, v2_cl_a_bear - 1.5)
 
-        # --- CLUSTER B: Aggressor Delta & CVD (CVD, CMF, PVT, Sweeps, Tick Imbalance) ---
+        # --- CLUSTER B: Aggressor Delta & CVD (CVD, CMF, PVT, Sweeps, Tick Imbalance, CVD Absorption) ---
+        # Footprint Cumulative Volume Delta (CVD) Absorption & Exhaustion Filter (Upgrade 1)
+        has_cvd_absorb, cvd_absorb_type = MultiIndicatorMath.calculate_cvd_absorption_divergence(
+            c5m["high"], c5m["low"], c5m["close"], c5m["volume"], c5m.get("open"), lookback=5
+        )
+        if cvd_absorb_type == "BEARISH_ABSORPTION_WALL":
+            # Price printed higher high but 1m/5m CVD turned negative: institutional limit sellers absorbing market orders
+            v2_cl_b_bull = max(0.0, v2_cl_b_bull - 3.5)
+            v2_cl_b_bear += 2.0
+        elif cvd_absorb_type == "BULLISH_ABSORPTION_FLOOR":
+            # Price printed lower low but seller CVD turned positive: institutional limit buyers absorbing sellers
+            v2_cl_b_bear = max(0.0, v2_cl_b_bear - 3.5)
+            v2_cl_b_bull += 2.0
+
         if cvd_bias == "AGGRESSIVE_BUYING":
             v2_cl_b_bull += 2.5  # Institutional Buyer Absorption Confirmation
         elif cvd_bias == "AGGRESSIVE_SELLING":
@@ -5033,6 +5089,15 @@ class UltraHighConvictionRelianceEngine:
             v4_bull = max(0.0, v4_bull - 2.0)
             v4_bear = max(0.0, v4_bear - 2.0)
 
+        # Dynamic Realized Volatility Ratio (Yang-Zhang / Garman-Klass) (Upgrade 3)
+        # Yang-Zhang handles overnight jumps + intraday drift. Vol < 12.0% indicates extreme compression coiling.
+        if yang_zhang_vol <= 12.0:
+            v4_bull += 2.0  # Massive energy compression pre-breakout
+            v4_bear += 2.0
+        elif yang_zhang_vol >= 16.5:
+            v4_bull += 1.5  # Active healthy volatility expansion
+            v4_bear += 1.5
+
         # TTM Squeeze Fired Expansion Boost
         if squeeze_state == "SQUEEZE_FIRED_EXPANSION":
             v4_bull += 2.0
@@ -5398,6 +5463,20 @@ class UltraHighConvictionRelianceEngine:
         )
         is_high_market_impact = (kyle_regime == "LIQUIDITY_VACUUM_TRAP")
 
+        # Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry (Upgrade 2)
+        has_index_drag, drag_penalty, index_drag_regime = MultiIndicatorMath.calculate_index_beta_drag(
+            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=1.15
+        )
+        if has_index_drag:
+            if "DOWNWARD_DRAG" in index_drag_regime:
+                macro_bull = max(0.0, macro_bull - drag_penalty)
+                macro_bear += 2.5
+            elif "UPWARD_LAG" in index_drag_regime:
+                macro_bear = max(0.0, macro_bear - drag_penalty)
+                macro_bull += 2.5
+            elif "MODERATE_INDEX_DIVERGENCE" in index_drag_regime:
+                macro_bull = max(0.0, macro_bull - drag_penalty)
+
         # NIFTY Index Conflict Guards
         if nifty_pct < -0.35:
             macro_bull -= 3.0
@@ -5650,26 +5729,55 @@ class UltraHighConvictionRelianceEngine:
         rr_ratio = self.risk.target_pts / self.risk.stop_loss_pts if self.risk.stop_loss_pts > 0 else 2.22
         expected_value_r = round(((dominant_win_exp / 100.0) * rr_ratio) - ((100.0 - dominant_win_exp) / 100.0), 2)
 
-        # Conditional Kelly with CVaR Tail Risk Adjustment (Gap 7: Thorp 2006)
-        # Reads realized P&L distribution from trade journal for tail analysis
+        # Automated Walk-Forward Kelly Updating via Realized Trade Log (Upgrade 5)
+        # Reads realized P&L distribution from both daily_trade_journal.json & empirical_calibration_dataset.json
         _trade_pnls = []
+        _journal_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily_trade_journal.json")
+        _calib_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "empirical_calibration_dataset.json")
         try:
-            _journal_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily_trade_journal.json")
             if os.path.exists(_journal_path):
                 with open(_journal_path, "r", encoding="utf-8") as _jf:
                     _journal_data = json.load(_jf)
                 if isinstance(_journal_data, list):
-                    _trade_pnls = [
+                    _trade_pnls.extend([
                         float(t.get("net_pnl", t.get("realised_pnl", 0.0)))
                         for t in _journal_data if t.get("is_closed", False)
-                    ]
+                    ])
         except Exception:
             pass
 
+        try:
+            if os.path.exists(_calib_path):
+                with open(_calib_path, "r", encoding="utf-8") as _cf:
+                    _calib_data = json.load(_cf)
+                if isinstance(_calib_data, list):
+                    for item in _calib_data:
+                        outcome = item.get("outcome", {})
+                        if outcome.get("is_resolved", False) and "realized_pnl" in outcome:
+                            _trade_pnls.append(float(outcome["realized_pnl"]))
+        except Exception:
+            pass
+
+        # Rolling 20-trade realized win rate & payoff ratio updating
+        effective_win_rate = dominant_score
+        effective_rr = rr_ratio
+        if len(_trade_pnls) >= 10:
+            recent_20 = _trade_pnls[-20:]
+            wins = [p for p in recent_20 if p > 0]
+            losses = [abs(p) for p in recent_20 if p < 0]
+            if wins and losses:
+                realized_win_rate = (len(wins) / len(recent_20)) * 100.0
+                avg_win = sum(wins) / len(wins)
+                avg_loss = sum(losses) / len(losses)
+                realized_payoff = avg_win / max(1.0, avg_loss)
+                # Blend 60% model prior + 40% rolling realized walk-forward performance
+                effective_win_rate = round(0.60 * dominant_score + 0.40 * realized_win_rate, 1)
+                effective_rr = round(0.60 * rr_ratio + 0.40 * realized_payoff, 2)
+
         full_kelly_pct, half_kelly_pct, kelly_lots, kelly_risk_cap, kelly_status, cvar_adjustment = MultiIndicatorMath.calculate_conditional_kelly(
             trade_pnls=_trade_pnls,
-            win_rate=dominant_score,
-            reward_risk_ratio=rr_ratio,
+            win_rate=effective_win_rate,
+            reward_risk_ratio=effective_rr,
             capital=73643.72,
             atr=atr_15m,
             lot_size=self.risk.lot_size
@@ -5706,16 +5814,27 @@ class UltraHighConvictionRelianceEngine:
         )
 
         # Tiered Automated Trailing Breakeven Escalator Guidelines
-        breakeven_trigger_price = round(entry_premium + 3.5, 2)
-        lock_profit_trigger_price = round(entry_premium + 5.5, 2)
+        # Dynamic Bayesian Change-Point Trailing Adaptation (Upgrade 4)
+        # If BOCPD detects a regime shift (cp_prob >= 0.65), instantly tighten trailing trigger to protect profits
+        if cp_prob >= 0.65:
+            be_pts_offset = 2.0  # Tightened from 3.5 pts during regime uncertainty
+            lock_pts_offset = 3.8  # Tightened from 5.5 pts
+            be_escalator_note = f"⚡ [BOCPD Shift: P(cp)={cp_prob:.2f} > 0.65 -> Trailing SL Tightened to +{be_pts_offset:.1f} pts!]"
+        else:
+            be_pts_offset = 3.5
+            lock_pts_offset = 5.5
+            be_escalator_note = f"[BOCPD Regime Stable: P(cp)={cp_prob:.2f}]"
+
+        breakeven_trigger_price = round(entry_premium + be_pts_offset, 2)
+        lock_profit_trigger_price = round(entry_premium + lock_pts_offset, 2)
         breakeven_sl = round(entry_premium + 0.10, 2)
-        lock_profit_sl = round(entry_premium + 3.00, 2)
+        lock_profit_sl = round(entry_premium + (be_pts_offset - 0.50), 2)
 
         target_text = (
             f"TARGET: Rs. {tp_premium:.2f} (+{self.risk.target_pts:.1f} pts | Gross +Rs. {self.risk.target_reward_rupees:,.0f} | Net ~Rs. {self.risk.net_target_reward_rupees:,.0f}) | "
             f"STOP LOSS: Rs. {sl_premium:.2f} (-{self.risk.stop_loss_pts:.1f} pts | Gross -Rs. {self.risk.max_risk_rupees:,.0f} | Net ~Rs. {self.risk.net_max_risk_rupees:,.0f}) "
             f"[Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f} | Pegged Limit: Rs. {pegged_routing['pegged_limit_price']:.2f} | Routing: {pegged_routing['routing_mode']}] "
-            f"🛡️ [Breakeven Escalator: 1) At +3.5 pts (Rs. {breakeven_trigger_price:.2f}) -> Move SL to Cost Rs. {breakeven_sl:.2f} (Risk-Free!) | 2) At +5.5 pts (Rs. {lock_profit_trigger_price:.2f}) -> Lock SL to Rs. {lock_profit_sl:.2f} (+Rs. 750 profit)] "
+            f"🛡️ [Breakeven Escalator: 1) At +{be_pts_offset:.1f} pts (Rs. {breakeven_trigger_price:.2f}) -> Move SL to Cost Rs. {breakeven_sl:.2f} (Risk-Free!) | 2) At +{lock_pts_offset:.1f} pts (Rs. {lock_profit_trigger_price:.2f}) -> Lock SL to Rs. {lock_profit_sl:.2f}] {be_escalator_note} "
             f"📊 [VaR 99%: Rs. {var_greeks['var_99_rupees']:,.0f} | Delta Eqv: {var_greeks['portfolio_delta_shares']:+.1f} Sh | {var_greeks['neutrality_regime']}]"
             if is_tradable
             else "TARGET: N/A | STOP LOSS: N/A"
@@ -5754,12 +5873,21 @@ class UltraHighConvictionRelianceEngine:
             "avwap_stance": avwap_stance,
             "parkinson_vol": parkinson_vol,
             "cvd_bias": cvd_bias,
-            "cvd_absorption_trap": absorb_type,
+            "cvd_absorption_trap": cvd_absorb_type,
+            "has_cvd_absorb": has_cvd_absorb,
             "max_pain_strike": max_pain_strike,
             "max_pain_dist": mp_dist,
             "max_pain_gravity": mp_gravity,
             "yang_zhang_vol": yang_zhang_vol,
             "effective_rv": effective_rv,
+            "has_index_drag": has_index_drag,
+            "index_drag_regime": index_drag_regime,
+            "bocpd_changepoint_prob": cp_prob,
+            "bocpd_regime": cp_regime,
+            "kelly_lots": kelly_lots,
+            "half_kelly_pct": half_kelly_pct,
+            "kelly_status": kelly_status,
+            "cvar_adjustment": cvar_adjustment,
             "vector_scores": {
                 "v1_bull": round(v1_bull, 2), "v1_bear": round(v1_bear, 2),
                 "v2_bull": round(v2_bull, 2), "v2_bear": round(v2_bear, 2),

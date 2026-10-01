@@ -4853,6 +4853,21 @@ if df is not None and not df.empty:
     elif straddle_regime == "BREAKDOWN_OUTSIDE_EXPECTED_MOVE":
         v4_bear += 2.0
 
+    # Dynamic Realized Volatility Ratio (Yang-Zhang / Garman-Klass) (Upgrade 3)
+    try:
+        from fo_quant_engine import MultiIndicatorMath
+        yz_vol_app = MultiIndicatorMath.calculate_yang_zhang_volatility(
+            df['High'].tolist(), df['Low'].tolist(), df['Close'].tolist(), df['Open'].tolist() if 'Open' in df.columns else None, 14
+        )
+        if yz_vol_app <= 12.0:
+            v4_bull += 2.0  # Massive volatility compression coiling pre-breakout
+            v4_bear += 2.0
+        elif yz_vol_app >= 16.5:
+            v4_bull += 1.5  # Active healthy volatility expansion
+            v4_bear += 1.5
+    except Exception:
+        pass
+
     v4_bull = min(15.0, max(0.0, v4_bull))
     v4_bear = min(15.0, max(0.0, v4_bear))
 
@@ -4961,6 +4976,26 @@ if df is not None and not df.empty:
         )
     except Exception:
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = 0.0, "NEUTRAL", 1.0, 1.10, "NORMAL", True
+
+    # Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry (Upgrade 2)
+    has_index_drag_app = False
+    index_drag_regime_app = "INDEX_BETA_ALIGNED"
+    try:
+        from fo_quant_engine import MultiIndicatorMath
+        has_index_drag_app, drag_pen_app, index_drag_regime_app = MultiIndicatorMath.calculate_index_beta_drag(
+            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=1.15
+        )
+        if has_index_drag_app:
+            if "DOWNWARD_DRAG" in index_drag_regime_app:
+                macro_bull = max(0.0, macro_bull - drag_pen_app)
+                macro_bear += 2.5
+            elif "UPWARD_LAG" in index_drag_regime_app:
+                macro_bear = max(0.0, macro_bear - drag_pen_app)
+                macro_bull += 2.5
+            elif "MODERATE_INDEX_DIVERGENCE" in index_drag_regime_app:
+                macro_bull = max(0.0, macro_bull - drag_pen_app)
+    except Exception:
+        pass
 
     # Composite Probability Scores (Symmetric Dual-Directional: Bullish vs Bearish)
     news_modifier = (news_sentiment_score / 10.0) * 5.0
@@ -5170,12 +5205,20 @@ if df is not None and not df.empty:
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
     is_sl_dynamic = not is_sim_active
 
-    # Enhancement 3: Tiered Trailing Stop-Loss & Breakeven Escalator
-    breakeven_trigger_price = round(estimated_premium + 3.5, 2)
+    # Enhancement 3: Tiered Trailing Stop-Loss & Breakeven Escalator (BOCPD Adaptive)
+    # If Bayesian Online Changepoint Detection flags regime uncertainty (cp_prob >= 0.65), instantly tighten trailing thresholds
+    if 'cp_prob' in locals() and cp_prob >= 0.65:
+        be_offset = 2.0  # Tightened from 3.5 to lock profits faster during regime shifts
+        lock_offset = 3.8
+    else:
+        be_offset = 3.5
+        lock_offset = 5.5
+
+    breakeven_trigger_price = round(estimated_premium + be_offset, 2)
     breakeven_sl = round(estimated_premium + 0.10, 2)
-    lock_profit_trigger_price = round(estimated_premium + 5.5, 2)
-    lock_profit_sl = round(estimated_premium + 3.00, 2)
-    trailing_activation_pts = 3.5
+    lock_profit_trigger_price = round(estimated_premium + lock_offset, 2)
+    lock_profit_sl = round(estimated_premium + (be_offset - 0.50), 2)
+    trailing_activation_pts = be_offset
     trailing_active = False
 
     # Enhancement 4: Account Capital Risk Guard (Strictly <= 4.0% of Account Capital)
