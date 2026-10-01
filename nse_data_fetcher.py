@@ -167,6 +167,28 @@ class NSEIndiaFetcher:
             far_y = next_y if next_m < 12 else next_y + 1
             exp_next = cls.get_last_tuesday_of_month(far_y, far_m, fo_holidays)
 
+        # Seamlessly align with Groww Official Broker API listed expiries when connected
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw_exp = GrowwMarketFeed.get_instance().get_official_expiries("RELIANCE")
+            if gw_exp:
+                fut_exp = []
+                for es in gw_exp:
+                    try:
+                        ed = datetime.strptime(es.strip(), "%Y-%m-%d")
+                        if ed.date() >= today_dt.date():
+                            fut_exp.append(ed)
+                    except Exception:
+                        pass
+                fut_exp.sort()
+                if len(fut_exp) >= 2:
+                    exp_curr = fut_exp[0]
+                    exp_next = fut_exp[1]
+                elif len(fut_exp) == 1:
+                    exp_curr = fut_exp[0]
+        except Exception:
+            pass
+
         cycle_start = exp_prev + timedelta(days=1)
         elapsed_trading_days, _ = cls.get_trading_days_between(cycle_start, today_dt, fo_holidays)
         total_cycle_days, _ = cls.get_trading_days_between(cycle_start, exp_curr, fo_holidays)
