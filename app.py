@@ -7335,6 +7335,7 @@ if df is not None and not df.empty:
         if groww_feed.is_connected:
             live_wallet_telemetry = groww_feed.get_wallet_balance()
             live_pos_telemetry = groww_feed.get_live_positions()
+            ucc_val = (groww_feed.user_profile or {}).get("ucc", "5697793414")
 
             realised_pnl_val = live_pos_telemetry.get("total_realised_pnl", 0.0)
             unrealised_pnl_val = live_pos_telemetry.get("total_unrealised_pnl", 0.0)
