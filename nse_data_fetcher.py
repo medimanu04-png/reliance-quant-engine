@@ -33,6 +33,8 @@ class NSEIndiaFetcher:
 
     _cached_data = None
     _last_fetch_time = 0
+    _cached_expiry_mandate = None
+    _last_expiry_calc_time = 0
     CACHE_TTL_SECONDS = 1.0  # Real-time Groww live feed with 0-delay instant caching
 
     @classmethod
@@ -137,6 +139,11 @@ class NSEIndiaFetcher:
           to completely eliminate rapid time erosion and dangerous near-expiry gamma expansion risk.
         Automatically updates dynamically every single day based on live calendar progression.
         """
+        now_ts = time.time()
+        if today_dt is None and not fo_holidays:
+            if hasattr(cls, "_cached_expiry_mandate") and cls._cached_expiry_mandate:
+                if now_ts - getattr(cls, "_last_expiry_calc_time", 0) < 300.0:
+                    return cls._cached_expiry_mandate.copy()
         if today_dt is None:
             today_dt = datetime.now(IST)
         if getattr(today_dt, "tzinfo", None) is not None:
@@ -234,6 +241,10 @@ class NSEIndiaFetcher:
             "rule_desc": rule_desc,
             "dte": max(1, (active_expiry.date() - today_dt.date()).days)
         }
+        if today_dt is None or getattr(today_dt, "date", lambda: today_dt)() == datetime.now(IST).date():
+            cls._cached_expiry_mandate = result
+            cls._last_expiry_calc_time = now_ts
+        return result
 
     @classmethod
     def compute_official_expiry(cls, fo_holidays: List[str] = None) -> str:

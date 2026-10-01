@@ -1464,7 +1464,7 @@ tg_chat_id = tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
 tg_enabled = bool(tg_config.get("enabled", True))
 parsed_recipients = TelegramNotifier.parse_chat_ids(tg_chat_id)
  
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def fetch_global_news_and_macro(force_key: str = ""):
     """Fetches latest real-time news and macro telemetry for Reliance."""
     news_items = []
@@ -1481,7 +1481,7 @@ def fetch_global_news_and_macro(force_key: str = ""):
             return t.news if hasattr(t, "news") and t.news else []
         with ThreadPoolExecutor(max_workers=1) as ex:
             fut = ex.submit(_get_news)
-            raw_news = fut.result(timeout=0.6)
+            raw_news = fut.result(timeout=0.25)
         for item in raw_news[:4]:
             content = item.get("content", item)
             title = content.get("title", "Market Update")
