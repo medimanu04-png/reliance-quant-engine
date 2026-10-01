@@ -2186,6 +2186,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_time_msg = tp.get("time_gate_msg", "Prime Execution Window")
     plan_choppy = tp.get("is_choppy_regime", False)
     plan_chop_val = tp.get("chop_val", 50.0)
+    plan_sector_trap = tp.get("is_sector_divergence_trap", False)
+    plan_energy_pct = tp.get("energy_pct", 0.0)
+    plan_rel_pct = tp.get("reliance_pct", 0.0)
+    plan_liq_vacuum = tp.get("is_liquidity_vacuum", False)
 
     # Resolve active contract live price from sub-second stream
     if plan_strike == corridor["lower_strike"]:
@@ -3450,13 +3454,34 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             </div>
             """)
         else:
+            if plan_sector_trap:
+                standdown_title = "SECTOR DIVERGENCE TRAP ACTIVE"
+                standdown_desc = f"Directional score is <b style='color: #34D399;'>{plan_score:.1f}%</b> (> {plan_gate:.0f}% Gate), but <b style='color: #F87171;'>RELIANCE ({plan_rel_pct:+.2f}%)</b> is diverging from parent sector <b style='color: #38BDF8;'>NIFTY ENERGY ({plan_energy_pct:+.2f}%)</b>. Buying options against the broader energy sector carries severe mean-reversion whipsaw risk. BUY trigger is <b>LOCKED</b> until sector alignment is restored."
+                standdown_source = f"Institutional Sector Coupling Filter (Nifty Energy {plan_energy_pct:+.2f}% vs Reliance {plan_rel_pct:+.2f}%)"
+            elif plan_choppy:
+                standdown_title = "CONSOLIDATION CHOP FILTER ACTIVE"
+                standdown_desc = f"Choppiness Index (CHOP {plan_chop_val:.1f} > 61.8) indicates extreme fractal consolidation. Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent false breakout traps and rapid option theta decay."
+                standdown_source = f"Wilder's CHOP Index Filter ({plan_chop_val:.1f} > 61.8 Gate)"
+            elif plan_liq_vacuum:
+                standdown_title = "ORDER BOOK LIQUIDITY VACUUM"
+                standdown_desc = "Kyle's Lambda microstructure algorithm detected an order book liquidity vacuum. Live execution is <b>LOCKED</b> to prevent excessive market impact and bid-ask spread slippage."
+                standdown_source = "Kyle's Lambda Microstructure Model (Thin Book Slippage Guard)"
+            elif plan_score <= plan_gate:
+                standdown_title = "STAND DOWN / SUB-THRESHOLD CONFLUENCE"
+                standdown_desc = f"Directional score is <b style='color: #FFFFFF;'>{plan_score:.1f}%</b>, which does not satisfy the mandatory <b style='color: #FEF08A;'>&gt;{plan_gate:.0f}% Institutional Execution Gate</b>. Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent whipsaws and capital erosion during consolidation chop."
+                standdown_source = f"Institutional Filter Gate (Multi-Vector Probability Algorithm ≤ {plan_gate:.0f}% Gate)"
+            else:
+                standdown_title = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"
+                standdown_desc = f"Directional score is <b style='color: #34D399;'>{plan_score:.1f}%</b>, but institutional capital protection filters require standing down. Live premium monitoring continues with 0 delay in background."
+                standdown_source = "Institutional Risk Preservation Protocol"
+
             st.html(f"""
             <div class="trigger-standdown-box">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 1.2rem;">🛑</span>
                         <span style="font-size: 1.0rem; font-weight: 800; color: #F87171; letter-spacing: 0.4px;">
-                            {'CONSOLIDATION CHOP FILTER ACTIVE' if plan_choppy else 'STAND DOWN / CAPITAL PRESERVATION ACTIVE'}
+                            {standdown_title}
                         </span>
                     </div>
                     <span style="background: rgba(239, 68, 68, 0.25); color: #FCA5A5; font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">
@@ -3464,11 +3489,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     </span>
                 </div>
                 <div style="font-size: 0.82rem; color: #E2E8F0; margin-top: 6px; line-height: 1.5;">
-                    Directional score is <b style="color: #FFFFFF;">{plan_score:.1f}%</b>, which does not satisfy the mandatory <b style="color: #FEF08A;">&gt;{plan_gate:.0f}% Institutional Execution Gate</b>. 
-                    Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent whipsaws and capital erosion during consolidation chop.
+                    {standdown_desc}
                 </div>
                 <div style="margin-top: 6px; border-top: 1px solid rgba(239, 68, 68, 0.25); padding-top: 5px; font-size: 0.70rem; color: #94A3B8;">
-                    📡 <b>Source:</b> Institutional Filter Gate (Multi-Vector Probability Algorithm ≤ {plan_gate:.0f}% Gate)
+                    📡 <b>Source:</b> {standdown_source}
                 </div>
             </div>
             """)
@@ -6095,6 +6119,38 @@ if df is not None and not df.empty:
                     cap_badge_title = "🛡️ CAPITAL PRESERVATION ACTIVE"
                     cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
                     cap_sub_desc = "🛡️ Protected from chop & theta decay"
+                elif is_sector_divergence_trap:
+                    stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE SETUP &bull; STAND DOWN"
+                    stand_down_badge = f"⚠️ SECTOR DIVERGENCE TRAP ACTIVE"
+                    stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+                    stand_down_sub = f"Reliance ({reliance_pct:+.2f}%) is diverging from its parent sector NIFTY Energy ({energy_pct:+.2f}%) &bull; High mean-reversion trap risk"
+                    gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                    gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                    gate_card_title = "SECTOR DIVERGENCE GUARD"
+                    gate_card_val = "🛑 DIVERGENCE TRAP"
+                    gate_card_sub = f"Energy {energy_pct:+.2f}% vs Rel {reliance_pct:+.2f}%"
+                    why_stand_down_html = f"""
+                    <b style="color: #FFFFFF;">Why Stand Down?</b> Confluence score is strong at <b>{dominant_score:.1f}%</b>, but Reliance (<b style='color: #F87171;'>{reliance_pct:+.2f}%</b>) is moving in direct opposition to its parent benchmark index <b style='color: #38BDF8;'>NIFTY ENERGY ({energy_pct:+.2f}%)</b>. Taking a short (PUT / PE) position against a rallying energy sector carries severe snapback and whipsaw risk. Institutional policy mandates standing down until sector alignment is restored.
+                    """
+                    dot_color = "#EF4444"
+                    cap_badge_title = "🛡️ SECTOR SHIELD ACTIVE"
+                    cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
+                    cap_sub_desc = "🛡️ Protected against sector mean-reversion snapbacks"
+                elif is_liquidity_vacuum:
+                    stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE SETUP &bull; STAND DOWN"
+                    stand_down_badge = "⚠️ ORDER BOOK LIQUIDITY VACUUM"
+                    stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70);"
+                    stand_down_sub = "Kyle's Lambda model detected thin order book depth &bull; Large bid-ask slippage risk"
+                    gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                    gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                    gate_card_title = "LIQUIDITY VACUUM GUARD"
+                    gate_card_val = "🛑 THIN BOOK DEPTH"
+                    gate_card_sub = "High slippage hazard"
+                    why_stand_down_html = "<b style='color: #FFFFFF;'>Why Stand Down?</b> Kyle's Lambda microstructure algorithm detected an order book liquidity vacuum. Entering positions now risks excessive market impact and slippage."
+                    dot_color = "#EF4444"
+                    cap_badge_title = "🛡️ SLIPPAGE GUARD ACTIVE"
+                    cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
+                    cap_sub_desc = "🛡️ Protected against order book slippage"
                 else:
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
                     stand_down_badge = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"
@@ -6104,7 +6160,7 @@ if df is not None and not df.empty:
                     gate_card_border = "1px solid rgba(255, 255, 255, 0.12)"
                     gate_card_title = "MANDATORY EXECUTION GATE"
                     gate_card_val = f"&gt; {MIN_HIT_PERCENTAGE:.0f}% Required"
-                    gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold"
+                    gate_card_sub = f"Deficit: -{deficit_val:.1f}% below threshold" if dominant_score <= MIN_HIT_PERCENTAGE else f"🟢 Gate Cleared (+{dominant_score - MIN_HIT_PERCENTAGE:.1f}%)"
                     why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Stand Down?</b> Current prevailing bias is {bias_label}. Strict capital preservation active."
                     dot_color = "#EF4444"
                     cap_badge_title = "🛡️ CAPITAL PRESERVATION ACTIVE"
@@ -6253,6 +6309,10 @@ if df is not None and not df.empty:
                 "time_gate_msg": time_gate_msg,
                 "is_choppy_regime": is_choppy_regime,
                 "chop_val": chop_val,
+                "is_sector_divergence_trap": is_sector_divergence_trap,
+                "energy_pct": energy_pct,
+                "reliance_pct": reliance_pct,
+                "is_liquidity_vacuum": is_liquidity_vacuum,
                 "estimated_premium": estimated_premium,
                 "custom_trigger_override": custom_trigger_override,
                 "is_target_dynamic": is_target_dynamic,
