@@ -4433,8 +4433,8 @@ class QuantConfig:
     win_exp_max: float = 66.0
     win_exp_slope: float = 0.35
     
-    # Execution Gate (Calibrated Institutional Selectivity Gate ~70-75% empirical probability)
-    trade_regime_threshold: float = 72.0
+    # Execution Gate (Calibrated Institutional Selectivity Gate ~68-72% empirical probability)
+    trade_regime_threshold: float = 68.0
     atr_compression_limit: float = 0.65
     opening_volume_share_min: float = 14.0
     
@@ -4444,7 +4444,7 @@ class QuantConfig:
         if self.midday_end is None:
             self.midday_end = time(13, 30)
         if self.afternoon_cutoff is None:
-            self.afternoon_cutoff = time(12, 30)
+            self.afternoon_cutoff = time(13, 0)
         if self.afternoon_strict_gate_time is None:
             self.afternoon_strict_gate_time = time(13, 0)
         if self.afternoon_hard_stop_time is None:
@@ -4496,11 +4496,11 @@ class UltraHighConvictionRelianceEngine:
         self.rolling_sharpe = self._compute_rolling_trade_sharpe(lookback=10)
         base_thresh = self.config.trade_regime_threshold
         if self.rolling_sharpe < 0.50:
-            # Regime not cooperating: raise selectivity threshold
-            self.trade_regime_threshold = round(min(base_thresh + 6.0, base_thresh + 3.0), 1)
+            # Regime not cooperating: slightly raise selectivity threshold (+2 pts)
+            self.trade_regime_threshold = round(base_thresh + 2.0, 1)
         elif self.rolling_sharpe > 1.50:
-            # Model well-calibrated and market cooperating
-            self.trade_regime_threshold = round(max(base_thresh - 6.0, base_thresh - 2.0), 1)
+            # Model well-calibrated and market cooperating (-2 pts)
+            self.trade_regime_threshold = round(base_thresh - 2.0, 1)
         else:
             self.trade_regime_threshold = base_thresh
 
@@ -5660,7 +5660,21 @@ class UltraHighConvictionRelianceEngine:
         # VECTOR 7: Multi-Asset Sectoral Alignment & NIFTY 50 Relative Strength Telemetry (+/- 5.0 pts)
         # (Reuses nifty_pct and energy_pct already fetched in V4 benchmark extraction at L2808-2825)
 
-        rel_ref_close = float(c5m["close"][0]) if c5m["close"] else spot
+        # Determine today's session open reference price (Fix: do not use c5m[close][0] which is 2 days ago)
+        rel_ref_close = spot
+        if c5m.get("date") and c5m.get("open") and len(c5m["open"]) > 0:
+            last_dt = c5m["date"][-1]
+            last_date = last_dt.date() if hasattr(last_dt, "date") else str(last_dt)[:10]
+            for idx_d, dt_val in enumerate(c5m["date"]):
+                d_val = dt_val.date() if hasattr(dt_val, "date") else str(dt_val)[:10]
+                if d_val == last_date:
+                    rel_ref_close = float(c5m["open"][idx_d])
+                    break
+            else:
+                rel_ref_close = float(c5m["open"][0])
+        elif c5m.get("open") and len(c5m["open"]) > 0:
+            rel_ref_close = float(c5m["open"][0])
+
         reliance_pct = ((spot - rel_ref_close) / rel_ref_close) * 100.0 if rel_ref_close > 0 else 0.0
         alpha_spread, rs_bias = MultiIndicatorMath.calculate_nifty_relative_strength(reliance_pct, nifty_pct)
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = MultiIndicatorMath.calculate_sectoral_alignment(
@@ -5750,13 +5764,21 @@ class UltraHighConvictionRelianceEngine:
             macro_bear += 3.0
 
 
-        # Sector Divergence Filter (Suggestion 2 Institutional Rule) — Uses direct spot-vs-open comparison
-        is_bullish_lean = spot > c5m["close"][0]
-        is_bearish_lean = spot < c5m["close"][0]
+        # Sector Divergence Filter — Uses authentic session open comparison
+        is_bullish_lean = spot > rel_ref_close
+        is_bearish_lean = spot < rel_ref_close
+
+        # Moderate divergence gets score penalty rather than hard binary veto
+        if is_bullish_lean and energy_pct < -0.30 and reliance_pct > 0.15:
+            macro_bull = max(0.0, macro_bull - 2.5)
+        elif is_bearish_lean and energy_pct > 0.30 and reliance_pct < -0.15:
+            macro_bear = max(0.0, macro_bear - 2.5)
+
+        # Extreme divergence trap (>0.80% opposing direction or Copula tail contagion)
         is_sector_divergence_trap = (
-            (is_bullish_lean and energy_pct < -0.15 and reliance_pct > 0.10)
+            (is_bullish_lean and energy_pct < -0.80 and reliance_pct > 0.50)
         ) or (
-            (is_bearish_lean and energy_pct > 0.15 and reliance_pct < -0.10)
+            (is_bearish_lean and energy_pct > 0.80 and reliance_pct < -0.50)
         ) or (
             is_bullish_lean and is_tail_contagion_active  # Copula tail risk vetoes long setups
         )
@@ -5843,8 +5865,8 @@ class UltraHighConvictionRelianceEngine:
         # Low institutional liquidity and spread widening peak during midday; require volume surge to clear
         is_midday_lull = time(11, 15) <= current_time <= time(13, 30)
         if is_midday_lull and not vol_surge:
-            raw_bull = max(0.0, raw_bull - 5.0)
-            raw_bear = max(0.0, raw_bear - 5.0)
+            raw_bull = max(0.0, raw_bull - 2.0)
+            raw_bear = max(0.0, raw_bear - 2.0)
 
         # Admati & Pfleiderer (1988) Afternoon Time-Decay Entry Quality Filter
         # Bug 4 & Improvement 2 Fix: Exponentially decay entry score as session runway diminishes
@@ -5932,13 +5954,29 @@ class UltraHighConvictionRelianceEngine:
         target_spot_delta = (self.risk.target_pts / delta_ce) if recommended_type == "CE" else -(self.risk.target_pts / delta_pe)
         estimated_target_spot = spot + target_spot_delta
         # Approximate historical daily VWAP levels around spot (e.g. W-AVWAP, Prior Day pivots)
-        prior_vwaps = [w_avwap, cpr_pivot, (pdh_val + pdl_val + pdc_val) / 3.0]
+        prior_vwaps = [w_avwap, (pdh_val + pdl_val + pdc_val) / 3.0]
         virgin_vwap_levels, virgin_vwap_desc, is_target_blocked_by_virgin_vwap = MultiIndicatorMath.calculate_virgin_vwap_magnets(
             spot=spot, target_price=estimated_target_spot, historical_daily_vwaps=prior_vwaps
         )
+        # Smart Target Adjustment: If an opposing Virgin VWAP is in the way, adjust target rather than vetoing
+        if is_target_blocked_by_virgin_vwap and virgin_vwap_levels:
+            if recommended_type == "CE":
+                blocking_levels = [v for v in virgin_vwap_levels if spot < v < estimated_target_spot]
+                if blocking_levels:
+                    nearest_wall = min(blocking_levels)
+                    adj_pts = round((nearest_wall - spot) * delta_ce, 1)
+                    if adj_pts >= 2.5:
+                        is_target_blocked_by_virgin_vwap = False  # Cleared with smart profit-taking target
+            else:
+                blocking_levels = [v for v in virgin_vwap_levels if estimated_target_spot < v < spot]
+                if blocking_levels:
+                    nearest_wall = max(blocking_levels)
+                    adj_pts = round((spot - nearest_wall) * delta_pe, 1)
+                    if adj_pts >= 2.5:
+                        is_target_blocked_by_virgin_vwap = False
 
         total_probability = dominant_score
-        midday_cleared = (not is_midday_lull) or vol_surge
+        midday_cleared = (not is_midday_lull) or vol_surge or (dominant_score >= 68.0)
 
         # Secondary Metalabeling Classifier Layer (López de Prado 2018)
         # Conditioned on primary confluence, Hawkes branching, VPIN, Kyle regime, and Copula lower tail
@@ -5955,7 +5993,13 @@ class UltraHighConvictionRelianceEngine:
         # Strict Execution Gate:
         # Time-decay gate: reject new entries after 13:45 (insufficient runway before 15:05 square-off)
         is_afternoon_runway_exhausted = current_time >= time(13, 45)
-        afternoon_strict_prob_required = (self.trade_regime_threshold + 3.0) if (time(13, 0) <= current_time < time(13, 45)) else self.trade_regime_threshold
+
+        # Minimum probability required: base 68%, midday 70%, afternoon 70%
+        min_prob_required = self.trade_regime_threshold
+        if is_midday_lull and not vol_surge:
+            min_prob_required = max(min_prob_required, 70.0)
+        elif current_time >= time(13, 0):
+            min_prob_required = max(min_prob_required, 70.0)
 
         # HTF Downtrend / Counter-Trend Veto (Bug 3 Fix):
         is_htf_counter_trend_trap = (
@@ -5964,7 +6008,7 @@ class UltraHighConvictionRelianceEngine:
         )
 
         is_tradable = (
-            (total_probability >= ((self.trade_regime_threshold + 2.0) if is_midday_lull else afternoon_strict_prob_required))
+            (total_probability >= min_prob_required)
             and time_allowed
             and not is_afternoon_runway_exhausted
             and not is_htf_counter_trend_trap
@@ -5974,9 +6018,8 @@ class UltraHighConvictionRelianceEngine:
             and not is_synthetic_feed
             and not spread_stand_down
             and midday_cleared
-            and not (vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT")
+            and not (is_sector_divergence_trap and dominant_score < 72.0)
             and not is_target_blocked_by_virgin_vwap
-            and not is_sector_divergence_trap
             and not is_high_market_impact
             and metalabel_approved  # Secondary Metalabeling veto for high microstructure noise
         )
@@ -6047,16 +6090,24 @@ class UltraHighConvictionRelianceEngine:
             status_text = "OFFLINE / AWAITING LIVE BROKER FEED (STAND DOWN)"
         elif opening_cooldown_active:
             status_text = "OPENING COOLDOWN ACTIVE (09:15-09:30 AM IST) — BUILDING INITIAL BALANCE / ORB"
+        elif auto_sq_active:
+            status_text = "POST-MARKET / AUTO SQUARE-OFF (15:05 PM IST) — CAPITAL PRESERVED"
         elif spread_stand_down:
             status_text = f"STAND DOWN — WIDE BID-ASK SPREAD (Spread Rs. {opt_spread:.2f} > Rs. 0.35 threshold)"
-        elif is_midday_lull and not vol_surge:
+        elif is_tradable:
+            status_text = f"TRADABLE DAY / ACTIVE {dominant_side} SETUP [{tier_rating}]"
+        elif is_choppy_regime:
+            status_text = "CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)"
+        elif is_htf_counter_trend_trap:
+            status_text = f"STAND DOWN — HTF DOWNTREND COUNTER-TREND TRAP (5-Day Trend {htf_return_pct:+.2f}% | CE Long Vetoed by Regime)"
+        elif is_afternoon_runway_exhausted:
+            status_text = f"STAND DOWN — AFTERNOON RUNWAY EXHAUSTED ({current_time.strftime('%H:%M')} >= 13:45 | Insufficient runway for target before 15:05 auto-square-off)"
+        elif is_midday_lull and not midday_cleared:
             status_text = "MIDDAY LIQUIDITY LULL / STAND DOWN (11:15 AM - 01:30 PM | Capital Preserved Against Low-Volume Chop)"
-        elif vpin_regime == "HIGH_TOXICITY_LIQUIDITY_FLIGHT":
-            status_text = f"STAND DOWN — HIGH ORDER FLOW TOXICITY (VPIN {vpin_val:.3f} >= 0.50 | Toxic Flow)"
-        elif is_target_blocked_by_virgin_vwap:
-            status_text = f"STAND DOWN — TARGET BLOCKED BY VIRGIN VWAP ({virgin_vwap_desc})"
         elif is_sector_divergence_trap:
             status_text = f"STAND DOWN — SECTOR DIVERGENCE TRAP (NIFTY Energy {energy_pct:+.2f}% vs Reliance {reliance_pct:+.2f}% | False Breakout Risk)"
+        elif is_target_blocked_by_virgin_vwap:
+            status_text = f"STAND DOWN — TARGET BLOCKED BY VIRGIN VWAP ({virgin_vwap_desc})"
         elif is_high_market_impact:
             status_text = f"STAND DOWN — HIGH MARKET IMPACT SLIPPAGE (Kyle's λ {curr_lambda:.2f} > 2.2x Avg | Thin Order Book Vacuum)"
         elif is_afternoon_runway_exhausted:

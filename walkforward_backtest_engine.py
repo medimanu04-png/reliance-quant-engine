@@ -329,9 +329,9 @@ class RelianceQuantBacktester:
                     # Afternoon time-decay gate & midday filter (Bug 4 / Recommendation 2)
                     if current_time >= time(13, 45):
                         is_tradable = False
-                    elif current_time >= time(13, 0) and dom_score < 75.0:
+                    elif current_time >= time(13, 0) and dom_score < 70.0:
                         is_tradable = False
-                    elif time(11, 15) <= current_time <= time(13, 30) and dom_score < 74.0:
+                    elif time(11, 15) <= current_time <= time(13, 30) and dom_score < 70.0:
                         is_tradable = False
 
                     if is_tradable and not day_traded:
