@@ -42,14 +42,14 @@ class RelianceQuantBacktester:
     def __init__(self, period: str = "60d"):
         self.period = period
         self.capital = 73643.72
-        self.lot_size = 250
-        self.num_lots = 1
-        self.total_qty = 250
-        self.target_option_pts = 7.5
-        self.sl_option_pts = 3.5
+        self.lot_size = 500
+        self.num_lots = 2
+        self.total_qty = 1000
+        self.target_option_pts = 7.0
+        self.sl_option_pts = 5.0
         self.delta_approx = 0.52
-        self.spot_target_pts = round(self.target_option_pts / self.delta_approx, 2)  # ~14.4 pts
-        self.spot_sl_pts = round(self.sl_option_pts / self.delta_approx, 2)          # ~6.7 pts
+        self.spot_target_pts = round(self.target_option_pts / self.delta_approx, 2)  # ~13.5 pts
+        self.spot_sl_pts = round(self.sl_option_pts / self.delta_approx, 2)          # ~9.6 pts
 
     def run_backtest(self) -> Dict[str, Any]:
         import yfinance as yf

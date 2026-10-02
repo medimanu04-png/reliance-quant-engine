@@ -51,13 +51,13 @@ if sys.stdout.encoding != 'utf-8':
 @dataclass
 class RelianceRiskBudget:
     total_capital: float = 73643.72
-    lot_size: int = 250  # Standardized 1 lot = 250 units for strict institutional capital preservation
-    num_lots: int = 1    # Strictly 1 lot base for institutional capital preservation (<= 4.0% risk cap)
-    target_pts: float = 6.5
-    stop_loss_pts: float = 3.2
+    lot_size: int = 500  # Revised NSE contract size = 500 units per lot
+    num_lots: int = 2    # Standard 2 lots mandate = 1,000 Qty total
+    target_pts: float = 7.0  # Optimal Intraday Target = +7.0 pts (+Rs. 7,000 on 1,000 Qty)
+    stop_loss_pts: float = 5.0  # Optimal Stop Loss = -5.0 pts (-Rs. 5,000 on 1,000 Qty)
     limit_collar_pts: float = 0.65  # Institutional Stop-Limit execution collar (prevents market spike slippage & gap misses)
     estimated_tax_per_lot: float = 65.0  # Estimated statutory charges (STT, GST, Exchange turnover & brokerage)
-    daily_sl_cap_rupees: float = 1200.0  # Strict 1-and-Done Cap (~1.6% of capital)
+    daily_sl_cap_rupees: float = 5000.0  # Strict 1-and-Done Cap for 2 lots
     max_daily_sl_trades: int = 1  # 1-and-Done Rule (trading ceases immediately if 1 SL is hit)
 
     def check_daily_sl_cap(self, daily_realized_loss: float = 0.0, daily_sl_count: int = 0) -> Tuple[bool, str]:
@@ -79,18 +79,18 @@ class RelianceRiskBudget:
     ) -> Tuple[float, str, str]:
         """
         Tiered Trailing Breakeven Escalator Protocol:
-        - Tier 0: LTP < Entry + 3.5 pts -> Maintain Initial SL
-        - Tier 1: LTP >= Entry + 3.5 pts -> Move SL to Cost + 0.10 pts (Risk-Free Breakeven)
-        - Tier 2: LTP >= Entry + 5.5 pts -> Lock SL to Entry + 3.00 pts (Lock in Rs. 750+ profit)
+        - Tier 0: LTP < Entry + 3.0 pts -> Maintain Initial SL
+        - Tier 1: LTP >= Entry + 3.0 pts -> Move SL to Cost + 0.10 pts (Risk-Free Breakeven)
+        - Tier 2: LTP >= Entry + 5.0 pts -> Lock SL to Entry + 2.50 pts (Lock in Rs. 2,500+ profit)
         """
         profit_pts = round(current_ltp - entry_price, 2)
-        if profit_pts >= 5.5:
-            current_sl = round(entry_price + 3.00, 2)
-            tier_status = "TIER_2_PROFIT_LOCK (+5.5 pts hit -> SL locked at +3.0 pts)"
+        if profit_pts >= 5.0:
+            current_sl = round(entry_price + 2.50, 2)
+            tier_status = "TIER_2_PROFIT_LOCK (+5.0 pts hit -> SL locked at +2.50 pts)"
             action = "LOCK_PROFIT_TRAILING"
-        elif profit_pts >= 3.5:
+        elif profit_pts >= 3.0:
             current_sl = round(entry_price + 0.10, 2)
-            tier_status = "TIER_1_BREAKEVEN (+3.5 pts hit -> SL moved to Cost +0.10 pts)"
+            tier_status = "TIER_1_BREAKEVEN (+3.0 pts hit -> SL moved to Cost +0.10 pts)"
             action = "MOVE_SL_TO_COST_RISK_FREE"
         else:
             current_sl = initial_sl
@@ -3912,9 +3912,9 @@ class MultiIndicatorMath:
         intraday_gk_rv: float,
         delta: float = 0.52,
         horizon_minutes: int = 45,
-        base_target_pts: float = 7.5,
-        base_sl_pts: float = 3.5,
-        reward_risk_ratio: float = 2.14
+        base_target_pts: float = 7.0,
+        base_sl_pts: float = 5.0,
+        reward_risk_ratio: float = 1.40
     ) -> Tuple[float, float, str]:
         """
         Dynamic Triple Barrier Volatility Scaling.
@@ -3922,8 +3922,8 @@ class MultiIndicatorMath:
 
         Dynamically scales the upper and lower profit/loss barriers at the precise time of breakout
         using the intraday Garman-Klass / Parkinson realized volatility:
-          Target Pts = max(5.0, min(12.5, base_tgt * (RV / baseline_RV)^0.65 * sqrt(horizon / 45)))
-          SL Pts = max(2.5, min(5.0, Target Pts / reward_risk_ratio))
+          Target Pts = max(5.0, min(10.0, base_tgt * (RV / baseline_RV)^0.65 * sqrt(horizon / 45)))
+          SL Pts = max(3.5, min(6.0, Target Pts / reward_risk_ratio))
 
         Returns: (dynamic_target_pts, dynamic_sl_pts, barrier_regime)
         """
@@ -3932,8 +3932,8 @@ class MultiIndicatorMath:
         time_scaling = math.sqrt(max(0.5, horizon_minutes / 45.0))
 
         scaled_target = base_target_pts * rv_multiplier * time_scaling
-        dyn_target = round(min(12.5, max(5.0, scaled_target)), 1)
-        dyn_sl = round(min(5.0, max(2.5, dyn_target / max(1.5, reward_risk_ratio))), 1)
+        dyn_target = round(min(10.0, max(5.0, scaled_target)), 1)
+        dyn_sl = round(min(6.0, max(3.5, dyn_target / max(1.2, reward_risk_ratio))), 1)
 
         if rv_multiplier >= 1.25:
             regime = "HIGH_EXPANSION_EXTENDED_BARRIER"
@@ -5994,12 +5994,15 @@ class UltraHighConvictionRelianceEngine:
         # Time-decay gate: reject new entries after 13:45 (insufficient runway before 15:05 square-off)
         is_afternoon_runway_exhausted = current_time >= time(13, 45)
 
-        # Minimum probability required: base 68%, midday 70%, afternoon 70%
+        # Strict Execution Timing & Midday Whipsaw Gate:
+        # Morning Power Window (09:15 - 10:45 AM) has 90% Win Rate; accepts standard high conviction (>= 68.0%)
+        # Midday Lull (10:45 AM - 13:30 PM) is prone to low-volume traps; strictly requires exceptional conviction (>= 78.0%)
+        # Afternoon Session (13:30 - 13:45 PM) requires >= 72.0%
         min_prob_required = self.trade_regime_threshold
-        if is_midday_lull and not vol_surge:
-            min_prob_required = max(min_prob_required, 70.0)
-        elif current_time >= time(13, 0):
-            min_prob_required = max(min_prob_required, 70.0)
+        if time(10, 45) < current_time < time(13, 30):
+            min_prob_required = max(min_prob_required, 78.0)
+        elif current_time >= time(13, 30):
+            min_prob_required = max(min_prob_required, 72.0)
 
         # HTF Downtrend / Counter-Trend Veto (Bug 3 Fix):
         is_htf_counter_trend_trap = (
@@ -6211,12 +6214,12 @@ class UltraHighConvictionRelianceEngine:
         # Dynamic Bayesian Change-Point Trailing Adaptation (Upgrade 4)
         # If BOCPD detects a regime shift (cp_prob >= 0.65), instantly tighten trailing trigger to protect profits
         if cp_prob >= 0.65:
-            be_pts_offset = 2.0  # Tightened from 3.5 pts during regime uncertainty
-            lock_pts_offset = 3.8  # Tightened from 5.5 pts
+            be_pts_offset = 2.0  # Tightened from 3.0 pts during regime uncertainty
+            lock_pts_offset = 3.8  # Tightened from 5.0 pts
             be_escalator_note = f"⚡ [BOCPD Shift: P(cp)={cp_prob:.2f} > 0.65 -> Trailing SL Tightened to +{be_pts_offset:.1f} pts!]"
         else:
-            be_pts_offset = 3.5
-            lock_pts_offset = 5.5
+            be_pts_offset = 3.0
+            lock_pts_offset = 5.0
             be_escalator_note = f"[BOCPD Regime Stable: P(cp)={cp_prob:.2f}]"
 
         breakeven_trigger_price = round(entry_premium + be_pts_offset, 2)
