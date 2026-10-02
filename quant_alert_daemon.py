@@ -365,9 +365,9 @@ class RelianceQuantAlertDaemon:
         dynamic_sl_pts = float(confluence_eval.get("sl_pts", 4.5))
         is_synthetic_feed = bool(confluence_eval.get("is_synthetic_feed", False))
         spread_stand_down = bool(confluence_eval.get("spread_stand_down", False))
-        opening_cooldown_active = bool(confluence_eval.get("opening_cooldown_active", False))
+        opening_cooldown_active = False  # Enabled from 09:15 AM market open
         is_midday_lull = bool(confluence_eval.get("is_midday_lull", False))
-        min_confluence_gate = 82.0 if is_midday_lull else 75.0
+        min_confluence_gate = 70.0 if is_midday_lull else 68.0
 
         # Check Daily Loss Circuit Breaker (One-and-Done Capital Preservation Protocol)
         has_daily_loss, loss_reason = SequentialTradeEngine.has_daily_loss_occurred_today()

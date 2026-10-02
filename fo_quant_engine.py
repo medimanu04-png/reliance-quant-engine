@@ -4556,8 +4556,8 @@ class UltraHighConvictionRelianceEngine:
         # 3. 14:45 - 15:05 PM: Intraday Expiry / Square-off Cooldown
         # 4. 15:05+ PM: Auto Square-off Enforcement
         in_orb_window = time(9, 15) <= current_time <= time(9, 30)
-        opening_cooldown_active = in_orb_window and not allow_orb_early_entry
-        market_open = time(9, 15) if allow_orb_early_entry else time(9, 30)
+        opening_cooldown_active = False  # Unlocked from 09:15 AM market open itself
+        market_open = time(9, 15)
         market_close = time(15, 10)
         cutoff, auto_sq = time(14, 45), time(15, 5)
 
@@ -6018,9 +6018,9 @@ class UltraHighConvictionRelianceEngine:
             and not is_synthetic_feed
             and not spread_stand_down
             and midday_cleared
-            and not (is_sector_divergence_trap and dominant_score < 72.0)
+            and not (is_sector_divergence_trap and dominant_score < 68.0)
             and not is_target_blocked_by_virgin_vwap
-            and not is_high_market_impact
+            and not (is_high_market_impact and dominant_score < 68.0)
             and metalabel_approved  # Secondary Metalabeling veto for high microstructure noise
         )
 
@@ -6088,8 +6088,6 @@ class UltraHighConvictionRelianceEngine:
 
         if is_synthetic_feed:
             status_text = "OFFLINE / AWAITING LIVE BROKER FEED (STAND DOWN)"
-        elif opening_cooldown_active:
-            status_text = "OPENING COOLDOWN ACTIVE (09:15-09:30 AM IST) — BUILDING INITIAL BALANCE / ORB"
         elif auto_sq_active:
             status_text = "POST-MARKET / AUTO SQUARE-OFF (15:05 PM IST) — CAPITAL PRESERVED"
         elif spread_stand_down:
@@ -6104,28 +6102,19 @@ class UltraHighConvictionRelianceEngine:
             status_text = f"STAND DOWN — AFTERNOON RUNWAY EXHAUSTED ({current_time.strftime('%H:%M')} >= 13:45 | Insufficient runway for target before 15:05 auto-square-off)"
         elif is_midday_lull and not midday_cleared:
             status_text = "MIDDAY LIQUIDITY LULL / STAND DOWN (11:15 AM - 01:30 PM | Capital Preserved Against Low-Volume Chop)"
-        elif is_sector_divergence_trap:
+        elif is_sector_divergence_trap and dominant_score < 68.0:
             status_text = f"STAND DOWN — SECTOR DIVERGENCE TRAP (NIFTY Energy {energy_pct:+.2f}% vs Reliance {reliance_pct:+.2f}% | False Breakout Risk)"
         elif is_target_blocked_by_virgin_vwap:
             status_text = f"STAND DOWN — TARGET BLOCKED BY VIRGIN VWAP ({virgin_vwap_desc})"
-        elif is_high_market_impact:
+        elif is_high_market_impact and dominant_score < 68.0:
             status_text = f"STAND DOWN — HIGH MARKET IMPACT SLIPPAGE (Kyle's λ {curr_lambda:.2f} > 2.2x Avg | Thin Order Book Vacuum)"
-        elif is_afternoon_runway_exhausted:
-            status_text = f"STAND DOWN — AFTERNOON RUNWAY EXHAUSTED ({current_time.strftime('%H:%M')} >= 13:45 | Insufficient runway for target before 15:05 auto-square-off)"
-        elif is_htf_counter_trend_trap:
-            status_text = f"STAND DOWN — HTF DOWNTREND COUNTER-TREND TRAP (5-Day Trend {htf_return_pct:+.2f}% | CE Long Vetoed by Regime)"
-        elif is_tradable:
-            status_text = f"TRADABLE DAY / ACTIVE {dominant_side} SETUP [{tier_rating}]"
-        elif is_choppy_regime:
-            status_text = "CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)"
-
         elif total_probability >= self.trade_regime_threshold and not time_allowed:
             if current_time < time(9, 15):
                 status_text = f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Opens 09:15 AM IST)"
             elif current_time >= auto_sq:
                 status_text = f"SETUP ARMED / POST-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Session Ended)"
             else:
-                status_text = f"SETUP ARMED / ORB-15 COOLDOWN (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Unlocks 09:30 AM)"
+                status_text = f"SETUP ARMED (Dominant Bias: {dominant_side} {dominant_score}%)"
         else:
             status_text = "NON-TRADABLE DAY / STAND DOWN"
 

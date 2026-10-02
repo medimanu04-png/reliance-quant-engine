@@ -267,8 +267,8 @@ class RelianceQuantBacktester:
                             active_trade = None
                             break
 
-                # If no active trade, evaluate entry conditions (09:30 AM to 14:30 PM window)
-                if not day_traded and (time(9, 30) <= current_time <= time(14, 30)):
+                # If no active trade, evaluate entry conditions (09:15 AM to 14:30 PM window)
+                if not day_traded and (time(9, 15) <= current_time <= time(14, 30)):
                     # Slice history up to current candle for strict point-in-time calculation (no lookahead bias)
                     upto_idx = history_df.index.get_loc(candle_dt) + 1
                     slice_5m = history_df.iloc[max(0, upto_idx - 150):upto_idx]
