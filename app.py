@@ -1150,7 +1150,7 @@ if manual_rescan:
 st.session_state["just_rescanned"] = False
 
 # 6 Sleek Live Market Cards with Dynamic Streaming Fragment
-@st.fragment(run_every="3s")
+@st.fragment(run_every="6s")
 def render_live_macro_benchmarks_strip():
     tick_payload = NSEIndiaFetcher.get_dynamic_market_ticks()
     benchmarks = tick_payload["benchmarks"]
@@ -1854,7 +1854,18 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     except Exception:
         df = pd.DataFrame()
 
-    # 2. Secondary fallback via yfinance
+    # 2. Fast local parquet cache fallback (0-latency instant load)
+    if df is None or df.empty or len(df) < 30:
+        cache_file = os.path.join(os.path.dirname(__file__), "data_cache", "reliance_5m_cache.parquet")
+        if os.path.exists(cache_file):
+            try:
+                c_df = pd.read_parquet(cache_file)
+                if not c_df.empty and len(c_df) >= 30:
+                    df = c_df.iloc[-120:].copy()
+            except Exception:
+                pass
+
+    # 3. Secondary fallback via yfinance
     if df is None or df.empty or len(df) < 30:
         try:
             def _get_hist():
@@ -3956,7 +3967,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 """)
 
 
-@st.fragment(run_every="3s")
+@st.fragment(run_every="6s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
     # Dynamically pull current real-time spot from Groww live feed on each 1-sec tick
     try:
@@ -5335,7 +5346,7 @@ if df is not None and not df.empty:
         bias_badge_label = f"⚪ Neutral / Mild {active_side_name} Lean ({active_side_conviction:.1f}%)"
         bias_narrative = "Sub-threshold directional drift"
 
-    @st.fragment(run_every="3s")
+    @st.fragment(run_every="6s")
     def render_reliance_spot_hero():
         from groww_market_feed import GrowwMarketFeed
         spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
@@ -5399,7 +5410,7 @@ if df is not None and not df.empty:
             </div>
             """)
 
-    @st.fragment(run_every="3s")
+    @st.fragment(run_every="6s")
     def render_quant_radar_kpis():
         from groww_market_feed import GrowwMarketFeed
         spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
