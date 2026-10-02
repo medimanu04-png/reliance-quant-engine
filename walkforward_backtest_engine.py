@@ -92,9 +92,40 @@ class RelianceQuantBacktester:
         if df_raw.empty:
             return {"error": "Failed to download market data from Yahoo Finance and no cache found"}
 
+        # Benchmark NIFTY 50 Caching for authentic Clayton Copula cross-asset returns
+        cache_nifty_file = os.path.join(cache_dir, "nifty_5m_cache.parquet")
+        df_nifty_raw = pd.DataFrame()
+        cached_nifty_df = pd.DataFrame()
+        if os.path.exists(cache_nifty_file):
+            try:
+                cached_nifty_df = pd.read_parquet(cache_nifty_file)
+            except Exception:
+                pass
+        try:
+            df_nifty_new = yf.download("^NSEI", period=self.period, interval="5m", progress=False)
+            if isinstance(df_nifty_new.columns, pd.MultiIndex):
+                df_nifty_new.columns = df_nifty_new.columns.get_level_values(0)
+            if not df_nifty_new.empty:
+                if not cached_nifty_df.empty:
+                    comb_nifty = pd.concat([cached_nifty_df, df_nifty_new])
+                    df_nifty_raw = comb_nifty[~comb_nifty.index.duplicated(keep="last")].sort_index()
+                else:
+                    df_nifty_raw = df_nifty_new
+                try:
+                    df_nifty_raw.to_parquet(cache_nifty_file)
+                except Exception:
+                    pass
+            else:
+                df_nifty_raw = cached_nifty_df
+        except Exception:
+            df_nifty_raw = cached_nifty_df
+
+        df_nifty = df_nifty_raw.dropna().copy() if not df_nifty_raw.empty else pd.DataFrame()
+
         df = df_raw.dropna().copy()
         unique_dates = sorted(list(set(df.index.date)))
-        print(f"Loaded {len(df)} candles across {len(unique_dates)} trading sessions.")
+        print(f"Loaded {len(df)} candles across {len(unique_dates)} trading sessions. (NIFTY benchmark: {len(df_nifty)} bars)")
+
 
         trades: List[Dict[str, Any]] = []
         daily_summaries: List[Dict[str, Any]] = []
@@ -270,24 +301,53 @@ class RelianceQuantBacktester:
                     except Exception:
                         c15m = c5m  # Fallback if resample fails
 
-                    eval_res = engine.evaluate_90plus_confluence(current_time, c5m, c15m)
+                    benchmark_c5m = None
+                    if not df_nifty.empty:
+                        try:
+                            nifty_slice = df_nifty.loc[:candle_dt].iloc[-150:]
+                            if len(nifty_slice) >= 15:
+                                benchmark_c5m = {
+                                    "open": nifty_slice["Open"].tolist(),
+                                    "high": nifty_slice["High"].tolist(),
+                                    "low": nifty_slice["Low"].tolist(),
+                                    "close": nifty_slice["Close"].tolist(),
+                                    "volume": nifty_slice["Volume"].tolist(),
+                                    "date": nifty_slice.index.tolist()
+                                }
+                        except Exception:
+                            benchmark_c5m = None
+
+                    eval_res = engine.evaluate_90plus_confluence(
+                        current_time, c5m, c15m, benchmark_c5m=benchmark_c5m, is_backtest=True
+                    )
                     dom_score = float(eval_res.get("dominant_score", 0.0))
                     status_text = str(eval_res.get("2. TRADE STATUS", ""))
                     
-                    # Recommendation 1: A+ Strict Selectivity Gate (Raise Gate from 75% -> 84.0%)
-                    is_tradable = (
-                        eval_res.get("is_tradable", False)
-                        or (dom_score >= 84.0 and "STAND DOWN" not in status_text and not eval_res.get("is_target_blocked_by_virgin_vwap", False))
-                    )
+                    # Calibrated Institutional Selectivity Gate
+                    is_tradable = eval_res.get("is_tradable", False)
 
-                    # Midday lull filter
-                    if time(11, 15) <= current_time <= time(13, 30) and dom_score < 86.0:
+                    # Afternoon time-decay gate & midday filter (Bug 4 / Recommendation 2)
+                    if current_time >= time(13, 45):
+                        is_tradable = False
+                    elif current_time >= time(13, 0) and dom_score < 75.0:
+                        is_tradable = False
+                    elif time(11, 15) <= current_time <= time(13, 30) and dom_score < 74.0:
                         is_tradable = False
 
                     if is_tradable and not day_traded:
                         rec_inst = str(eval_res.get("4. RECOMMENDED INSTRUMENT", ""))
-                        is_ce = "CE" in rec_inst or eval_res.get("bullish_score", 0) >= eval_res.get("bearish_score", 0)
-                        direction = "BUY CE" if is_ce else "BUY PE"
+                        rec_type = str(eval_res.get("recommended_type", ""))
+                        if rec_type in ("CE", "PE"):
+                            direction = f"BUY {rec_type}"
+                        elif "PE" in rec_inst:
+                            direction = "BUY PE"
+                        elif "CE" in rec_inst:
+                            direction = "BUY CE"
+                        else:
+                            direction = "BUY CE" if eval_res.get("bullish_score", 0) >= eval_res.get("bearish_score", 0) else "BUY PE"
+
+                        is_ce = direction == "BUY CE"
+
 
                         # Recommendation 3: India VIX Dynamic Target/SL pts
                         tgt_opt_pts = float(eval_res.get("target_pts", self.target_option_pts))

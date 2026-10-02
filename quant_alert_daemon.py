@@ -325,7 +325,27 @@ class RelianceQuantAlertDaemon:
         candles_5m = RelianceCandleFetcher.get_5m_candles(spot)
         candles_15m = RelianceCandleFetcher.get_15m_candles(spot)
         curr_time = now_dt.time()
-        confluence_eval = self.quant_engine.evaluate_90plus_confluence(curr_time, candles_5m, candles_15m)
+
+        benchmark_c5m = None
+        try:
+            gw = GrowwMarketFeed.get_instance()
+            bm_df = gw.get_benchmark_historical_candles("NIFTY 50", interval="5m", days=5)
+            if bm_df is not None and not bm_df.empty and "Close" in bm_df.columns:
+                benchmark_c5m = {
+                    "open": bm_df["Open"].tolist(),
+                    "high": bm_df["High"].tolist(),
+                    "low": bm_df["Low"].tolist(),
+                    "close": bm_df["Close"].tolist(),
+                    "volume": bm_df["Volume"].tolist(),
+                    "date": bm_df.index.tolist()
+                }
+        except Exception:
+            benchmark_c5m = None
+
+        confluence_eval = self.quant_engine.evaluate_90plus_confluence(
+            curr_time, candles_5m, candles_15m, benchmark_c5m=benchmark_c5m
+        )
+
 
         prob_str = confluence_eval.get("3. CONFLUENCE SCORE", confluence_eval.get("3. PROBABILITY SCORE", ""))
         status_text = confluence_eval.get("2. TRADE STATUS", "")

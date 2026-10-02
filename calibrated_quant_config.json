@@ -1,35 +1,21 @@
 {
   "status": "SUCCESSFULLY_CALIBRATED",
-  "calibration_model": "ISOTONIC_REGRESSION_PAVA",
-  "sample_size": 11,
-  "empirical_win_rate": 45.5,
-  "calibrated_sigmoid_k": 0.1,
-  "calibrated_sigmoid_s0": 89.2,
-  "brier_score": 0.2455,
-  "log_loss": 0.684,
-  "calibration_quality": "ACCEPTABLE_FOR_SMALL_N",
-  "isotonic_lookup_table": [
-    {
-      "score_range": [
-        78.5,
-        85.8
-      ],
-      "calibrated_p_win": 0.4
-    },
-    {
-      "score_range": [
-        89.6,
-        93.0
-      ],
-      "calibrated_p_win": 0.5
-    },
-    {
-      "score_range": [
-        95.0,
-        96.0
-      ],
-      "calibrated_p_win": 0.5
-    }
-  ],
-  "calibrated_at": "2026-09-30 11:40:07 PM IST"
+  "sample_size": 550,
+  "empirical_win_rate": 56.7,
+  "calibrated_sigmoid_k": 0.04,
+  "calibrated_sigmoid_s0": 46.4,
+  "brier_score": 0.2536,
+  "loocv_brier_score": 0.3453,
+  "log_loss": 0.7036,
+  "calibration_quality": "LOW",
+  "vector_importance_weights": {
+    "v1_trend": 0.028,
+    "v2_order_flow": 0.012,
+    "v3_gamma_oi": 0.258,
+    "v4_volatility": -0.154,
+    "v5_momentum": 0.033,
+    "v6_greeks": 0.12,
+    "v7_macro": -0.236
+  },
+  "calibrated_at": "2026-10-03 02:08:42 AM IST"
 }

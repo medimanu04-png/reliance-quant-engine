@@ -247,18 +247,34 @@ class EmpiricalCalibrationEngine:
                 weights[j] -= (learning_rate / sample_size) * grad_w[j]
             bias -= (learning_rate / sample_size) * grad_b
 
-        # Compute empirical Platt Scaling parameters (sigmoid_k, sigmoid_s0) directly on raw_scores
-        # z = k * (raw_score - s0) -> fit k and s0
+        # Platt Scaling (Platt 1999): Maximum Likelihood Fitting of Sigmoid Parameters
+        # P(win | raw_score) = 1 / (1 + exp(-k * (raw_score - s0)))
+        # Optimizes k and s0 directly via gradient descent on cross-entropy loss
         win_rate = sum(y) / max(1, sample_size)
-        raw_wins = [raw_scores[i] for i in range(sample_size) if y[i] == 1]
-        raw_losses = [raw_scores[i] for i in range(sample_size) if y[i] == 0]
+        init_s0 = sum(raw_scores) / max(1, sample_size)
+        calibrated_k = 0.10
+        calibrated_s0 = max(35.0, min(65.0, init_s0))
+        lr_platt = 0.08
 
-        avg_win_raw = sum(raw_wins) / max(1, len(raw_wins)) if raw_wins else 55.0
-        avg_loss_raw = sum(raw_losses) / max(1, len(raw_losses)) if raw_losses else 35.0
-        calibrated_s0 = round((avg_win_raw + avg_loss_raw) / 2.0, 1)
+        for _ in range(800):
+            grad_k = 0.0
+            grad_s0 = 0.0
+            for i in range(sample_size):
+                diff = raw_scores[i] - calibrated_s0
+                z = max(-15.0, min(15.0, calibrated_k * diff))
+                p = 1.0 / (1.0 + math.exp(-z))
+                err = p - y[i]
+                grad_k += err * diff
+                grad_s0 += -err * calibrated_k
 
-        raw_spread = max(2.0, avg_win_raw - avg_loss_raw)
-        calibrated_k = round(min(0.25, max(0.05, 2.0 / raw_spread)), 3)
+            calibrated_k -= (lr_platt / sample_size) * grad_k
+            calibrated_s0 -= (lr_platt / sample_size) * grad_s0
+            calibrated_k = max(0.04, min(0.25, calibrated_k))
+            calibrated_s0 = max(35.0, min(65.0, calibrated_s0))
+
+        calibrated_k = round(calibrated_k, 3)
+        calibrated_s0 = round(calibrated_s0, 1)
+
 
         # Brier Score Calculation: Brier = (1/N) * sum((prob - actual)^2)
         # Closer to 0 is better (0.0 = perfect probabilistic foresight; 0.25 = coin toss)
@@ -272,19 +288,40 @@ class EmpiricalCalibrationEngine:
         brier_score = round(brier_sum / sample_size, 4)
         log_loss = round(log_loss_sum / sample_size, 4)
 
-        # Leave-One-Out Cross-Validation (LOOCV) to prevent in-sample overfitting (Efron 1982)
-        loocv_brier_sum = 0.0
-        for i in range(sample_size):
-            loocv_wins = [raw_scores[j] for j in range(sample_size) if j != i and y[j] == 1]
-            loocv_losses = [raw_scores[j] for j in range(sample_size) if j != i and y[j] == 0]
-            avg_w = sum(loocv_wins) / max(1, len(loocv_wins)) if loocv_wins else 55.0
-            avg_l = sum(loocv_losses) / max(1, len(loocv_losses)) if loocv_losses else 35.0
-            s0_i = (avg_w + avg_l) / 2.0
-            spread_i = max(2.0, avg_w - avg_l)
-            k_i = min(0.25, max(0.05, 2.0 / spread_i))
-            p_out = 1.0 / (1.0 + math.exp(-k_i * (raw_scores[i] - s0_i)))
-            loocv_brier_sum += (p_out - y[i]) ** 2
-        loocv_brier = round(loocv_brier_sum / sample_size, 4)
+        # Cross-Validation: 5-Fold CV for N >= 100, LOOCV for smaller sample sizes (Efron 1982)
+        if sample_size >= 100:
+            k_folds = 5
+            fold_size = sample_size // k_folds
+            cv_brier_sum = 0.0
+            for fold in range(k_folds):
+                val_idx = set(range(fold * fold_size, min(sample_size, (fold + 1) * fold_size)))
+                train_scores = [raw_scores[j] for j in range(sample_size) if j not in val_idx]
+                train_y = [y[j] for j in range(sample_size) if j not in val_idx]
+                w_scores = [train_scores[j] for j in range(len(train_scores)) if train_y[j] == 1]
+                l_scores = [train_scores[j] for j in range(len(train_scores)) if train_y[j] == 0]
+                avg_w = sum(w_scores) / max(1, len(w_scores)) if w_scores else 55.0
+                avg_l = sum(l_scores) / max(1, len(l_scores)) if l_scores else 35.0
+                s0_fold = (avg_w + avg_l) / 2.0
+                spread_fold = max(2.0, avg_w - avg_l)
+                k_fold = min(0.25, max(0.04, 2.0 / spread_fold))
+                for idx in val_idx:
+                    p_val = 1.0 / (1.0 + math.exp(-k_fold * (raw_scores[idx] - s0_fold)))
+                    cv_brier_sum += (p_val - y[idx]) ** 2
+            loocv_brier = round(cv_brier_sum / sample_size, 4)
+        else:
+            loocv_brier_sum = 0.0
+            for i in range(sample_size):
+                loocv_wins = [raw_scores[j] for j in range(sample_size) if j != i and y[j] == 1]
+                loocv_losses = [raw_scores[j] for j in range(sample_size) if j != i and y[j] == 0]
+                avg_w = sum(loocv_wins) / max(1, len(loocv_wins)) if loocv_wins else 55.0
+                avg_l = sum(loocv_losses) / max(1, len(loocv_losses)) if loocv_losses else 35.0
+                s0_i = (avg_w + avg_l) / 2.0
+                spread_i = max(2.0, avg_w - avg_l)
+                k_i = min(0.25, max(0.04, 2.0 / spread_i))
+                p_out = 1.0 / (1.0 + math.exp(-k_i * (raw_scores[i] - s0_i)))
+                loocv_brier_sum += (p_out - y[i]) ** 2
+            loocv_brier = round(loocv_brier_sum / sample_size, 4)
+
 
         result = {
             "status": "SUCCESSFULLY_CALIBRATED",
@@ -641,5 +678,217 @@ class EmpiricalCalibrationEngine:
             cls.fit_logistic_calibration()
 
         return resolved_count
+
+    @classmethod
+    def generate_shadow_observations_from_history(
+        cls,
+        target_count: int = 500,
+        period: str = "60d"
+    ) -> int:
+        """
+        Generates 500+ authentic empirical shadow observations from historical 5-minute candles.
+        Solves Improvement #1 / 500+ Shadow Observation Calibration Mandate:
+        For each candidate intraday bar:
+        1. Runs UltraHighConvictionRelianceEngine to produce feature vectors [V1..V7, raw_score]
+        2. Evaluates forward triple-barrier outcome (+7.5 pts option / ~14.4 pts spot vs -3.5 pts option / ~6.7 pts spot)
+           over the next 12 bars (60 minutes) or session end.
+        3. Labels target_hit = 1 (Win) or 0 (Loss).
+        """
+        import yfinance as yf
+        import pandas as pd
+        from datetime import time as dt_time
+        from fo_quant_engine import UltraHighConvictionRelianceEngine
+
+        engine = UltraHighConvictionRelianceEngine()
+        cache_dir = os.path.join(BASE_DIR, "data_cache")
+        cache_file = os.path.join(cache_dir, "reliance_5m_cache.parquet")
+        
+        df = pd.DataFrame()
+        if os.path.exists(cache_file):
+            try:
+                df = pd.read_parquet(cache_file)
+            except Exception:
+                pass
+                
+        if df.empty:
+            try:
+                df_raw = yf.download("RELIANCE.NS", period=period, interval="5m", progress=False)
+                if isinstance(df_raw.columns, pd.MultiIndex):
+                    df_raw.columns = df_raw.columns.get_level_values(0)
+                df = df_raw.dropna()
+                os.makedirs(cache_dir, exist_ok=True)
+                df.to_parquet(cache_file)
+            except Exception as e:
+                logger.error(f"Error downloading market data: {e}")
+                return 0
+
+        if df.empty:
+            return 0
+
+        dataset = cls.load_dataset()
+        existing_ids = set(r.get("id") for r in dataset)
+        new_records = []
+        
+        unique_dates = sorted(list(set(df.index.date)))
+        spot_target_pts = 14.4
+        spot_sl_pts = 6.7
+        
+        print(f"Scanning {len(unique_dates)} trading sessions for authentic shadow observations...")
+        for d in unique_dates:
+            day_mask = df.index.date == d
+            day_indices = [i for i, val in enumerate(day_mask) if val]
+            if len(day_indices) < 20:
+                continue
+                
+            # Scan bars throughout the active trading window
+            for idx in day_indices[15:-4]:
+                candle_dt = df.index[idx]
+                curr_time = candle_dt.time()
+                
+                # Active window: 09:30 AM to 14:15 PM
+                if not (dt_time(9, 30) <= curr_time <= dt_time(14, 15)):
+                    continue
+                    
+                slice_5m = df.iloc[max(0, idx - 150):idx + 1]
+                c5m = {
+                    "open": slice_5m["Open"].tolist(),
+                    "high": slice_5m["High"].tolist(),
+                    "low": slice_5m["Low"].tolist(),
+                    "close": slice_5m["Close"].tolist(),
+                    "volume": slice_5m["Volume"].tolist(),
+                    "date": slice_5m.index.tolist()
+                }
+                
+                try:
+                    resampled_15m = slice_5m.resample("15min").agg({
+                        "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+                    }).dropna()
+                    c15m = {
+                        "open": resampled_15m["Open"].tolist(),
+                        "high": resampled_15m["High"].tolist(),
+                        "low": resampled_15m["Low"].tolist(),
+                        "close": resampled_15m["Close"].tolist(),
+                        "volume": resampled_15m["Volume"].tolist(),
+                        "date": resampled_15m.index.tolist()
+                    }
+                except Exception:
+                    c15m = c5m
+                    
+                eval_res = engine.evaluate_90plus_confluence(curr_time, c5m, c15m)
+                vec_scores = eval_res.get("vector_scores", {})
+                raw_b = float(vec_scores.get("raw_bull", 0.0))
+                raw_s = float(vec_scores.get("raw_bear", 0.0))
+                raw_max = max(raw_b, raw_s)
+                rec_type = "CE" if raw_b >= raw_s else "PE"
+                dom_score = float(eval_res.get("dominant_score", raw_max))
+                
+                # Only record meaningful setups (raw feature score >= 28.0)
+                if raw_max < 28.0:
+                    continue
+                    
+                obs_id = f"OBS-{candle_dt.strftime('%Y%m%d_%H%M')}_{rec_type}"
+                if obs_id in existing_ids:
+                    continue
+
+                    
+                spot_entry = float(slice_5m["Close"].iloc[-1])
+                target_spot = spot_entry + spot_target_pts if rec_type == "CE" else spot_entry - spot_target_pts
+                sl_spot = spot_entry - spot_sl_pts if rec_type == "CE" else spot_entry + spot_sl_pts
+                
+                # Check forward triple barrier outcome over next 12 bars (60 min) or rest of day
+                future_bars = df.iloc[idx + 1:min(len(df), idx + 13)]
+                day_future = future_bars[future_bars.index.date == d]
+                
+                target_hit = False
+                sl_hit = False
+                realized_pts = 0.0
+                
+                for _, f_row in day_future.iterrows():
+                    f_high = float(f_row["High"])
+                    f_low = float(f_row["Low"])
+                    
+                    if rec_type == "CE":
+                        if f_high >= target_spot:
+                            target_hit = True
+                            realized_pts = 7.5
+                            break
+                        elif f_low <= sl_spot:
+                            sl_hit = True
+                            realized_pts = -3.5
+                            break
+                    else:  # PE
+                        if f_low <= target_spot:
+                            target_hit = True
+                            realized_pts = 7.5
+                            break
+                        elif f_high >= sl_spot:
+                            sl_hit = True
+                            realized_pts = -3.5
+                            break
+                            
+                if not target_hit and not sl_hit:
+                    # MTM outcome at end of window
+                    if not day_future.empty:
+                        last_c = float(day_future["Close"].iloc[-1])
+                        delta_spot = (last_c - spot_entry) if rec_type == "CE" else (spot_entry - last_c)
+                        realized_pts = round(delta_spot * 0.52, 2)
+                        target_hit = realized_pts > 0.0
+                    else:
+                        continue
+                        
+                vec_scores = eval_res.get("vector_scores", {})
+                rec = {
+                    "id": obs_id,
+                    "timestamp": candle_dt.strftime("%Y-%m-%d %I:%M:%S %p IST"),
+                    "date": candle_dt.strftime("%Y-%m-%d"),
+                    "instrument": f"RELIANCE {rec_type} (Shadow Observation)",
+                    "direction": f"BUY {rec_type}",
+                    "planned_entry": spot_entry,
+                    "target": target_spot,
+                    "sl": sl_spot,
+                    "features": {
+                        "v1_trend": vec_scores.get("v1_bull" if rec_type == "CE" else "v1_bear", 0.0),
+                        "v2_order_flow": vec_scores.get("v2_bull" if rec_type == "CE" else "v2_bear", 0.0),
+                        "v3_gamma_oi": vec_scores.get("v3_bull" if rec_type == "CE" else "v3_bear", 0.0),
+                        "v4_volatility": vec_scores.get("v4_bull" if rec_type == "CE" else "v4_bear", 0.0),
+                        "v5_momentum": vec_scores.get("v5_bull" if rec_type == "CE" else "v5_bear", 0.0),
+                        "v6_greeks": vec_scores.get("v6_bull" if rec_type == "CE" else "v6_bear", 0.0),
+                        "v7_macro": vec_scores.get("macro_bull" if rec_type == "CE" else "macro_bear", 0.0),
+                        "raw_score": vec_scores.get("raw_bull" if rec_type == "CE" else "raw_bear", dom_score),
+                        "engine_probability": dom_score,
+                        "win_expectancy": eval_res.get("win_expectancy_pct", 50.0)
+                    },
+                    "outcome": {
+                        "is_resolved": True,
+                        "target_hit": 1 if target_hit else 0,
+                        "realized_pnl": round(realized_pts * 250.0, 2),
+                        "realized_pts": realized_pts,
+                        "exit_reason": "FORWARD_TRIPLE_BARRIER"
+                    },
+                    "is_shadow_observation": True
+                }
+                new_records.append(rec)
+                existing_ids.add(obs_id)
+                
+                if len(new_records) + len(dataset) >= target_count:
+                    break
+            if len(new_records) + len(dataset) >= target_count:
+                break
+                
+        dataset.extend(new_records)
+        cls.save_dataset(dataset)
+        print(f"Generated {len(new_records)} authentic shadow observations. Total dataset size: {len(dataset)}")
+        return len(new_records)
+
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("RUNNING EMPIRICAL CALIBRATION ENGINE ON 500+ SHADOW OBSERVATIONS")
+    print("=" * 70)
+    added = EmpiricalCalibrationEngine.generate_shadow_observations_from_history(target_count=550)
+    res = EmpiricalCalibrationEngine.fit_logistic_calibration()
+    print("\nCalibration Results:")
+    print(json.dumps(res, indent=2))
+
 
 

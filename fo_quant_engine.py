@@ -286,19 +286,23 @@ class MultiIndicatorMath:
         smooth_pdm = sum(plus_dm[:period])
         smooth_mdm = sum(minus_dm[:period])
 
+        pdi = (smooth_pdm / smooth_tr * 100.0) if smooth_tr > 0 else 25.0
+        mdi = (smooth_mdm / smooth_tr * 100.0) if smooth_tr > 0 else 25.0
+
         dx = []
         for i in range(period, len(tr)):
             smooth_tr = smooth_tr - (smooth_tr / period) + tr[i]
             smooth_pdm = smooth_pdm - (smooth_pdm / period) + plus_dm[i]
             smooth_mdm = smooth_mdm - (smooth_mdm / period) + minus_dm[i]
-            pdi = (smooth_pdm / smooth_tr * 100.0) if smooth_tr > 0 else 0
-            mdi = (smooth_mdm / smooth_tr * 100.0) if smooth_tr > 0 else 0
+            pdi = (smooth_pdm / smooth_tr * 100.0) if smooth_tr > 0 else 0.0
+            mdi = (smooth_mdm / smooth_tr * 100.0) if smooth_tr > 0 else 0.0
             diff = abs(pdi - mdi)
             total = pdi + mdi
-            dx.append((diff / total * 100.0) if total > 0 else 0)
+            dx.append((diff / total * 100.0) if total > 0 else 0.0)
 
         adx = sum(dx[-period:]) / period if len(dx) >= period else (dx[-1] if dx else 32.0)
         return round(adx, 1), round(pdi, 1), round(mdi, 1)
+
 
     @staticmethod
     def calculate_stochastic(highs: List[float], lows: List[float], closes: List[float], period: int = 14, smooth_k: int = 3):
@@ -1814,9 +1818,9 @@ class MultiIndicatorMath:
         vpin = sum(order_imbalances) / total_vol if total_vol > 0 else 0.28
         vpin = round(min(1.0, max(0.0, vpin)), 3)
 
-        if vpin >= 0.50:
+        if vpin >= 0.70:
             regime = "HIGH_TOXICITY_LIQUIDITY_FLIGHT"
-        elif vpin >= 0.38:
+        elif vpin >= 0.45:
             regime = "ELEVATED_INFORMED_FLOW"
         elif vpin >= 0.22:
             regime = "BALANCED_HEALTHY_LIQUIDITY"
@@ -4062,7 +4066,8 @@ class MultiIndicatorMath:
         vpin_val: float,
         kyle_regime: str,
         is_synthetic_feed: bool,
-        copula_lambda_L: float
+        copula_lambda_L: float,
+        required_threshold: float = 72.0
     ) -> Tuple[bool, float, str]:
         """
         Secondary Metalabeling Classifier Layer (López de Prado 2018).
@@ -4074,32 +4079,32 @@ class MultiIndicatorMath:
         Returns: (metalabel_approved, execution_confidence, metalabel_regime)
         """
         # Baseline confidence from primary confluence score
-        conf = (primary_confluence_score - 50.0) / 50.0  # Scale 0.0 to 1.0
+        conf = (primary_confluence_score - 50.0) / max(10.0, required_threshold - 50.0)
         conf = max(0.0, min(1.0, conf))
 
         penalties = 0.0
 
         # Secondary Microstructure Filters
-        if hawkes_branching_ratio < 0.40:
-            penalties += 0.25  # Solitary order burst lacks cascade follow-through
-        if vpin_val >= 0.35:
-            penalties += 0.30  # High toxicity flight risk
+        if hawkes_branching_ratio < 0.35:
+            penalties += 0.20  # Solitary order burst lacks cascade follow-through
+        if vpin_val >= 0.65:
+            penalties += 0.25  # High toxicity flight risk
         if kyle_regime == "LIQUIDITY_VACUUM_TRAP":
-            penalties += 0.35  # Adverse selection risk in thin book
+            penalties += 0.25  # Adverse selection risk in thin book
         if is_synthetic_feed:
-            penalties += 0.40  # Missing live option chain
+            penalties += 0.25  # Missing live option chain
         if copula_lambda_L >= 0.60:
-            penalties += 0.30  # Tail contagion risk
+            penalties += 0.25  # Tail contagion risk
 
         adjusted_conf = round(max(0.0, min(1.0, conf - penalties)), 2)
-        metalabel_approved = (adjusted_conf >= 0.45) and (primary_confluence_score >= 80.0)
+        metalabel_approved = (adjusted_conf >= 0.35) and (primary_confluence_score >= required_threshold)
 
-        if adjusted_conf >= 0.75:
+        if adjusted_conf >= 0.70:
             regime = "METALABEL_HIGH_CONFIDENCE_FULL_SIZE"
         elif metalabel_approved:
             regime = "METALABEL_APPROVED_STANDARD_SIZE"
         else:
-            regime = f"METALABEL_VETOED_HIGH_MICROSTRUCTURE_NOISE (Confidence: {adjusted_conf:.2f} < 0.45)"
+            regime = f"METALABEL_VETOED_HIGH_MICROSTRUCTURE_NOISE (Confidence: {adjusted_conf:.2f} < 0.35)"
 
         return metalabel_approved, adjusted_conf, regime
 
@@ -4145,7 +4150,193 @@ class MultiIndicatorMath:
 
         return False, 0.0, "INDEX_BETA_ALIGNED"
 
+    @staticmethod
+    def calculate_market_breadth_signals(
+        advances: int,
+        declines: int,
+        pct_above_20ema: Optional[float] = None
+    ) -> Tuple[float, float, float, str]:
+        """
+        Market Breadth Signals (NIFTY 50 Advance/Decline Ratio & % Stocks Above 20-EMA).
+        References: Zweig (1986); Colby (2003) Encyclopedia of Technical Market Indicators.
+        Broad market participation is genuinely orthogonal to single-stock indicators.
+        
+        Returns: (breadth_macro_score, ad_ratio, pct_above_20ema, breadth_regime)
+        """
+        adv = max(0, int(advances))
+        dec = max(0, int(declines))
+        ad_ratio = round(adv / max(1, dec), 2)
+        
+        if pct_above_20ema is None:
+            pct_above_20ema = round(min(95.0, max(5.0, (adv / 50.0) * 100.0)), 1)
+            
+        score = 0.0
+        if ad_ratio >= 1.50 and pct_above_20ema >= 65.0:
+            score = 3.0
+            regime = "STRONG_BULLISH_BREADTH_THRUST"
+        elif ad_ratio >= 1.15 and pct_above_20ema >= 50.0:
+            score = 1.5
+            regime = "MILD_BULLISH_BREADTH"
+        elif ad_ratio <= 0.65 or pct_above_20ema <= 35.0:
+            score = -3.0
+            regime = "SEVERE_BEARISH_BREADTH_DISTRIBUTION"
+        elif ad_ratio <= 0.85 or pct_above_20ema <= 45.0:
+            score = -1.5
+            regime = "MILD_BEARISH_BREADTH_DRAG"
+        else:
+            score = 0.0
+            regime = "NEUTRAL_BALANCED_BREADTH"
+            
+        return score, ad_ratio, pct_above_20ema, regime
 
+    @staticmethod
+    def calculate_har_rv(
+        rv_intraday_series: List[float],
+        daily_rv: float = 18.0,
+        weekly_rv: float = 19.5,
+        monthly_rv: float = 21.0
+    ) -> Tuple[float, str]:
+        """
+        Heterogeneous Autoregressive Realized Volatility (HAR-RV) Model (Corsi 2009).
+        Forecasts forward realized volatility by combining intraday, daily, weekly, and monthly components:
+        RV_{t+1} = c + beta_d * RV_d + beta_w * RV_w + beta_m * RV_m
+        """
+        c = 0.05
+        beta_d = 0.45
+        beta_w = 0.32
+        beta_m = 0.18
+        if rv_intraday_series and len(rv_intraday_series) >= 3:
+            d_rv = rv_intraday_series[-1]
+            w_rv = sum(rv_intraday_series[-min(5, len(rv_intraday_series)):]) / min(5, len(rv_intraday_series))
+            m_rv = sum(rv_intraday_series[-min(20, len(rv_intraday_series)):]) / min(20, len(rv_intraday_series))
+        else:
+            d_rv = daily_rv
+            w_rv = weekly_rv
+            m_rv = monthly_rv
+
+        forecast_rv = c + (beta_d * d_rv) + (beta_w * w_rv) + (beta_m * m_rv)
+        forecast_rv = round(max(8.0, min(55.0, forecast_rv)), 2)
+        if forecast_rv < 15.0:
+            regime = "HAR_RV_COMPRESSED_VOL"
+        elif forecast_rv > 26.0:
+            regime = "HAR_RV_EXPANDING_VOL"
+        else:
+            regime = "HAR_RV_MODERATE_VOL"
+        return forecast_rv, regime
+
+    @staticmethod
+    def calculate_expected_slippage_and_market_impact(
+        kyle_lambda: float,
+        amihud_illiquidity: float,
+        bid_ask_spread: float,
+        order_size_lots: int = 1,
+        lot_size: int = 250,
+        avg_daily_volume: float = 5000000.0,
+        daily_volatility: float = 0.015
+    ) -> Dict[str, float]:
+        """
+        Expected Slippage & Market Impact Model.
+        Reference: Almgren & Chriss (2000) Optimal Execution; Kyle (1985).
+        Combines half bid-ask spread with temporary and permanent price impact.
+        """
+        total_shares = order_size_lots * lot_size
+        half_spread = max(0.05, bid_ask_spread / 2.0)
+        temp_impact = max(0.0, kyle_lambda * (total_shares / 1000.0))
+        participation_rate = total_shares / max(100000.0, avg_daily_volume)
+        perm_impact = 0.10 * daily_volatility * math.sqrt(participation_rate) * 100.0
+        
+        total_slippage_pts = round(half_spread + temp_impact + perm_impact, 2)
+        option_slippage_pts = round(max(0.10, total_slippage_pts * 0.52), 2)
+        slippage_cost_rs = round(option_slippage_pts * total_shares, 2)
+        
+        return {
+            "half_spread_pts": round(half_spread, 2),
+            "temp_impact_pts": round(temp_impact, 3),
+            "perm_impact_pts": round(perm_impact, 3),
+            "total_spot_slippage_pts": total_slippage_pts,
+            "expected_option_slippage_pts": option_slippage_pts,
+            "expected_slippage_rupees": slippage_cost_rs
+        }
+
+    @staticmethod
+    def calculate_session_time_decay_factor(
+        current_time: time,
+        afternoon_cutoff: time = time(12, 30),
+        decay_lambda: float = 1.5
+    ) -> Tuple[float, str]:
+        """
+        Admati & Pfleiderer (1988) Session Time-Decay Quality Filter.
+        Penalizes entries after 12:30 PM exponentially because options targets (+7.5 pts option /
+        +14.4 pts spot) require sufficient remaining session runway before 15:05 auto-square-off.
+        
+        Formula:
+        decay_factor = exp(-lambda * (minutes_since_cutoff / remaining_session_minutes))
+        """
+        curr_mins = current_time.hour * 60 + current_time.minute
+        cutoff_mins = afternoon_cutoff.hour * 60 + afternoon_cutoff.minute
+        close_mins = 15 * 60 + 5  # 15:05 auto square-off
+        
+        if curr_mins <= cutoff_mins:
+            return 1.0, "PRIME_RUNWAY_WINDOW"
+            
+        elapsed_after_cutoff = curr_mins - cutoff_mins
+        remaining_runway = max(1, close_mins - cutoff_mins)
+        
+        decay_factor = math.exp(-decay_lambda * (elapsed_after_cutoff / remaining_runway))
+        decay_factor = round(max(0.20, min(1.0, decay_factor)), 3)
+        
+        if current_time >= time(14, 0):
+            regime = "EXHAUSTED_SESSION_RUNWAY"
+        elif current_time >= time(13, 0):
+            regime = "LATE_AFTERNOON_TIME_DECAY"
+        else:
+            regime = "EARLY_AFTERNOON_TIME_DECAY"
+            
+        return decay_factor, regime
+
+    @staticmethod
+    def calculate_htf_rolling_trend(
+        close_series: List[float],
+        lookback_bars: int = 375,
+        min_lookback: int = 30
+    ) -> Tuple[float, str, float]:
+        """
+        5-Day Rolling Trend Filter & Directional Bias Correction.
+        Reference: Moskowitz, Ooi & Pedersen (2012) Time Series Momentum.
+        375 bars on 5m = 5 full trading sessions (75 bars/day).
+        
+        Returns: (htf_return_pct, htf_regime, trend_multiplier)
+        """
+        if not close_series or len(close_series) < min_lookback:
+            return 0.0, "INSUFFICIENT_HTF_HISTORY", 1.0
+            
+        effective_lb = min(len(close_series) - 1, lookback_bars)
+        ref_close = close_series[-effective_lb - 1]
+        latest_close = close_series[-1]
+        
+        if ref_close <= 0.0:
+            return 0.0, "INVALID_REF_PRICE", 1.0
+            
+        ret_pct = ((latest_close - ref_close) / ref_close) * 100.0
+        ret_pct = round(ret_pct, 2)
+        
+        if ret_pct <= -3.0:
+            regime = "SEVERE_MULTI_DAY_DOWNTREND_DISTRIBUTION"
+            multiplier = 0.50
+        elif ret_pct <= -1.5:
+            regime = "MILD_MULTI_DAY_DOWNTREND"
+            multiplier = 0.75
+        elif ret_pct >= 3.0:
+            regime = "STRONG_MULTI_DAY_UPTREND_ACCUMULATION"
+            multiplier = 1.25
+        elif ret_pct >= 1.5:
+            regime = "MILD_MULTI_DAY_UPTREND"
+            multiplier = 1.10
+        else:
+            regime = "BALANCED_MULTI_DAY_RANGE"
+            multiplier = 1.0
+            
+        return ret_pct, regime, multiplier
 
 
 # ============================================================================
@@ -4216,19 +4407,34 @@ class QuantConfig:
     midday_start: time = None
     midday_end: time = None
     bid_ask_spread_standown: float = 0.35
-    vpin_toxicity_threshold: float = 0.50
+    vpin_toxicity_threshold: float = 0.70
     
-    # Sigmoid Calibration (Recalibrated for fixed vector caps & institutional selectivity)
+    # Sigmoid Calibration (Empirically fitted or calibrated via EmpiricalCalibrationEngine)
     sigmoid_k: float = 0.12
     sigmoid_s0: float = 48.0
+    
+    # Time-Decay Entry Quality Filter (Admati & Pfleiderer 1988)
+    time_decay_lambda: float = 1.5
+    afternoon_cutoff: time = None
+    afternoon_strict_gate_time: time = None
+    afternoon_hard_stop_time: time = None
+    
+    # HTF 5-Day Trend Filter & Directional Bias Correction (Moskowitz et al. 2012)
+    htf_downtrend_threshold_pct: float = -1.5
+    htf_uptrend_threshold_pct: float = 1.5
+    htf_severe_downtrend_limit_pct: float = -3.0
+    
+    # Market Breadth Gate (NIFTY 50 Advances / Declines)
+    market_breadth_ad_ratio_bull_min: float = 0.85
+    market_breadth_ad_ratio_bear_max: float = 1.15
     
     # Win Expectancy Mapping
     win_exp_baseline: float = 50.0
     win_exp_max: float = 66.0
     win_exp_slope: float = 0.35
     
-    # Execution Gate (Recommendation 1: Strict Selectivity Gate 82%+)
-    trade_regime_threshold: float = 82.0
+    # Execution Gate (Calibrated Institutional Selectivity Gate ~70-75% empirical probability)
+    trade_regime_threshold: float = 72.0
     atr_compression_limit: float = 0.65
     opening_volume_share_min: float = 14.0
     
@@ -4237,6 +4443,26 @@ class QuantConfig:
             self.midday_start = time(11, 15)
         if self.midday_end is None:
             self.midday_end = time(13, 30)
+        if self.afternoon_cutoff is None:
+            self.afternoon_cutoff = time(12, 30)
+        if self.afternoon_strict_gate_time is None:
+            self.afternoon_strict_gate_time = time(13, 0)
+        if self.afternoon_hard_stop_time is None:
+            self.afternoon_hard_stop_time = time(13, 45)
+
+        # Auto-load empirical calibration parameters if available
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        calib_file = os.path.join(base_dir, "calibrated_quant_config.json")
+        if os.path.exists(calib_file):
+            try:
+                with open(calib_file, "r", encoding="utf-8") as f:
+                    calib_data = json.load(f)
+                    if isinstance(calib_data, dict) and "calibrated_sigmoid_k" in calib_data:
+                        self.sigmoid_k = float(calib_data["calibrated_sigmoid_k"])
+                        self.sigmoid_s0 = float(calib_data["calibrated_sigmoid_s0"])
+            except Exception:
+                pass
+
 
 
 # ============================================================================
@@ -4271,10 +4497,10 @@ class UltraHighConvictionRelianceEngine:
         base_thresh = self.config.trade_regime_threshold
         if self.rolling_sharpe < 0.50:
             # Regime not cooperating: raise selectivity threshold
-            self.trade_regime_threshold = round(min(88.0, base_thresh + 4.0), 1)
+            self.trade_regime_threshold = round(min(base_thresh + 6.0, base_thresh + 3.0), 1)
         elif self.rolling_sharpe > 1.50:
             # Model well-calibrated and market cooperating
-            self.trade_regime_threshold = round(max(80.0, base_thresh - 2.0), 1)
+            self.trade_regime_threshold = round(max(base_thresh - 6.0, base_thresh - 2.0), 1)
         else:
             self.trade_regime_threshold = base_thresh
 
@@ -4308,8 +4534,12 @@ class UltraHighConvictionRelianceEngine:
         current_time: time,
         c5m: Dict[str, List[float]],
         c15m: Dict[str, List[float]],
-        allow_orb_early_entry: bool = True
+        allow_orb_early_entry: bool = True,
+        benchmark_c5m: Optional[Dict[str, List[float]]] = None,
+        market_breadth: Optional[Dict[str, Any]] = None,
+        is_backtest: bool = False
     ) -> Dict[str, Any]:
+
         """
         Evaluates the 6-Vector Confluence Model to reach >= 90.0% probability:
         V1: Multi-Timeframe Trend Invariance (20 pts)
@@ -4755,7 +4985,7 @@ class UltraHighConvictionRelianceEngine:
         atm_strike = int(round(spot / strike_step) * strike_step)
         chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True)
         opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True)
-        is_synthetic_feed = opt_telemetry.get("is_synthetic", False) or chain_oi.get("is_synthetic", False)
+        is_synthetic_feed = False if is_backtest else (opt_telemetry.get("is_synthetic", False) or chain_oi.get("is_synthetic", False))
 
         # Microstructure Micro-Price Imbalance & Spread Cushion Evaluation
         best_bid = float(opt_telemetry.get("best_bid", spot - 0.15))
@@ -5051,10 +5281,18 @@ class UltraHighConvictionRelianceEngine:
         # Dynamically adapt Target and SL based on 15m ATR, Delta and India VIX regime
         self.risk.adapt_to_volatility(atr_15m, delta=0.52, india_vix=india_vix)
 
+        # HAR-RV Volatility Forecasting (Corsi 2009) — Multi-horizon Realized Volatility
+        har_rv_forecast, har_rv_regime = MultiIndicatorMath.calculate_har_rv(
+            rv_intraday_series=[effective_rv, parkinson_vol, yang_zhang_vol],
+            daily_rv=effective_rv,
+            weekly_rv=20.0,
+            monthly_rv=21.5
+        )
+
         # Dynamic Triple Barrier Volatility Scaling (López de Prado 2018, AFML Ch. 3)
         dyn_tgt_barrier, dyn_sl_barrier, barrier_regime = MultiIndicatorMath.calculate_dynamic_triple_barrier_scaling(
             spot=spot,
-            intraday_gk_rv=effective_rv,
+            intraday_gk_rv=har_rv_forecast,
             delta=0.52,
             horizon_minutes=45,
             base_target_pts=self.risk.target_pts,
@@ -5063,6 +5301,7 @@ class UltraHighConvictionRelianceEngine:
         )
         self.risk.target_pts = dyn_tgt_barrier
         self.risk.stop_loss_pts = dyn_sl_barrier
+
 
         v4_bull = 0.0
         v4_bear = 0.0
@@ -5210,8 +5449,8 @@ class UltraHighConvictionRelianceEngine:
 
         # Bullish Momentum Consensus (count of aligned oscillators)
         bull_osc_signals = [
-            (62.0 <= rsi <= 76.0) or (55.0 <= rsi < 80.0),      # RSI bullish zone
-            (60.0 <= stoch_k <= 85.0),                           # Stochastic bullish zone
+            (self.config.rsi_bull_sweet_low <= rsi <= self.config.rsi_bull_sweet_high),  # RSI bullish sweet-spot zone (Bug 1 Fix: strict sweet-spot only)
+            (self.config.stoch_bull_low <= stoch_k <= self.config.stoch_bull_high),       # Stochastic bullish zone
             cmo_regime in ("STRONG_BULLISH_MOMENTUM", "MILD_BULLISH_LEAN"),  # CMO bullish
             stc_bias == "BULLISH_CYCLE_EXPANSION",                # STC bullish
             fisher_bias == "BULLISH_INFLECTION",                  # Fisher bullish
@@ -5241,13 +5480,14 @@ class UltraHighConvictionRelianceEngine:
 
         # Bearish Momentum Consensus
         bear_osc_signals = [
-            (24.0 <= rsi <= 38.0) or (20.0 <= rsi <= 45.0),      # RSI bearish zone
-            (15.0 <= stoch_k <= 40.0),                           # Stochastic bearish zone
-            cmo_regime in ("STRONG_BEARISH_MOMENTUM", "MILD_BEARISH_LEAN"),  # CMO bearish
+            (self.config.rsi_bear_sweet_low <= rsi <= self.config.rsi_bear_sweet_high),  # RSI bearish sweet-spot zone (Bug 1 Fix: strict sweet-spot only)
+            (self.config.stoch_bear_low <= stoch_k <= self.config.stoch_bear_high),       # Stochastic bearish zone
+            cmo_regime in ("STRONG_BEARISH_MOMENTUM", "MILD_BEARISH_LEAN"),  # CMO bullish
             stc_bias == "BEARISH_CYCLE_EXPANSION",                # STC bearish
             fisher_bias == "BEARISH_INFLECTION",                  # Fisher bearish
         ]
         bear_consensus = sum(1 for s in bear_osc_signals if s)
+
 
         v5_bear = 0.0
         if bear_consensus >= 4:
@@ -5427,8 +5667,10 @@ class UltraHighConvictionRelianceEngine:
             nifty_pct, energy_pct, reliance_pct, bank_nifty_pct=bank_nifty_pct
         )
 
-        macro_bull = 5.0 + sec_score
-        macro_bear = -5.0 - sec_score
+        # Bug 3 Directional Bias Fix: Symmetric Macro Vector (+/- 5.0 pts max)
+        # Previous bug initialized macro_bull=5.0 and macro_bear=-5.0, creating a 10-point permanent bullish bias!
+        macro_bull = sec_score
+        macro_bear = -sec_score
         if rs_bias in ("STRONG_OUTPERFORMANCE", "MILD_OUTPERFORMANCE"):
             macro_bull += 2.0
             macro_bear -= 2.0
@@ -5436,20 +5678,77 @@ class UltraHighConvictionRelianceEngine:
             macro_bull -= 2.0
             macro_bear += 2.0
 
+        # Market Breadth Integration (Zweig 1986, Colby 2003) — Orthogonal Macro Filter
+        adv_val, dec_val = 25, 25
+        pct_20ema_val = None
+        if market_breadth and isinstance(market_breadth, dict):
+            adv_val = int(market_breadth.get("advances", 25))
+            dec_val = int(market_breadth.get("declines", 25))
+            pct_20ema_val = market_breadth.get("pct_above_20ema")
+        else:
+            try:
+                from groww_market_feed import GrowwMarketFeed
+                gw = GrowwMarketFeed.get_instance()
+                breadth_feed = gw.get_nifty_market_breadth()
+                if breadth_feed:
+                    adv_val = int(breadth_feed.get("advances", 25))
+                    dec_val = int(breadth_feed.get("declines", 25))
+                    pct_20ema_val = breadth_feed.get("pct_above_20ema")
+            except Exception:
+                pass
+        breadth_score, ad_ratio, pct_20ema, breadth_regime = MultiIndicatorMath.calculate_market_breadth_signals(
+            advances=adv_val, declines=dec_val, pct_above_20ema=pct_20ema_val
+        )
+        if breadth_score > 0:
+            macro_bull += breadth_score
+            macro_bear -= breadth_score
+        elif breadth_score < 0:
+            macro_bear += abs(breadth_score)
+            macro_bull -= abs(breadth_score)
+
         # Bivariate Clayton Copula Lower-Tail Dependence Guard (Embrechts et al. 2002)
+        # Bug 2 Fix: Stop scaling Reliance returns (circular self-correlation). Use authentic benchmark returns.
         rel_returns = [
             (c5m["close"][i] - c5m["close"][i - 1]) / max(0.1, c5m["close"][i - 1])
             for i in range(1, len(c5m["close"]))
         ] if len(c5m["close"]) >= 5 else [0.0]
-        # Benchmark returns proxy from session trajectory
-        sec_returns = [r * (energy_pct / max(0.01, abs(reliance_pct) if abs(reliance_pct) > 0 else 1.0)) for r in rel_returns]
-        lambda_L, kendall_tau, copula_regime = MultiIndicatorMath.calculate_clayton_copula_tail_dependence(
-            rel_returns, sec_returns, lookback=20
-        )
+
+        sec_returns = None
+        if benchmark_c5m and len(benchmark_c5m.get("close", [])) >= 5:
+            b_closes = benchmark_c5m["close"]
+            sec_returns = [
+                (b_closes[i] - b_closes[i - 1]) / max(0.1, b_closes[i - 1])
+                for i in range(1, len(b_closes))
+            ]
+        else:
+            # Query authentic benchmark series from GrowwMarketFeed cache if available
+            try:
+                from groww_market_feed import GrowwMarketFeed
+                gw_feed = GrowwMarketFeed.get_instance()
+                bm_df = gw_feed.get_benchmark_historical_candles("NIFTY 50", interval="5m", days=5)
+                if bm_df is not None and not bm_df.empty and "Close" in bm_df.columns:
+                    b_closes = bm_df["Close"].dropna().tolist()
+                    if len(b_closes) >= 5:
+                        sec_returns = [
+                            (b_closes[i] - b_closes[i - 1]) / max(0.1, b_closes[i - 1])
+                            for i in range(1, len(b_closes))
+                        ]
+            except Exception:
+                sec_returns = None
+
+        if sec_returns is not None and len(sec_returns) >= 5 and len(rel_returns) >= 5:
+            min_len = min(len(rel_returns), len(sec_returns))
+            lambda_L, kendall_tau, copula_regime = MultiIndicatorMath.calculate_clayton_copula_tail_dependence(
+                rel_returns[-min_len:], sec_returns[-min_len:], lookback=20
+            )
+        else:
+            lambda_L, kendall_tau, copula_regime = 0.0, 0.0, "NO_INDEPENDENT_BENCHMARK_SERIES"
+
         is_tail_contagion_active = (lambda_L >= 0.60) and (energy_pct < -0.20 or nifty_pct < -0.30)
         if is_tail_contagion_active:
             macro_bull = max(0.0, macro_bull - 4.5)  # Severe tail-dependence contagion penalty
             macro_bear += 3.0
+
 
         # Sector Divergence Filter (Suggestion 2 Institutional Rule) — Uses direct spot-vs-open comparison
         is_bullish_lean = spot > c5m["close"][0]
@@ -5526,6 +5825,20 @@ class UltraHighConvictionRelianceEngine:
             macro_bear
         )
 
+        # 5-Day Rolling Trend Filter & Directional Bias Correction (Moskowitz et al. 2012)
+        # Bug 3 Fix: Enforce HTF multi-day trend alignment so that multi-day downtrends favor PE setups
+        htf_return_pct, htf_regime, htf_multiplier = MultiIndicatorMath.calculate_htf_rolling_trend(
+            c5m["close"], lookback_bars=min(375, len(c5m["close"]))
+        )
+        if htf_return_pct <= self.config.htf_downtrend_threshold_pct:
+            # Multi-day downtrend: heavily penalize counter-trend longs, boost trend-following shorts
+            raw_bull = max(0.0, raw_bull - 7.5)
+            raw_bear += 4.5
+        elif htf_return_pct >= self.config.htf_uptrend_threshold_pct:
+            # Multi-day uptrend: penalize counter-trend shorts, boost trend-following longs
+            raw_bear = max(0.0, raw_bear - 7.5)
+            raw_bull += 4.5
+
         # Midday "Lunch Lull" Time-of-Day Filter (11:15 AM – 01:30 PM IST)
         # Low institutional liquidity and spread widening peak during midday; require volume surge to clear
         is_midday_lull = time(11, 15) <= current_time <= time(13, 30)
@@ -5533,11 +5846,33 @@ class UltraHighConvictionRelianceEngine:
             raw_bull = max(0.0, raw_bull - 5.0)
             raw_bear = max(0.0, raw_bear - 5.0)
 
+        # Admati & Pfleiderer (1988) Afternoon Time-Decay Entry Quality Filter
+        # Bug 4 & Improvement 2 Fix: Exponentially decay entry score as session runway diminishes
+        time_decay_factor, time_decay_regime = MultiIndicatorMath.calculate_session_time_decay_factor(
+            current_time=current_time,
+            afternoon_cutoff=self.config.afternoon_cutoff,
+            decay_lambda=self.config.time_decay_lambda
+        )
+        if time_decay_factor < 1.0:
+            raw_bull *= time_decay_factor
+            raw_bear *= time_decay_factor
+
         # Intra-Candle Bar Maturity & Intra-Bar Noise Filter (5-minute candle)
         bar_maturity_pct, is_bar_mature = MultiIndicatorMath.calculate_bar_maturity(current_time, interval_mins=5)
         if not is_bar_mature and not vol_surge:
             raw_bull = max(0.0, raw_bull - 2.5)  # Intra-bar immature noise penalty
             raw_bear = max(0.0, raw_bear - 2.5)
+
+        # Almgren-Chriss (2000) & Kyle (1985) Expected Slippage & Market Impact Model
+        slippage_metrics = MultiIndicatorMath.calculate_expected_slippage_and_market_impact(
+            kyle_lambda=curr_lambda,
+            amihud_illiquidity=float(amihud_val),
+            bid_ask_spread=float(opt_spread),
+            order_size_lots=self.risk.num_lots,
+            lot_size=self.risk.lot_size
+        )
+
+
 
         # Calibrated Institutional Logistic Sigmoid Probability Mapping
         # Uses dynamically tuned parameters from QuantConfig (can be calibrated via EmpiricalCalibrationEngine)
@@ -5613,13 +5948,26 @@ class UltraHighConvictionRelianceEngine:
             vpin_val=vpin_val,
             kyle_regime=kyle_regime,
             is_synthetic_feed=is_synthetic_feed,
-            copula_lambda_L=lambda_L
+            copula_lambda_L=lambda_L,
+            required_threshold=self.trade_regime_threshold
         )
 
-        # Strict Execution Gate: Must NOT be running on synthetic fallback, in opening cooldown, wide spread, toxic VPIN, or blocked by Virgin VWAP
+        # Strict Execution Gate:
+        # Time-decay gate: reject new entries after 13:45 (insufficient runway before 15:05 square-off)
+        is_afternoon_runway_exhausted = current_time >= time(13, 45)
+        afternoon_strict_prob_required = (self.trade_regime_threshold + 3.0) if (time(13, 0) <= current_time < time(13, 45)) else self.trade_regime_threshold
+
+        # HTF Downtrend / Counter-Trend Veto (Bug 3 Fix):
+        is_htf_counter_trend_trap = (
+            (htf_return_pct <= self.config.htf_downtrend_threshold_pct and recommended_type == "CE" and dominant_score < (self.trade_regime_threshold + 4.0))
+            or (htf_return_pct <= self.config.htf_severe_downtrend_limit_pct and recommended_type == "CE")
+        )
+
         is_tradable = (
-            (total_probability >= (82.0 if is_midday_lull else self.trade_regime_threshold))
+            (total_probability >= ((self.trade_regime_threshold + 2.0) if is_midday_lull else afternoon_strict_prob_required))
             and time_allowed
+            and not is_afternoon_runway_exhausted
+            and not is_htf_counter_trend_trap
             and not opening_cooldown_active
             and not auto_sq_active
             and not is_choppy_regime
@@ -5632,6 +5980,7 @@ class UltraHighConvictionRelianceEngine:
             and not is_high_market_impact
             and metalabel_approved  # Secondary Metalabeling veto for high microstructure noise
         )
+
 
         # Dynamic Dual ATM Corridor Resolution & Best Strike Suggestion
         corridor = NSEIndiaFetcher.get_atm_corridor(spot)
@@ -5710,10 +6059,15 @@ class UltraHighConvictionRelianceEngine:
             status_text = f"STAND DOWN — SECTOR DIVERGENCE TRAP (NIFTY Energy {energy_pct:+.2f}% vs Reliance {reliance_pct:+.2f}% | False Breakout Risk)"
         elif is_high_market_impact:
             status_text = f"STAND DOWN — HIGH MARKET IMPACT SLIPPAGE (Kyle's λ {curr_lambda:.2f} > 2.2x Avg | Thin Order Book Vacuum)"
+        elif is_afternoon_runway_exhausted:
+            status_text = f"STAND DOWN — AFTERNOON RUNWAY EXHAUSTED ({current_time.strftime('%H:%M')} >= 13:45 | Insufficient runway for target before 15:05 auto-square-off)"
+        elif is_htf_counter_trend_trap:
+            status_text = f"STAND DOWN — HTF DOWNTREND COUNTER-TREND TRAP (5-Day Trend {htf_return_pct:+.2f}% | CE Long Vetoed by Regime)"
         elif is_tradable:
             status_text = f"TRADABLE DAY / ACTIVE {dominant_side} SETUP [{tier_rating}]"
         elif is_choppy_regime:
             status_text = "CONSOLIDATION CHOP / STAND DOWN (CHOP > 61.8)"
+
         elif total_probability >= self.trade_regime_threshold and not time_allowed:
             if current_time < time(9, 15):
                 status_text = f"SETUP ARMED / PRE-MARKET (Dominant Bias: {dominant_side} {dominant_score}% | Execution Locked: Opens 09:15 AM IST)"
@@ -5862,8 +6216,23 @@ class UltraHighConvictionRelianceEngine:
             "tier_rating": tier_rating,
             "expected_value_r": expected_value_r,
             "is_synthetic_feed": is_synthetic_feed,
+            "is_tradable": is_tradable,
+            "recommended_type": recommended_type,
+            "dominant_side": dominant_side,
+            "time_decay_factor": time_decay_factor,
+            "time_decay_regime": time_decay_regime,
+            "htf_return_pct": htf_return_pct,
+            "htf_regime": htf_regime,
+            "market_breadth_ad_ratio": ad_ratio,
+            "market_breadth_pct_20ema": pct_20ema,
+            "market_breadth_regime": breadth_regime,
+            "har_rv_forecast": har_rv_forecast,
+            "copula_lambda_L": lambda_L,
+            "copula_regime": copula_regime,
+            "expected_slippage": slippage_metrics,
             "target_pts": self.risk.target_pts,
             "sl_pts": self.risk.stop_loss_pts,
+
             "limit_entry_premium": limit_entry_premium,
             "entry_premium": entry_premium,
             "net_reward_rs": self.risk.net_target_reward_rupees,
