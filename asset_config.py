@@ -44,6 +44,11 @@ class AssetSpec:
     fallback_put_oi: int = 380000   # Fallback ATM put open interest
     spread_threshold: float = 0.04 # Maximum tolerable bid-ask spread fraction
     max_pain_gamma_divisor: float = 15.0 # Gamma proxy divisor scaling
+    jitter_range: Tuple[float, float] = (-0.15, 0.20) # Synthetic tick noise boundaries
+    escalator_t1_thresh: float = 3.0 # Tier 1 Breakeven profit trigger threshold
+    escalator_t2_thresh: float = 5.0 # Tier 2 Profit Lock trigger threshold
+    escalator_t1_lock: float = 0.10  # Tier 1 Stop Loss lock amount
+    escalator_t2_lock: float = 2.50  # Tier 2 Stop Loss lock amount
 
 ASSET_SPECS: Dict[str, AssetSpec] = {
     "RELIANCE": AssetSpec(
@@ -81,7 +86,12 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         fallback_call_oi=450000,
         fallback_put_oi=380000,
         spread_threshold=0.04,
-        max_pain_gamma_divisor=15.0
+        max_pain_gamma_divisor=15.0,
+        jitter_range=(-0.15, 0.20),
+        escalator_t1_thresh=3.0,
+        escalator_t2_thresh=5.0,
+        escalator_t1_lock=0.10,
+        escalator_t2_lock=2.50
     ),
     "ADANIENT": AssetSpec(
         symbol="ADANIENT",
@@ -118,7 +128,12 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         fallback_call_oi=22500,
         fallback_put_oi=19000,
         spread_threshold=0.10,
-        max_pain_gamma_divisor=50.0
+        max_pain_gamma_divisor=50.0,
+        jitter_range=(-0.45, 0.55),
+        escalator_t1_thresh=15.0,
+        escalator_t2_thresh=25.0,
+        escalator_t1_lock=0.50,
+        escalator_t2_lock=12.0
     )
 }
 

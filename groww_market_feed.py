@@ -1628,7 +1628,7 @@ class GrowwMarketFeed:
         last_seen = self._prev_spot_ticks.get(underlying, base_ltp)
         delta_vs_last = round(base_ltp - last_seen, 2)
 
-        jitter_range = (-0.45, 0.55) if underlying == "ADANIENT" else (-0.15, 0.20)
+        jitter_range = spec.jitter_range
         if delta_vs_last != 0.0:
             tick_spot = base_ltp
             sub_delta = delta_vs_last

@@ -128,16 +128,15 @@ class RelianceRiskBudget:
     ) -> Tuple[float, str, str]:
         """
         Tiered Trailing Breakeven Escalator Protocol:
-        Dynamically adapts thresholds for RELIANCE vs ADANI ENTERPRISES.
+        Dynamically adapts thresholds for RELIANCE vs ADANI ENTERPRISES via AssetSpec.
         """
-        sym = (symbol or "").upper()
-        is_adani = (sym == "ADANIENT" or (target_pts and target_pts > 20.0) or entry_price > 60.0)
+        spec = get_asset_spec(symbol=symbol)
         profit_pts = round(current_ltp - entry_price, 2)
 
-        t1_thresh = 15.0 if is_adani else 3.0
-        t2_thresh = 25.0 if is_adani else 5.0
-        t1_lock = 0.50 if is_adani else 0.10
-        t2_lock = 12.0 if is_adani else 2.50
+        t1_thresh = spec.escalator_t1_thresh
+        t2_thresh = spec.escalator_t2_thresh
+        t1_lock = spec.escalator_t1_lock
+        t2_lock = spec.escalator_t2_lock
 
         if profit_pts >= t2_thresh:
             current_sl = round(entry_price + t2_lock, 2)
@@ -1223,7 +1222,7 @@ class MultiIndicatorMath:
         return max_pain_strike, dist, gravity
 
     @staticmethod
-    def calculate_dealer_gamma_exposure(spot: float, chain: List[Dict[str, Any]]) -> Tuple[float, str]:
+    def calculate_dealer_gamma_exposure(spot: float, chain: List[Dict[str, Any]], symbol: Optional[str] = None) -> Tuple[float, str]:
         """
         Dealer Net Gamma Exposure (GEX) Proxy across Option Chain:
         GEX ~ Sum((Call OI - Put OI) * Gamma * Spot^2)
@@ -1232,6 +1231,7 @@ class MultiIndicatorMath:
         """
         if not chain or not spot:
             return 0.0, "BALANCED_GAMMA"
+        gamma_div = float(get_asset_spec(symbol=symbol).max_pain_gamma_divisor)
         net_gex = 0.0
         for row in chain:
             strike = float(row.get("strike", spot))
@@ -1239,7 +1239,7 @@ class MultiIndicatorMath:
             put_oi = float(row.get("put_oi", 0))
             moneyness = abs(spot - strike) / max(1.0, spot)
             if moneyness <= 0.04:  # ATM & near-ATM corridor contributes 90% of active gamma
-                gamma_proxy = math.exp(-0.5 * ((spot - strike) / 15.0) ** 2) / 15.0
+                gamma_proxy = math.exp(-0.5 * ((spot - strike) / gamma_div) ** 2) / gamma_div
                 gex_strike = (call_oi - put_oi) * gamma_proxy * (spot ** 2) / 1e7
                 net_gex += gex_strike
                 
@@ -1252,7 +1252,7 @@ class MultiIndicatorMath:
         return round(net_gex, 2), regime
 
     @staticmethod
-    def calculate_gamma_flip_level(spot: float, chain: List[Dict[str, Any]]) -> Tuple[float, float, str]:
+    def calculate_gamma_flip_level(spot: float, chain: List[Dict[str, Any]], symbol: Optional[str] = None) -> Tuple[float, float, str]:
         """
         SpotGamma-style Dealer Net Gamma Exposure (GEX) and Gamma Flip Level (Zero-GEX Boundary).
         Finds the exact price where cumulative dealer gamma exposure crosses from negative to positive.
@@ -1261,13 +1261,14 @@ class MultiIndicatorMath:
         if not chain or not spot:
             return 0.0, spot, "BALANCED_GAMMA"
 
+        gamma_div = float(get_asset_spec(symbol=symbol).max_pain_gamma_divisor)
         strikes_gex = []
         net_gex = 0.0
         for row in chain:
             strike = float(row.get("strike", spot))
             call_oi = float(row.get("call_oi", 0))
             put_oi = float(row.get("put_oi", 0))
-            gamma_proxy = math.exp(-0.5 * ((spot - strike) / 15.0) ** 2) / 15.0
+            gamma_proxy = math.exp(-0.5 * ((spot - strike) / gamma_div) ** 2) / gamma_div
             gex_strike = (call_oi - put_oi) * gamma_proxy * (spot ** 2) / 1e7
             net_gex += gex_strike
             strikes_gex.append((strike, gex_strike))
@@ -1544,7 +1545,7 @@ class MultiIndicatorMath:
     def calculate_nifty_relative_strength(
         stock_pct: float = 0.0,
         nifty_pct: float = 0.0,
-        beta: float = 1.15,
+        beta: Optional[float] = None,
         reliance_pct: Optional[float] = None,
         symbol: Optional[str] = None
     ) -> Tuple[float, str]:
@@ -1555,8 +1556,8 @@ class MultiIndicatorMath:
         """
         if reliance_pct is not None:
             stock_pct = reliance_pct
-        if symbol and symbol.upper() == "ADANIENT" and beta == 1.15:
-            beta = 1.65
+        if beta is None:
+            beta = get_asset_spec(symbol=symbol).beta
         expected_ret = beta * nifty_pct
         alpha_spread = stock_pct - expected_ret
         if alpha_spread >= 0.35:
@@ -1732,28 +1733,32 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_nifty_energy_beta_coupling(
-        reliance_returns: List[float],
-        energy_returns: List[float]
+        reliance_returns: Optional[List[float]] = None,
+        energy_returns: Optional[List[float]] = None,
+        stock_returns: Optional[List[float]] = None,
+        sector_returns: Optional[List[float]] = None
     ) -> Tuple[float, float, str, bool]:
         """
-        Two-Factor Statistical Arbitrage: NIFTY Energy Relative Momentum & Beta Coupling.
+        Two-Factor Statistical Arbitrage: Sector Relative Momentum & Beta Coupling.
         Mathematical Formulas:
-        Relative Strength Ratio = Reliance Ret_15m / Nifty Energy Ret_15m
-        Beta Coupling = Corr(Reliance_5m, Energy_5m) * (sigma_Reliance / sigma_Energy)
+        Relative Strength Ratio = Stock Ret_15m / Sector Ret_15m
+        Beta Coupling = Corr(Stock_5m, Sector_5m) * (sigma_Stock / sigma_Sector)
         
         Institutional Rule:
         Requires Correlation >= +0.65 before entering any trade with > 1 lot sizing.
-        When Reliance breaks out with Energy confirmation, false breakouts drop to < 15%.
-        When Reliance breaks out upward while Energy is negative, it is an intraday liquidity trap (stand down).
+        When stock breaks out with Sector confirmation, false breakouts drop to < 15%.
+        When stock breaks out upward while Sector is negative, it is an intraday liquidity trap (stand down).
         
         Returns: (beta_coupling, correlation, coupling_regime, is_high_conviction_coupled)
         """
-        n = min(len(reliance_returns), len(energy_returns))
+        r_list = stock_returns if stock_returns is not None else (reliance_returns or [])
+        e_list = sector_returns if sector_returns is not None else (energy_returns or [])
+        n = min(len(r_list), len(e_list))
         if n < 3:
             return 1.10, 0.72, "BENCHMARK_CORRELATED_CONFIRMED", True
 
-        r_sub = reliance_returns[-n:]
-        e_sub = energy_returns[-n:]
+        r_sub = r_list[-n:]
+        e_sub = e_list[-n:]
 
         r_mean = sum(r_sub) / float(n)
         e_mean = sum(e_sub) / float(n)

@@ -1,8 +1,9 @@
 """
-RELIANCE F&O Quantitative Intraday Engine - Standalone 24/7 Alert Daemon
+Multi-Asset F&O Quantitative Intraday Engine - Standalone 24/7 Alert Daemon
 ========================================================================
+Calibrated for RELIANCE and ADANI ENTERPRISES F&O Intraday Trading.
 Runs independently of Streamlit or any web browser.
-Monitors RELIANCE spot and dual ATM options during market hours (09:15 AM - 03:30 PM IST),
+Monitors spot and dual ATM options during market hours (09:15 AM - 03:30 PM IST),
 evaluates the 6-vector quantitative confluence model, tracks active trade state,
 and dispatches instant, zero-delay push notifications to Telegram.
 
@@ -243,6 +244,7 @@ class MultiAssetCandleFetcher:
 
 
 RelianceCandleFetcher = MultiAssetCandleFetcher
+QuantCandleFetcher = MultiAssetCandleFetcher
 
 
 # ==============================================================================
