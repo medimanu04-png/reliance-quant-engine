@@ -479,6 +479,42 @@ st.markdown("""
         color: #38BDF8 !important;
     }
 
+    /* Instant Launchpad Buttons Alignment & Styling */
+    div.st-key-btn_launch_reliance_hp button,
+    div.st-key-btn_launch_adani_hp button {
+        height: 46px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 0.88rem !important;
+        font-weight: 800 !important;
+        border-radius: 8px !important;
+        margin-top: 0px !important;
+        letter-spacing: 0.3px !important;
+    }
+    div.st-key-btn_launch_reliance_hp button {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(14, 116, 144, 0.30) 100%) !important;
+        border: 1.5px solid rgba(56, 189, 248, 0.5) !important;
+        color: #38BDF8 !important;
+    }
+    div.st-key-btn_launch_reliance_hp button:hover {
+        background: rgba(56, 189, 248, 0.22) !important;
+        border-color: #38BDF8 !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 0 16px rgba(56, 189, 248, 0.40) !important;
+    }
+    div.st-key-btn_launch_adani_hp button {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(180, 83, 9, 0.30) 100%) !important;
+        border: 1.5px solid rgba(245, 158, 11, 0.5) !important;
+        color: #FBBF24 !important;
+    }
+    div.st-key-btn_launch_adani_hp button:hover {
+        background: rgba(245, 158, 11, 0.22) !important;
+        border-color: #FBBF24 !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 0 16px rgba(245, 158, 11, 0.40) !important;
+    }
+
     /* Streamlit Alerts High Contrast */
     div[data-testid="stAlert"] {
         border-radius: 8px !important;
@@ -1384,25 +1420,27 @@ if active_route == "":
     
     with col_d1:
         st.html(f"""
-        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF;">⚡ RELIANCE QUANT DESK</span>
-                <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_rel_hp.lot_size} QTY/LOT</span>
+        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 205px; height: 205px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; margin-bottom: 12px;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">⚡ RELIANCE QUANT DESK</span>
+                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_rel_hp.lot_size} QTY/LOT</span>
+                </div>
+                <div style="font-size: 0.78rem; color: #94A3B8; min-height: 42px; display: flex; align-items: center; line-height: 1.45;">
+                    Dedicated Institutional F&O Engine for <b>RELIANCE.NS</b>. Equipped with 6-Vector Confluence, ATM Dual Corridor & Breakeven Escalator.
+                </div>
             </div>
-            <div style="font-size: 0.78rem; color: #94A3B8; margin-bottom: 12px; line-height: 1.5;">
-                Dedicated Institutional F&O Engine for <b>RELIANCE.NS</b>. Equipped with 6-Vector Confluence, ATM Dual Corridor & Breakeven Escalator.
-            </div>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; margin-bottom: 4px; text-align: center;">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; text-align: center;">
                 <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">PROFIT TARGET</div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_rel_hp.target_pts:.1f} pts</div>
                 </div>
                 <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">STOP LOSS</div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_rel_hp.sl_pts:.1f} pts</div>
                 </div>
                 <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">EXECUTION GATE</div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_rel_hp.min_confluence_gate:.0f}%</div>
                 </div>
             </div>
@@ -1413,25 +1451,27 @@ if active_route == "":
 
     with col_d2:
         st.html(f"""
-        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF;">🔥 ADANI QUANT DESK</span>
-                <span style="background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_ada_hp.lot_size} QTY/LOT</span>
+        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 205px; height: 205px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; margin-bottom: 12px;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🔥 ADANI QUANT DESK</span>
+                    <span style="background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_ada_hp.lot_size} QTY/LOT</span>
+                </div>
+                <div style="font-size: 0.78rem; color: #94A3B8; min-height: 42px; display: flex; align-items: center; line-height: 1.45;">
+                    Dedicated Institutional F&O Engine for <b>ADANIENT.NS</b>. High-Beta Momentum Runner with 2.33:1 Asymmetric R:R.
+                </div>
             </div>
-            <div style="font-size: 0.78rem; color: #94A3B8; margin-bottom: 12px; line-height: 1.5;">
-                Dedicated Institutional F&O Engine for <b>ADANIENT.NS</b>. High-Beta Momentum Runner with 2.33:1 Asymmetric R:R.
-            </div>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; margin-bottom: 4px; text-align: center;">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; text-align: center;">
                 <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">PROFIT TARGET</div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_ada_hp.target_pts:.1f} pts</div>
                 </div>
                 <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">STOP LOSS</div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_ada_hp.sl_pts:.1f} pts</div>
                 </div>
                 <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">EXECUTION GATE</div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_ada_hp.min_confluence_gate:.0f}%</div>
                 </div>
             </div>
