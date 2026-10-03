@@ -137,5 +137,33 @@
     "suggested_exit": 146.65,
     "suggested_sl": 96.65,
     "confluence_score": 94.4
+  },
+  "2026-10-04_SENSEX26OCT71900CE": {
+    "date": "2026-10-04",
+    "trade_given_time": "02:21:26 AM IST",
+    "full_contract": "SENSEX 71900 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 20 Qty | Current Price: \u20b9465.00 (Spot: \u20b971909.70)",
+    "symbol": "SENSEX26OCT71900CE",
+    "contract_type": "CE",
+    "action": "BUY CE",
+    "strike": 71900,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 466.2,
+    "suggested_exit": 586.2,
+    "suggested_sl": 406.2,
+    "confluence_score": 88.5
+  },
+  "2026-10-04": {
+    "date": "2026-10-04",
+    "trade_given_time": "02:21:26 AM IST",
+    "full_contract": "SENSEX 71900 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 20 Qty | Current Price: \u20b9465.00 (Spot: \u20b971909.70)",
+    "symbol": "SENSEX26OCT71900CE",
+    "contract_type": "CE",
+    "action": "BUY CE",
+    "strike": 71900,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 466.2,
+    "suggested_exit": 586.2,
+    "suggested_sl": 406.2,
+    "confluence_score": 88.5
   }
 }

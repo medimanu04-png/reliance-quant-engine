@@ -10,6 +10,7 @@ import json
 import pandas as pd
 from datetime import datetime
 import pytz
+from asset_config import resolve_symbol
 
 IST = pytz.timezone("Asia/Kolkata")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +25,8 @@ def load_live_trades():
     """Loads strictly forward trades recorded on or after Monday, October 05, 2026."""
     trades_rel = []
     trades_ada = []
+    trades_nifty = []
+    trades_sensex = []
 
     if os.path.exists(LIVE_JOURNAL_FILE):
         try:
@@ -36,7 +39,8 @@ def load_live_trades():
                         if entry_date < START_DATE:
                             continue
 
-                        sym = "RELIANCE" if "RELIANCE" in entry.get("trading_symbol", "") or "RELIANCE" in entry.get("instrument", "") else "ADANIENT"
+                        raw_sym = entry.get("trading_symbol") or entry.get("instrument") or entry.get("symbol") or ""
+                        sym = resolve_symbol(raw_sym)
                         month_str = entry_date[:7]
                         
                         # Build standard row
@@ -65,12 +69,18 @@ def load_live_trades():
 
                         if sym == "RELIANCE":
                             trades_rel.append(row)
-                        else:
+                        elif sym == "ADANIENT":
                             trades_ada.append(row)
+                        elif sym == "NIFTY":
+                            trades_nifty.append(row)
+                        elif sym == "SENSEX":
+                            trades_sensex.append(row)
+                        else:
+                            trades_rel.append(row)
         except Exception as e:
             print(f"Notice reading live journal: {e}")
 
-    return trades_rel, trades_ada
+    return trades_rel, trades_ada, trades_nifty, trades_sensex
 
 
 def get_active_state():
@@ -102,7 +112,7 @@ def get_active_state():
 
 def generate_live_dashboard():
     """Generates the live HTML dashboard strictly starting Monday, October 05, 2026."""
-    trades_rel, trades_ada = load_live_trades()
+    trades_rel, trades_ada, trades_nifty, trades_sensex = load_live_trades()
     active_state = get_active_state()
     now_str = datetime.now(IST).strftime("%d %B %Y, %I:%M:%S %p IST")
 
@@ -690,6 +700,14 @@ def generate_live_dashboard():
         </div>
         <div class="desk-badge-group">
             <div class="desk-pill">
+                <span>Nifty Desk</span>
+                <strong>50 Qty (2L)</strong>
+            </div>
+            <div class="desk-pill">
+                <span>Sensex Desk</span>
+                <strong>20 Qty (2L)</strong>
+            </div>
+            <div class="desk-pill">
                 <span>Reliance Desk</span>
                 <strong>1,000 Qty (2L)</strong>
             </div>
@@ -776,6 +794,8 @@ def generate_live_dashboard():
         <div class="nav-tabs">
             <button class="nav-btn active" id="tab-rel" onclick="switchTicker('RELIANCE')">Reliance Industries</button>
             <button class="nav-btn" id="tab-ada" onclick="switchTicker('ADANIENT')">Adani Enterprises</button>
+            <button class="nav-btn" id="tab-nifty" onclick="switchTicker('NIFTY')">NIFTY 50</button>
+            <button class="nav-btn" id="tab-sensex" onclick="switchTicker('SENSEX')">BSE SENSEX</button>
         </div>
 
         <div class="filter-group">
@@ -834,6 +854,8 @@ def generate_live_dashboard():
 <script>
     const dataReliance = {json.dumps(trades_rel)};
     const dataAdani = {json.dumps(trades_ada)};
+    const dataNifty = {json.dumps(trades_nifty)};
+    const dataSensex = {json.dumps(trades_sensex)};
     
     let currentTicker = 'RELIANCE';
 
@@ -841,6 +863,8 @@ def generate_live_dashboard():
         currentTicker = ticker;
         document.getElementById('tab-rel').classList.toggle('active', ticker === 'RELIANCE');
         document.getElementById('tab-ada').classList.toggle('active', ticker === 'ADANIENT');
+        document.getElementById('tab-nifty').classList.toggle('active', ticker === 'NIFTY');
+        document.getElementById('tab-sensex').classList.toggle('active', ticker === 'SENSEX');
         renderTable();
     }}
 
@@ -861,7 +885,11 @@ def generate_live_dashboard():
 
     function renderTable() {{
         try {{
-            const rawData = currentTicker === 'RELIANCE' ? dataReliance : dataAdani;
+            let rawData = dataReliance;
+            if (currentTicker === 'ADANIENT') rawData = dataAdani;
+            else if (currentTicker === 'NIFTY') rawData = dataNifty;
+            else if (currentTicker === 'SENSEX') rawData = dataSensex;
+
             const monthFilter = document.getElementById('month-filter').value;
             const outcomeFilter = document.getElementById('outcome-filter').value;
             const searchVal = document.getElementById('search-input').value.toLowerCase().trim();

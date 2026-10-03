@@ -1621,7 +1621,7 @@ if active_route == "":
             
             c_aud1, c_aud2 = st.columns([3, 1])
             with c_aud1:
-                st.caption("⚡ **Interactive Audit Tool**: Adjust lot sizes (1 to 100+ lots), switch between Reliance and Adani desks, view monthly distributions, and examine individual verified trade tickets.")
+                st.caption("⚡ **Interactive Audit Tool**: Adjust lot sizes (1 to 100+ lots), switch between NIFTY 50, BSE SENSEX, Reliance, and Adani desks, view monthly distributions, and examine individual verified trade tickets.")
             with c_aud2:
                 st_download_button_stretch(
                     label="📥 Download Backtest Audit HTML",
@@ -1653,7 +1653,7 @@ if active_route == "":
             
             c_liv1, c_liv2 = st.columns([3, 1])
             with c_liv1:
-                st.caption("🟢 **Live Forward Desk (Oct 05, 2026 Onwards)**: Strictly forward ledger recording actual trading actions executed by `quant_alert_daemon.py`.")
+                st.caption("🟢 **Live Forward Desk (Oct 05, 2026 Onwards)**: Strictly forward ledger recording actual trading actions across NIFTY 50, BSE SENSEX, Reliance, and Adani desks.")
             with c_liv2:
                 st_download_button_stretch(
                     label="📥 Download Live Desk HTML",
@@ -1669,14 +1669,14 @@ if active_route == "":
 
     with tab_downloads:
         st.markdown("<h4 style='color: #FFFFFF; margin-top: 12px; margin-bottom: 4px;'>Institutional Data Repository</h4>", unsafe_allow_html=True)
-        st.caption("Direct access to full backtested performance logs, real-time alert daemon logs, and active journal files.")
+        st.caption("Direct access to full backtested performance logs, real-time alert daemon logs, and active journal files across all 4 desks.")
         
         c_d1, c_d2 = st.columns(2)
         with c_d1:
             st.html("""
             <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-bottom: 12px;">
                 <b style="color: #38BDF8;">📊 Historical Calibration & Backtest Datasets</b>
-                <p style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px; margin-bottom: 0;">Complete 9-month tick-by-tick dataset across 180+ trading sessions.</p>
+                <p style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px; margin-bottom: 0;">Complete 9-month tick-by-tick dataset across 180+ trading sessions for all 4 desks.</p>
             </div>
             """)
             emp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "empirical_calibration_dataset.json")
@@ -1690,6 +1690,19 @@ if active_route == "":
                 with open(summ_path, "r", encoding="utf-8") as f:
                     summ_data = f.read()
                 st_download_button_stretch("📥 Download Backtest Summary JSON", data=summ_data, file_name="backtest_results_summary.json", mime="application/json", key="dl_summ_data")
+
+            csv_datasets = [
+                ("nifty_50_9months_full_spots.csv", "📥 Download NIFTY 50 9-Month Audit CSV", "dl_nifty_csv"),
+                ("bse_sensex_9months_full_spots.csv", "📥 Download BSE SENSEX 9-Month Audit CSV", "dl_sensex_csv"),
+                ("reliance_9months_full_spots.csv", "📥 Download Reliance 9-Month Audit CSV", "dl_rel_csv"),
+                ("adani_9months_full_spots.csv", "📥 Download Adani 9-Month Audit CSV", "dl_ada_csv"),
+            ]
+            for fname, lbl, k in csv_datasets:
+                fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scratch", fname)
+                if os.path.exists(fpath):
+                    with open(fpath, "r", encoding="utf-8") as f_csv:
+                        c_data = f_csv.read()
+                    st_download_button_stretch(lbl, data=c_data, file_name=fname, mime="text/csv", key=k)
 
         with c_d2:
             st.html("""
