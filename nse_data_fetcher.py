@@ -677,7 +677,7 @@ class NSEIndiaFetcher:
         rng = random.Random(sec_seed)
 
         sym = scrip_symbol.upper() if scrip_symbol else ("ADANIENT" if spot >= 2000 else "RELIANCE")
-        lot_size = 300 if sym == "ADANIENT" else 500
+        lot_size = 309 if sym == "ADANIENT" else 500
         target_pts = 35.0 if sym == "ADANIENT" else 8.0
 
         # Dynamic Dual ATM Corridor calculation

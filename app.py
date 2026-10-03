@@ -164,10 +164,10 @@ class BreakoutTriggerManager:
             return 0.0
 
 # ==============================================================================
-# 1. PAGE SETUP & INSTITUTIONAL THEME - RELIANCE EXCLUSIVE
+# 1. PAGE SETUP & INSTITUTIONAL THEME - F&O QUANTITATIVE DESK
 # ==============================================================================
 st.set_page_config(
-    page_title="RELIANCE F&O Quantitative Engine",
+    page_title="Quantitative F&O Trading Engine",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1121,7 +1121,7 @@ def render_auto_rescan_controller():
     cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
     cur_sel_adani = (cur_sel_scrip == "ADANI ENTERPRISES")
     cur_sel_sym = "ADANIENT.NS" if cur_sel_adani else "RELIANCE.NS"
-    cur_sel_lot = 300 if cur_sel_adani else 500
+    cur_sel_lot = 309 if cur_sel_adani else 500
     cur_sel_tgt = 35.0 if cur_sel_adani else 10.0
     cur_sel_sl = 15.0 if cur_sel_adani else 5.0
     st.html(f"""
@@ -1324,11 +1324,11 @@ is_adani = (scrip_choice == "ADANI ENTERPRISES")
 # Dynamic Scrip Configuration
 if is_adani:
     scrip_symbol = "ADANIENT"
-    scrip_name = "ADANI ENTERPRISES"
+    scrip_name = "ADANI ENTERPRISES QUANT DESK"
     scrip_yf = "ADANIENT.NS"
-    scrip_lot = 300
+    scrip_lot = 309
     scrip_lots_count = 2
-    scrip_total_qty = 600
+    scrip_total_qty = 618
     scrip_target_pts = 35.0
     scrip_sl_pts = 15.0
     scrip_be_pts = 12.0
@@ -1503,11 +1503,13 @@ tg_enabled = bool(tg_config.get("enabled", True))
 parsed_recipients = TelegramNotifier.parse_chat_ids(tg_chat_id)
  
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_global_news_and_macro(force_key: str = ""):
-    """Fetches latest real-time news and macro telemetry for Reliance."""
+def fetch_global_news_and_macro(force_key: str = "", scrip_sym: str = "RELIANCE"):
+    """Fetches latest real-time news and macro telemetry for active scrip."""
     news_items = []
     macro_data = {"crude": "Neutral (Steady)", "global_sentiment": "Bullish Bias"}
     sentiment_score = 0.0
+    is_adani_sel = (scrip_sym == "ADANIENT" or "ADANI" in scrip_sym)
+    ticker_sym = "ADANIENT.NS" if is_adani_sel else "RELIANCE.NS"
 
     BULLISH_KEYWORDS = ["profit", "gain", "relief", "tax", "deal", "growth", "cut in windfall", "surge", "expansion", "dividend", "rise", "rally", "record"]
     BEARISH_KEYWORDS = ["loss", "fall", "slump", "drop", "penalty", "downgrade", "sanction", "decline", "tariff", "war", "investigation"]
@@ -1515,7 +1517,7 @@ def fetch_global_news_and_macro(force_key: str = ""):
     try:
         from concurrent.futures import ThreadPoolExecutor
         def _get_news():
-            t = yf.Ticker("RELIANCE.NS")
+            t = yf.Ticker(ticker_sym)
             return t.news if hasattr(t, "news") and t.news else []
         with ThreadPoolExecutor(max_workers=1) as ex:
             fut = ex.submit(_get_news)
@@ -1550,12 +1552,20 @@ def fetch_global_news_and_macro(force_key: str = ""):
         news_items = []
 
     if len(news_items) < 4:
-        defaults = [
-            {"title": "Reliance Industries Operational Flow & Fuel Margin Telemetry", "summary": "Domestic consumption in fuels and petrochemicals tracks historical median benchmarks across major hubs.", "provider": "Institutional Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-            {"title": "Government Energy Policy & Export Realization Monitoring", "summary": "Gross refining margins (GRM) for export plants remain aligned with regional crack spreads.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-            {"title": "Petrochemical & Polymer Realization Spread Review", "summary": "Specialty chemical demand in Asian markets continues in balanced inventory turnover bands.", "provider": "Energy Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-            {"title": "Domestic Retail & Telecom ARPU Stability Audit", "summary": "Consumer additions and steady 5G subscriber migration maintain standard operational cash flow buffers.", "provider": "Consumer Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
-        ]
+        if is_adani_sel:
+            defaults = [
+                {"title": "Adani Enterprises Infrastructure & Incubation Operational Flow", "summary": "Solar manufacturing, airport operations, and green hydrogen projects maintain targeted capex momentum.", "provider": "Institutional Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Adani Group Energy & Utility Asset Telemetry", "summary": "Operational metrics across domestic power, transmission, and port utility hubs show robust quarterly utilization.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Adani New Industries Green Energy Execution Update", "summary": "Integrated solar wafer capacity expansion and wind turbine manufacturing track institutional delivery milestones.", "provider": "Energy Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Adani Enterprises Domestic Cash Flow & Debt Coverage Audit", "summary": "Consolidated debt-to-EBITDA buffers and operating cash liquidity remain well within institutional comfort thresholds.", "provider": "Institutional Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
+            ]
+        else:
+            defaults = [
+                {"title": "Reliance Industries Operational Flow & Fuel Margin Telemetry", "summary": "Domestic consumption in fuels and petrochemicals tracks historical median benchmarks across major hubs.", "provider": "Institutional Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Government Energy Policy & Export Realization Monitoring", "summary": "Gross refining margins (GRM) for export plants remain aligned with regional crack spreads.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Petrochemical & Polymer Realization Spread Review", "summary": "Specialty chemical demand in Asian markets continues in balanced inventory turnover bands.", "provider": "Energy Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Domestic Retail & Telecom ARPU Stability Audit", "summary": "Consumer additions and steady 5G subscriber migration maintain standard operational cash flow buffers.", "provider": "Consumer Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
+            ]
         for d in defaults:
             if len(news_items) >= 4:
                 break
@@ -1569,7 +1579,7 @@ def fetch_global_news_and_macro(force_key: str = ""):
 
 
 rescan_sync_key = st.session_state.get("rescan_time", "")
-news_list, news_sentiment_score = fetch_global_news_and_macro()
+news_list, news_sentiment_score = fetch_global_news_and_macro(force_key=rescan_sync_key, scrip_sym=scrip_symbol)
 
 
 # ==============================================================================
@@ -1727,7 +1737,7 @@ class MultiTimeframeMatrixEngine:
         }
 
 
-def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float, atm_strike: int):
+def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float, atm_strike: int, scrip_symbol: str = "RELIANCE"):
     """
     Renders an institutional interactive Plotly dual-panel chart:
     Panel 1: Candlesticks, Session VWAP, VWAP Bands, ORB-15 Anchored VWAP, 9/20 EMAs
@@ -1752,7 +1762,7 @@ def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float
         high=chart_df['High'],
         low=chart_df['Low'],
         close=chart_df['Close'],
-        name="RELIANCE",
+        name=scrip_symbol,
         increasing_line_color="#10B981",
         decreasing_line_color="#EF4444"
     ), row=1, col=1)
@@ -2772,10 +2782,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #8B5CF6; box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);">
+                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #8B5CF6; box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);">
                     🔒 SQUARE-OFF ON GROWW (03:05 PM) ↗
                 </a>
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 VIEW OPEN POSITIONS ↗
                 </a>
             </div>
@@ -2882,7 +2892,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 OBSERVE MARKET (READ-ONLY) ↗
                 </a>
             </div>
@@ -3248,14 +3258,16 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         """
 
         # Interactive UI Action Buttons (Green for CE, Red for PE)
+        gw_slug = 'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'
+        chart_label = f"📊 OPEN {active_scrip_name} LIVE CHART ↗"
         if plan_contract_type == "CE":
-            entry_ui_buttons = """
+            entry_ui_buttons = f"""
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
+                <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
                     🟢 BUY CALL (CE) ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
-                    📊 OPEN RELIANCE LIVE CHART ↗
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    {chart_label}
                 </a>
             </div>
             """
@@ -3263,13 +3275,13 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             header_title = "🔥 ACTIVE ENTRY TRIGGERED — BUY CALL (CE) VIA LIMIT IOC!"
             header_badge = "🟢 BUY CALL SIGNAL CONFIRMED"
         else:
-            entry_ui_buttons = """
+            entry_ui_buttons = f"""
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #F87171; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
+                <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #F87171; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
                     🔴 BUY PUT (PE) ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
-                    📊 OPEN RELIANCE LIVE CHART ↗
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    {chart_label}
                 </a>
             </div>
             """
@@ -3468,11 +3480,11 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 <span>Target / SL: <b style="color: #34D399;">Fixed 10/9 pts R:R Rule</b></span>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #000000; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #FCD34D; box-shadow: 0 0 14px rgba(245, 158, 11, 0.4);">
+                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #000000; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #FCD34D; box-shadow: 0 0 14px rgba(245, 158, 11, 0.4);">
                     🟡 VIEW OPTION CHAIN (GROWW) ↗
                 </a>
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
-                    📊 RELIANCE LIVE QUOTE ↗
+                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    📊 {active_scrip_name} LIVE QUOTE ↗
                 </a>
             </div>
             {tg_armed_status_html}
@@ -3526,8 +3538,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         else:
             if plan_sector_trap:
                 standdown_title = "SECTOR DIVERGENCE TRAP ACTIVE"
-                standdown_desc = f"Directional score is <b style='color: #34D399;'>{plan_score:.1f}%</b> (> {plan_gate:.0f}% Gate), but <b style='color: #F87171;'>RELIANCE ({plan_rel_pct:+.2f}%)</b> is diverging from parent sector <b style='color: #38BDF8;'>NIFTY ENERGY ({plan_energy_pct:+.2f}%)</b>. Buying options against the broader energy sector carries severe mean-reversion whipsaw risk. BUY trigger is <b>LOCKED</b> until sector alignment is restored."
-                standdown_source = f"Institutional Sector Coupling Filter (Nifty Energy {plan_energy_pct:+.2f}% vs Reliance {plan_rel_pct:+.2f}%)"
+                standdown_desc = f"Directional score is <b style='color: #34D399;'>{plan_score:.1f}%</b> (> {plan_gate:.0f}% Gate), but <b style='color: #F87171;'>{active_scrip_name} ({plan_rel_pct:+.2f}%)</b> is diverging from parent sector <b style='color: #38BDF8;'>NIFTY ENERGY ({plan_energy_pct:+.2f}%)</b>. Buying options against the broader sector carries severe mean-reversion whipsaw risk. BUY trigger is <b>LOCKED</b> until sector alignment is restored."
+                standdown_source = f"Institutional Sector Coupling Filter (Nifty Energy {plan_energy_pct:+.2f}% vs {active_scrip_name} {plan_rel_pct:+.2f}%)"
             elif plan_choppy:
                 standdown_title = "CONSOLIDATION CHOP FILTER ACTIVE"
                 standdown_desc = f"Choppiness Index (CHOP {plan_chop_val:.1f} > 61.8) indicates extreme fractal consolidation. Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent false breakout traps and rapid option theta decay."
@@ -3999,8 +4011,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     st.html(f"""
     <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px 0; display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem;">
         <div>
-            <b style="color: #FBBF24;">💡 Smart Money Footprint (Reliance Only):</b> 
-            <span style="color: #CBD5E1;">FIIs & DIIs are actively absorbing <b style="color: #10B981;">{sm_net:+.1f} Cr</b> of net Reliance liquidity while Retailers are net sellers (<b style="color: #F87171;">{ret['net_flow_cr']:+.1f} Cr</b>). Institutional accumulation with retail liquidation creates strong support floor around ₹{spot:.2f}.</span>
+            <b style="color: #FBBF24;">💡 Smart Money Footprint ({cur_sym}):</b> 
+            <span style="color: #CBD5E1;">FIIs & DIIs are actively absorbing <b style="color: #10B981;">{sm_net:+.1f} Cr</b> of net {cur_sym} liquidity while Retailers are net sellers (<b style="color: #F87171;">{ret['net_flow_cr']:+.1f} Cr</b>). Institutional accumulation with retail liquidation creates strong support floor around ₹{spot:.2f}.</span>
         </div>
         <span style="background: {sm_badge_bg}; color: {sm_badge_color}; padding: 3px 10px; border-radius: 4px; font-weight: 800; font-size: 0.72rem; white-space: nowrap; margin-left: 12px; border: 1px solid {sm_badge_border};">
             {part_flow['smart_money_verdict']}
@@ -4073,7 +4085,7 @@ if df is not None and not df.empty:
         user_strike_choice = None  # Auto-Detect Best Strike
 
     # Dynamic Pre-Bias Resolution from Live Spot vs VWAP and Previous Close
-    initial_pclose = float(nse_data.get("prev_close", 1226.00)) if nse_data else 1226.00
+    initial_pclose = float(df['Close'].iloc[0]) if (is_adani_active and len(df) > 0) else (float(nse_data.get("prev_close", 1226.00)) if nse_data else 1226.00)
     initial_vwap = float(df['VWAP'].iloc[-1]) if 'VWAP' in df.columns else initial_pclose
     pre_bias = "BEARISH" if (spot < initial_pclose - 1.5 or (spot < initial_vwap and spot < initial_pclose)) else "BULLISH"
 
@@ -4179,11 +4191,11 @@ if df is not None and not df.empty:
 
     # Enhancement 3: Relative Strength / Alpha Divergence vs NIFTY 50
     # Spot vs Benchmark percentage delta: detects institutional accumulation/distribution
-    rel_pct_ref = float(nse_data.get("prev_close", 1219.20)) if nse_data else 1219.20
+    rel_pct_ref = float(df['Close'].iloc[0]) if (is_adani and len(df) > 0) else (float(nse_data.get("prev_close", 1219.20)) if nse_data else 1219.20)
     rel_change_pct = ((spot - rel_pct_ref) / rel_pct_ref) * 100.0 if rel_pct_ref > 0 else 0.0
     alpha_spread = round(rel_change_pct - nifty_pct, 2)
-    alpha_bull_divergence = alpha_spread >= 0.30  # Reliance outperforming NIFTY significantly (Institutional Buy Absorption)
-    alpha_bear_divergence = alpha_spread <= -0.30 # Reliance underperforming NIFTY significantly (Institutional Selling)
+    alpha_bull_divergence = alpha_spread >= 0.30  # Outperforming NIFTY significantly (Institutional Buy Absorption)
+    alpha_bear_divergence = alpha_spread <= -0.30 # Underperforming NIFTY significantly (Institutional Selling)
 
     # Enhancement: Multi-Timeframe Matrix Analysis (M15 Structural + M5 Trigger + M1 Micro-Execution)
     # Estimate preliminary option LTP for initial micro-timing pricing
@@ -5405,7 +5417,7 @@ if df is not None and not df.empty:
         lot_size=lot_size
     )
     half_kelly = half_kelly_pct / 100.0
-    prev_close_ref = float(nse_data.get("prev_close", 1219.20) if nse_data else 1219.20)
+    prev_close_ref = float(df['Close'].iloc[0]) if (is_adani_active and len(df) > 0) else float(nse_data.get("prev_close", 1219.20) if nse_data else 1219.20)
 
 
     # Render Persistent Sticky Top Header
@@ -5431,15 +5443,29 @@ if df is not None and not df.empty:
 
     @st.fragment(run_every="6s")
     def render_reliance_spot_hero():
-        from groww_market_feed import GrowwMarketFeed
-        spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
-        curr_spot = float(spot_info.get("spot_ltp", 1210.00))
-        p_close = float(spot_info.get("prev_close", 1219.20))
-        s_diff = float(spot_info.get("diff", round(curr_spot - p_close, 2)))
-        s_diff_pct = float(spot_info.get("diff_pct", round((s_diff / max(1.0, p_close)) * 100.0, 2)))
-        t_dir = str(spot_info.get("tick_direction", "UP"))
-        t_delta = float(spot_info.get("tick_delta", 0.0))
-        f_time = str(spot_info.get("timestamp", datetime.now(IST).strftime("%I:%M:%S %p IST")))
+        is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
+        if is_adani_active:
+            curr_spot = float(spot)
+            p_close = float(prev_close_ref) if prev_close_ref > 0 else float(spot)
+            s_diff = round(curr_spot - p_close, 2)
+            s_diff_pct = round((s_diff / max(1.0, p_close)) * 100.0, 2)
+            t_dir = "UP" if s_diff >= 0 else "DOWN"
+            t_delta = round(curr_spot - float(latest.get("Open", curr_spot)), 2) if ('latest' in locals() or 'latest' in globals()) else 0.0
+            f_time = datetime.now(IST).strftime("%I:%M:%S %p IST")
+            badge_label = "NSE 5M FEED"
+            hero_title = f"⚡ {scrip_symbol} LIVE SPOT"
+        else:
+            from groww_market_feed import GrowwMarketFeed
+            spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
+            curr_spot = float(spot_info.get("spot_ltp", 1210.00))
+            p_close = float(spot_info.get("prev_close", 1219.20))
+            s_diff = float(spot_info.get("diff", round(curr_spot - p_close, 2)))
+            s_diff_pct = float(spot_info.get("diff_pct", round((s_diff / max(1.0, p_close)) * 100.0, 2)))
+            t_dir = str(spot_info.get("tick_direction", "UP"))
+            t_delta = float(spot_info.get("tick_delta", 0.0))
+            f_time = str(spot_info.get("timestamp", datetime.now(IST).strftime("%I:%M:%S %p IST")))
+            badge_label = "GROWW 0-DELAY (1s)"
+            hero_title = "⚡ RELIANCE LIVE SPOT"
         
         delta_color = "#10B981" if s_diff >= 0 else "#EF4444"
         delta_arrow = "↑" if s_diff >= 0 else "↓"
@@ -5454,8 +5480,8 @@ if df is not None and not df.empty:
             st.html(f"""
             <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 14px 18px; min-height: 115px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.78rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">⚡ RELIANCE LIVE SPOT</span>
-                    <span style="font-size: 0.68rem; background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 2px 7px; border-radius: 4px; font-weight: 700;">GROWW 0-DELAY (1s)</span>
+                    <span style="font-size: 0.78rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">{hero_title}</span>
+                    <span style="font-size: 0.68rem; background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 2px 7px; border-radius: 4px; font-weight: 700;">{badge_label}</span>
                 </div>
                 <div style="font-size: 1.85rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.5px; margin: 4px 0; display: flex; align-items: baseline; justify-content: space-between;">
                     <span>₹{curr_spot:.2f}</span>
@@ -5681,12 +5707,12 @@ if df is not None and not df.empty:
         last_closed = seq_state.get("last_closed_trade")
 
         # Target symbol for matching
-        target_contract_sym = f"RELIANCE26OCT{atm_strike}{recommended_contract_type}" if (atm_strike and recommended_contract_type) else ""
+        target_contract_sym = f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}" if (atm_strike and recommended_contract_type) else ""
 
         # Auto-verify active or pending trade with Groww broker feed if connected
         if groww_feed.is_connected:
             try:
-                gw_executed = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                gw_executed = groww_feed.get_executed_trades_today(symbol_filter=scrip_symbol)
                 if current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
                     for ex_tr in gw_executed:
                         if active_trade.get("contract", "") in ex_tr.get("symbol", ""):
@@ -5829,7 +5855,7 @@ if df is not None and not df.empty:
         elif current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
             # ENTRY PENDING: Verification with Groww
             planned_p = float(active_trade.get("planned_entry", 30.0))
-            inst_name = active_trade.get("instrument", active_trade.get("contract", "RELIANCE Contract"))
+            inst_name = active_trade.get("instrument", active_trade.get("contract", f"{scrip_symbol} Contract"))
 
             st.html(f'''
             <div style="background: rgba(245, 158, 11, 0.12); border: 2px solid #F59E0B; border-radius: 12px; padding: 18px 22px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(245, 158, 11, 0.20);">
@@ -5880,7 +5906,7 @@ if df is not None and not df.empty:
             with ep_c4:
                 if st.button("🤖 Auto-Verify via Groww", use_container_width=True, help="Check Groww API for executed orders"):
                     if groww_feed.is_connected:
-                        gw_tr = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                        gw_tr = groww_feed.get_executed_trades_today(symbol_filter=scrip_symbol)
                         matched = False
                         for x in gw_tr:
                             if active_trade.get("contract", "") in x.get("symbol", ""):
@@ -5951,7 +5977,7 @@ if df is not None and not df.empty:
                                     ⚡ HIGH-PROBABILITY SIGNAL
                                 </span>
                                 <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
-                                    RELIANCE {atm_strike} CE
+                                    {scrip_symbol} {atm_strike} CE
                                 </span>
                             </div>
                         </div>
@@ -6222,14 +6248,14 @@ if df is not None and not df.empty:
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE SETUP &bull; STAND DOWN"
                     stand_down_badge = f"⚠️ SECTOR DIVERGENCE TRAP ACTIVE"
                     stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
-                    stand_down_sub = f"Reliance ({reliance_pct:+.2f}%) is diverging from its parent sector NIFTY Energy ({energy_pct:+.2f}%) &bull; High mean-reversion trap risk"
+                    stand_down_sub = f"{scrip_symbol} ({reliance_pct:+.2f}%) is diverging from its parent sector NIFTY Energy ({energy_pct:+.2f}%) &bull; High mean-reversion trap risk"
                     gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
                     gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
                     gate_card_title = "SECTOR DIVERGENCE GUARD"
                     gate_card_val = "🛑 DIVERGENCE TRAP"
-                    gate_card_sub = f"Energy {energy_pct:+.2f}% vs Rel {reliance_pct:+.2f}%"
+                    gate_card_sub = f"Energy {energy_pct:+.2f}% vs {scrip_symbol} {reliance_pct:+.2f}%"
                     why_stand_down_html = f"""
-                    <b style="color: #FFFFFF;">Why Stand Down?</b> Confluence score is strong at <b>{dominant_score:.1f}%</b>, but Reliance (<b style='color: #F87171;'>{reliance_pct:+.2f}%</b>) is moving in direct opposition to its parent benchmark index <b style='color: #38BDF8;'>NIFTY ENERGY ({energy_pct:+.2f}%)</b>. Taking a short (PUT / PE) position against a rallying energy sector carries severe snapback and whipsaw risk. Institutional policy mandates standing down until sector alignment is restored.
+                    <b style="color: #FFFFFF;">Why Stand Down?</b> Confluence score is strong at <b>{dominant_score:.1f}%</b>, but {scrip_symbol} (<b style='color: #F87171;'>{reliance_pct:+.2f}%</b>) is moving in direct opposition to its parent benchmark index <b style='color: #38BDF8;'>NIFTY ENERGY ({energy_pct:+.2f}%)</b>. Taking a short (PUT / PE) position against a rallying sector carries severe snapback and whipsaw risk. Institutional policy mandates standing down until sector alignment is restored.
                     """
                     dot_color = "#EF4444"
                     cap_badge_title = "🛡️ SECTOR SHIELD ACTIVE"
@@ -6687,7 +6713,7 @@ if df is not None and not df.empty:
 
         # Institutional Interactive Multi-Timeframe Candlestick & CVD Chart
         with st.expander("📈 Institutional Chart: Candlesticks, ORB-15 Anchored VWAP & Cumulative Volume Delta (CVD)", expanded=True):
-            render_institutional_candlestick_and_cvd_chart(df, spot, atm_strike)
+            render_institutional_candlestick_and_cvd_chart(df, spot, atm_strike, scrip_symbol=scrip_symbol)
 
 
     with tab_radar:
@@ -7014,7 +7040,7 @@ if df is not None and not df.empty:
                     β = {beta_coup_disp:.2f} <span style="font-size: 0.72rem; color: #94A3B8;">(Energy: {energy_pct:+.2f}%)</span>
                 </div>
                 <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 4px;">
-                    Two-Factor Stat-Arb: Rel RS {rs_ratio:.2f}x. Reliance (33% wt) aligned with index drops false breakouts &lt;15%.
+                    Two-Factor Stat-Arb: {scrip_symbol} RS {rs_ratio:.2f}x. {scrip_symbol} aligned with index drops false breakouts &lt;15%.
                 </div>
             </div>
 
@@ -7059,7 +7085,7 @@ if df is not None and not df.empty:
         # 7. GLOBAL NEWS & MACRO SENTIMENT TELEMETRY PANEL
         # ==============================================================================
         st.subheader("🌐 Global News & Macro Sentiment Telemetry")
-        st.caption("📡 **Data Source**: Aggregated via Google News RSS (RELIANCE & Petrochemicals/Retail) & MCX Commodity Telemetry (Brent Crude & Gold)")
+        st.caption(f"📡 **Data Source**: Aggregated via Google News RSS ({scrip_symbol} Telemetry) & MCX Commodity Telemetry (Brent Crude & Gold)")
         n_cols = st.columns(len(news_list)) if news_list else [st.container()]
         for idx, item in enumerate(news_list):
             sentiment = item.get("sentiment", "NEUTRAL")
@@ -7530,10 +7556,11 @@ if df is not None and not df.empty:
                 pass
 
 
+        active_day_vol = int(df['Volume'].iloc[-1]) if (is_adani and df is not None and not df.empty and 'Volume' in df.columns) else int(nse_data.get('volume', 4725000) if nse_data else 4725000)
         if stream_live_1s:
-            render_dynamic_1s_atm_feed(spot, live_broker_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, trade_plan=trade_plan)
+            render_dynamic_1s_atm_feed(spot, live_broker_ltp, active_day_vol, rel_vol, user_strike_choice, trade_plan=trade_plan)
         else:
-            render_atm_call_put_content(spot, live_broker_ltp, int(nse_data['volume']), rel_vol, user_strike_choice, is_streaming=False, trade_plan=trade_plan)
+            render_atm_call_put_content(spot, live_broker_ltp, active_day_vol, rel_vol, user_strike_choice, is_streaming=False, trade_plan=trade_plan)
 
         # ==============================================================================
 
@@ -8464,7 +8491,7 @@ if df is not None and not df.empty:
 
         with col_cfg_left:
             st.markdown("### 🎯 Risk & Position Sizing Parameters")
-            c_lots = st.number_input(f"Number of Lots (RELIANCE: {lot_size} Qty/Lot)", min_value=1, max_value=4, value=st.session_state.get("num_lots", 1), key="ui_num_lots")
+            c_lots = st.number_input(f"Number of Lots ({scrip_symbol}: {lot_size} Qty/Lot)", min_value=1, max_value=4, value=st.session_state.get("num_lots", 1), key="ui_num_lots")
             st.session_state["num_lots"] = c_lots
 
             c_target = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=st.session_state.get("target_pts", 10.0), step=0.5, key="ui_target_pts")
