@@ -44,18 +44,23 @@ pg = st.navigation({
 pg.run()
 active_route = getattr(pg, "url_path", "")
 
-# Synchronize query parameters (?stock=Nifty, ?stock=Sensex, ?stock=Adani, ?stock=Reliance)
-q_stock = st.query_params.get("stock") or st.query_params.get("scrip")
-if q_stock:
-    q_str = str(q_stock).upper()
-    if "SENSEX" in q_str and active_route != "Sensex":
-        st.switch_page(p_sensex)
-    elif "NIFTY" in q_str and active_route != "Nifty":
-        st.switch_page(p_nifty)
-    elif "ADANI" in q_str and active_route != "Adani":
-        st.switch_page(p_adani)
-    elif "RELIANCE" in q_str and active_route != "Reliance":
-        st.switch_page(p_reliance)
+# Synchronize query parameters with active route
+if active_route:
+    # Update query param to match the active page
+    st.query_params["stock"] = active_route
+else:
+    # On root/homepage, allow query param to route to target desk
+    q_stock = st.query_params.get("stock") or st.query_params.get("scrip")
+    if q_stock:
+        q_str = str(q_stock).upper()
+        if "SENSEX" in q_str:
+            st.switch_page(p_sensex)
+        elif "NIFTY" in q_str:
+            st.switch_page(p_nifty)
+        elif "ADANI" in q_str:
+            st.switch_page(p_adani)
+        elif "RELIANCE" in q_str:
+            st.switch_page(p_reliance)
 
 class IndianFOTransactionCostEngine:
     """
@@ -1240,10 +1245,9 @@ def render_auto_rescan_controller():
         </div>
         """)
     else:
-        # Desk Mode: display active single-stock pill
+        # Desk Mode: display active asset pill
         cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
-        cur_sel_adani = ("ADANI" in str(cur_sel_scrip).upper())
-        spec_active = spec_ada if cur_sel_adani else spec_rel
+        spec_active = get_asset_spec(symbol=cur_sel_scrip)
         cur_sel_sym = spec_active.yf_symbol
         cur_sel_lot = spec_active.lot_size
         cur_sel_tgt = spec_active.target_pts
@@ -1427,7 +1431,7 @@ if active_route == "":
 
     with col_idx1:
         st.html(f"""
-        <a href="./Nifty" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Nifty?stock=Nifty" target="_self" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1454,15 +1458,16 @@ if active_route == "":
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 8px; font-size: 0.74rem; color: #10B981; font-weight: 700;">
                     <span>Benchmark Execution Terminal</span>
-                    <span>Launch Desk in New Tab ↗</span>
+                    <span>Launch Desk →</span>
                 </div>
             </div>
         </a>
         """)
+        st.page_link(p_nifty, label="📈 Open NIFTY 50 Desk", use_container_width=True)
 
     with col_idx2:
         st.html(f"""
-        <a href="./Sensex" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Sensex?stock=Sensex" target="_self" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid rgba(168, 85, 247, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1489,11 +1494,12 @@ if active_route == "":
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 8px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
                     <span>Benchmark Execution Terminal</span>
-                    <span>Launch Desk in New Tab ↗</span>
+                    <span>Launch Desk →</span>
                 </div>
             </div>
         </a>
         """)
+        st.page_link(p_sensex, label="🏛️ Open BSE SENSEX Desk", use_container_width=True)
 
     st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
@@ -1504,7 +1510,7 @@ if active_route == "":
 
     with col_eq1:
         st.html(f"""
-        <a href="./Reliance" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Reliance?stock=Reliance" target="_self" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-reliance" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1531,15 +1537,16 @@ if active_route == "":
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(56, 189, 248, 0.2); padding-top: 8px; font-size: 0.74rem; color: #38BDF8; font-weight: 700;">
                     <span>Institutional Execution Terminal</span>
-                    <span>Launch Desk in New Tab ↗</span>
+                    <span>Launch Desk →</span>
                 </div>
             </div>
         </a>
         """)
+        st.page_link(p_reliance, label="⚡ Open RELIANCE Desk", use_container_width=True)
 
     with col_eq2:
         st.html(f"""
-        <a href="./Adani" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Adani?stock=Adani" target="_self" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-adani" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1566,11 +1573,12 @@ if active_route == "":
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(245, 158, 11, 0.2); padding-top: 8px; font-size: 0.74rem; color: #FBBF24; font-weight: 700;">
                     <span>Institutional Execution Terminal</span>
-                    <span>Launch Desk in New Tab ↗</span>
+                    <span>Launch Desk →</span>
                 </div>
             </div>
         </a>
         """)
+        st.page_link(p_adani, label="🔥 Open ADANI Desk", use_container_width=True)
     # --------------------------------------------------------------------------
     # INSTITUTIONAL PERFORMANCE & LIVE FORWARD TRADE DESK SUITE
     # --------------------------------------------------------------------------
@@ -1709,18 +1717,21 @@ if active_route == "":
 # 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR (DEDICATED DESK MODE)
 # ==============================================================================
 # Route-Aware Active Scrip Resolution
-if active_route == "Reliance":
+route_lower = (active_route or "").lower()
+if route_lower == "reliance":
     forced_choice = "RELIANCE"
-elif active_route == "Adani":
+elif route_lower == "adani":
     forced_choice = "ADANI ENTERPRISES"
-elif active_route == "Nifty":
+elif route_lower == "nifty":
     forced_choice = "NIFTY 50"
-elif active_route == "Sensex":
+elif route_lower == "sensex":
     forced_choice = "BSE SENSEX"
 else:
     forced_choice = st.session_state.get("selected_scrip", "RELIANCE")
 
 st.session_state["selected_scrip"] = forced_choice
+if route_lower in ("reliance", "adani", "nifty", "sensex"):
+    st.session_state["sb_scrip_selector"] = forced_choice
 
 if st.sidebar.button("🏠 ← Return to Market Hub (Homepage)", use_container_width=True, key="sb_btn_return_home"):
     st.switch_page(p_home)
@@ -1736,14 +1747,22 @@ scrip_choice = st.sidebar.selectbox(
 )
 
 # Auto-switch page URL when user toggles dropdown
-if scrip_choice == "ADANI ENTERPRISES" and active_route != "Adani":
-    st.switch_page(p_adani)
-elif scrip_choice == "RELIANCE" and active_route != "Reliance":
-    st.switch_page(p_reliance)
-elif scrip_choice == "NIFTY 50" and active_route != "Nifty":
-    st.switch_page(p_nifty)
-elif scrip_choice == "BSE SENSEX" and active_route != "Sensex":
-    st.switch_page(p_sensex)
+current_route_scrip = {
+    "reliance": "RELIANCE",
+    "adani": "ADANI ENTERPRISES",
+    "nifty": "NIFTY 50",
+    "sensex": "BSE SENSEX"
+}.get(route_lower, "")
+
+if current_route_scrip and scrip_choice != current_route_scrip:
+    if scrip_choice == "ADANI ENTERPRISES":
+        st.switch_page(p_adani)
+    elif scrip_choice == "RELIANCE":
+        st.switch_page(p_reliance)
+    elif scrip_choice == "NIFTY 50":
+        st.switch_page(p_nifty)
+    elif scrip_choice == "BSE SENSEX":
+        st.switch_page(p_sensex)
 
 is_adani = (scrip_choice == "ADANI ENTERPRISES")
 is_nifty = (scrip_choice == "NIFTY 50")
