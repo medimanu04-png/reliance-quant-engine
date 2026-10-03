@@ -2317,7 +2317,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         gap_pts = round(breakout_level - active_live_ltp, 2)
         entry_confirmed = (active_live_ltp >= breakout_level) and plan_tradable
 
-    active_seq_state = SequentialTradeEngine.get_state()
+    active_seq_state = SequentialTradeEngine.get_state(symbol=active_sym)
     active_trade_obj = active_seq_state.get("active_trade")
     is_live_trade_running = (
         active_seq_state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE
@@ -3006,7 +3006,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         trade_update = SequentialTradeEngine.update_active_trade(
             current_ltp=active_track_ltp,
             groww_feed=gw_inst,
-            starting_cash=STARTING_CAPITAL
+            starting_cash=STARTING_CAPITAL,
+            symbol=active_sym
         )
 
         today_date = datetime.now(IST).strftime("%Y-%m-%d")
@@ -3164,7 +3165,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         net_risk_rs = round(abs(entry_sl_costs["net_pnl"]))
 
         # Immediate Zero-Delay Sequential State Transition
-        seq_now = SequentialTradeEngine.get_state()
+        seq_now = SequentialTradeEngine.get_state(symbol=active_sym)
         if seq_now.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
             SequentialTradeEngine.enter_trade_direct(
                 contract=f"{active_sym}26OCT{plan_strike}{plan_contract_type}",
@@ -3176,7 +3177,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 expiry=plan_expiry,
                 confluence=plan_score,
                 qty=plan_qty,
-                num_lots=plan_num_lots
+                num_lots=plan_num_lots,
+                symbol=active_sym
             )
             st.session_state["just_entered_trade"] = True
 
@@ -5702,7 +5704,7 @@ if df is not None and not df.empty:
             """)
         # 6. STRICT SEQUENTIAL TRADING ASSISTANT ENGINE (ONE-TRADE-AT-A-TIME DISCIPLINE)
         # ==============================================================================
-        seq_state = SequentialTradeEngine.get_state()
+        seq_state = SequentialTradeEngine.get_state(symbol=scrip_symbol)
         current_seq_state = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
         active_trade = seq_state.get("active_trade")
         last_closed = seq_state.get("last_closed_trade")
@@ -5720,7 +5722,8 @@ if df is not None and not df.empty:
                             SequentialTradeEngine.confirm_groww_fill(
                                 confirmed=True,
                                 actual_price=float(ex_tr.get("entry_price", active_trade["planned_entry"])),
-                                actual_time=ex_tr.get("entry_time", datetime.now(IST).strftime("%I:%M:%S %p IST"))
+                                actual_time=ex_tr.get("entry_time", datetime.now(IST).strftime("%I:%M:%S %p IST")),
+                                symbol=scrip_symbol
                             )
                             st.rerun()
             except Exception as e:
@@ -5752,7 +5755,8 @@ if df is not None and not df.empty:
             tr_update = SequentialTradeEngine.update_active_trade(
                 current_ltp=active_ltp,
                 groww_feed=groww_feed,
-                starting_cash=account_cash
+                starting_cash=account_cash,
+                symbol=scrip_symbol
             )
             if tr_update.get("closed_trade"):
                 st.rerun()
@@ -5842,15 +5846,15 @@ if df is not None and not df.empty:
             it_c1, it_c2, it_c3 = st.columns([1.2, 1.2, 1.6])
             with it_c1:
                 if st.button("🎯 Mark Target Hit & Close", use_container_width=True, help="Record target hit outcome and close trade"):
-                    SequentialTradeEngine.close_trade(exit_price=active_ltp, status="Target Hit", notes="Target reached in active monitoring", starting_cash=account_cash)
+                    SequentialTradeEngine.close_trade(exit_price=active_ltp, status="Target Hit", notes="Target reached in active monitoring", starting_cash=account_cash, symbol=scrip_symbol)
                     st.rerun()
             with it_c2:
                 if st.button("🛑 Mark SL Hit & Close", use_container_width=True, help="Record stop-loss outcome and close trade"):
-                    SequentialTradeEngine.close_trade(exit_price=active_ltp, status="SL Hit", notes="Stop loss hit in active monitoring", starting_cash=account_cash)
+                    SequentialTradeEngine.close_trade(exit_price=active_ltp, status="SL Hit", notes="Stop loss hit in active monitoring", starting_cash=account_cash, symbol=scrip_symbol)
                     st.rerun()
             with it_c3:
                 if st.button("🔄 Sync with Groww Positions", use_container_width=True):
-                    SequentialTradeEngine.update_active_trade(current_ltp=active_ltp, groww_feed=groww_feed, starting_cash=account_cash)
+                    SequentialTradeEngine.update_active_trade(current_ltp=active_ltp, groww_feed=groww_feed, starting_cash=account_cash, symbol=scrip_symbol)
                     st.rerun()
 
         elif current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
@@ -5896,12 +5900,12 @@ if df is not None and not df.empty:
                 actual_fill_input = st.number_input("Actual Groww Fill (₹)", value=float(planned_p), step=0.05, format="%.2f", key="groww_actual_fill_p")
             with ep_c2:
                 if st.button("✅ Yes, Filled on Groww", use_container_width=True, help="Confirm order filled on Groww at this price"):
-                    SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=actual_fill_input)
+                    SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=actual_fill_input, symbol=scrip_symbol)
                     st.success(f"✅ Trade #{active_trade.get('trade_num', 1)} execution confirmed!")
                     st.rerun()
             with ep_c3:
                 if st.button("❌ No / Cancel Setup", use_container_width=True, help="Cancel trade setup and return to scanning"):
-                    SequentialTradeEngine.confirm_groww_fill(confirmed=False)
+                    SequentialTradeEngine.confirm_groww_fill(confirmed=False, symbol=scrip_symbol)
                     st.info("ℹ️ Setup cancelled. Returned to scanning.")
                     st.rerun()
             with ep_c4:
@@ -5914,7 +5918,8 @@ if df is not None and not df.empty:
                                 SequentialTradeEngine.confirm_groww_fill(
                                     confirmed=True,
                                     actual_price=float(x.get("entry_price", planned_p)),
-                                    actual_time=x.get("entry_time")
+                                    actual_time=x.get("entry_time"),
+                                    symbol=scrip_symbol
                                 )
                                 matched = True
                                 st.success(f"✅ Found Groww fill @ ₹{x.get('entry_price', planned_p):.2f}!")
@@ -5956,7 +5961,8 @@ if df is not None and not df.empty:
             ''')
 
             if st.button("🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)", use_container_width=True):
-                SequentialTradeEngine.acknowledge_and_reset()
+                SequentialTradeEngine.acknowledge_and_reset(symbol=scrip_symbol)
+                st.rerun()
                 st.rerun()
 
         else:
@@ -6112,7 +6118,8 @@ if df is not None and not df.empty:
                             expiry=expiry_date_str,
                             confluence=float(dominant_score),
                             qty=total_trading_qty,
-                            num_lots=num_lots
+                            num_lots=num_lots,
+                            symbol=scrip_symbol
                         )
                         st.rerun()
 
@@ -7782,7 +7789,7 @@ if df is not None and not df.empty:
 
         with cal_col4:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            all_raw_shadow = ShadowMonitoringEngine.load_records()
+            all_raw_shadow = ShadowMonitoringEngine.load_records(symbol=scrip_symbol)
             raw_df = pd.DataFrame(all_raw_shadow)
             csv_bytes = raw_df.to_csv(index=False).encode('utf-8')
             st_download_button_stretch(
@@ -7794,15 +7801,15 @@ if df is not None and not df.empty:
 
         # Filter Records Based on Calendar Date Selection
         active_date_filter = None if date_scope == "All Dates (Full History)" else selected_date_str
-        shadow_records = ShadowMonitoringEngine.get_records_by_date(active_date_filter)
-        journal_entries = TradeJournalManager.load_journal(starting_cash=account_cash)
+        shadow_records = ShadowMonitoringEngine.get_records_by_date(active_date_filter, symbol=scrip_symbol)
+        journal_entries = TradeJournalManager.load_journal(starting_cash=account_cash, symbol=scrip_symbol)
 
         if active_date_filter:
             journal_entries = [e for e in journal_entries if e.get("date") == active_date_filter]
 
         # Calculate Date-wise KPI
         shadow_kpi = ShadowMonitoringEngine.get_shadow_kpi(shadow_records)
-        all_journal = TradeJournalManager.load_journal(starting_cash=account_cash)
+        all_journal = TradeJournalManager.load_journal(starting_cash=account_cash, symbol=scrip_symbol)
         all_summary_kpi = TradeJournalManager.get_summary_kpi(all_journal, today_strike_price=today_strike_price, starting_cash=account_cash)
         date_label = f"📅 {selected_date_str}" if active_date_filter else "📜 All Historical Dates"
 
@@ -7838,19 +7845,19 @@ if df is not None and not df.empty:
         """, unsafe_allow_html=True)
 
         # Running Sequential Trade Log Table (Strict Operating Discipline)
-        seq_state = SequentialTradeEngine.get_state()
+        seq_state = SequentialTradeEngine.get_state(symbol=scrip_symbol)
         curr_state_val = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
         state_color = "#10B981" if curr_state_val == SequentialTradeEngine.STATE_IDLE else ("#F59E0B" if curr_state_val == SequentialTradeEngine.STATE_ENTRY_PENDING else "#38BDF8")
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; margin-bottom: 6px;">
-            <h4 style='color: #F8FAFC; margin: 0;'>📋 Running Sequential Trade Log</h4>
+            <h4 style='color: #F8FAFC; margin: 0;'>📋 Running Sequential Trade Log ({scrip_symbol})</h4>
             <span style="background: rgba(15, 23, 42, 0.8); border: 1px solid {state_color}; color: {state_color}; padding: 3px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
                 ● ENGINE: {curr_state_val}
             </span>
         </div>
         """, unsafe_allow_html=True)
-        st.caption("Strict Sequential Trading Operating Discipline • One Trade at a Time • Verified Groww Executions")
-        running_rows = SequentialTradeEngine.get_running_trade_log_rows()
+        st.caption(f"Strict Sequential Trading Operating Discipline • One Trade at a Time • Verified Groww Executions ({scrip_symbol})")
+        running_rows = SequentialTradeEngine.get_running_trade_log_rows(symbol=scrip_symbol)
         if running_rows:
             df_running = pd.DataFrame(running_rows)
             st_dataframe_stretch(
@@ -7871,21 +7878,21 @@ if df is not None and not df.empty:
                 }
             )
         else:
-            st.info("ℹ️ No trades recorded yet today. Click '➕ Record / Sync Trade into Sequential Log' below or await an institutional 75%+ confluence setup.")
+            st.info(f"ℹ️ No trades recorded yet today for {scrip_symbol}. Click '➕ Record / Sync Trade into Sequential Log' below or await an institutional 75%+ confluence setup.")
 
         # Entry Interface for Running Sequential Trade Log
         with st.expander("➕ Record / Sync Trade into Sequential Log", expanded=False):
             t_sync, t_manual = st.tabs(["🔄 Sync Groww Broker Executions", "✍️ Manual Trade Entry / Override"])
 
             with t_sync:
-                st.caption("Fetch genuine completed fills from your Groww account and automatically log them into today's Sequential Trade Log.")
+                st.caption(f"Fetch genuine completed fills from your Groww account and automatically log them into today's Sequential Trade Log ({scrip_symbol}).")
                 c_sync_btn, c_sync_status = st.columns([1.2, 2.8])
                 with c_sync_btn:
                     if st.button("🔄 Sync from Groww Now", key="sync_groww_trades_btn", use_container_width=True):
                         try:
                             feed = st.session_state.get("groww_feed")
-                            synced_count = TradeJournalManager.sync_with_groww_executed_trades(feed, starting_cash=STARTING_CAPITAL)
-                            st.success(f"Successfully synced {synced_count} executed trade(s) from Groww!")
+                            synced_count = TradeJournalManager.sync_with_groww_executed_trades(feed, starting_cash=STARTING_CAPITAL, symbol_filter=scrip_symbol)
+                            st.success(f"Successfully synced {synced_count} executed trade(s) for {scrip_symbol} from Groww!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Sync error: {e}")
@@ -7893,7 +7900,7 @@ if df is not None and not df.empty:
                     st.caption("Auto-reconciles order executions, fill prices, and realised P&L from Groww broker API.")
 
             with t_manual:
-                st.caption("Directly record an executed trade into the Sequential Trade Log and Ledger.")
+                st.caption(f"Directly record an executed trade into the Sequential Trade Log and Ledger for {scrip_symbol}.")
                 with st.form(key="manual_seq_trade_entry_form"):
                     col_m1, col_m2, col_m3 = st.columns(3)
                     with col_m1:
@@ -7918,7 +7925,7 @@ if df is not None and not df.empty:
 
                     submit_manual = st.form_submit_button("💾 Save Trade to Sequential Log", use_container_width=True)
                     if submit_manual:
-                        qty_calc = int(m_lots * 250)
+                        qty_calc = int(m_lots * lot_size)
                         pts = round(m_exit_price - m_actual_entry, 2) if m_status != "Open" else 0.0
                         realised_pnl = round(pts * qty_calc, 2) if m_status != "Open" else 0.0
 
@@ -7947,7 +7954,7 @@ if df is not None and not df.empty:
                             "actual_exit_price": m_exit_price if m_status != "Open" else None,
                             "exit_price": m_exit_price if m_status != "Open" else None,
                             "num_lots": int(m_lots),
-                            "lot_size": 250,
+                            "lot_size": int(lot_size),
                             "qty": qty_calc,
                             "capital_deployed": round(m_actual_entry * qty_calc, 2),
                             "realised_pnl": realised_pnl,
@@ -7962,7 +7969,25 @@ if df is not None and not df.empty:
                             "confluence_score": m_confluence
                         }
                         TradeJournalManager.add_or_update_entry(t_rec, starting_cash=STARTING_CAPITAL)
-                        st.success(f"✅ Trade {m_instrument} recorded successfully into Sequential Trade Log!")
+                        if m_status == "Open":
+                            SequentialTradeEngine.enter_trade_direct(
+                                contract=m_instrument,
+                                instrument=m_instrument,
+                                entry_price=m_actual_entry,
+                                sl=m_sl,
+                                target=m_target,
+                                direction=m_action,
+                                expiry=expiry_date_str if 'expiry_date_str' in locals() else "27-OCT-2026",
+                                confluence=m_confluence,
+                                qty=qty_calc,
+                                num_lots=int(m_lots),
+                                symbol=scrip_symbol
+                            )
+                        elif m_status in ["Target Hit", "SL Hit"]:
+                            s_st = SequentialTradeEngine.get_state(symbol=scrip_symbol)
+                            if s_st.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE:
+                                SequentialTradeEngine.close_trade(exit_price=m_exit_price, status=m_status, notes=m_notes, starting_cash=STARTING_CAPITAL, symbol=scrip_symbol)
+                        st.success(f"✅ Trade {m_instrument} recorded successfully into Sequential Trade Log ({scrip_symbol})!")
                         st.rerun()
 
         # Search & Outcome Filter Controls

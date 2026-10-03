@@ -95,5 +95,33 @@
     "suggested_exit": 40.0,
     "suggested_sl": 28.5,
     "confluence_score": 61.8
+  },
+  "2026-10-03_RELIANCE26OCT1160CE": {
+    "date": "2026-10-03",
+    "trade_given_time": "02:56:07 PM IST",
+    "full_contract": "RELIANCE 1160 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91160 & \u20b91170] | 2 Lots / 1000 Qty | Current Price: \u20b938.75 (Spot: \u20b91167.70)",
+    "symbol": "RELIANCE26OCT1160CE",
+    "contract_type": "CE",
+    "action": "BUY CE",
+    "strike": 1160,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 39.95,
+    "suggested_exit": 46.95,
+    "suggested_sl": 34.95,
+    "confluence_score": 85.8
+  },
+  "2026-10-03": {
+    "date": "2026-10-03",
+    "trade_given_time": "02:56:07 PM IST",
+    "full_contract": "RELIANCE 1160 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91160 & \u20b91170] | 2 Lots / 1000 Qty | Current Price: \u20b938.75 (Spot: \u20b91167.70)",
+    "symbol": "RELIANCE26OCT1160CE",
+    "contract_type": "CE",
+    "action": "BUY CE",
+    "strike": 1160,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 39.95,
+    "suggested_exit": 46.95,
+    "suggested_sl": 34.95,
+    "confluence_score": 85.8
   }
 }

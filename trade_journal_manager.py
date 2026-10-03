@@ -180,7 +180,9 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
         ep = float(e.get("entry_price", e.get("actual_entry_price", 0.0)))
         lot_sz = int(e.get("lot_size", 250))
         qty = int(e.get("qty", lot_sz))
-        if qty > 0 and (qty % 250 == 0) and (qty % 500 != 0 or qty == 250):
+        if qty > 0 and (qty % 309 == 0):
+            lot_sz = 309
+        elif qty > 0 and (qty % 250 == 0) and (qty % 500 != 0 or qty == 250):
             lot_sz = 250
         elif qty > 0 and (qty % 500 == 0):
             lot_sz = int(e.get("lot_size", 500))
@@ -265,34 +267,43 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
 # ==============================================================================
 class TradeJournalManager:
     @classmethod
-    def load_journal(cls, starting_cash: float = None) -> List[Dict[str, Any]]:
-        """Loads journal from JSON file. Returns clean list without injecting synthetic data."""
-        if starting_cash is None:
-            starting_cash = STARTING_CAPITAL
-
+    def _load_raw_entries(cls) -> List[Dict[str, Any]]:
+        """Loads all raw journal records from disk without symbol filtering."""
         if not os.path.exists(JOURNAL_FILE):
             cls.save_journal([])
             return []
-            
         try:
             with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
-                # Filter strictly for RELIANCE trades
-                reliance_entries = [
-                    e for e in data 
-                    if "RELIANCE" in str(e.get("trading_symbol", "")).upper() or "RELIANCE" in str(e.get("instrument", "")).upper()
-                ]
-                if len(reliance_entries) > 0:
-                    return recalculate_journal(reliance_entries, starting_cash)
-                else:
-                    return []
-            else:
-                cls.save_journal([])
-                return []
+                return data
+            cls.save_journal([])
+            return []
         except Exception:
             cls.save_journal([])
             return []
+
+    @classmethod
+    def load_journal(cls, starting_cash: float = None, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Loads journal from JSON file. Returns clean list filtered by symbol if provided."""
+        if starting_cash is None:
+            starting_cash = STARTING_CAPITAL
+
+        raw_entries = cls._load_raw_entries()
+        if not raw_entries:
+            return []
+
+        if symbol:
+            sym_clean = "ADANI" if "ADANI" in symbol.upper() else ("RELIANCE" if "RELIANCE" in symbol.upper() else symbol.upper())
+            matching = [
+                e for e in raw_entries
+                if sym_clean in str(e.get("trading_symbol", "")).upper() or sym_clean in str(e.get("instrument", "")).upper()
+            ]
+            if len(matching) > 0:
+                return recalculate_journal(matching, starting_cash)
+            return []
+        else:
+            return recalculate_journal(raw_entries, starting_cash)
 
     @classmethod
     def save_journal(cls, entries: List[Dict[str, Any]]):
@@ -302,13 +313,12 @@ class TradeJournalManager:
 
     @classmethod
     def add_or_update_entry(cls, new_entry: Dict[str, Any], starting_cash: float = None) -> List[Dict[str, Any]]:
-        """Adds a new daily trade record or updates existing trade for the same date/ID."""
+        """Adds a new daily trade record or updates existing trade across all assets."""
         if starting_cash is None:
             starting_cash = STARTING_CAPITAL
-        entries = cls.load_journal(starting_cash)
-        date_to_log = new_entry.get("date")
+        # Load raw records across all symbols so we never delete other assets!
+        entries = cls._load_raw_entries()
         entry_id = new_entry.get("id")
-        sym_to_log = new_entry.get("trading_symbol")
 
         # Replace matching entry if exists by unique ID
         def is_match(e):
@@ -324,10 +334,10 @@ class TradeJournalManager:
 
     @classmethod
     def delete_entry(cls, entry_id: str, starting_cash: float = None) -> List[Dict[str, Any]]:
-        """Deletes trade record by ID or date."""
+        """Deletes trade record by ID or date across all assets."""
         if starting_cash is None:
             starting_cash = STARTING_CAPITAL
-        entries = cls.load_journal(starting_cash)
+        entries = cls._load_raw_entries()
         entries = [e for e in entries if e.get("id") != entry_id and e.get("date") != entry_id]
         recalculated = recalculate_journal(entries, starting_cash)
         cls.save_journal(recalculated)
@@ -390,7 +400,8 @@ class TradeJournalManager:
         cls,
         groww_executed_trades: List[Dict[str, Any]],
         active_signal: Optional[Dict[str, Any]] = None,
-        starting_cash: float = None
+        starting_cash: float = None,
+        symbol_filter: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Automates cross-verification between the trade given by the system and actual trades executed on Groww.
@@ -399,9 +410,10 @@ class TradeJournalManager:
         if starting_cash is None:
             starting_cash = STARTING_CAPITAL
 
-        current_entries = cls.load_journal(starting_cash)
+        current_entries = cls._load_raw_entries()
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         today_day = datetime.now(IST).strftime("%A")
+        sym_kw = "ADANI" if (symbol_filter and "ADANI" in symbol_filter.upper()) else "RELIANCE"
 
         # Deduplicate existing entries strictly by unique trade ID
         unique_entries = {}
@@ -411,17 +423,17 @@ class TradeJournalManager:
             unique_entries[eid] = e
         
         # Load or use active signal for today
-        signal = active_signal or SignalTracker.get_signal(today_str) or {}
+        signal = active_signal or SignalTracker.get_signal(today_str, symbol=symbol_filter) or {}
 
         for gt in groww_executed_trades:
             sym = gt.get("symbol", "")
-            if not sym or "RELIANCE" not in sym.upper():
+            if not sym or sym_kw not in sym.upper():
                 continue
 
             entry_p = float(gt.get("entry_price", 0.0))
             exit_p = float(gt.get("exit_price", 0.0))
             realised_pnl = float(gt.get("realised_pnl", 0.0))
-            qty = int(gt.get("qty", 1000))
+            qty = int(gt.get("qty", 309 if sym_kw == "ADANI" else 1000))
             is_closed = bool(gt.get("is_closed", False))
             
             raw_entry_t = gt.get("entry_time", "")
@@ -443,7 +455,7 @@ class TradeJournalManager:
                 except Exception:
                     actual_exit_time_str = raw_exit_t
 
-            is_reliance = "RELIANCE" in sym.upper()
+            is_target_scrip = sym_kw in sym.upper()
 
             # Find matching existing entry (by timestamp or contract + entry price)
             existing_match_id = None
@@ -479,7 +491,7 @@ class TradeJournalManager:
                 matched_signal = SignalTracker.find_matching_signal(symbol=sym, actual_entry_time=actual_entry_time_str, date_str=today_str)
                 if matched_signal:
                     trade_given_time = matched_signal.get("trade_given_time", actual_entry_time_str)
-                    sugg_contract = matched_signal.get("full_contract") or f"RELIANCE {matched_signal.get('strike', 1200)} {matched_signal.get('contract_type', 'PE')} ({matched_signal.get('expiry', '27-OCT-2026')})"
+                    sugg_contract = matched_signal.get("full_contract") or f"{sym_kw} {matched_signal.get('strike', 1200)} {matched_signal.get('contract_type', 'PE')} ({matched_signal.get('expiry', '27-OCT-2026')})"
                     sugg_entry = float(matched_signal.get("suggested_entry", entry_p))
                     sugg_exit = float(matched_signal.get("suggested_exit", round(sugg_entry + 10.0, 2)))
                     sugg_sl = float(matched_signal.get("suggested_sl", round(max(0.05, sugg_entry - 4.5), 2)))
@@ -518,7 +530,7 @@ class TradeJournalManager:
                 "trading_symbol": sym,
                 "instrument": sugg_contract,
                 "type": trade_type,
-                "decision": "TRADABLE (A+ SETUP)" if is_reliance else "DISCRETIONARY GROWW TRADE",
+                "decision": "TRADABLE (A+ SETUP)" if is_target_scrip else "DISCRETIONARY GROWW TRADE",
                 "source": "GROWW_VERIFIED",
                 "is_closed": is_closed,
                 
@@ -560,13 +572,33 @@ class TradeJournalManager:
             }
             unique_entries[rec_id] = record
 
-        all_updated = [
-            e for e in unique_entries.values()
-            if "RELIANCE" in str(e.get("trading_symbol", "")).upper() or "RELIANCE" in str(e.get("instrument", "")).upper()
-        ]
+        all_updated = list(unique_entries.values())
         recalculated = recalculate_journal(all_updated, starting_cash)
         cls.save_journal(recalculated)
-        return recalculated
+        return cls.load_journal(starting_cash=starting_cash, symbol=symbol_filter)
+
+    @classmethod
+    def sync_with_groww_executed_trades(
+        cls,
+        groww_feed: Any,
+        starting_cash: Optional[float] = None,
+        symbol_filter: Optional[str] = None
+    ) -> int:
+        """
+        Fetches genuine executed trades from Groww broker API for today and reconciles them into the trade journal.
+        Returns the count of synced/updated trades.
+        """
+        if not groww_feed or not getattr(groww_feed, "is_connected", False):
+            return 0
+        try:
+            executed = groww_feed.get_executed_trades_today(symbol_filter=symbol_filter)
+            if not executed:
+                return 0
+            cls.sync_groww_trades(executed, starting_cash=starting_cash, symbol_filter=symbol_filter)
+            return len(executed)
+        except Exception as e:
+            logger.warning(f"Error syncing with Groww executed trades: {e}")
+            return 0
 
     @classmethod
     def get_summary_kpi(cls, entries: List[Dict[str, Any]], today_strike_price: float = None, starting_cash: float = None) -> Dict[str, Any]:
@@ -645,16 +677,28 @@ class ShadowMonitoringEngine:
        - Date-specific log table, metrics, and KPI audit ledger.
     """
     @classmethod
-    def load_records(cls) -> List[Dict[str, Any]]:
+    def load_records(cls, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         if os.path.exists(SHADOW_SIGNALS_FILE):
             try:
                 with open(SHADOW_SIGNALS_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        return data
+                        records = data
+                    else:
+                        records = cls._bootstrap_from_existing()
             except Exception as e:
                 logger.debug(f"Error loading shadow signals log: {e}")
-        return cls._bootstrap_from_existing()
+                records = cls._bootstrap_from_existing()
+        else:
+            records = cls._bootstrap_from_existing()
+
+        if symbol:
+            sym_kw = "ADANI" if "ADANI" in symbol.upper() else "RELIANCE"
+            return [
+                r for r in records
+                if sym_kw in str(r.get("symbol", "")).upper() or sym_kw in str(r.get("instrument", "")).upper()
+            ]
+        return records
 
     @classmethod
     def save_records(cls, records: List[Dict[str, Any]]):
@@ -861,7 +905,7 @@ class ShadowMonitoringEngine:
         verified_executed_trades = []
         if groww_feed and getattr(groww_feed, "is_connected", False):
             try:
-                gw_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                gw_trades = groww_feed.get_executed_trades_today()
                 verified_executed_trades = list(gw_trades)
             except Exception as e:
                 logger.debug(f"Shadow check executed trades error: {e}")
@@ -1125,8 +1169,8 @@ class ShadowMonitoringEngine:
         return dates
 
     @classmethod
-    def get_records_by_date(cls, selected_date: Optional[str] = None) -> List[Dict[str, Any]]:
-        records = cls.load_records()
+    def get_records_by_date(cls, selected_date: Optional[str] = None, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        records = cls.load_records(symbol=symbol)
         def _get_sort_key(r):
             t_str = str(r.get("timestamp", ""))
             mins = 0.0
@@ -1204,27 +1248,31 @@ class SequentialTradeEngine:
     STATE_TRADE_CLOSED = "TRADE CLOSED & AUDITED"
 
     @classmethod
-    def get_state_file_path(cls) -> str:
+    def get_state_file_path(cls, symbol: Optional[str] = None) -> str:
+        if symbol and "ADANI" in symbol.upper():
+            return os.path.join(BASE_DIR, "sequential_trade_state_ADANIENT.json")
         return SEQUENTIAL_STATE_FILE
 
     @classmethod
-    def get_state(cls) -> Dict[str, Any]:
-        """Loads and returns current sequential engine state."""
-        if os.path.exists(SEQUENTIAL_STATE_FILE):
+    def get_state(cls, symbol: Optional[str] = None) -> Dict[str, Any]:
+        """Loads and returns current sequential engine state for the specified symbol."""
+        state_file = cls.get_state_file_path(symbol)
+        if os.path.exists(state_file):
             try:
-                with open(SEQUENTIAL_STATE_FILE, "r", encoding="utf-8") as f:
+                with open(state_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
                     if isinstance(state, dict) and "current_state" in state:
                         return state
             except Exception as e:
-                logger.debug(f"Error reading sequential state: {e}")
+                logger.debug(f"Error reading sequential state ({state_file}): {e}")
 
-        # Initialize default state based on today's journal
+        # Initialize default state based on today's journal for this symbol
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        journal = TradeJournalManager.load_journal()
+        sym_kw = "ADANI" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
+        journal = TradeJournalManager.load_journal(symbol=sym_kw)
         today_trades = [
             t for t in journal 
-            if t.get("date") == today_str and "RELIANCE" in str(t.get("trading_symbol", "")).upper()
+            if t.get("date") == today_str and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
         ]
 
         open_trades = [t for t in today_trades if t.get("status") == "OPEN" or t.get("is_closed") is False]
@@ -1232,8 +1280,10 @@ class SequentialTradeEngine:
 
         if open_trades:
             active_tr = open_trades[-1]
+            def_qty = 309 if sym_kw == "ADANI" else 500
             init_state = {
                 "current_state": cls.STATE_IN_TRADE,
+                "symbol": "ADANIENT" if sym_kw == "ADANI" else "RELIANCE",
                 "active_trade": {
                     "trade_num": len(closed_trades) + 1,
                     "contract": active_tr.get("trading_symbol", ""),
@@ -1245,8 +1295,9 @@ class SequentialTradeEngine:
                     "sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - 4.5))),
                     "target": float(active_tr.get("suggested_exit", active_tr.get("entry_price", 0.0) + 10.0)),
                     "direction": active_tr.get("type", "BUY PE"),
-                    "qty": int(active_tr.get("qty", 250)),
+                    "qty": int(active_tr.get("qty", def_qty)),
                     "num_lots": int(active_tr.get("num_lots", 1)),
+                    "lot_size": int(active_tr.get("lot_size", def_qty)),
                     "highest_price": float(active_tr.get("actual_entry_price", active_tr.get("entry_price", 0.0))),
                     "trailing_sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - 4.5))),
                     "status": "Open",
@@ -1260,6 +1311,7 @@ class SequentialTradeEngine:
             last_closed = closed_trades[-1] if closed_trades else None
             init_state = {
                 "current_state": cls.STATE_IDLE,
+                "symbol": "ADANIENT" if sym_kw == "ADANI" else "RELIANCE",
                 "active_trade": None,
                 "last_closed_trade": {
                     "trade_num": len(closed_trades),
@@ -1276,36 +1328,44 @@ class SequentialTradeEngine:
                 "updated_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
             }
 
-        cls.save_state(init_state)
+        cls.save_state(init_state, symbol=symbol)
         return init_state
 
     @classmethod
-    def save_state(cls, state: Dict[str, Any]):
-        """Persists the engine state to disk."""
+    def save_state(cls, state: Dict[str, Any], symbol: Optional[str] = None):
+        """Persists the engine state to disk for the appropriate symbol."""
         state["updated_at"] = datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
+        sym = symbol or state.get("symbol")
+        if not sym and state.get("active_trade"):
+            act = state["active_trade"]
+            sym_str = str(act.get("contract", "")) + " " + str(act.get("instrument", ""))
+            sym = "ADANIENT" if "ADANI" in sym_str.upper() else "RELIANCE"
+        state_file = cls.get_state_file_path(sym)
         try:
-            with open(SEQUENTIAL_STATE_FILE, "w", encoding="utf-8") as f:
+            with open(state_file, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
         except Exception as e:
-            logger.warning(f"Failed to persist sequential state: {e}")
+            logger.warning(f"Failed to persist sequential state to {state_file}: {e}")
 
     @classmethod
-    def has_daily_loss_occurred_today(cls) -> Tuple[bool, str]:
+    def has_daily_loss_occurred_today(cls, symbol: Optional[str] = None) -> Tuple[bool, str]:
         """
         One-and-Done Institutional Circuit Breaker:
         Returns (True, reason) if any trade executed today hit Stop-Loss or realized a negative PnL.
         Protects the trader from revenge trading and overtrading.
         """
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        journal = TradeJournalManager.load_journal()
+        sym_kw = "ADANI" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
+        journal = TradeJournalManager.load_journal(symbol=sym_kw)
         today_losses = [
             t for t in journal
             if t.get("date") == today_str
+            and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
             and (t.get("status") in ["FAIL", "SL Hit"] or float(t.get("realised_pnl", 0.0)) < 0)
         ]
         if today_losses:
             loss_t = today_losses[-1]
-            return True, f"1 Stop-Loss Hit Today on {loss_t.get('trading_symbol', 'RELIANCE')} ({loss_t.get('status')})"
+            return True, f"1 Stop-Loss Hit Today on {loss_t.get('trading_symbol', sym_kw)} ({loss_t.get('status')})"
         return False, ""
 
     @classmethod
@@ -1363,22 +1423,24 @@ class SequentialTradeEngine:
         expiry: str,
         confluence: float,
         qty: int = 250,
-        num_lots: int = 1
+        num_lots: int = 1,
+        symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Immediately transitions engine to IN-TRADE (ACTIVE MONITORING).
         Zero delay: called instantly as soon as a buy entry trigger is validated.
         Completely prevents flapping back to ARMED state when price fluctuates.
         """
-        state = cls.get_state()
+        active_sym = symbol or ("ADANIENT" if ("ADANI" in contract.upper() or "ADANI" in instrument.upper()) else "RELIANCE")
+        state = cls.get_state(symbol=active_sym)
         curr_state = state.get("current_state", cls.STATE_IDLE)
 
         # One-and-Done Daily Circuit Breaker Guard
-        has_loss, loss_reason = cls.has_daily_loss_occurred_today()
+        has_loss, loss_reason = cls.has_daily_loss_occurred_today(symbol=active_sym)
         if has_loss:
             return {
                 "success": False,
-                "msg": f"⛔ CIRCUIT BREAKER ACTIVE: {loss_reason}. All new entries locked for today to preserve capital.",
+                "msg": f"⛔ CIRCUIT BREAKER ACTIVE ({active_sym}): {loss_reason}. All new entries locked for today to preserve capital.",
                 "state": state
             }
 
@@ -1413,12 +1475,14 @@ class SequentialTradeEngine:
             "highest_price": actual_p,
             "trailing_sl": sl_p,
             "status": "Open",
-            "proposed_at": now_time_str
+            "proposed_at": now_time_str,
+            "symbol": active_sym
         }
 
         state["current_state"] = cls.STATE_IN_TRADE
+        state["symbol"] = active_sym
         state["active_trade"] = active_trade
-        cls.save_state(state)
+        cls.save_state(state, symbol=active_sym)
 
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         try:
@@ -1456,21 +1520,23 @@ class SequentialTradeEngine:
         expiry: str,
         confluence: float,
         qty: int = 250,
-        num_lots: int = 1
+        num_lots: int = 1,
+        symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Rule 1: Propose a new trade setup. Strictly forbidden if an active or pending trade exists.
         Transitions state to ENTRY PENDING.
         """
-        state = cls.get_state()
+        active_sym = symbol or ("ADANIENT" if ("ADANI" in contract.upper() or "ADANI" in instrument.upper()) else "RELIANCE")
+        state = cls.get_state(symbol=active_sym)
         curr_state = state.get("current_state", cls.STATE_IDLE)
 
         # One-and-Done Daily Circuit Breaker Guard
-        has_loss, loss_reason = cls.has_daily_loss_occurred_today()
+        has_loss, loss_reason = cls.has_daily_loss_occurred_today(symbol=active_sym)
         if has_loss:
             return {
                 "success": False,
-                "msg": f"⛔ CIRCUIT BREAKER ACTIVE: {loss_reason}. All new entries locked for today to preserve capital.",
+                "msg": f"⛔ CIRCUIT BREAKER ACTIVE ({active_sym}): {loss_reason}. All new entries locked for today to preserve capital.",
                 "state": state
             }
 
@@ -1513,12 +1579,14 @@ class SequentialTradeEngine:
             "highest_price": round(float(planned_entry), 2),
             "trailing_sl": round(float(sl), 2),
             "status": "Entry Pending",
-            "proposed_at": datetime.now(IST).strftime("%I:%M:%S %p IST")
+            "proposed_at": datetime.now(IST).strftime("%I:%M:%S %p IST"),
+            "symbol": active_sym
         }
 
         state["current_state"] = cls.STATE_ENTRY_PENDING
+        state["symbol"] = active_sym
         state["active_trade"] = active_trade
-        cls.save_state(state)
+        cls.save_state(state, symbol=active_sym)
 
         # Also register in SignalTracker and EmpiricalCalibrationEngine
         try:
@@ -1565,14 +1633,15 @@ class SequentialTradeEngine:
         confirmed: bool,
         actual_price: Optional[float] = None,
         actual_time: Optional[str] = None,
-        notes: str = ""
+        notes: str = "",
+        symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Rule 2: Verification with Groww.
         - If confirmed (Yes): transitions to IN-TRADE (ACTIVE MONITORING) with actual entry price & time.
         - If rejected / cancelled (No): transitions back to IDLE / SCANNING.
         """
-        state = cls.get_state()
+        state = cls.get_state(symbol=symbol)
         if state.get("current_state") != cls.STATE_ENTRY_PENDING:
             return {
                 "success": False,
@@ -1583,7 +1652,7 @@ class SequentialTradeEngine:
         active = state.get("active_trade")
         if not active:
             state["current_state"] = cls.STATE_IDLE
-            cls.save_state(state)
+            cls.save_state(state, symbol=symbol)
             return {"success": False, "msg": "No pending trade record found.", "state": state}
 
         if confirmed:
@@ -1596,7 +1665,7 @@ class SequentialTradeEngine:
             active["highest_price"] = actual_p
             active["trailing_sl"] = active["sl"]
             state["current_state"] = cls.STATE_IN_TRADE
-            cls.save_state(state)
+            cls.save_state(state, symbol=symbol)
             return {
                 "success": True,
                 "msg": f"✅ Groww execution confirmed at ₹{actual_p:.2f} ({actual_t}). Trade #{active['trade_num']} is now ACTIVE.",
@@ -1608,7 +1677,7 @@ class SequentialTradeEngine:
             inst = active.get("instrument", "")
             state["current_state"] = cls.STATE_IDLE
             state["active_trade"] = None
-            cls.save_state(state)
+            cls.save_state(state, symbol=symbol)
             return {
                 "success": True,
                 "msg": f"ℹ️ Trade #{t_num} ({inst}) cancelled/not executed. Reverted to IDLE / SCANNING.",
@@ -1620,33 +1689,35 @@ class SequentialTradeEngine:
         cls,
         current_ltp: float,
         groww_feed: Any = None,
-        starting_cash: Optional[float] = None
+        starting_cash: Optional[float] = None,
+        symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Rule 3: Monitor Active Trade.
         Checks if Target Hit or SL Hit, updates trailing SL, or detects broker exit.
         """
-        state = cls.get_state()
+        state = cls.get_state(symbol=symbol)
         if state.get("current_state") != cls.STATE_IN_TRADE:
             return {"active": False, "state": state}
 
         active = state.get("active_trade")
         if not active:
             state["current_state"] = cls.STATE_IDLE
-            cls.save_state(state)
+            cls.save_state(state, symbol=symbol)
             return {"active": False, "state": state}
 
         current_ltp = float(current_ltp)
         actual_entry = float(active.get("actual_entry", active.get("planned_entry", 0.0)))
         target = float(active.get("target", actual_entry + 10.0))
         sl = float(active.get("sl", max(0.05, actual_entry - 4.5)))
-        qty = int(active.get("qty", 1000))
         contract = active.get("contract", "")
+        active_sym = symbol or state.get("symbol") or ("ADANIENT" if "ADANI" in contract.upper() else "RELIANCE")
+        qty = int(active.get("qty", 309 if active_sym == "ADANIENT" else 500))
 
         # Resolve real-time live LTP from Groww broker feed if connected (absolute zero latency)
         if groww_feed and getattr(groww_feed, "is_connected", False) and hasattr(groww_feed, "get_option_contract_ltp"):
             try:
-                gw_ltp = groww_feed.get_option_contract_ltp(contract)
+                gw_ltp = groww_feed.get_option_contract_ltp(contract, symbol=active_sym)
                 if gw_ltp and gw_ltp > 0:
                     current_ltp = float(gw_ltp)
             except Exception:
@@ -1687,8 +1758,8 @@ class SequentialTradeEngine:
         # Check automated broker sync if Groww feed is provided
         if groww_feed and getattr(groww_feed, "is_connected", False):
             try:
-                executed_today = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
-                journal_entries = TradeJournalManager.load_journal(starting_cash=starting_cash)
+                executed_today = groww_feed.get_executed_trades_today(symbol_filter=active_sym)
+                journal_entries = TradeJournalManager.load_journal(starting_cash=starting_cash, symbol=active_sym)
                 used_exit_times = {str(j.get("actual_exit_time")) for j in journal_entries if j.get("actual_exit_time")}
                 used_entry_times = {str(j.get("actual_entry_time")) for j in journal_entries if j.get("actual_entry_time")}
 
@@ -1712,6 +1783,7 @@ class SequentialTradeEngine:
                             # Position closed in Groww!
                             exit_p = float(ex_tr.get("exit_price", current_ltp))
                             exit_t = ex_tr.get("exit_time", datetime.now(IST).strftime("%I:%M:%S %p IST"))
+                            real_pnl = float(ex_tr.get("realised_pnl", (exit_p - actual_entry) * qty))
                             if exit_p >= (target - 0.25):
                                 status = "Target Hit"
                             elif exit_p <= (effective_sl + 0.25):
@@ -1725,7 +1797,8 @@ class SequentialTradeEngine:
                                 status=status,
                                 exit_time=exit_t,
                                 notes=f"Auto-synced Groww Position Exit @ ₹{exit_p:.2f} ({status})",
-                                starting_cash=starting_cash
+                                starting_cash=starting_cash,
+                                symbol=active_sym
                             )
             except Exception as e:
                 logger.debug(f"Error checking broker sync for active trade: {e}")
@@ -1736,7 +1809,8 @@ class SequentialTradeEngine:
                 exit_price=current_ltp,
                 status="Target Hit",
                 notes=f"Profit Target Reached: ₹{current_ltp:.2f} >= ₹{target:.2f} (+{round(current_ltp - actual_entry, 2)} pts)",
-                starting_cash=starting_cash
+                starting_cash=starting_cash,
+                symbol=active_sym
             )
 
         # Check Stop-Loss Hit
@@ -1745,11 +1819,12 @@ class SequentialTradeEngine:
                 exit_price=current_ltp,
                 status="SL Hit",
                 notes=f"Stop-Loss Triggered: ₹{current_ltp:.2f} <= ₹{effective_sl:.2f} (-{round(actual_entry - current_ltp, 2)} pts)",
-                starting_cash=starting_cash
+                starting_cash=starting_cash,
+                symbol=active_sym
             )
 
         # Still in trade
-        cls.save_state(state)
+        cls.save_state(state, symbol=active_sym)
         return {
             "active": True,
             "current_ltp": current_ltp,
@@ -1766,28 +1841,31 @@ class SequentialTradeEngine:
         status: str,
         exit_time: Optional[str] = None,
         notes: str = "",
-        starting_cash: Optional[float] = None
+        starting_cash: Optional[float] = None,
+        symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Rule 4: Close and Audit Active Trade.
         Records outcome in daily journal and transitions engine to TRADE CLOSED & AUDITED.
         """
-        state = cls.get_state()
+        state = cls.get_state(symbol=symbol)
         active = state.get("active_trade")
         if not active:
             state["current_state"] = cls.STATE_IDLE
-            cls.save_state(state)
+            cls.save_state(state, symbol=symbol)
             return {"success": False, "msg": "No active trade to close.", "state": state}
 
         exit_p = round(float(exit_price), 2)
         exit_t = exit_time or datetime.now(IST).strftime("%I:%M:%S %p IST")
         actual_entry = float(active.get("actual_entry", active.get("planned_entry", 0.0)))
-        qty = int(active.get("qty", 1000))
-        pts = round(exit_p - actual_entry, 2)
-        pnl = round(pts * qty, 2)
         t_num = active.get("trade_num", int(state.get("today_trade_count", 0)) + 1)
         inst = active.get("instrument", "")
         sym = active.get("contract", "")
+        active_sym = symbol or state.get("symbol") or ("ADANIENT" if "ADANI" in sym.upper() else "RELIANCE")
+        def_lot_sz = 309 if active_sym == "ADANIENT" else 500
+        qty = int(active.get("qty", def_lot_sz))
+        pts = round(exit_p - actual_entry, 2)
+        pnl = round(pts * qty, 2)
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
         # Record in daily journal ledger
@@ -1815,7 +1893,7 @@ class SequentialTradeEngine:
             "actual_exit_price": exit_p,
             "exit_price": exit_p,
             "num_lots": active.get("num_lots", 1),
-            "lot_size": active.get("lot_size", 250),
+            "lot_size": active.get("lot_size", def_lot_sz),
             "qty": qty,
             "capital_deployed": round(actual_entry * qty, 2),
             "realised_pnl": pnl,
@@ -1863,10 +1941,11 @@ class SequentialTradeEngine:
         }
 
         state["current_state"] = cls.STATE_TRADE_CLOSED
+        state["symbol"] = active_sym
         state["active_trade"] = None
         state["last_closed_trade"] = closed_summary
         state["today_trade_count"] = max(int(state.get("today_trade_count", 0)), t_num)
-        cls.save_state(state)
+        cls.save_state(state, symbol=active_sym)
 
         return {
             "success": True,
@@ -1876,14 +1955,14 @@ class SequentialTradeEngine:
         }
 
     @classmethod
-    def acknowledge_and_reset(cls) -> Dict[str, Any]:
+    def acknowledge_and_reset(cls, symbol: Optional[str] = None) -> Dict[str, Any]:
         """
         Rule 5: Wait for closure.
         User acknowledges closed trade outcome; transitions engine back to IDLE / SCANNING.
         """
-        state = cls.get_state()
+        state = cls.get_state(symbol=symbol)
         state["current_state"] = cls.STATE_IDLE
-        cls.save_state(state)
+        cls.save_state(state, symbol=symbol)
         return {
             "success": True,
             "msg": "✅ Trade acknowledged and logged. Engine is now in IDLE / SCANNING for next high-probability setup.",
@@ -1891,26 +1970,29 @@ class SequentialTradeEngine:
         }
 
     @classmethod
-    def get_running_trade_log_rows(cls) -> List[Dict[str, Any]]:
+    def get_running_trade_log_rows(cls, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Generates the EXACT running log table requested:
+        Generates the EXACT running log table requested for the active scrip:
         Trade # | Instrument | Planned Entry | Actual Groww Entry | Executed (Yes/No) | SL | Target | Status (Open / Target Hit / SL Hit) | P&L
         """
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        journal = TradeJournalManager.load_journal()
-        # Strictly RELIANCE trades for today
+        sym_kw = "ADANI" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
+        journal = TradeJournalManager.load_journal(symbol=sym_kw)
+
+        # Strictly trades for this symbol for today
         today_trades = [
             t for t in journal 
-            if t.get("date") == today_str and "RELIANCE" in str(t.get("trading_symbol", "")).upper()
+            if t.get("date") == today_str and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
         ]
-        # If no trades have been executed yet today, display recent verified trades from earlier sessions
+        # If no trades have been executed yet today, display recent verified trades from earlier sessions for this symbol
         is_prior_session = False
         if not today_trades:
             today_trades = [
                 t for t in journal 
-                if "RELIANCE" in str(t.get("trading_symbol", "")).upper()
+                if sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper()
             ][-5:]
-            is_prior_session = True
+            if today_trades:
+                is_prior_session = True
 
         rows = []
         for i, tr in enumerate(today_trades, 1):
@@ -1934,7 +2016,7 @@ class SequentialTradeEngine:
             rows.append({
                 "Trade #": trade_lbl,
                 "Date": tr.get("date", today_str),
-                "Instrument": tr.get("instrument") or tr.get("trading_symbol") or f"RELIANCE {tr.get('suggested_contract')}",
+                "Instrument": tr.get("instrument") or tr.get("trading_symbol") or f"{sym_kw} {tr.get('suggested_contract')}",
                 "Confluence": conf_str,
                 "Planned Entry": f"₹{float(tr.get('suggested_entry', 0.0)):.2f}",
                 "Actual Groww Entry": f"₹{float(tr.get('actual_entry_price', tr.get('entry_price', 0.0))):.2f}",
@@ -1946,35 +2028,36 @@ class SequentialTradeEngine:
             })
 
         # If there is currently an active trade genuinely executed on Groww and not yet closed in journal, append it
-        state = cls.get_state()
+        state = cls.get_state(symbol=symbol)
         curr_state = state.get("current_state")
         active = state.get("active_trade")
         if active and curr_state == cls.STATE_IN_TRADE and active.get("executed") == "Yes":
-            # Check if this active trade is already in rows by trade index or open status
-            t_idx = int(active.get("trade_num") or (len(rows) + 1))
-            already_in_rows = any(r.get("Trade #") == f"Trade {t_idx}" for r in rows)
-            if not already_in_rows:
-                act_entry = f"₹{float(active.get('actual_entry', 0.0)):.2f}"
-                status_lbl = "Open"
-                unreal = float(active.get("unrealized_pnl", 0.0))
-                pnl_lbl = f"{'+' if unreal >= 0 else ''}₹{unreal:,.2f} (Live)"
-                executed_lbl = "Yes"
-                conf_act = active.get("confluence_score") or active.get("confluence") or 75.0
-                conf_act_str = f"{float(conf_act):.1f}%"
+            active_inst = str(active.get("instrument", "")) + " " + str(active.get("contract", ""))
+            if sym_kw in active_inst.upper():
+                t_idx = int(active.get("trade_num") or (len(rows) + 1))
+                already_in_rows = any(r.get("Trade #") == f"Trade {t_idx}" for r in rows)
+                if not already_in_rows:
+                    act_entry = f"₹{float(active.get('actual_entry', 0.0)):.2f}"
+                    status_lbl = "Open"
+                    unreal = float(active.get("unrealized_pnl", 0.0))
+                    pnl_lbl = f"{'+' if unreal >= 0 else ''}₹{unreal:,.2f} (Live)"
+                    executed_lbl = "Yes"
+                    conf_act = active.get("confluence_score") or active.get("confluence") or 75.0
+                    conf_act_str = f"{float(conf_act):.1f}%"
 
-                rows.append({
-                    "Trade #": f"Trade {t_idx}",
-                    "Date": today_str,
-                    "Instrument": active.get("instrument", active.get("contract", "")),
-                    "Confluence": conf_act_str,
-                    "Planned Entry": f"₹{float(active.get('planned_entry', 0.0)):.2f}",
-                    "Actual Groww Entry": act_entry,
-                    "Executed (Yes/No)": executed_lbl,
-                    "SL": f"₹{float(active.get('sl', 0.0)):.2f}",
-                    "Target": f"₹{float(active.get('target', 0.0)):.2f}",
-                    "Status": status_lbl,
-                    "P&L": pnl_lbl
-                })
+                    rows.append({
+                        "Trade #": f"Trade {t_idx}",
+                        "Date": today_str,
+                        "Instrument": active.get("instrument", active.get("contract", "")),
+                        "Confluence": conf_act_str,
+                        "Planned Entry": f"₹{float(active.get('planned_entry', 0.0)):.2f}",
+                        "Actual Groww Entry": act_entry,
+                        "Executed (Yes/No)": executed_lbl,
+                        "SL": f"₹{float(active.get('sl', 0.0)):.2f}",
+                        "Target": f"₹{float(active.get('target', 0.0)):.2f}",
+                        "Status": status_lbl,
+                        "P&L": pnl_lbl
+                    })
 
         return rows
 
