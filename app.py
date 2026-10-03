@@ -4063,11 +4063,12 @@ if df is not None and not df.empty:
     
     # Ground spot strictly on authentic Groww / NSE official data
     is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
+    from groww_market_feed import GrowwMarketFeed
+    gw_spot_data = GrowwMarketFeed.get_instance().get_live_spot_data(symbol="ADANIENT" if is_adani_active else "RELIANCE")
+    gw_live_spot = gw_spot_data.get("spot_ltp", 2816.80 if is_adani_active else 1226.00)
     if is_adani_active:
-        spot = float(latest['Close'])
+        spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) > 2000) else float(latest['Close'])
     else:
-        from groww_market_feed import GrowwMarketFeed
-        gw_live_spot = GrowwMarketFeed.get_instance().get_reliance_live_data().get("spot_ltp", 1226.00)
         spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) < 2000) else float(latest['Close'])
 
     # Strike Pinning & Dynamic Dual ATM Corridor Resolution
@@ -4111,8 +4112,8 @@ if df is not None and not df.empty:
     today_dt = expiry_plan.get("today_dt", datetime.now(IST))
 
     # Live Option Contract Volume & OI Telemetry (Center on Active Selected Strike)
-    opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=is_rescan)
-    chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=is_rescan)
+    opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=is_rescan, symbol=scrip_symbol)
+    chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=is_rescan, symbol=scrip_symbol)
 
     # Option Chain OI Walls & Telemetry
     call_wall = float(chain_oi.get("call_wall", atm_strike + 20))
@@ -5732,11 +5733,11 @@ if df is not None and not df.empty:
             active_ltp = float(current_option_ltp if current_option_ltp > 0 else active_trade.get("actual_entry", 30.0))
             if groww_feed.is_connected:
                 try:
-                    resolved_ltp = groww_feed.get_option_contract_ltp(active_contract)
+                    resolved_ltp = groww_feed.get_option_contract_ltp(active_contract, symbol=scrip_symbol)
                     if resolved_ltp and resolved_ltp > 0:
                         active_ltp = float(resolved_ltp)
                     else:
-                        gw_chain_live = groww_feed.get_reliance_live_option_chain()
+                        gw_chain_live = groww_feed.get_live_option_chain(symbol=scrip_symbol)
                         if gw_chain_live:
                             for rw in gw_chain_live:
                                 if abs(rw.get("strike", 0) - active_trade.get("strike", atm_strike)) < 0.5:
@@ -7190,8 +7191,8 @@ if df is not None and not df.empty:
             c1_live_ltp = float(high_data['put_ltp'])
             c2_live_ltp = float(low_data['put_ltp'])
             try:
-                gw_chain_fresh = GrowwMarketFeed.get_instance().get_reliance_live_option_chain()
-                if gw_chain_fresh and scrip_symbol != "ADANIENT":
+                gw_chain_fresh = GrowwMarketFeed.get_instance().get_live_option_chain(symbol=scrip_symbol)
+                if gw_chain_fresh:
                     for row in gw_chain_fresh:
                         if abs(row.get("strike", 0) - upper_atm) < 0.5 and row.get("put_ltp"):
                             c1_live_ltp = float(row["put_ltp"])
@@ -7247,8 +7248,8 @@ if df is not None and not df.empty:
             c1_live_ltp = float(low_data['call_ltp'])
             c2_live_ltp = float(high_data['call_ltp'])
             try:
-                gw_chain_fresh = GrowwMarketFeed.get_instance().get_reliance_live_option_chain()
-                if gw_chain_fresh and scrip_symbol != "ADANIENT":
+                gw_chain_fresh = GrowwMarketFeed.get_instance().get_live_option_chain(symbol=scrip_symbol)
+                if gw_chain_fresh:
                     for row in gw_chain_fresh:
                         if abs(row.get("strike", 0) - lower_atm) < 0.5 and row.get("call_ltp"):
                             c1_live_ltp = float(row["call_ltp"])
