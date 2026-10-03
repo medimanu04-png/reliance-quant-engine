@@ -13,7 +13,7 @@ import pytz
 from typing import Optional, List, Dict, Any, Tuple
 
 IST = pytz.timezone("Asia/Kolkata")
-from asset_config import get_asset_spec
+from asset_config import get_asset_spec, resolve_symbol
 from groww_market_feed import GrowwMarketFeed
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier

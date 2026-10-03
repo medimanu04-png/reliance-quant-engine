@@ -21,7 +21,7 @@ import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
 logger = logging.getLogger(__name__)
-from asset_config import get_asset_spec
+from asset_config import get_asset_spec, resolve_symbol
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 JOURNAL_FILE = os.path.join(BASE_DIR, "daily_trade_journal.json")

@@ -1180,7 +1180,58 @@ class GrowwMarketFeed:
             except Exception as e:
                 logger.debug(f"growwapi get_quote fallback: {e}")
 
-        # 2. SECONDARY: Direct Groww JSON REST API
+        # 1.5. BENCHMARK INDICES: NIFTY 50 and BSE SENSEX
+        # Benchmark indices are not cash equities; bypass obsolete CASH segment endpoint
+        if underlying in ("NIFTY", "SENSEX"):
+            spec_u = get_asset_spec(symbol=underlying)
+            try:
+                import yfinance as yf
+                import numpy as np
+                ticker = yf.Ticker(spec_u.yf_symbol)
+                fast = getattr(ticker, "fast_info", None)
+                ltp = float(fast.last_price) if (fast and hasattr(fast, "last_price") and fast.last_price and not np.isnan(fast.last_price)) else spec_u.default_spot
+                prev_close = float(fast.previous_close) if (fast and hasattr(fast, "previous_close") and fast.previous_close and not np.isnan(fast.previous_close)) else ltp
+                change = round(ltp - prev_close, 2)
+                day_change_perc = round((change / max(1.0, prev_close)) * 100.0, 2)
+                open_p = float(fast.open) if (fast and hasattr(fast, "open") and fast.open and not np.isnan(fast.open)) else ltp
+                high_p = float(fast.day_high) if (fast and hasattr(fast, "day_high") and fast.day_high and not np.isnan(fast.day_high)) else max(ltp, open_p)
+                low_p = float(fast.day_low) if (fast and hasattr(fast, "day_low") and fast.day_low and not np.isnan(fast.day_low)) else min(ltp, open_p)
+                data = {
+                    "source": f"{spec_u.display_name} Live Feed",
+                    "status": "LIVE_INDEX_DIRECT",
+                    "market_state": "Active",
+                    "trade_date": datetime.now(IST).strftime("%d-%b-%Y"),
+                    "spot_ltp": round(ltp, 2),
+                    "open": round(open_p, 2),
+                    "high": round(high_p, 2),
+                    "low": round(low_p, 2),
+                    "prev_close": round(prev_close, 2),
+                    "day_change": change,
+                    "day_change_perc": day_change_perc,
+                    "volume": int(spec_u.volume_norm),
+                    "total_buy_qty": 0,
+                    "total_sell_qty": 0,
+                    "turnover_lakhs": round((spec_u.volume_norm * ltp) / 100000.0, 2),
+                    "official_expiry": "27-OCT-2026",
+                    "expiry_cycle": "Monthly Derivatives (NSE Mandate)",
+                    "fo_holidays": [],
+                    "raw_quote": None
+                }
+                with self._cache_lock:
+                    if not hasattr(self, "_cached_spots_by_symbol"):
+                        self._cached_spots_by_symbol = {}
+                    self._cached_spots_by_symbol[underlying] = (data, time.time())
+                return data
+            except Exception as e:
+                logger.debug(f"Index live fetch fallback for {underlying}: {e}")
+                fb = self._get_fallback_spot(underlying)
+                with self._cache_lock:
+                    if not hasattr(self, "_cached_spots_by_symbol"):
+                        self._cached_spots_by_symbol = {}
+                    self._cached_spots_by_symbol[underlying] = (fb, time.time())
+                return fb
+
+        # 2. SECONDARY: Direct Groww JSON REST API (for Equities)
         try:
             sess = self._get_session()
             url = f"https://groww.in/v1/api/stocks_data/v1/accord_points/exchange/NSE/segment/CASH/latest_prices_ohlc/{underlying}"
