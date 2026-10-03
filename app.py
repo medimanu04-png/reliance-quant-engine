@@ -30,22 +30,29 @@ st.set_page_config(
 )
 
 p_home = st.Page(lambda: None, title="Market Overview", icon="🏠", url_path="", default=True)
+p_nifty = st.Page(lambda: None, title="Nifty 50 Quant Desk", icon="📈", url_path="Nifty")
+p_sensex = st.Page(lambda: None, title="Sensex Quant Desk", icon="🏛️", url_path="Sensex")
 p_reliance = st.Page(lambda: None, title="Reliance Quant Desk", icon="⚡", url_path="Reliance")
 p_adani = st.Page(lambda: None, title="Adani Quant Desk", icon="🔥", url_path="Adani")
 
 pg = st.navigation({
     "Overview": [p_home],
-    "Quant Desks": [p_reliance, p_adani]
+    "Benchmark Index Desks": [p_nifty, p_sensex],
+    "Equity Stock Desks": [p_reliance, p_adani]
 })
 
 pg.run()
 active_route = getattr(pg, "url_path", "")
 
-# Synchronize query parameters (?stock=Adani or ?stock=Reliance)
+# Synchronize query parameters (?stock=Nifty, ?stock=Sensex, ?stock=Adani, ?stock=Reliance)
 q_stock = st.query_params.get("stock") or st.query_params.get("scrip")
 if q_stock:
     q_str = str(q_stock).upper()
-    if "ADANI" in q_str and active_route != "Adani":
+    if "SENSEX" in q_str and active_route != "Sensex":
+        st.switch_page(p_sensex)
+    elif "NIFTY" in q_str and active_route != "Nifty":
+        st.switch_page(p_nifty)
+    elif "ADANI" in q_str and active_route != "Adani":
         st.switch_page(p_adani)
     elif "RELIANCE" in q_str and active_route != "Reliance":
         st.switch_page(p_reliance)
@@ -494,6 +501,14 @@ st.markdown("""
     .tile-adani:hover {
         border-color: #FBBF24 !important;
         box-shadow: 0 10px 30px rgba(245, 158, 11, 0.28) !important;
+    }
+    .tile-nifty:hover {
+        border-color: #10B981 !important;
+        box-shadow: 0 10px 30px rgba(16, 185, 129, 0.28) !important;
+    }
+    .tile-sensex:hover {
+        border-color: #A855F7 !important;
+        box-shadow: 0 10px 30px rgba(168, 85, 247, 0.28) !important;
     }
 
     /* Embedded HTML Dashboards */
@@ -1400,15 +1415,94 @@ if active_route == "":
             </span>
         </div>
         <span style="font-size: 0.76rem; color: #94A3B8;">
-            Click any tile to launch desk in a new tab (<b style="color: #38BDF8;">/Reliance</b> or <b style="color: #FBBF24;">/Adani</b>)
+            Click any tile to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>, <b style="color: #38BDF8;">/Reliance</b>, <b style="color: #FBBF24;">/Adani</b>)
         </span>
     </div>
     """)
-    col_d1, col_d2 = st.columns(2)
+
+    # Row 1: Benchmark Index Quant Desks
+    col_idx1, col_idx2 = st.columns(2)
+    spec_nifty_hp = get_asset_spec("NIFTY")
+    spec_sensex_hp = get_asset_spec("SENSEX")
+
+    with col_idx1:
+        st.html(f"""
+        <a href="./Nifty" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+            <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">📈 NIFTY 50 QUANT DESK</span>
+                        <span style="background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_nifty_hp.lot_size} QTY/LOT</span>
+                    </div>
+                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
+                        Institutional Benchmark F&O Engine for <b style="color: #10B981;">NIFTY 50</b>. Calibrated with Multi-Index Confluence, 50-Pt Strike Corridor & Escalator.
+                    </p>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_nifty_hp.target_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_nifty_hp.sl_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_nifty_hp.min_confluence_gate:.0f}%</div>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 8px; font-size: 0.74rem; color: #10B981; font-weight: 700;">
+                    <span>Benchmark Execution Terminal</span>
+                    <span>Launch Desk in New Tab ↗</span>
+                </div>
+            </div>
+        </a>
+        """)
+
+    with col_idx2:
+        st.html(f"""
+        <a href="./Sensex" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+            <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid rgba(168, 85, 247, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🏛️ BSE SENSEX QUANT DESK</span>
+                        <span style="background: rgba(168, 85, 247, 0.15); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_sensex_hp.lot_size} QTY/LOT</span>
+                    </div>
+                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
+                        Institutional Benchmark F&O Engine for <b style="color: #C084FC;">BSE SENSEX 30</b>. 100-Pt Strike Intervals with 2:1 Asymmetric Volatility Runner.
+                    </p>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_sensex_hp.target_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_sensex_hp.sl_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_sensex_hp.min_confluence_gate:.0f}%</div>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 8px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
+                    <span>Benchmark Execution Terminal</span>
+                    <span>Launch Desk in New Tab ↗</span>
+                </div>
+            </div>
+        </a>
+        """)
+
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+
+    # Row 2: High-Conviction Equity F&O Desks
+    col_eq1, col_eq2 = st.columns(2)
     spec_rel_hp = get_asset_spec("RELIANCE")
     spec_ada_hp = get_asset_spec("ADANIENT")
-    
-    with col_d1:
+
+    with col_eq1:
         st.html(f"""
         <a href="./Reliance" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-reliance" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
@@ -1443,7 +1537,7 @@ if active_route == "":
         </a>
         """)
 
-    with col_d2:
+    with col_eq2:
         st.html(f"""
         <a href="./Adani" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-adani" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
@@ -1619,6 +1713,10 @@ if active_route == "Reliance":
     forced_choice = "RELIANCE"
 elif active_route == "Adani":
     forced_choice = "ADANI ENTERPRISES"
+elif active_route == "Nifty":
+    forced_choice = "NIFTY 50"
+elif active_route == "Sensex":
+    forced_choice = "BSE SENSEX"
 else:
     forced_choice = st.session_state.get("selected_scrip", "RELIANCE")
 
@@ -1627,21 +1725,47 @@ st.session_state["selected_scrip"] = forced_choice
 if st.sidebar.button("🏠 ← Return to Market Hub (Homepage)", use_container_width=True, key="sb_btn_return_home"):
     st.switch_page(p_home)
 
+scrip_options = ["NIFTY 50", "BSE SENSEX", "RELIANCE", "ADANI ENTERPRISES"]
+scrip_idx = scrip_options.index(forced_choice) if forced_choice in scrip_options else 2
+
 scrip_choice = st.sidebar.selectbox(
     "🎯 Active Trading Scrip",
-    ["RELIANCE", "ADANI ENTERPRISES"],
-    index=0 if forced_choice == "RELIANCE" else 1,
+    scrip_options,
+    index=scrip_idx,
     key="sb_scrip_selector"
 )
 
 # Auto-switch page URL when user toggles dropdown
-if scrip_choice == "ADANI ENTERPRISES" and active_route == "Reliance":
+if scrip_choice == "ADANI ENTERPRISES" and active_route != "Adani":
     st.switch_page(p_adani)
-elif scrip_choice == "RELIANCE" and active_route == "Adani":
+elif scrip_choice == "RELIANCE" and active_route != "Reliance":
     st.switch_page(p_reliance)
+elif scrip_choice == "NIFTY 50" and active_route != "Nifty":
+    st.switch_page(p_nifty)
+elif scrip_choice == "BSE SENSEX" and active_route != "Sensex":
+    st.switch_page(p_sensex)
 
 is_adani = (scrip_choice == "ADANI ENTERPRISES")
-scrip_symbol = "ADANIENT" if is_adani else "RELIANCE"
+is_nifty = (scrip_choice == "NIFTY 50")
+is_sensex = (scrip_choice == "BSE SENSEX")
+
+if is_nifty:
+    scrip_symbol = "NIFTY"
+    scrip_color = "#10B981"
+    scrip_accent = "rgba(16, 185, 129, 0.15)"
+elif is_sensex:
+    scrip_symbol = "SENSEX"
+    scrip_color = "#A855F7"
+    scrip_accent = "rgba(168, 85, 247, 0.15)"
+elif is_adani:
+    scrip_symbol = "ADANIENT"
+    scrip_color = "#F59E0B"
+    scrip_accent = "rgba(245, 158, 11, 0.15)"
+else:
+    scrip_symbol = "RELIANCE"
+    scrip_color = "#38BDF8"
+    scrip_accent = "rgba(56, 189, 248, 0.15)"
+
 spec = get_asset_spec(symbol=scrip_symbol)
 
 scrip_name = spec.display_name

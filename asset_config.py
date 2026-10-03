@@ -137,12 +137,102 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         escalator_t2_thresh=25.0,
         escalator_t1_lock=0.50,
         escalator_t2_lock=12.0
+    ),
+    "NIFTY": AssetSpec(
+        symbol="NIFTY",
+        display_name="NIFTY 50 QUANT DESK",
+        full_name="Nifty 50 Index (NSE)",
+        yf_symbol="^NSEI",
+        lot_size=25,
+        default_lots=2,
+        target_pts=35.0,
+        sl_pts=18.0,
+        be_pts=18.0,
+        profit_lock_trigger=28.0,
+        profit_lock_locked=15.0,
+        min_confluence_gate=72.0,
+        strike_step=50,
+        default_spot=25250.0,
+        default_strike=25250,
+        default_call_price=135.0,
+        default_put_price=125.0,
+        groww_company_slug="nifty-50",
+        volume_norm=15000000,
+        daily_sl_cap_rupees=2500.0,
+        tape_quantities=(25, 50, 75, 100),
+        beta=1.00,
+        limit_collar_pts=1.50,
+        estimated_tax_per_lot=45.0,
+        parent_sector="BENCHMARK INDEX",
+        total_capital=100000.0,
+        breakout_buffer=3.0,
+        trail_runner_offset=3.0,
+        bsm_sigma=0.135,
+        has_crude_coupling=False,
+        fallback_call_vol=250000,
+        fallback_put_vol=220000,
+        fallback_call_oi=1800000,
+        fallback_put_oi=1600000,
+        spread_threshold=0.03,
+        max_pain_gamma_divisor=50.0,
+        jitter_range=(-0.30, 0.40),
+        escalator_t1_thresh=18.0,
+        escalator_t2_thresh=28.0,
+        escalator_t1_lock=0.50,
+        escalator_t2_lock=15.0
+    ),
+    "SENSEX": AssetSpec(
+        symbol="SENSEX",
+        display_name="BSE SENSEX QUANT DESK",
+        full_name="BSE SENSEX 30 Index",
+        yf_symbol="^BSESN",
+        lot_size=10,
+        default_lots=2,
+        target_pts=120.0,
+        sl_pts=60.0,
+        be_pts=60.0,
+        profit_lock_trigger=95.0,
+        profit_lock_locked=50.0,
+        min_confluence_gate=72.0,
+        strike_step=100,
+        default_spot=82500.0,
+        default_strike=82500,
+        default_call_price=420.0,
+        default_put_price=390.0,
+        groww_company_slug="bse-sensex",
+        volume_norm=8000000,
+        daily_sl_cap_rupees=3000.0,
+        tape_quantities=(10, 20, 30, 40),
+        beta=1.00,
+        limit_collar_pts=5.0,
+        estimated_tax_per_lot=55.0,
+        parent_sector="BENCHMARK INDEX",
+        total_capital=120000.0,
+        breakout_buffer=10.0,
+        trail_runner_offset=10.0,
+        bsm_sigma=0.132,
+        has_crude_coupling=False,
+        fallback_call_vol=120000,
+        fallback_put_vol=110000,
+        fallback_call_oi=950000,
+        fallback_put_oi=880000,
+        spread_threshold=0.03,
+        max_pain_gamma_divisor=100.0,
+        jitter_range=(-0.80, 1.20),
+        escalator_t1_thresh=60.0,
+        escalator_t2_thresh=95.0,
+        escalator_t1_lock=2.0,
+        escalator_t2_lock=50.0
     )
 }
 
 def resolve_symbol(symbol: Optional[str] = None, contract: Optional[str] = None) -> str:
-    """Canonical resolver mapping any variant name to standard 'RELIANCE' or 'ADANIENT'."""
+    """Canonical resolver mapping any variant name to standard 'RELIANCE', 'ADANIENT', 'NIFTY', or 'SENSEX'."""
     text = f"{symbol or ''} {contract or ''}".upper()
+    if "SENSEX" in text or "BSESN" in text:
+        return "SENSEX"
+    if "NIFTY" in text or "NSEI" in text:
+        return "NIFTY"
     if "ADANI" in text:
         return "ADANIENT"
     return "RELIANCE"
