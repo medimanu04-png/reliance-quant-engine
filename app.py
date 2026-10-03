@@ -1118,6 +1118,12 @@ def render_auto_rescan_controller():
         st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
+    cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
+    cur_sel_adani = (cur_sel_scrip == "ADANI ENTERPRISES")
+    cur_sel_sym = "ADANIENT.NS" if cur_sel_adani else "RELIANCE.NS"
+    cur_sel_lot = 300 if cur_sel_adani else 500
+    cur_sel_tgt = 35.0 if cur_sel_adani else 10.0
+    cur_sel_sl = 15.0 if cur_sel_adani else 5.0
     st.html(f"""
         <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
             <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
@@ -1125,9 +1131,9 @@ def render_auto_rescan_controller():
             <span>⚡ <b style="color: #34D399;">~4ms</b></span>
         </div>
         <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-            <span>⚡ <b style="color: #FFFFFF;">RELIANCE.NS</b> (250 Qty/Lot)</span>
-            <span>🎯 Target: <b style="color: #34D399;">+10.0 pts</b></span>
-            <span>🛑 SL: <b style="color: #F87171;">-4.5 pts</b></span>
+            <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot)</span>
+            <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
+            <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
             <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
         </div>
     """)
@@ -1881,25 +1887,24 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
     symbol_yf = "ADANIENT.NS" if is_adani else "RELIANCE.NS"
     cache_filename = "adanient_5m_cache.parquet" if is_adani else "reliance_5m_cache.parquet"
 
-    # 1. Try Groww official charting API first for Reliance (fastest, authentic NSE intraday candles, ~60ms)
-    if not is_adani:
+    # 1. Fast local parquet cache (0-latency instant load < 5ms)
+    cache_file = os.path.join(os.path.dirname(__file__), "data_cache", cache_filename)
+    if os.path.exists(cache_file):
+        try:
+            c_df = pd.read_parquet(cache_file)
+            if not c_df.empty and len(c_df) >= 30:
+                df = c_df.iloc[-120:].copy()
+        except Exception:
+            pass
+
+    # 2. Try Groww official charting API for Reliance if parquet is unavailable
+    if (df is None or df.empty or len(df) < 30) and not is_adani:
         try:
             from groww_market_feed import GrowwMarketFeed
             gw_feed = GrowwMarketFeed.get_instance()
             df = gw_feed.get_reliance_historical_candles(interval=interval, days=5)
         except Exception:
             df = pd.DataFrame()
-
-    # 2. Fast local parquet cache fallback (0-latency instant load)
-    if df is None or df.empty or len(df) < 30:
-        cache_file = os.path.join(os.path.dirname(__file__), "data_cache", cache_filename)
-        if os.path.exists(cache_file):
-            try:
-                c_df = pd.read_parquet(cache_file)
-                if not c_df.empty and len(c_df) >= 30:
-                    df = c_df.iloc[-120:].copy()
-            except Exception:
-                pass
 
     # 3. Secondary fallback via yfinance
     if df is None or df.empty or len(df) < 30:
@@ -1909,7 +1914,7 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
                 return t.history(period="5d", interval=interval)
             with ThreadPoolExecutor(max_workers=1) as ex:
                 fut = ex.submit(_get_hist)
-                df = fut.result(timeout=1.5)  # Fast timeout prevents UI stalls
+                df = fut.result(timeout=1.0)  # Fast timeout prevents UI stalls
         except Exception:
             df = pd.DataFrame()
 
