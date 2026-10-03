@@ -486,11 +486,12 @@ class TradeJournalManager:
                 confluence = float(existing.get("confluence_score", 78.5))
                 trade_type = existing.get("type", "BUY PE" if "PE" in sym else "BUY CE")
             else:
-                # Find matching signal recommendation that was issued BEFORE this trade's entry time
                 matched_signal = SignalTracker.find_matching_signal(symbol=sym, actual_entry_time=actual_entry_time_str, date_str=today_str)
                 if matched_signal:
                     trade_given_time = matched_signal.get("trade_given_time", actual_entry_time_str)
-                    sugg_contract = matched_signal.get("full_contract") or f"{sym_kw} {matched_signal.get('strike', spec_exec.default_strike)} {matched_signal.get('contract_type', 'PE')} ({matched_signal.get('expiry', '27-OCT-2026')})"
+                    from nse_data_fetcher import NSEIndiaFetcher
+                    default_exp = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=sym_kw)["selected_expiry"]
+                    sugg_contract = matched_signal.get("full_contract") or f"{sym_kw} {matched_signal.get('strike', spec_exec.default_strike)} {matched_signal.get('contract_type', 'PE')} ({matched_signal.get('expiry', default_exp)})"
                     sugg_entry = float(matched_signal.get("suggested_entry", entry_p))
                     sugg_exit = float(matched_signal.get("suggested_exit", round(sugg_entry + spec_exec.target_pts, 2)))
                     sugg_sl = float(matched_signal.get("suggested_sl", round(max(0.05, sugg_entry - spec_exec.sl_pts), 2)))

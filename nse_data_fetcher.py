@@ -114,14 +114,12 @@ class NSEIndiaFetcher:
             "prev_close": spec.default_spot,
             "volume": spec.volume_norm,
             "turnover_lakhs": round((spec.volume_norm * spec.default_spot) / 100000.0, 2),
-            "official_expiry": "27-OCT-2026",
-            "expiry_cycle": "Monthly Derivatives (NSE Mandate)",
+            "official_expiry": cls.compute_official_expiry([], symbol=sym),
+            "expiry_cycle": "Weekly Derivatives" if sym in ("NIFTY", "SENSEX") else "Monthly Derivatives (NSE Mandate)",
             "fo_holidays": [],
             "raw_quote": None
         }
 
-        # Fast fallback if Groww feed not initialized
-        result["official_expiry"] = cls.compute_official_expiry([])
         setattr(cls, cache_attr, result)
         setattr(cls, time_attr, now)
         return result
@@ -174,16 +172,52 @@ class NSEIndiaFetcher:
         return cnt, days
 
     @classmethod
+    def get_nearest_weekly_expiry(cls, today_dt: datetime, target_weekday: int = 3, fo_holidays: List[str] = None) -> datetime:
+        """
+        Determines the current week's expiry date for index derivatives:
+        - target_weekday: 3 for Thursday (NIFTY 50), 4 for Friday (BSE SENSEX).
+        - If today is on or before expiry day during market hours (before 15:30 IST):
+            Current week's expiry is target_weekday of the current week.
+        - If today is after expiry day (or past 15:30 on expiry day):
+            Current week's expiry rolls to the next week's target_weekday.
+        - If the calculated expiry is an exchange holiday, it automatically shifts
+          backwards to the preceding active trading day (e.g. Thursday -> Wednesday).
+        """
+        if fo_holidays is None:
+            fo_holidays = []
+        from datetime import time as dtime
+        cur_weekday = today_dt.weekday()
+        if cur_weekday < target_weekday:
+            days_ahead = target_weekday - cur_weekday
+        elif cur_weekday == target_weekday:
+            if today_dt.time() <= dtime(15, 30):
+                days_ahead = 0
+            else:
+                days_ahead = 7
+        else:
+            days_ahead = 7 - (cur_weekday - target_weekday)
+
+        cand = today_dt + timedelta(days=days_ahead)
+        cand = datetime(cand.year, cand.month, cand.day)
+
+        while cand.strftime("%d-%b-%Y") in fo_holidays or cand.strftime("%Y-%m-%d") in fo_holidays or cand.weekday() in (5, 6):
+            cand -= timedelta(days=1)
+
+        return cand
+
+    @classmethod
     def resolve_dynamic_expiry_mandate(cls, today_dt: datetime = None, fo_holidays: List[str] = None, symbol: Optional[str] = None) -> Dict[str, Any]:
         """
-        Enforces Institutional 10-Day Expiry Rollover Rule (Theta Decay Avoidance Mandate):
-        - 1st 10 Trading Days of each new expiry cycle: Trade Current Month Expiry (Low theta decay buffer).
-        - Day 11 onwards (Last ~10 trading days before expiry): Dynamically ROLL OVER to Next Month Expiry
-          to completely eliminate rapid time erosion and dangerous near-expiry gamma expansion risk.
+        Resolves active F&O expiry mandate:
+        - For Indices (NIFTY 50, BSE SENSEX): Strictly trades the CURRENT WEEK'S EXPIRY
+          (Thursday for NIFTY, Friday for SENSEX) for peak intraday gamma responsiveness & contract depth.
+        - For Equities (RELIANCE, ADANIENT): Institutional 10-Day Expiry Rollover Rule (Theta Decay Avoidance Mandate):
+          1st 10 Trading Days of cycle: Trade Current Month Expiry (Last Tuesday of Month).
+          Day 11 onwards: Dynamically roll over to Next Month Expiry.
         Automatically updates dynamically every single day based on live calendar progression.
         """
         now_ts = time.time()
-        sym = (symbol or "").upper().strip() or "RELIANCE"
+        sym = resolve_symbol(symbol=symbol)
         cache_attr = f"_cached_expiry_mandate_{sym}"
         time_attr = f"_last_expiry_calc_time_{sym}"
 
@@ -199,28 +233,39 @@ class NSEIndiaFetcher:
         if fo_holidays is None:
             fo_holidays = []
 
-        y, m = today_dt.year, today_dt.month
-        exp_curr = cls.get_last_tuesday_of_month(y, m, fo_holidays)
+        is_index = sym in ("NIFTY", "SENSEX")
 
-        if today_dt.date() <= exp_curr.date():
-            # In the cycle leading up to exp_curr
-            prev_m = m - 1 if m > 1 else 12
-            prev_y = y if m > 1 else y - 1
-            exp_prev = cls.get_last_tuesday_of_month(prev_y, prev_m, fo_holidays)
-
-            next_m = m + 1 if m < 12 else 1
-            next_y = y if m < 12 else y + 1
-            exp_next = cls.get_last_tuesday_of_month(next_y, next_m, fo_holidays)
+        if is_index:
+            target_weekday = 3 if sym == "NIFTY" else 4
+            exp_curr = cls.get_nearest_weekly_expiry(today_dt, target_weekday=target_weekday, fo_holidays=fo_holidays)
+            exp_next = cls.get_nearest_weekly_expiry(exp_curr + timedelta(days=7), target_weekday=target_weekday, fo_holidays=fo_holidays)
+            cand_prev = exp_curr - timedelta(days=7)
+            while cand_prev.strftime("%d-%b-%Y") in fo_holidays or cand_prev.strftime("%Y-%m-%d") in fo_holidays or cand_prev.weekday() in (5, 6):
+                cand_prev -= timedelta(days=1)
+            exp_prev = cand_prev
         else:
-            # Past current month's expiry date; new cycle leading up to next month
-            exp_prev = exp_curr
-            next_m = m + 1 if m < 12 else 1
-            next_y = y if m < 12 else y + 1
-            exp_curr = cls.get_last_tuesday_of_month(next_y, next_m, fo_holidays)
+            y, m = today_dt.year, today_dt.month
+            exp_curr = cls.get_last_tuesday_of_month(y, m, fo_holidays)
 
-            far_m = next_m + 1 if next_m < 12 else 1
-            far_y = next_y if next_m < 12 else next_y + 1
-            exp_next = cls.get_last_tuesday_of_month(far_y, far_m, fo_holidays)
+            if today_dt.date() <= exp_curr.date():
+                # In the cycle leading up to exp_curr
+                prev_m = m - 1 if m > 1 else 12
+                prev_y = y if m > 1 else y - 1
+                exp_prev = cls.get_last_tuesday_of_month(prev_y, prev_m, fo_holidays)
+
+                next_m = m + 1 if m < 12 else 1
+                next_y = y if m < 12 else y + 1
+                exp_next = cls.get_last_tuesday_of_month(next_y, next_m, fo_holidays)
+            else:
+                # Past current month's expiry date; new cycle leading up to next month
+                exp_prev = exp_curr
+                next_m = m + 1 if m < 12 else 1
+                next_y = y if m < 12 else y + 1
+                exp_curr = cls.get_last_tuesday_of_month(next_y, next_m, fo_holidays)
+
+                far_m = next_m + 1 if next_m < 12 else 1
+                far_y = next_y if next_m < 12 else next_y + 1
+                exp_next = cls.get_last_tuesday_of_month(far_y, far_m, fo_holidays)
 
         # Seamlessly align with Groww Official Broker API listed expiries when connected
         try:
@@ -236,11 +281,10 @@ class NSEIndiaFetcher:
                     except Exception:
                         pass
                 fut_exp.sort()
-                if len(fut_exp) >= 2:
+                if fut_exp:
                     exp_curr = fut_exp[0]
-                    exp_next = fut_exp[1]
-                elif len(fut_exp) == 1:
-                    exp_curr = fut_exp[0]
+                    if len(fut_exp) >= 2:
+                        exp_next = fut_exp[1]
         except Exception:
             pass
 
@@ -253,7 +297,14 @@ class NSEIndiaFetcher:
         curr_str = exp_curr.strftime("%d-%b-%Y").upper()
         next_str = exp_next.strftime("%d-%b-%Y").upper()
 
-        if rem_trading_days >= 4:
+        if is_index:
+            active_expiry = exp_curr
+            phase = "CURRENT_WEEK_WEEKLY_MANDATE"
+            is_rollover = False
+            weekday_name = "Thursday" if sym == "NIFTY" else "Friday"
+            rule_badge = f"⚡ Current Week Weekly Expiry ({curr_str})"
+            rule_desc = f"Trading Current Week's {weekday_name} Expiry {curr_str} for {sym}: Prime gamma responsiveness, tightest bid-ask spread & peak weekly liquidity corridor."
+        elif rem_trading_days >= 4:
             active_expiry = exp_curr
             phase = "CURRENT_MONTH_HIGH_LIQUIDITY"
             is_rollover = False
@@ -284,16 +335,16 @@ class NSEIndiaFetcher:
             "is_rollover": is_rollover,
             "rule_badge": rule_badge,
             "rule_desc": rule_desc,
-            "dte": max(1, (active_expiry.date() - today_dt.date()).days)
+            "dte": max(0, (active_expiry.date() - today_dt.date()).days)
         }
         setattr(cls, cache_attr, result)
         setattr(cls, time_attr, now_ts)
         return result
 
     @classmethod
-    def compute_official_expiry(cls, fo_holidays: List[str] = None) -> str:
-        """Determines active expiry based on 10-day decay avoidance mandate."""
-        return cls.resolve_dynamic_expiry_mandate(fo_holidays=fo_holidays)["selected_expiry"]
+    def compute_official_expiry(cls, fo_holidays: List[str] = None, symbol: Optional[str] = None) -> str:
+        """Determines active expiry based on mandate."""
+        return cls.resolve_dynamic_expiry_mandate(fo_holidays=fo_holidays, symbol=symbol)["selected_expiry"]
 
     _cached_benchmarks = None
     _last_benchmark_time = 0
@@ -750,8 +801,8 @@ class NSEIndiaFetcher:
         # Micro-fluctuation on spot (+/- 0.30 pts)
         spot_tick = round(spot + rng.uniform(-0.25, 0.35), 2)
 
-        # Expiry parameters dynamically resolved via 10-day decay avoidance mandate
-        expiry_meta = cls.resolve_dynamic_expiry_mandate()
+        # Expiry parameters dynamically resolved via mandate
+        expiry_meta = cls.resolve_dynamic_expiry_mandate(symbol=sym)
         selected_expiry_str = expiry_meta["selected_expiry"]
         selected_iso = expiry_meta["selected_dt"].strftime("%Y-%m-%d")
         dte = expiry_meta["dte"]
@@ -759,7 +810,7 @@ class NSEIndiaFetcher:
         r = 0.0675
         sigma = spec.bsm_sigma
 
-        def compute_strike_metrics(k: int, base_c_override: float = 0.0, base_p_override: float = 0.0, base_c_oi_lots: int = 2415, base_p_oi_lots: int = 3599, c_oi_chg: float = 10.0, p_oi_chg: float = 10.0, delta_c_override: float = None, delta_p_override: float = None):
+        def compute_strike_metrics(k: int, base_c_override: float = 0.0, base_p_override: float = 0.0, base_c_oi_lots: int = 2415, base_p_oi_lots: int = 3599, c_oi_chg: float = 10.0, p_oi_chg: float = 10.0, delta_c_override: float = None, delta_p_override: float = None, call_vol_override: int = None, put_vol_override: int = None):
             # Black-Scholes Greeks
             d1 = (math.log(spot_tick / k) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
             d2 = d1 - sigma * math.sqrt(T)
@@ -784,9 +835,9 @@ class NSEIndiaFetcher:
             c_oi_shares = int(base_c_oi_lots * lot_size)
             p_oi_shares = int(base_p_oi_lots * lot_size)
 
-            # Realistic contract volume calibrated to live OI activity
-            c_vol = max(100, int(base_c_oi_lots * 0.78))
-            p_vol = max(100, int(base_p_oi_lots * 0.72))
+            # Authentic contract volume directly from Groww API
+            c_vol = call_vol_override if (call_vol_override is not None and call_vol_override > 0) else max(100, int(base_c_oi_lots * 0.78))
+            p_vol = put_vol_override if (put_vol_override is not None and put_vol_override > 0) else max(100, int(base_p_oi_lots * 0.72))
 
             c_oi_shift = round(c_oi_chg, 1)
             p_oi_shift = round(p_oi_chg, 1)
@@ -838,6 +889,8 @@ class NSEIndiaFetcher:
         gw_low_pe = 0.0
         gw_low_c_oi = max(1, spec.fallback_call_oi // spec.lot_size)
         gw_low_p_oi = max(1, spec.fallback_put_oi // spec.lot_size)
+        gw_low_c_vol = None
+        gw_low_p_vol = None
         gw_low_c_chg = 0.25
         gw_low_p_chg = -2.50
         gw_low_delta_c = None
@@ -847,6 +900,8 @@ class NSEIndiaFetcher:
         gw_high_pe = 0.0
         gw_high_c_oi = max(1, int((spec.fallback_call_oi * 0.9) // spec.lot_size))
         gw_high_p_oi = max(1, int((spec.fallback_put_oi * 0.9) // spec.lot_size))
+        gw_high_c_vol = None
+        gw_high_p_vol = None
         gw_high_c_chg = 0.15
         gw_high_p_chg = -2.50
         gw_high_delta_c = None
@@ -867,6 +922,10 @@ class NSEIndiaFetcher:
                             gw_low_c_oi = int(row["call_oi"])
                         if row.get("put_oi"):
                             gw_low_p_oi = int(row["put_oi"])
+                        if row.get("call_volume"):
+                            gw_low_c_vol = int(row["call_volume"])
+                        if row.get("put_volume"):
+                            gw_low_p_vol = int(row["put_volume"])
                         if row.get("call_close") and row["call_close"] > 0:
                             gw_low_c_chg = round((row["call_change"] / row["call_close"]) * 100.0, 1)
                         if row.get("put_close") and row["put_close"] > 0:
@@ -884,6 +943,10 @@ class NSEIndiaFetcher:
                             gw_high_c_oi = int(row["call_oi"])
                         if row.get("put_oi"):
                             gw_high_p_oi = int(row["put_oi"])
+                        if row.get("call_volume"):
+                            gw_high_c_vol = int(row["call_volume"])
+                        if row.get("put_volume"):
+                            gw_high_p_vol = int(row["put_volume"])
                         if row.get("call_close") and row["call_close"] > 0:
                             gw_high_c_chg = round((row["call_change"] / row["call_close"]) * 100.0, 1)
                         if row.get("put_close") and row["put_close"] > 0:
@@ -904,7 +967,9 @@ class NSEIndiaFetcher:
             c_oi_chg=gw_low_c_chg, 
             p_oi_chg=gw_low_p_chg,
             delta_c_override=gw_low_delta_c,
-            delta_p_override=gw_low_delta_p
+            delta_p_override=gw_low_delta_p,
+            call_vol_override=gw_low_c_vol,
+            put_vol_override=gw_low_p_vol
         )
         high_data = compute_strike_metrics(
             s_high, 
@@ -915,7 +980,9 @@ class NSEIndiaFetcher:
             c_oi_chg=gw_high_c_chg, 
             p_oi_chg=gw_high_p_chg,
             delta_c_override=gw_high_delta_c,
-            delta_p_override=gw_high_delta_p
+            delta_p_override=gw_high_delta_p,
+            call_vol_override=gw_high_c_vol,
+            put_vol_override=gw_high_p_vol
         )
 
         # Quantitative Best Strike Selection Algorithm:

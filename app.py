@@ -1725,22 +1725,29 @@ if active_route == "":
 # ==============================================================================
 # 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR (DEDICATED DESK MODE)
 # ==============================================================================
-# Route-Aware Active Scrip Resolution
+# Route-Aware Active Scrip Resolution (guarded to avoid clobbering dropdown on rerun)
 route_lower = (active_route or "").lower()
-if route_lower == "reliance":
-    forced_choice = "RELIANCE"
-elif route_lower == "adani":
-    forced_choice = "ADANI ENTERPRISES"
-elif route_lower == "nifty":
-    forced_choice = "NIFTY 50"
-elif route_lower == "sensex":
-    forced_choice = "BSE SENSEX"
-else:
-    forced_choice = st.session_state.get("selected_scrip", "RELIANCE")
+last_route = st.session_state.get("_last_route_visited")
 
-st.session_state["selected_scrip"] = forced_choice
-if route_lower in ("reliance", "adani", "nifty", "sensex"):
+if last_route != active_route:
+    # Route actually changed — force the scrip to match the new route
+    st.session_state["_last_route_visited"] = active_route
+    if route_lower == "reliance":
+        forced_choice = "RELIANCE"
+    elif route_lower == "adani":
+        forced_choice = "ADANI ENTERPRISES"
+    elif route_lower == "nifty":
+        forced_choice = "NIFTY 50"
+    elif route_lower == "sensex":
+        forced_choice = "BSE SENSEX"
+    else:
+        forced_choice = st.session_state.get("selected_scrip", "RELIANCE")
+    st.session_state["selected_scrip"] = forced_choice
     st.session_state["sb_scrip_selector"] = forced_choice
+else:
+    # Same route as before — respect the user's dropdown selection
+    forced_choice = st.session_state.get("sb_scrip_selector") or st.session_state.get("selected_scrip", "RELIANCE")
+    st.session_state["selected_scrip"] = forced_choice
 
 if st.sidebar.button("🏠 ← Return to Market Hub (Homepage)", use_container_width=True, key="sb_btn_return_home"):
     st.switch_page(p_home)
@@ -1805,6 +1812,10 @@ scrip_target_pts = spec.target_pts
 scrip_sl_pts = spec.sl_pts
 scrip_be_pts = spec.be_pts
 scrip_min_gate = spec.min_confluence_gate
+
+# Dynamically resolve active expiry mandate for currently active ticker (Weekly for NIFTY/SENSEX, Monthly for Equities)
+expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=scrip_symbol)
+active_mandate_expiry = expiry_plan["selected_expiry"]
 
 # Sync active scoped values to active keys so switching scrips never cross-pollinates
 st.session_state["live_broker_ltp"] = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
@@ -2763,7 +2774,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_lot_size = tp.get("lot_size", spec_plan.lot_size)
     plan_qty = tp.get("total_trading_qty", plan_lot_size * plan_num_lots)
     gw_slug = spec_plan.groww_company_slug
-    plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
+    plan_expiry = tp.get("expiry_date_str") or NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=plan_sym)["selected_expiry"]
     plan_score = tp.get("dominant_score", 75.0)
     plan_gate = tp.get("min_hit_percentage", 75.0)
     plan_dir = tp.get("dominant_side", "BULLISH (CALL / CE)")
@@ -4104,11 +4115,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
 # ==============================================================================
 def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, is_streaming: bool = True, trade_plan: dict = None):
     tp = trade_plan or {}
-    plan_contract_type = tp.get("recommended_contract_type", "CE")
-    plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
-    is_pe_dominant = (plan_contract_type == "PE")
-
     cur_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
+    plan_expiry = tp.get("expiry_date_str") or NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=cur_sym)["selected_expiry"]
+    plan_contract_type = tp.get("recommended_contract_type") or tp.get("contract_type") or ("PE" if tp.get("action") == "BUY_PE" or tp.get("bias") == "BEARISH" else "CE")
+    is_pe_dominant = (plan_contract_type == "PE")
     dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=cur_sym)
     dyn_atm = dyn_corridor["lower_strike"]
 
@@ -4182,106 +4192,134 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     # Dynamic styling and badges based on whether CE or PE is dominant
     if is_pe_dominant:
         c1_border = "1px solid #334155"
-        c1_badge = '<span style="font-size: 0.70rem; background: #1E293B; color: #94A3B8; padding: 2px 8px; border-radius: 4px; font-weight: 700;">LOWER CALL</span>'
+        c1_badge = '<span style="font-size: 0.68rem; background: #1E293B; color: #94A3B8; padding: 2px 7px; border-radius: 4px; font-weight: 700; white-space: nowrap; border: 1px solid #334155;">LOWER CALL</span>'
         c2_border = "1px solid #475569"
-        c2_badge = '<span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SUPPORT FLOOR</span>'
+        c2_badge = '<span style="font-size: 0.68rem; background: #334155; color: #F8FAFC; padding: 2px 7px; border-radius: 4px; font-weight: 700; white-space: nowrap; border: 1px solid #475569;">SUPPORT FLOOR</span>'
         c3_border = "1px solid #334155"
-        c3_badge = '<span style="font-size: 0.70rem; background: #1E293B; color: #94A3B8; padding: 2px 8px; border-radius: 4px; font-weight: 700;">CALL RESISTANCE</span>'
+        c3_badge = '<span style="font-size: 0.68rem; background: #1E293B; color: #94A3B8; padding: 2px 7px; border-radius: 4px; font-weight: 700; white-space: nowrap; border: 1px solid #334155;">CALL RESISTANCE</span>'
         c4_border = "2px solid #EF4444"
-        c4_badge = '<span style="font-size: 0.70rem; background: #DC2626; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 800;">🏆 BEST STRIKE (PE)</span>'
+        c4_badge = '<span style="font-size: 0.68rem; background: #DC2626; color: #FFFFFF; padding: 2px 7px; border-radius: 4px; font-weight: 800; white-space: nowrap; border: 1px solid #EF4444;">🏆 BEST STRIKE</span>'
     else:
         c1_border = "2px solid #10B981"
-        c1_badge = '<span style="font-size: 0.70rem; background: #059669; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 800;">🏆 BEST STRIKE</span>'
+        c1_badge = '<span style="font-size: 0.68rem; background: #059669; color: #FFFFFF; padding: 2px 7px; border-radius: 4px; font-weight: 800; white-space: nowrap; border: 1px solid #10B981;">🏆 BEST STRIKE</span>'
         c2_border = "1px solid #475569"
-        c2_badge = '<span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">SUPPORT FLOOR</span>'
+        c2_badge = '<span style="font-size: 0.68rem; background: #334155; color: #F8FAFC; padding: 2px 7px; border-radius: 4px; font-weight: 700; white-space: nowrap; border: 1px solid #475569;">SUPPORT FLOOR</span>'
         c3_border = "1px solid #0284C7"
-        c3_badge = '<span style="font-size: 0.70rem; background: #0C4A6E; color: #7DD3FC; border: 1px solid #0284C7; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER ATM</span>'
+        c3_badge = '<span style="font-size: 0.68rem; background: #0C4A6E; color: #7DD3FC; padding: 2px 7px; border-radius: 4px; font-weight: 700; white-space: nowrap; border: 1px solid #0284C7;">UPPER ATM</span>'
         c4_border = "1px solid #475569"
-        c4_badge = '<span style="font-size: 0.70rem; background: #334155; color: #F8FAFC; padding: 2px 8px; border-radius: 4px; font-weight: 700;">UPPER HEDGE</span>'
+        c4_badge = '<span style="font-size: 0.68rem; background: #334155; color: #F8FAFC; padding: 2px 7px; border-radius: 4px; font-weight: 700; white-space: nowrap; border: 1px solid #475569;">UPPER HEDGE</span>'
 
     # 4 Side-by-Side Dual ATM Corridor Cards
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
         st.html(f"""
-        <div style="background: #0F172A !important; border: {c1_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #34D399;">📞 {low['strike']} CE ({plan_expiry})</span>
-                {c1_badge}
+        <div style="background: #0F172A !important; border: {c1_border} !important; border-radius: 8px; padding: 12px 14px; min-height: 255px; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; height: 38px; margin-bottom: 6px;">
+                    <div>
+                        <div style="font-size: 0.95rem; font-weight: 800; color: #34D399; line-height: 1.2; white-space: nowrap;">📞 {low['strike']} CE</div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 600; line-height: 1.2; margin-top: 2px; white-space: nowrap;">Exp: {plan_expiry}</div>
+                    </div>
+                    <div style="white-space: nowrap; flex-shrink: 0;">
+                        {c1_badge}
+                    </div>
+                </div>
+                <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; line-height: 1.1; margin-bottom: 2px;">₹{low['call_ltp']:.2f}</div>
+                <div style="font-size: 0.72rem; color: #E2E8F0; height: 18px; line-height: 18px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Delta: <b style="color: #38BDF8;">{low['delta_ce']}</b> | Intrinsic: <b style="color: #34D399;">₹{low['intrinsic_ce']:.2f}</b></div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 6px 0 8px 0;">
+                <div style="font-size: 0.74rem; color: #F8FAFC; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Vol: <b style="color: #FFFFFF;">{low['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['call_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.74rem; color: #FBBF24; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">OI: <b style="color: #FDE68A;">{low['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['call_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.74rem; color: #34D399; font-weight: 700; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shift: {low['call_oi_change_pct']:+.1f}% (Squeeze Fuel)</div>
+                <div style="font-size: 0.74rem; color: #38BDF8; font-weight: 700; height: 18px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Spot Move to Target: <b style="color: #7DD3FC;">+{low['spot_move_needed_ce']} pts</b></div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{low['call_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{low['delta_ce']}</b> | Intrinsic: <b style="color: #34D399;">₹{low['intrinsic_ce']:.2f}</b></div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['call_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{low['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['call_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: {low['call_oi_change_pct']:+.1f}% (Squeeze Fuel)</div>
-            <div style="font-size: 0.74rem; color: #38BDF8; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #7DD3FC;">+{low['spot_move_needed_ce']} pts</b></div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #10B981; font-weight: 700; font-size: 0.65rem;">LIVE 0-DELAY</span>
+            <div style="font-size: 0.65rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; white-space: nowrap;">
+                <span>Source: <b style="color: #38BDF8;">Groww Live (0-Delay)</b></span>
+                <span style="color: #10B981; font-weight: 700; font-size: 0.62rem; letter-spacing: 0.4px;">LIVE 0-DELAY</span>
             </div>
         </div>
         """)
 
     with c2:
         st.html(f"""
-        <div style="background: #0F172A !important; border: {c2_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {low['strike']} PE ({plan_expiry})</span>
-                {c2_badge}
+        <div style="background: #0F172A !important; border: {c2_border} !important; border-radius: 8px; padding: 12px 14px; min-height: 255px; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; height: 38px; margin-bottom: 6px;">
+                    <div>
+                        <div style="font-size: 0.95rem; font-weight: 800; color: #C084FC; line-height: 1.2; white-space: nowrap;">🛡️ {low['strike']} PE</div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 600; line-height: 1.2; margin-top: 2px; white-space: nowrap;">Exp: {plan_expiry}</div>
+                    </div>
+                    <div style="white-space: nowrap; flex-shrink: 0;">
+                        {c2_badge}
+                    </div>
+                </div>
+                <div style="font-size: 1.65rem; font-weight: 800; color: #C084FC; line-height: 1.1; margin-bottom: 2px;">₹{low['put_ltp']:.2f}</div>
+                <div style="font-size: 0.72rem; color: #E2E8F0; height: 18px; line-height: 18px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Delta: <b style="color: #F472B6;">{low['delta_pe']}</b> | OTM Put</div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 6px 0 8px 0;">
+                <div style="font-size: 0.74rem; color: #F8FAFC; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Vol: <b style="color: #FFFFFF;">{low['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['put_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.74rem; color: #34D399; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">OI: <b style="color: #6EE7B7;">{low['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['put_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.74rem; color: #34D399; font-weight: 700; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shift: {low['put_oi_change_pct']:+.1f}% (Put Writing)</div>
+                <div style="font-size: 0.74rem; color: #C084FC; font-weight: 700; height: 18px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Spot Move to Target: <b style="color: #E9D5FF;">-{low['spot_move_needed_pe']} pts</b></div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{low['put_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{low['delta_pe']}</b> | OTM Put</div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{low['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{low['put_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{low['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{low['put_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: {low['put_oi_change_pct']:+.1f}% (Put Writing)</div>
-            <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">Solidified Support Floor</div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #10B981; font-weight: 700; font-size: 0.65rem;">LIVE 0-DELAY</span>
+            <div style="font-size: 0.65rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; white-space: nowrap;">
+                <span>Source: <b style="color: #C084FC;">Groww Live (0-Delay)</b></span>
+                <span style="color: #10B981; font-weight: 700; font-size: 0.62rem; letter-spacing: 0.4px;">LIVE 0-DELAY</span>
             </div>
         </div>
         """)
 
     with c3:
         st.html(f"""
-        <div style="background: #0F172A !important; border: {c3_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #38BDF8;">📞 {high['strike']} CE ({plan_expiry})</span>
-                {c3_badge}
+        <div style="background: #0F172A !important; border: {c3_border} !important; border-radius: 8px; padding: 12px 14px; min-height: 255px; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; height: 38px; margin-bottom: 6px;">
+                    <div>
+                        <div style="font-size: 0.95rem; font-weight: 800; color: #38BDF8; line-height: 1.2; white-space: nowrap;">📞 {high['strike']} CE</div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 600; line-height: 1.2; margin-top: 2px; white-space: nowrap;">Exp: {plan_expiry}</div>
+                    </div>
+                    <div style="white-space: nowrap; flex-shrink: 0;">
+                        {c3_badge}
+                    </div>
+                </div>
+                <div style="font-size: 1.65rem; font-weight: 800; color: #38BDF8; line-height: 1.1; margin-bottom: 2px;">₹{high['call_ltp']:.2f}</div>
+                <div style="font-size: 0.72rem; color: #E2E8F0; height: 18px; line-height: 18px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Delta: <b style="color: #38BDF8;">{high['delta_ce']}</b> | OTM Call</div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 6px 0 8px 0;">
+                <div style="font-size: 0.74rem; color: #F8FAFC; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Vol: <b style="color: #FFFFFF;">{high['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['call_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.74rem; color: #FBBF24; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">OI: <b style="color: #FDE68A;">{high['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['call_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.74rem; color: #38BDF8; font-weight: 700; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shift: {high['call_oi_change_pct']:+.1f}% (Resistance)</div>
+                <div style="font-size: 0.74rem; color: #FBBF24; font-weight: 700; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Spot Move to Target: <b style="color: #FDE68A;">+{high['spot_move_needed_ce']} pts</b></div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #38BDF8;">₹{high['call_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #38BDF8;">{high['delta_ce']}</b> | OTM Call</div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['call_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['call_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #FBBF24; margin-bottom: 3px;">OI: <b style="color: #FDE68A;">{high['call_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['call_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #38BDF8; font-weight: 700; margin-top: 3px;">Shift: {high['call_oi_change_pct']:+.1f}% (Resistance)</div>
-            <div style="font-size: 0.74rem; color: #FBBF24; font-weight: 700; margin-top: 4px;">Spot Move to Target: <b style="color: #FDE68A;">+{high['spot_move_needed_ce']} pts</b></div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #10B981; font-weight: 700; font-size: 0.65rem;">LIVE 0-DELAY</span>
+            <div style="font-size: 0.65rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; white-space: nowrap;">
+                <span>Source: <b style="color: #38BDF8;">Groww Live (0-Delay)</b></span>
+                <span style="color: #10B981; font-weight: 700; font-size: 0.62rem; letter-spacing: 0.4px;">LIVE 0-DELAY</span>
             </div>
         </div>
         """)
 
     with c4:
         st.html(f"""
-        <div style="background: #0F172A !important; border: {c4_border} !important; border-radius: 8px; padding: 14px 16px; min-height: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 0.90rem; font-weight: 800; color: #C084FC;">🛡️ {high['strike']} PE ({plan_expiry})</span>
-                {c4_badge}
+        <div style="background: #0F172A !important; border: {c4_border} !important; border-radius: 8px; padding: 12px 14px; min-height: 255px; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.5); box-sizing: border-box;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; height: 38px; margin-bottom: 6px;">
+                    <div>
+                        <div style="font-size: 0.95rem; font-weight: 800; color: #C084FC; line-height: 1.2; white-space: nowrap;">🛡️ {high['strike']} PE</div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 600; line-height: 1.2; margin-top: 2px; white-space: nowrap;">Exp: {plan_expiry}</div>
+                    </div>
+                    <div style="white-space: nowrap; flex-shrink: 0;">
+                        {c4_badge}
+                    </div>
+                </div>
+                <div style="font-size: 1.65rem; font-weight: 800; color: #C084FC; line-height: 1.1; margin-bottom: 2px;">₹{high['put_ltp']:.2f}</div>
+                <div style="font-size: 0.72rem; color: #E2E8F0; height: 18px; line-height: 18px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Delta: <b style="color: #F472B6;">{high['delta_pe']}</b> | ITM Put</div>
+                <hr style="border: none; border-top: 1px solid #334155; margin: 6px 0 8px 0;">
+                <div style="font-size: 0.74rem; color: #F8FAFC; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Vol: <b style="color: #FFFFFF;">{high['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['put_volume_cr']:,.1f} Cr</span>)</div>
+                <div style="font-size: 0.74rem; color: #34D399; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">OI: <b style="color: #6EE7B7;">{high['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['put_oi_shares']:,} Sh</span>)</div>
+                <div style="font-size: 0.74rem; color: #34D399; font-weight: 700; height: 18px; line-height: 18px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shift: {high['put_oi_change_pct']:+.1f}% (Writing)</div>
+                <div style="font-size: 0.74rem; color: #C084FC; font-weight: 700; height: 18px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Spot Move to Target: <b style="color: #E9D5FF;">-{high['spot_move_needed_pe']} pts</b></div>
             </div>
-            <div style="font-size: 1.7rem; font-weight: 800; color: #C084FC;">₹{high['put_ltp']:.2f}</div>
-            <div style="font-size: 0.76rem; color: #E2E8F0; margin-bottom: 8px;">Delta: <b style="color: #F472B6;">{high['delta_pe']}</b> | ITM Put</div>
-            <hr style="border: none; border-top: 1px solid #334155; margin: 8px 0;">
-            <div style="font-size: 0.78rem; color: #F8FAFC; margin-bottom: 3px;">Vol: <b style="color: #FFFFFF;">{high['put_volume_contracts']:,} Lots</b> (<span style="color: #CBD5E1;">₹{high['put_volume_cr']:,.1f} Cr</span>)</div>
-            <div style="font-size: 0.78rem; color: #34D399; margin-bottom: 3px;">OI: <b style="color: #6EE7B7;">{high['put_oi_lots']:,} Lots</b> (<span style="color: #CBD5E1;">{high['put_oi_shares']:,} Sh</span>)</div>
-            <div style="font-size: 0.76rem; color: #34D399; font-weight: 700; margin-top: 3px;">Shift: {high['put_oi_change_pct']:+.1f}% (Writing)</div>
-            <div style="font-size: 0.74rem; color: #CBD5E1; font-weight: 600; margin-top: 4px;">In-The-Money Hedge Floor</div>
-            <div style="font-size: 0.67rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span>Source: <b style="color: #C084FC;">Groww Live Option Chain (0-Delay)</b></span>
-                <span style="color: #10B981; font-weight: 700; font-size: 0.65rem;">LIVE 0-DELAY</span>
+            <div style="font-size: 0.65rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; white-space: nowrap;">
+                <span>Source: <b style="color: #C084FC;">Groww Live (0-Delay)</b></span>
+                <span style="color: #10B981; font-weight: 700; font-size: 0.62rem; letter-spacing: 0.4px;">LIVE 0-DELAY</span>
             </div>
         </div>
         """)
@@ -4628,7 +4666,8 @@ if df is not None and not df.empty:
     high_data = atm_stream_eval["upper"]
     is_best_strk = (atm_strike == best_strike_meta["strike"])
 
-    # Dynamic 10-Day Expiry Protocol Resolution
+    # Dynamic Expiry Protocol Resolution (Weekly for Indices, 10-Day Rollover for Equities)
+    expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=scrip_symbol)
     expiry_dt = expiry_plan["selected_dt"]
     expiry_date_str = expiry_plan["selected_expiry"]
     today_dt = expiry_plan.get("today_dt", datetime.now(IST))
@@ -7173,6 +7212,7 @@ if df is not None and not df.empty:
         b1, b2, b3, b4 = st.columns(4)
         with b1:
             side_tag = "🟢 Call (CE)" if recommended_contract_type == "CE" else "🔴 Put (PE)"
+            contract_badge = "⚡ Weekly Active" if scrip_symbol in ("NIFTY", "SENSEX") else ("🛡️ 10D Active" if not expiry_plan.get("is_rollover") else "🛡️ Rollover Active")
             st.html(f"""
             <div class="exec-block-card">
                 <div>
@@ -7182,7 +7222,7 @@ if df is not None and not df.empty:
                     </div>
                     <div style="height: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
                         <span>Current: <b style="font-size: 1.08rem; font-weight: 800; color: #38BDF8;">₹{current_option_ltp:.2f}</b> <span style="font-size: 0.68rem; color: #94A3B8;">(LTP)</span></span>
-                        <span style="background: rgba(251, 191, 36, 0.12); color: #FBBF24; font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(251, 191, 36, 0.28);">🛡️ 10D Active</span>
+                        <span style="background: rgba(251, 191, 36, 0.12); color: #FBBF24; font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(251, 191, 36, 0.28);">{contract_badge}</span>
                     </div>
                 </div>
                 <div style="font-size: 0.72rem; color: #94A3B8; border-top: 1px solid #1E293B; padding-top: 8px; margin-top: 8px;">
@@ -9376,16 +9416,16 @@ if df is not None and not df.empty:
             "ORB-15 Anchored VWAP": f"Anchor: ₹{avwap_orb:.2f} (Distance: {avwap_diff:+.2f} pts). Status: {'Grade A+ Retest Support Holding' if avwap_retest_support else ('Expanding Above Anchor' if avwap_expanding_above else ('Failed Breakout Trap' if avwap_trap_failed else 'Pre-Breakout Anchor'))}.",
             "SuperTrend & EMA alignment": f"Triple EMA Stack (9: {latest['EMA_9']:.1f} > 20: {latest['EMA_20']:.1f} > 50: {latest['EMA_50']:.1f}); SuperTrend (10, 3) printed Green support at ₹{latest['SuperTrend']:.2f}. ADX={latest['ADX']:.1f} confirms strong directional momentum (+DI > -DI).",
             "Momentum (RSI/MACD)": f"RSI(14) at {latest['RSI']:.1f} in prime acceleration band; MACD line above signal with accelerating positive histogram; Fast Stochastic %K confirms zero bearish divergence.",
-            "Volume & OI Confirmation": f"Dual ATM Corridor active (₹{lower_atm} & ₹{upper_atm}): {scrip_symbol} {atm_strike} {recommended_contract_type} quantitatively ranked #1 Best Strike (Score: 96/100, Delta: {low_data['delta_ce']}, required spot move: +{low_data['spot_move_needed_ce']} pts within 15m ATR ₹{latest['ATR']:.2f}). Bollinger Bands (20, 2) expanding with bandwidth={latest['BB_Width']:.2f}%. Overall {scrip_name} stock volume is {nse_data['volume']:,} shares ({rel_vol:.2f}x 20-MA). For ATM {atm_strike} CE: volume is {opt_telemetry['call_volume']:,} contracts (₹{(opt_telemetry['call_volume'] * lot_size * current_option_ltp)/1e7:,.2f} Cr) with {opt_telemetry['call_oi']:,} shares in OI ({opt_telemetry['call_oi_change_pct']:+.1f}% short covering). For ATM {atm_strike} PE: volume is {opt_telemetry['put_volume']:,} contracts with {opt_telemetry['put_oi']:,} shares in OI ({opt_telemetry['put_oi_change_pct']:+.1f}% institutional floor writing). Strike PCR is {opt_telemetry['pcr_oi']:.2f} (OI) / {opt_telemetry['pcr_volume']:.2f} (Vol). Strictly Next Monthly Expiry ({expiry_date_str}) verified with Groww / NSE calendar. Global news and macro sentiment (+{news_sentiment_score:.1f}/10) validates institutional tailwind."
+            "Volume & OI Confirmation": f"Dual ATM Corridor active (₹{lower_atm} & ₹{upper_atm}): {scrip_symbol} {atm_strike} {recommended_contract_type} quantitatively ranked #1 Best Strike (Score: 96/100, Delta: {low_data['delta_ce']}, required spot move: +{low_data['spot_move_needed_ce']} pts within 15m ATR ₹{latest['ATR']:.2f}). Bollinger Bands (20, 2) expanding with bandwidth={latest['BB_Width']:.2f}%. Overall {scrip_name} stock volume is {nse_data['volume']:,} shares ({rel_vol:.2f}x 20-MA). For ATM {atm_strike} CE: volume is {opt_telemetry['call_volume']:,} contracts (₹{(opt_telemetry['call_volume'] * lot_size * current_option_ltp)/1e7:,.2f} Cr) with {opt_telemetry['call_oi']:,} shares in OI ({opt_telemetry['call_oi_change_pct']:+.1f}% short covering). For ATM {atm_strike} PE: volume is {opt_telemetry['put_volume']:,} contracts with {opt_telemetry['put_oi']:,} shares in OI ({opt_telemetry['put_oi_change_pct']:+.1f}% institutional floor writing). Strike PCR is {opt_telemetry['pcr_oi']:.2f} (OI) / {opt_telemetry['pcr_volume']:.2f} (Vol). {'Strictly Current Week Expiry' if scrip_symbol in ('NIFTY', 'SENSEX') else 'Strictly Next Monthly Expiry'} ({expiry_date_str}) verified with Groww / NSE calendar. Global news and macro sentiment (+{news_sentiment_score:.1f}/10) validates institutional tailwind."
         },
         "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else f"NONE — Stand down (Conditions do not satisfy {MIN_HIT_PERCENTAGE:.0f}% hit threshold or time gate)",
         "8.5. EXPIRY SELECTION & THETA DECAY PROTOCOL": {
-            "Mandate Rule": "10-Day Theta Decay Avoidance Protocol (1st 10 Trading Days: Current Expiry; Day 11+: Rolled to Next Month)",
-            "Cycle Trading Days Elapsed": f"Day {expiry_plan['trading_days_elapsed']} of Cycle",
-            "Current Month Expiry": expiry_plan['curr_expiry_str'],
+            "Mandate Rule": "Weekly Options Expiry Mandate (Current Week Thursday for NIFTY, Friday for SENSEX)" if scrip_symbol in ("NIFTY", "SENSEX") else "10-Day Theta Decay Avoidance Protocol (1st 10 Trading Days: Current Expiry; Day 11+: Rolled to Next Month)",
+            "Cycle Status": f"Current Week Trading Cycle ({expiry_plan.get('trading_days_remaining_curr', 3)} Trading Days to Weekly Expiry)" if scrip_symbol in ("NIFTY", "SENSEX") else f"Day {expiry_plan['trading_days_elapsed']} of Monthly Cycle",
+            "Current Expiry": expiry_plan['curr_expiry_str'],
             "Active Selected Expiry": expiry_plan['selected_expiry'],
             "Rollover Active": expiry_plan['is_rollover'],
-            "Protection Status": "PROTECTED: Rolled to Next Month Expiry (Zero Near-Expiry Theta Decay & Gamma Pin Risk)" if expiry_plan['is_rollover'] else "ACTIVE: 1st 10 Trading Days Window (Low Theta Decay Buffer)"
+            "Protection Status": f"ACTIVE: Current Week {scrip_symbol} Weekly Expiry ({expiry_date_str}) with Prime Intraday Liquidity" if scrip_symbol in ("NIFTY", "SENSEX") else ("PROTECTED: Rolled to Next Month Expiry (Zero Near-Expiry Theta Decay & Gamma Pin Risk)" if expiry_plan['is_rollover'] else "ACTIVE: 1st 10 Trading Days Window (Low Theta Decay Buffer)")
         },
         "9. DATA SOURCES & AUDIT TRAIL": {
             "Spot & Indices Telemetry": "Groww API (0-Delay Real-Time Feed)",

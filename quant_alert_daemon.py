@@ -531,8 +531,8 @@ class RelianceQuantAlertDaemon:
         active_trade = seq_state.get("active_trade")
 
         # Expiry String
-        expiry_info = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
-        expiry_date = expiry_info.get("selected_expiry", "27-OCT-2026")
+        expiry_info = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=sym)
+        expiry_date = expiry_info.get("selected_expiry", "06-OCT-2026" if sym == "NIFTY" else ("08-OCT-2026" if sym == "SENSEX" else "27-OCT-2026"))
 
         # ----------------------------------------------------------------------
         # STATE A: IN-TRADE (Monitoring Target, SL, and Trailing SL)
