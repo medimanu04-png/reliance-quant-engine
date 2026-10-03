@@ -479,40 +479,21 @@ st.markdown("""
         color: #38BDF8 !important;
     }
 
-    /* Instant Launchpad Buttons Alignment & Styling */
-    div.st-key-btn_launch_reliance_hp button,
-    div.st-key-btn_launch_adani_hp button {
-        height: 46px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        font-size: 0.88rem !important;
-        font-weight: 800 !important;
-        border-radius: 8px !important;
-        margin-top: 0px !important;
-        letter-spacing: 0.3px !important;
+    /* Clickable Quant Desk Tiles (Interactive Multi-Tab Launchpad) */
+    .quant-desk-tile {
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease, border-color 0.25s ease !important;
+        cursor: pointer !important;
     }
-    div.st-key-btn_launch_reliance_hp button {
-        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(14, 116, 144, 0.30) 100%) !important;
-        border: 1.5px solid rgba(56, 189, 248, 0.5) !important;
-        color: #38BDF8 !important;
+    .quant-desk-tile:hover {
+        transform: translateY(-4px) !important;
     }
-    div.st-key-btn_launch_reliance_hp button:hover {
-        background: rgba(56, 189, 248, 0.22) !important;
+    .tile-reliance:hover {
         border-color: #38BDF8 !important;
-        color: #FFFFFF !important;
-        box-shadow: 0 0 16px rgba(56, 189, 248, 0.40) !important;
+        box-shadow: 0 10px 30px rgba(56, 189, 248, 0.28) !important;
     }
-    div.st-key-btn_launch_adani_hp button {
-        background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(180, 83, 9, 0.30) 100%) !important;
-        border: 1.5px solid rgba(245, 158, 11, 0.5) !important;
-        color: #FBBF24 !important;
-    }
-    div.st-key-btn_launch_adani_hp button:hover {
-        background: rgba(245, 158, 11, 0.22) !important;
+    .tile-adani:hover {
         border-color: #FBBF24 !important;
-        color: #FFFFFF !important;
-        box-shadow: 0 0 16px rgba(245, 158, 11, 0.40) !important;
+        box-shadow: 0 10px 30px rgba(245, 158, 11, 0.28) !important;
     }
 
     /* Streamlit Alerts High Contrast */
@@ -1410,7 +1391,7 @@ if active_route == "":
             </span>
         </div>
         <span style="font-size: 0.76rem; color: #94A3B8;">
-            Select a dedicated terminal below or open directly via URL (<b style="color: #38BDF8;">/Reliance</b> or <b style="color: #FBBF24;">/Adani</b>)
+            Click any tile to launch desk in a new tab (<b style="color: #38BDF8;">/Reliance</b> or <b style="color: #FBBF24;">/Adani</b>)
         </span>
     </div>
     """)
@@ -1420,65 +1401,73 @@ if active_route == "":
     
     with col_d1:
         st.html(f"""
-        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 205px; height: 205px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; margin-bottom: 12px;">
-            <div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">⚡ RELIANCE QUANT DESK</span>
-                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_rel_hp.lot_size} QTY/LOT</span>
+        <a href="./Reliance" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+            <div class="quant-desk-tile tile-reliance" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">⚡ RELIANCE QUANT DESK</span>
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_rel_hp.lot_size} QTY/LOT</span>
+                    </div>
+                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
+                        Institutional F&O Engine for <b style="color: #38BDF8;">RELIANCE.NS</b>. Equipped with 6-Vector Confluence, ATM Dual Corridor & Breakeven Escalator.
+                    </p>
                 </div>
-                <div style="font-size: 0.78rem; color: #94A3B8; min-height: 42px; display: flex; align-items: center; line-height: 1.45;">
-                    Dedicated Institutional F&O Engine for <b>RELIANCE.NS</b>. Equipped with 6-Vector Confluence, ATM Dual Corridor & Breakeven Escalator.
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_rel_hp.target_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_rel_hp.sl_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_rel_hp.min_confluence_gate:.0f}%</div>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(56, 189, 248, 0.2); padding-top: 8px; font-size: 0.74rem; color: #38BDF8; font-weight: 700;">
+                    <span>Institutional Execution Terminal</span>
+                    <span>Launch Desk in New Tab ↗</span>
                 </div>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; text-align: center;">
-                <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_rel_hp.target_pts:.1f} pts</div>
-                </div>
-                <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_rel_hp.sl_pts:.1f} pts</div>
-                </div>
-                <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_rel_hp.min_confluence_gate:.0f}%</div>
-                </div>
-            </div>
-        </div>
+        </a>
         """)
-        if st_button_stretch("⚡ OPEN RELIANCE QUANT DESK ↗ (/Reliance)", key="btn_launch_reliance_hp"):
-            st.switch_page(p_reliance)
 
     with col_d2:
         st.html(f"""
-        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 205px; height: 205px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; margin-bottom: 12px;">
-            <div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🔥 ADANI QUANT DESK</span>
-                    <span style="background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_ada_hp.lot_size} QTY/LOT</span>
+        <a href="./Adani" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: block;">
+            <div class="quant-desk-tile tile-adani" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🔥 ADANI QUANT DESK</span>
+                        <span style="background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_ada_hp.lot_size} QTY/LOT</span>
+                    </div>
+                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
+                        Institutional F&O Engine for <b style="color: #FBBF24;">ADANIENT.NS</b>. High-Beta Momentum Runner with 2.33:1 Asymmetric R:R.
+                    </p>
                 </div>
-                <div style="font-size: 0.78rem; color: #94A3B8; min-height: 42px; display: flex; align-items: center; line-height: 1.45;">
-                    Dedicated Institutional F&O Engine for <b>ADANIENT.NS</b>. High-Beta Momentum Runner with 2.33:1 Asymmetric R:R.
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_ada_hp.target_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_ada_hp.sl_pts:.1f} pts</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_ada_hp.min_confluence_gate:.0f}%</div>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(245, 158, 11, 0.2); padding-top: 8px; font-size: 0.74rem; color: #FBBF24; font-weight: 700;">
+                    <span>Institutional Execution Terminal</span>
+                    <span>Launch Desk in New Tab ↗</span>
                 </div>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; text-align: center;">
-                <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_ada_hp.target_pts:.1f} pts</div>
-                </div>
-                <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_ada_hp.sl_pts:.1f} pts</div>
-                </div>
-                <div>
-                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_ada_hp.min_confluence_gate:.0f}%</div>
-                </div>
-            </div>
-        </div>
+        </a>
         """)
-        if st_button_stretch("🔥 OPEN ADANI QUANT DESK ↗ (/Adani)", key="btn_launch_adani_hp"):
-            st.switch_page(p_adani)
             
     st.stop()
 
