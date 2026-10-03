@@ -520,6 +520,76 @@
             background: #162035;
         }
 
+        /* Delta Pricing Model Card */
+        .delta-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }
+        .delta-title-group {
+            margin-bottom: 12px;
+        }
+        .delta-title-group h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .delta-title-group p {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 3px;
+        }
+        .delta-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+        }
+        .delta-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-align: left;
+            transition: all 0.2s ease;
+            color: var(--text-primary);
+        }
+        .delta-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(56, 189, 248, 0.3);
+        }
+        .delta-btn.active {
+            background: rgba(6, 182, 212, 0.12);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
+        }
+        .delta-icon {
+            font-size: 20px;
+        }
+        .delta-text strong {
+            display: block;
+            font-size: 13px;
+            color: #fff;
+        }
+        .delta-btn.active .delta-text strong {
+            color: var(--accent-cyan);
+        }
+        .delta-text small {
+            display: block;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
         /* Pill Badges */
         .pill {
             display: inline-block;
@@ -701,6 +771,37 @@
         </div>
     </div>
 
+    <!-- Contract & Delta Pricing Model -->
+    <div class="delta-card">
+        <div class="delta-title-group">
+            <h3>🎯 Derivative Execution & Delta (Δ) Pricing Mode</h3>
+            <p>Select your instrument contract type below. Automatically scales all Points, Peak Gains, and Final Cash P&L:</p>
+        </div>
+        <div class="delta-selector">
+            <button class="delta-btn active" id="btn-delta-opt" onclick="setDeltaMode('OPTION')">
+                <span class="delta-icon">🎯</span>
+                <span class="delta-text">
+                    <strong>ATM Options Premium Mode (~0.52 Δ) [Active]</strong>
+                    <small>True Realized Cash P&L in Option Chain (Target ~+18.2 pts, SL ~-9.36 pts)</small>
+                </span>
+            </button>
+            <button class="delta-btn" id="btn-delta-fut" onclick="setDeltaMode('FUTURES')">
+                <span class="delta-icon">⚡</span>
+                <span class="delta-text">
+                    <strong>Futures / Spot Benchmark (1.00 Δ)</strong>
+                    <small>Raw Underlying Movement (Target +35.0 pts, SL -18.0 pts)</small>
+                </span>
+            </button>
+            <button class="delta-btn" id="btn-delta-itm" onclick="setDeltaMode('ITM')">
+                <span class="delta-icon">💎</span>
+                <span class="delta-text">
+                    <strong>Deep ITM Option Mode (~0.72 Δ)</strong>
+                    <small>High-Delta In-The-Money Option Contracts (Target ~+25.2 pts, SL ~-12.96 pts)</small>
+                </span>
+            </button>
+        </div>
+    </div>
+
     <!-- Info Notice -->
     <div class="info-bar">
         <div>💡 <strong>100% Column Visibility Active:</strong> The table below features <strong>fixed sticky columns</strong> on both edges (Date on left, Net P&L on right) and smooth horizontal scrolling so no data is ever clipped.</div>
@@ -795,7 +896,7 @@
                         <th>Exit Time</th>
                         <th>Exit Spot (₹)</th>
                         <th>Exit Reason</th>
-                        <th>Points</th>
+                        <th id="th-pts-label">Points (Opt Premium)</th>
                         <th class="col-sticky-right" id="th-final-pnl">Final P&L (2 Lots)</th>
                     </tr>
                 </thead>
@@ -829,6 +930,22 @@
     
     let currentTicker = 'RELIANCE';
     let currentLots = 2; // Default 2 lots
+    let currentDeltaMode = 'OPTION'; // 'OPTION' (0.52), 'FUTURES' (1.00), 'ITM' (0.72)
+
+    function getDeltaValue() {
+        if (currentDeltaMode === 'FUTURES') return 1.0;
+        if (currentDeltaMode === 'ITM') return 0.72;
+        return 0.52; // ATM Option Premium
+    }
+
+    function setDeltaMode(mode) {
+        currentDeltaMode = mode;
+        document.getElementById('btn-delta-opt').classList.toggle('active', mode === 'OPTION');
+        document.getElementById('btn-delta-fut').classList.toggle('active', mode === 'FUTURES');
+        document.getElementById('btn-delta-itm').classList.toggle('active', mode === 'ITM');
+        updateSizingSummary();
+        renderTable();
+    }
 
     function getLotSize(ticker) {
         if (ticker === 'RELIANCE') return 500;
@@ -877,10 +994,12 @@
         const lotSize = getLotSize(currentTicker);
         const totalQty = lotSize * currentLots;
         const formattedQty = totalQty.toLocaleString('en-IN');
+        const deltaLabel = currentDeltaMode === 'OPTION' ? 'ATM Options (~0.52 Δ)' : (currentDeltaMode === 'ITM' ? 'ITM Options (~0.72 Δ)' : 'Futures (1.00 Δ)');
         
         document.getElementById('sizing-summary-text').textContent = `${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'} (${formattedQty} Qty)`;
-        document.getElementById('kpi-pnl-label').textContent = `Cumulative Realized P&L (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
-        document.getElementById('kpi-peak-label').textContent = `Total Peak Gain (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
+        document.getElementById('kpi-pnl-label').textContent = `Realized P&L (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'} @ ${deltaLabel})`;
+        document.getElementById('kpi-peak-label').textContent = `Total Peak Gain (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'} @ ${deltaLabel})`;
+        document.getElementById('th-pts-label').textContent = currentDeltaMode === 'FUTURES' ? 'Points (Spot/Fut)' : 'Points (Opt Premium)';
         document.getElementById('th-peak-gain').textContent = `Peak Gain (${currentLots}L)`;
         document.getElementById('th-final-pnl').textContent = `Final P&L (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
     }
@@ -947,6 +1066,7 @@
             });
 
             // Update KPIs
+            const delta = getDeltaValue();
             let totalPnl = 0;
             let totalPts = 0;
             let totalPeakPts = 0;
@@ -960,8 +1080,10 @@
             let scoreSum = 0;
 
             filtered.forEach(r => {
-                const pts = parseFloat(r.pnl_pts) || 0;
-                const peakPts = parseFloat(r.peak_pts) || 0;
+                const rawPts = parseFloat(r.pnl_pts) || 0;
+                const pts = rawPts * delta;
+                const rawPeakPts = parseFloat(r.peak_pts) || 0;
+                const peakPts = rawPeakPts * delta;
                 const isStandDown = r.status === 'STAND_DOWN' || (r.action || '').toUpperCase().includes('STAND DOWN');
                 const pnl = isStandDown ? 0 : (pts * totalQty);
                 const peakAmt = isStandDown ? 0 : (peakPts * totalQty);
@@ -1017,12 +1139,14 @@
                 const tr = document.createElement('tr');
                 const action = String(row.action || '');
                 const score = parseFloat(row.score) || 0;
-                const pts = parseFloat(row.pnl_pts) || 0;
+                const rawPts = parseFloat(row.pnl_pts) || 0;
+                const pts = rawPts * delta;
+                const rawPeakPts = parseFloat(row.peak_pts) || 0;
+                const peakPts = rawPeakPts * delta;
                 const isStandDown = row.status === 'STAND_DOWN' || action.toUpperCase().includes('STAND DOWN');
                 
-                // Dynamic sizing calculation
+                // Dynamic sizing calculation with Delta
                 const pnl = isStandDown ? 0 : (pts * totalQty);
-                const peakPts = parseFloat(row.peak_pts) || 0;
                 const peakAmt = peakPts > 0 ? (peakPts * totalQty) : 0;
 
                 const reason = String(row.exit_reason || '');
@@ -1095,14 +1219,15 @@
                 tbody.appendChild(tr);
             });
 
+            const modeBadge = currentDeltaMode === 'OPTION' ? 'ATM Options (0.52 Δ)' : (currentDeltaMode === 'ITM' ? 'ITM Options (0.72 Δ)' : 'Futures (1.00 Δ)');
             document.getElementById('foot-total-peak').textContent = `+₹${Math.round(totalPeakAmt).toLocaleString('en-IN')}`;
             document.getElementById('foot-total-pts').textContent = `${totalPts >= 0 ? '+' : ''}${totalPts.toFixed(2)} pts`;
             document.getElementById('foot-total-pnl').textContent = formatCurrency(totalPnl);
             document.getElementById('foot-total-pnl').className = 'col-sticky-right mono pnl-cell ' + (totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg');
-            document.getElementById('foot-summary-label').textContent = `Cumulative Desk Performance (${activeTrades} Active Trades, ${standDowns} Stand Downs)`;
+            document.getElementById('foot-summary-label').textContent = `Cumulative Desk Performance (${activeTrades} Active Trades, ${standDowns} Stand Downs) — ${modeBadge}`;
 
             document.getElementById('footer-count').textContent = `Showing ${filtered.length} of ${rawData.length} trading sessions (${currentLots} Lots)`;
-            document.getElementById('footer-sum').innerHTML = `Total Peak Potential Gain: <strong style="color:var(--accent-green);font-size:14px;">+₹${Math.round(totalPeakAmt).toLocaleString('en-IN')}</strong> &nbsp;|&nbsp; Realized P&L: <strong style="color:${totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'};font-size:14px;">${formatCurrency(totalPnl)}</strong>`;
+            document.getElementById('footer-sum').innerHTML = `Mode: <strong style="color:var(--accent-cyan);">${modeBadge}</strong> &nbsp;|&nbsp; Total Peak Potential Gain: <strong style="color:var(--accent-green);font-size:14px;">+₹${Math.round(totalPeakAmt).toLocaleString('en-IN')}</strong> &nbsp;|&nbsp; Realized P&L: <strong style="color:${totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'};font-size:14px;">${formatCurrency(totalPnl)}</strong>`;
         } catch (err) {
             console.error("Render Table Error:", err);
             document.getElementById('table-body').innerHTML = `<tr><td colspan="13" style="color:red;padding:20px;">Error rendering data: ${err.message}</td></tr>`;
