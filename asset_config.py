@@ -29,6 +29,21 @@ class AssetSpec:
     volume_norm: int               # Average daily volume benchmark
     daily_sl_cap_rupees: float     # Maximum 1-day capital risk cap for 1 lot
     tape_quantities: Tuple[int, ...] # Order tape simulated fill sizes (lot multiples)
+    beta: float = 1.15             # Benchmark/NIFTY beta
+    limit_collar_pts: float = 0.65 # Execution limit collar points
+    estimated_tax_per_lot: float = 65.0 # Estimated STT/turnover tax per lot
+    parent_sector: str = "NIFTY ENERGY" # Parent sectoral index
+    total_capital: float = 73643.72 # Default allocated capital
+    breakout_buffer: float = 1.20  # Intraday breakout trigger buffer (points)
+    trail_runner_offset: float = 1.0 # Runner trailing offset beyond profit lock (points)
+    bsm_sigma: float = 0.212       # Benchmark baseline IV for Black-Scholes fallback
+    has_crude_coupling: bool = True # Flag for Brent Crude correlation weighting
+    fallback_call_vol: int = 98500  # Fallback market call volume
+    fallback_put_vol: int = 84200   # Fallback market put volume
+    fallback_call_oi: int = 450000  # Fallback ATM call open interest
+    fallback_put_oi: int = 380000   # Fallback ATM put open interest
+    spread_threshold: float = 0.04 # Maximum tolerable bid-ask spread fraction
+    max_pain_gamma_divisor: float = 15.0 # Gamma proxy divisor scaling
 
 ASSET_SPECS: Dict[str, AssetSpec] = {
     "RELIANCE": AssetSpec(
@@ -51,7 +66,22 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         groww_company_slug="reliance-industries-ltd",
         volume_norm=4725000,
         daily_sl_cap_rupees=5000.0,
-        tape_quantities=(500, 1000, 1500, 2000)
+        tape_quantities=(500, 1000, 1500, 2000),
+        beta=1.15,
+        limit_collar_pts=0.65,
+        estimated_tax_per_lot=65.0,
+        parent_sector="NIFTY ENERGY",
+        total_capital=73643.72,
+        breakout_buffer=1.20,
+        trail_runner_offset=1.0,
+        bsm_sigma=0.212,
+        has_crude_coupling=True,
+        fallback_call_vol=98500,
+        fallback_put_vol=84200,
+        fallback_call_oi=450000,
+        fallback_put_oi=380000,
+        spread_threshold=0.04,
+        max_pain_gamma_divisor=15.0
     ),
     "ADANIENT": AssetSpec(
         symbol="ADANIENT",
@@ -73,7 +103,22 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         groww_company_slug="adani-enterprises-ltd",
         volume_norm=1850000,
         daily_sl_cap_rupees=9500.0,
-        tape_quantities=(309, 618, 927, 1236)
+        tape_quantities=(309, 618, 927, 1236),
+        beta=1.65,
+        limit_collar_pts=1.80,
+        estimated_tax_per_lot=85.0,
+        parent_sector="NIFTY 50",
+        total_capital=85000.0,
+        breakout_buffer=3.50,
+        trail_runner_offset=5.0,
+        bsm_sigma=0.355,
+        has_crude_coupling=False,
+        fallback_call_vol=2770,
+        fallback_put_vol=5075,
+        fallback_call_oi=22500,
+        fallback_put_oi=19000,
+        spread_threshold=0.10,
+        max_pain_gamma_divisor=50.0
     )
 }
 

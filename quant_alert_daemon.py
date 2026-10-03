@@ -99,7 +99,9 @@ class StandaloneBreakoutManager:
             logger.debug(f"Error saving breakout records: {e}")
 
     @classmethod
-    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: float = 1.20, symbol: Optional[str] = None) -> float:
+    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: Optional[float] = None, symbol: Optional[str] = None) -> float:
+        if buffer_pts is None or buffer_pts <= 0.0:
+            buffer_pts = get_asset_spec(symbol).breakout_buffer
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         sym_part = f"{symbol.upper()}_" if symbol else ""
         key = f"{today_str}_{sym_part}{strike}_{contract_type}"
@@ -473,7 +475,7 @@ class RelianceQuantAlertDaemon:
         active_option_ltp = active_branch["call_ltp"] if contract_type == "CE" else active_branch["put_ltp"]
 
         # 4. Breakout Trigger Pinning & Bar Confirmation Gate
-        breakout_buffer = 3.50 if (sym == "ADANIENT" or "ADANI" in str(sym)) else 1.20
+        breakout_buffer = spec.breakout_buffer
         breakout_level = StandaloneBreakoutManager.get_or_set_trigger(
             strike=recommended_strike,
             contract_type=contract_type,
@@ -534,9 +536,9 @@ class RelianceQuantAlertDaemon:
         if current_state == SequentialTradeEngine.STATE_IN_TRADE and active_trade:
             trade_num = active_trade.get("trade_num", 1)
             inst_sym = active_trade.get("instrument", active_trade.get("contract", "RELIANCE"))
-            act_entry = float(active_trade.get("actual_entry", active_trade.get("planned_entry", 30.0)))
-            target_p = float(active_trade.get("target", act_entry + 10.0))
-            initial_sl = float(active_trade.get("sl", act_entry - 4.5))
+            act_entry = float(active_trade.get("actual_entry", active_trade.get("planned_entry", spec.default_call_price)))
+            target_p = float(active_trade.get("target", act_entry + spec.target_pts))
+            initial_sl = float(active_trade.get("sl", max(0.05, act_entry - spec.sl_pts)))
             trail_sl = float(active_trade.get("trailing_sl", initial_sl))
             effective_sl = max(initial_sl, trail_sl)
 
@@ -620,7 +622,7 @@ class RelianceQuantAlertDaemon:
                         logger.info(f"🔒 Telegram Profit Lock Alert dispatched: {fb}")
 
             # Milestone 3: Higher trailing alert for explosive runners
-            trail_runner_trigger = spec.profit_lock_trigger + (5.0 if sym == "ADANIENT" else 1.0)
+            trail_runner_trigger = spec.profit_lock_trigger + spec.trail_runner_offset
             if cur_trade_ltp > active_trade.get("highest_price", act_entry) and unreal_pts >= trail_runner_trigger:
                 new_trail = round(act_entry + (unreal_pts * 0.65), 2)
                 trail_alert_key = f"tg_sent_trail_{today_date}_{trade_num}_{round(new_trail, 1)}"
@@ -777,11 +779,12 @@ class RelianceQuantAlertDaemon:
 
                 # Save signal in SignalTracker so UI recommendation card is updated with the setup
                 try:
+                    exp_clean = expiry_date.replace("-", "").upper()
                     SignalTracker.save_signal({
                         "date": today_date,
                         "trade_given_time": time_str,
                         "full_contract": contract_label,
-                        "symbol": f"RELIANCE26OCT{recommended_strike}{contract_type}",
+                        "symbol": f"{sym}{exp_clean}{recommended_strike}{contract_type}",
                         "contract_type": contract_type,
                         "strike": recommended_strike,
                         "expiry": expiry_date,
@@ -910,6 +913,10 @@ class RelianceQuantAlertDaemon:
             except Exception as e:
                 logger.error(f"Tick cycle error: {e}", exc_info=True)
                 time.sleep(self.interval * 2)
+
+
+# Universal multi-asset daemon alias
+QuantAlertDaemon = RelianceQuantAlertDaemon
 
 
 # ==============================================================================

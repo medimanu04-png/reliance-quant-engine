@@ -1141,10 +1141,11 @@ def render_auto_rescan_controller():
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
     cur_sel_adani = (cur_sel_scrip == "ADANI ENTERPRISES")
-    cur_sel_sym = "ADANIENT.NS" if cur_sel_adani else "RELIANCE.NS"
-    cur_sel_lot = 309 if cur_sel_adani else 500
-    cur_sel_tgt = 35.0 if cur_sel_adani else 10.0
-    cur_sel_sl = 15.0 if cur_sel_adani else 5.0
+    spec_active = get_asset_spec(symbol="ADANIENT" if cur_sel_adani else "RELIANCE")
+    cur_sel_sym = spec_active.yf_symbol
+    cur_sel_lot = spec_active.lot_size
+    cur_sel_tgt = spec_active.target_pts
+    cur_sel_sl = spec_active.sl_pts
     st.html(f"""
         <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
             <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
@@ -1303,15 +1304,16 @@ st.markdown("---")
 # ==============================================================================
 # 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR
 # ==============================================================================
+_init_scrip = st.session_state.get("selected_scrip", "RELIANCE")
+_init_spec = get_asset_spec(symbol="ADANIENT" if _init_scrip == "ADANI ENTERPRISES" else "RELIANCE")
 if "lot_size" not in st.session_state:
-    _init_scrip = st.session_state.get("selected_scrip", "RELIANCE")
-    st.session_state["lot_size"] = 309 if _init_scrip == "ADANI ENTERPRISES" else 250  # Dynamic lot size per scrip
+    st.session_state["lot_size"] = _init_spec.lot_size
 if "num_lots" not in st.session_state:
     st.session_state["num_lots"] = 1
 if "target_pts" not in st.session_state:
-    st.session_state["target_pts"] = 10.0
+    st.session_state["target_pts"] = _init_spec.target_pts
 if "sl_pts" not in st.session_state:
-    st.session_state["sl_pts"] = 4.5
+    st.session_state["sl_pts"] = _init_spec.sl_pts
 if "MIN_HIT_PERCENTAGE" not in st.session_state:
     st.session_state["MIN_HIT_PERCENTAGE"] = 60.0
 if "max_daily_sl_allowed" not in st.session_state:
@@ -2294,11 +2296,13 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_strike = tp.get("atm_strike", corridor["lower_strike"])
     active_sym = tp.get("scrip_symbol", "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE")
     active_scrip_name = tp.get("scrip_name", "ADANI ENTERPRISES" if active_sym == "ADANIENT" else "RELIANCE")
-    plan_target_pts = tp.get("target_pts", 10.0)
-    plan_sl_pts = tp.get("sl_pts", 4.5)
+    spec_plan = get_asset_spec(symbol=active_sym)
+    plan_target_pts = tp.get("target_pts", spec_plan.target_pts)
+    plan_sl_pts = tp.get("sl_pts", spec_plan.sl_pts)
     plan_num_lots = tp.get("num_lots", 1)
-    plan_lot_size = tp.get("lot_size", 309 if active_sym == "ADANIENT" else 250)
+    plan_lot_size = tp.get("lot_size", spec_plan.lot_size)
     plan_qty = tp.get("total_trading_qty", plan_lot_size * plan_num_lots)
+    gw_slug = spec_plan.groww_company_slug
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
     plan_score = tp.get("dominant_score", 75.0)
     plan_gate = tp.get("min_hit_percentage", 75.0)
@@ -2329,7 +2333,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
 
     # Pin breakout trigger level persistently so it remains stationary across refreshes
     breakout_session_key = f"breakout_level_{active_sym}_{plan_strike}_{plan_contract_type}"
-    breakout_buffer = 3.50 if (active_sym == "ADANIENT" or "ADANI" in str(active_sym)) else 1.20
+    breakout_buffer = get_asset_spec(symbol=active_sym).breakout_buffer
     breakout_level = BreakoutTriggerManager.get_or_set_trigger(
         strike=plan_strike,
         contract_type=plan_contract_type,
@@ -2483,10 +2487,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #10B981; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
+                <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #10B981; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
                     🎯 BOOK FULL PROFIT ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📈 VIEW POSITIONS ↗
                 </a>
             </div>
@@ -2604,10 +2608,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #EF4444; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
+                <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #EF4444; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
                     🛑 EXIT POSITION NOW ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 VIEW LIVE CHART ↗
                 </a>
             </div>
@@ -2721,10 +2725,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #38BDF8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);">
+                <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #38BDF8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);">
                     ⚡ MODIFY SL ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 VIEW LIVE CHART ↗
                 </a>
             </div>
@@ -2831,10 +2835,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #8B5CF6; box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);">
+                <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #8B5CF6; box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);">
                     🔒 SQUARE-OFF ON GROWW (03:05 PM) ↗
                 </a>
-                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 VIEW OPEN POSITIONS ↗
                 </a>
             </div>
@@ -2942,7 +2946,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 OBSERVE MARKET (READ-ONLY) ↗
                 </a>
             </div>
@@ -3021,7 +3025,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     🛡️ VIEW SPOT CHART ON GROWW ↗
                 </a>
             </div>
@@ -3098,7 +3102,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     Trade #{act_trade_num} reached target price ₹{act_target:.2f} (Current LTP: ₹{active_track_ltp:.2f}). Book profits now on broker terminal.
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 14px;">
-                    <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
+                    <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
                         🎯 BOOK FULL PROFIT ON GROWW ↗
                     </a>
                 </div>
@@ -3141,7 +3145,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     Trade #{act_trade_num} hit protective stop loss ₹{effective_sl:.2f} (Current LTP: ₹{active_track_ltp:.2f}). Cut risk immediately.
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 14px;">
-                    <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
+                    <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
                         🛑 EXIT POSITION ON GROWW ↗
                     </a>
                 </div>
@@ -3195,10 +3199,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 14px;">
-                    <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399;">
+                    <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399;">
                         🟢 VIEW POSITION ON GROWW ↗
                     </a>
-                    <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                    <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                         📊 OPEN {active_sym} LIVE CHART ↗
                     </a>
                 </div>
@@ -3312,7 +3316,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         """
 
         # Interactive UI Action Buttons (Green for CE, Red for PE)
-        gw_slug = 'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'
+        gw_slug = spec_plan.groww_company_slug
         chart_label = f"📊 OPEN {active_scrip_name} LIVE CHART ↗"
         if plan_contract_type == "CE":
             entry_ui_buttons = f"""
@@ -3534,10 +3538,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 <span>Target / SL: <b style="color: #34D399;">Fixed 10/9 pts R:R Rule</b></span>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #000000; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #FCD34D; box-shadow: 0 0 14px rgba(245, 158, 11, 0.4);">
+                <a href="https://groww.in/options/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #000000; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #FCD34D; box-shadow: 0 0 14px rgba(245, 158, 11, 0.4);">
                     🟡 VIEW OPTION CHAIN (GROWW) ↗
                 </a>
-                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{gw_slug}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 {active_scrip_name} LIVE QUOTE ↗
                 </a>
             </div>
@@ -7355,7 +7359,7 @@ if df is not None and not df.empty:
             except Exception:
                 pass
 
-        corridor_step = 50 if scrip_symbol == "ADANIENT" else 10
+        corridor_step = get_asset_spec(symbol=scrip_symbol).strike_step
         with st.expander(matrix_title, expanded=(current_seq_state == SequentialTradeEngine.STATE_IDLE)):
             st.html(f"""
             <div style="background: #0B1120 !important; border: 1px solid #1E293B !important; border-left: 4px solid {rec_box_border_left} !important; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);">
@@ -8549,11 +8553,12 @@ if df is not None and not df.empty:
                     m_sym = mf_c2.text_input("Trading Symbol", value=rec_instrument if is_tradable else f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}")
                     m_status = mf_c3.selectbox("Trade Status", ["HIT", "FAIL", "OPEN", "STAND DOWN"], index=0)
 
+                    spec_manual = get_asset_spec(symbol=scrip_symbol)
                     mf_c4, mf_c5, mf_c6, mf_c7 = st.columns(4)
                     m_entry = mf_c4.number_input("Actual Entry Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price))
-                    m_exit = mf_c5.number_input("Actual Exit Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price + 10.0 if m_status == "HIT" else max(0.05, today_strike_price - 4.5)))
-                    m_qty = mf_c6.number_input("Traded Quantity", min_value=1, step=50, value=int(total_trading_qty))
-                    m_pnl = mf_c7.number_input("Total Profit / P&L (₹)", step=250.0, value=round((m_exit - m_entry) * m_qty, 2) if m_status in ["HIT", "FAIL"] else 0.0)
+                    m_exit = mf_c5.number_input("Actual Exit Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price + spec_manual.target_pts if m_status == "HIT" else max(0.05, today_strike_price - spec_manual.sl_pts)))
+                    m_qty = mf_c6.number_input("Traded Quantity", min_value=1, step=spec_manual.lot_size, value=int(total_trading_qty))
+                    m_pnl = mf_c7.number_input("Total Profit / P&L (₹)", step=100.0, value=round((m_exit - m_entry) * m_qty, 2) if m_status in ["HIT", "FAIL"] else 0.0)
 
                     m_notes = st.text_input("Audit Notes", value="Manual Trade Adjustment")
                     m_submit = st_form_submit_button_stretch("💾 Save Trade Record")

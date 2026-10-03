@@ -1,17 +1,17 @@
 """
-RELIANCE F&O ULTRA-HIGH-CONVICTION QUANTITATIVE ENGINE (NSE)
-===========================================================
-Exclusively Dedicated to RELIANCE F&O Intraday Trading
+MULTI-ASSET F&O ULTRA-HIGH-CONVICTION QUANTITATIVE ENGINE (NSE)
+===============================================================
+Calibrated for RELIANCE and ADANI ENTERPRISES F&O Intraday Trading
 Target Hit Probability Threshold: STRICTLY >= 90.0% (A+ Institutional Setup Only)
 
-Operational Mandates & Parameters:
-  1. Asset: RELIANCE (NSE: RELIANCE)
-  2. Lot Size: 250 Qty per Lot | Position: Standard 1 Lot = 250 Units (Half-Kelly Scaled)
-  3. Strike Mandate: DUAL ATM CORRIDOR (Nearest 10-Pt Increments: e.g. 1220 & 1230) with Quantitative Best Strike Selection
-  4. Expiry Mandate: STRICTLY NEXT MONTHLY EXPIRY (Zero Near-Expiry Gamma Risk)
-  5. Fixed Target: +6.5 to +8.5 Points (Option Premium)
-  6. Fixed Stop Loss: -3.2 to -4.5 Points (Option Premium) (1:2 R:R Ratio)
-  7. Capital Base: Rs. 73,643.72 (Strict <= 4.0% Risk Cap per Trade)
+Operational Mandates & Parameters (via Canonical AssetSpec):
+  1. Assets: RELIANCE (NSE: RELIANCE) & ADANIENT (NSE: ADANIENT)
+  2. Lot Sizes: RELIANCE = 500 Qty/Lot | ADANIENT = 309 Qty/Lot (Configured via AssetSpec)
+  3. Strike Mandate: DUAL ATM CORRIDOR (10-Pt Steps for RELIANCE, 50-Pt Steps for ADANIENT)
+  4. Expiry Mandate: STRICTLY 10-DAY VOLATILITY / DECAY AVOIDANCE (Zero Gamma Decay Risk)
+  5. Optimal Targets: RELIANCE +10.0 Pts | ADANIENT +35.0 Pts (Scales with VIX/ATR)
+  6. Optimal Stop Losses: RELIANCE -4.5 Pts | ADANIENT -15.0 Pts (Tiered Breakeven Escalator)
+  7. Risk Preservation: Strict <= 4.0% Risk Cap per Trade with 1-and-Done Session Lockout
   8. Trading Window: 09:15 AM to 03:10 PM IST (Cutoff: 02:45 PM | Auto-Square-Off: 03:05 PM)
   9. ULTRA-HIGH-CONVICTION GATE:
      - Probability >= 90.0%: "TRADABLE DAY / A+ ULTRA-HIGH-CONVICTION SETUP (>90% HIT PROBABILITY)"
@@ -58,18 +58,18 @@ ASSET_REGISTRY: Dict[str, Dict[str, Any]] = {
         "num_lots": spec.default_lots,
         "strike_step": float(spec.strike_step),
         "spread_step": spec.strike_step * 2,
-        "beta": 1.65 if sym == "ADANIENT" else 1.15,
+        "beta": spec.beta,
         "target_pts": spec.target_pts,
         "stop_loss_pts": spec.sl_pts,
         "be_pts": spec.be_pts,
         "profit_lock_trigger": spec.profit_lock_trigger,
         "profit_lock_locked": spec.profit_lock_locked,
-        "limit_collar_pts": 1.80 if sym == "ADANIENT" else 0.65,
-        "estimated_tax_per_lot": 85.0 if sym == "ADANIENT" else 65.0,
+        "limit_collar_pts": spec.limit_collar_pts,
+        "estimated_tax_per_lot": spec.estimated_tax_per_lot,
         "daily_sl_cap_rupees": spec.daily_sl_cap_rupees,
-        "parent_sector": "NIFTY 50" if sym == "ADANIENT" else "NIFTY ENERGY",
+        "parent_sector": spec.parent_sector,
         "avg_daily_volume": spec.volume_norm,
-        "has_crude_coupling": (sym == "RELIANCE"),
+        "has_crude_coupling": spec.has_crude_coupling,
         "groww_slug": spec.groww_company_slug,
     }
     for sym, spec in ASSET_SPECS.items()
@@ -96,14 +96,13 @@ class RelianceRiskBudget:
         """Instantiates risk budget calibrated specifically to the active scrip from canonical AssetSpec."""
         rb = cls()
         spec = get_asset_spec(symbol)
-        is_adani = (spec.symbol == "ADANIENT")
-        rb.total_capital = 85000.0 if is_adani else 73643.72
+        rb.total_capital = spec.total_capital
         rb.lot_size = spec.lot_size
         rb.num_lots = spec.default_lots
         rb.target_pts = spec.target_pts
         rb.stop_loss_pts = spec.sl_pts
-        rb.limit_collar_pts = 1.80 if is_adani else 0.65
-        rb.estimated_tax_per_lot = 85.0 if is_adani else 65.0
+        rb.limit_collar_pts = spec.limit_collar_pts
+        rb.estimated_tax_per_lot = spec.estimated_tax_per_lot
         rb.daily_sl_cap_rupees = spec.daily_sl_cap_rupees
         rb.max_daily_sl_trades = 1
         return rb
@@ -215,6 +214,8 @@ class RelianceRiskBudget:
 
 
 RiskBudget = RelianceRiskBudget
+AssetRiskBudget = RelianceRiskBudget
+FOQuantRiskBudget = RelianceRiskBudget
 
 
 # ============================================================================
@@ -1781,6 +1782,8 @@ class MultiIndicatorMath:
 
         return beta_coupling, corr, coupling_regime, is_high_conviction
 
+    calculate_sector_beta_coupling = calculate_nifty_energy_beta_coupling
+
     @staticmethod
     def calculate_sectoral_alignment(
         nifty_pct: float,
@@ -1805,15 +1808,10 @@ class MultiIndicatorMath:
         
         Returns: (alignment_score, alignment_regime, rs_ratio, beta_coupling, coupling_regime, is_coupled)
         """
-        sym = (symbol or "").upper()
-        if sym == "ADANIENT":
-            sec_pct = sector_pct if sector_pct is not None else nifty_pct
-            sec_label = sector_name or "NIFTY Infra / 50"
-            sym_label = "Adani"
-        else:
-            sec_pct = sector_pct if sector_pct is not None else energy_pct
-            sec_label = sector_name or "Energy"
-            sym_label = "Reliance"
+        spec = get_asset_spec(symbol=symbol)
+        sec_label = sector_name or spec.parent_sector
+        sym_label = spec.display_name
+        sec_pct = sector_pct if sector_pct is not None else (energy_pct if spec.has_crude_coupling else nifty_pct)
 
         # Relative Strength Ratio
         rs_ratio = round(reliance_pct / sec_pct, 2) if abs(sec_pct) > 0.02 else (1.0 if reliance_pct >= 0 else -1.0)
@@ -4825,8 +4823,8 @@ class UltraHighConvictionRelianceEngine:
         pdh_val = float(max(c15m["high"][:min(len(c15m["high"]), 75)])) if len(c15m["high"]) > 10 else float(max(c5m["high"]))
         pdl_val = float(min(c15m["low"][:min(len(c15m["low"]), 75)])) if len(c15m["low"]) > 10 else float(min(c5m["low"]))
         actual_prev_close = spot
-        active_sym = (symbol or getattr(self, "symbol", "RELIANCE") or ("ADANIENT" if spot >= 2000 else "RELIANCE")).upper()
-        is_adani_asset = (active_sym == "ADANIENT" or spot >= 2000.0)
+        active_sym = resolve_symbol(symbol=symbol or getattr(self, "symbol", "RELIANCE"))
+        is_adani_asset = (active_sym == "ADANIENT")
         try:
             official_data = NSEIndiaFetcher.get_reliance_official_data(symbol=active_sym)
             if isinstance(official_data, dict) and float(official_data.get("prev_close", 0.0)) > 100.0:
@@ -5103,9 +5101,10 @@ class UltraHighConvictionRelianceEngine:
             v2_cl_c_bull = max(0.0, v2_cl_c_bull - 5.0)
             v2_cl_c_bear = max(0.0, v2_cl_c_bear - 5.0)
 
-        # Strike & OI Telemetry (Dynamic Strike Interval: 10-point for RELIANCE, 50-point for ADANIENT)
-        active_sym = (symbol or "").upper()
-        strike_step = 50 if active_sym == "ADANIENT" else 10
+        # Strike & OI Telemetry (Dynamic Strike Interval via AssetSpec)
+        active_sym = resolve_symbol(symbol=symbol)
+        spec_eval = get_asset_spec(symbol=active_sym)
+        strike_step = spec_eval.strike_step
         atm_strike = int(round(spot / strike_step) * strike_step)
         chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True, symbol=active_sym)
         opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True, symbol=active_sym)

@@ -179,14 +179,11 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
             e["id"] = f"TRD-{e.get('date', '').replace('-', '')}-{i:02d}-{sym_tag}"
         
         ep = float(e.get("entry_price", e.get("actual_entry_price", 0.0)))
-        lot_sz = int(e.get("lot_size", 250))
+        spec_entry = get_asset_spec(symbol=e.get("symbol"), contract=e.get("trading_symbol") or e.get("instrument"))
+        lot_sz = int(e.get("lot_size") or spec_entry.lot_size)
         qty = int(e.get("qty", lot_sz))
-        if qty > 0 and (qty % 309 == 0):
-            lot_sz = 309
-        elif qty > 0 and (qty % 250 == 0) and (qty % 500 != 0 or qty == 250):
-            lot_sz = 250
-        elif qty > 0 and (qty % 500 == 0):
-            lot_sz = int(e.get("lot_size", 500))
+        if qty <= 0:
+            qty = lot_sz
         num_lots = max(1, round(qty / lot_sz)) if lot_sz > 0 else 1
         e["num_lots"] = e.get("num_lots", num_lots)
         e["lot_size"] = lot_sz
@@ -552,8 +549,8 @@ class TradeJournalManager:
                 "actual_exit_time": actual_exit_time_str,
                 "actual_exit_price": exit_p,
                 "exit_price": exit_p,
-                "num_lots": max(1, round(qty / (309 if qty % 309 == 0 else (250 if qty % 250 == 0 and (qty % 500 != 0 or qty == 250) else (500 if qty % 500 == 0 else 250))))),
-                "lot_size": 309 if qty % 309 == 0 else (250 if qty % 250 == 0 and (qty % 500 != 0 or qty == 250) else (500 if qty % 500 == 0 else 250)),
+                "num_lots": max(1, round(qty / get_asset_spec(symbol=symbol, contract=trading_symbol).lot_size)),
+                "lot_size": get_asset_spec(symbol=symbol, contract=trading_symbol).lot_size,
                 "qty": qty,
                 "capital_deployed": cap_deployed,
                 "realised_pnl": realised_pnl,
@@ -1272,6 +1269,8 @@ class SequentialTradeEngine:
                 with open(state_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
                     if isinstance(state, dict) and "current_state" in state:
+                        if "symbol" not in state:
+                            state["symbol"] = "ADANIENT" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
                         return state
             except Exception as e:
                 logger.debug(f"Error reading sequential state ({state_file}): {e}")
@@ -1290,10 +1289,11 @@ class SequentialTradeEngine:
 
         if open_trades:
             active_tr = open_trades[-1]
-            def_qty = 309 if sym_kw == "ADANI" else 500
+            spec_tr = get_asset_spec(symbol=sym_kw, contract=active_tr.get("trading_symbol"))
+            def_qty = spec_tr.lot_size
             init_state = {
                 "current_state": cls.STATE_IN_TRADE,
-                "symbol": "ADANIENT" if sym_kw == "ADANI" else "RELIANCE",
+                "symbol": spec_tr.symbol,
                 "active_trade": {
                     "trade_num": len(closed_trades) + 1,
                     "contract": active_tr.get("trading_symbol", ""),
@@ -1302,8 +1302,8 @@ class SequentialTradeEngine:
                     "actual_entry": float(active_tr.get("actual_entry_price", active_tr.get("entry_price", 0.0))),
                     "actual_entry_time": active_tr.get("actual_entry_time", ""),
                     "executed": "Yes",
-                    "sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - 4.5))),
-                    "target": float(active_tr.get("suggested_exit", active_tr.get("entry_price", 0.0) + 10.0)),
+                    "sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - spec_tr.sl_pts))),
+                    "target": float(active_tr.get("suggested_exit", active_tr.get("entry_price", 0.0) + spec_tr.target_pts)),
                     "direction": active_tr.get("type", "BUY PE"),
                     "qty": int(active_tr.get("qty", def_qty)),
                     "num_lots": int(active_tr.get("num_lots", 1)),
@@ -1432,7 +1432,7 @@ class SequentialTradeEngine:
         direction: str,
         expiry: str,
         confluence: float,
-        qty: int = 250,
+        qty: int = 0,
         num_lots: int = 1,
         symbol: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -1441,9 +1441,10 @@ class SequentialTradeEngine:
         Zero delay: called instantly as soon as a buy entry trigger is validated.
         Completely prevents flapping back to ARMED state when price fluctuates.
         """
-        active_sym = symbol or ("ADANIENT" if ("ADANI" in contract.upper() or "ADANI" in instrument.upper()) else "RELIANCE")
-        if (qty == 250 or qty <= 0) and "ADANI" in active_sym:
-            qty = 309
+        spec = get_asset_spec(symbol=symbol, contract=f"{contract} {instrument}")
+        active_sym = spec.symbol
+        if qty <= 0:
+            qty = spec.lot_size * max(1, num_lots)
         state = cls.get_state(symbol=active_sym)
         curr_state = state.get("current_state", cls.STATE_IDLE)
 
@@ -1532,7 +1533,7 @@ class SequentialTradeEngine:
         direction: str,
         expiry: str,
         confluence: float,
-        qty: int = 250,
+        qty: int = 0,
         num_lots: int = 1,
         symbol: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -1540,9 +1541,10 @@ class SequentialTradeEngine:
         Rule 1: Propose a new trade setup. Strictly forbidden if an active or pending trade exists.
         Transitions state to ENTRY PENDING.
         """
-        active_sym = symbol or ("ADANIENT" if ("ADANI" in contract.upper() or "ADANI" in instrument.upper()) else "RELIANCE")
-        if (qty == 250 or qty <= 0) and "ADANI" in active_sym:
-            qty = 309
+        spec = get_asset_spec(symbol=symbol, contract=f"{contract} {instrument}")
+        active_sym = spec.symbol
+        if qty <= 0:
+            qty = spec.lot_size * max(1, num_lots)
         state = cls.get_state(symbol=active_sym)
         curr_state = state.get("current_state", cls.STATE_IDLE)
 
@@ -1727,8 +1729,9 @@ class SequentialTradeEngine:
         target = float(active.get("target", actual_entry + 10.0))
         sl = float(active.get("sl", max(0.05, actual_entry - 4.5)))
         contract = active.get("contract", "")
-        active_sym = symbol or state.get("symbol") or ("ADANIENT" if "ADANI" in contract.upper() else "RELIANCE")
-        qty = int(active.get("qty", 309 if active_sym == "ADANIENT" else 500))
+        spec_act = get_asset_spec(symbol=symbol or state.get("symbol"), contract=contract)
+        active_sym = spec_act.symbol
+        qty = int(active.get("qty", spec_act.lot_size))
 
         # Resolve real-time live LTP from Groww broker feed if connected (absolute zero latency)
         if groww_feed and getattr(groww_feed, "is_connected", False) and hasattr(groww_feed, "get_option_contract_ltp"):
@@ -1877,8 +1880,9 @@ class SequentialTradeEngine:
         t_num = active.get("trade_num", int(state.get("today_trade_count", 0)) + 1)
         inst = active.get("instrument", "")
         sym = active.get("contract", "")
-        active_sym = symbol or state.get("symbol") or ("ADANIENT" if "ADANI" in sym.upper() else "RELIANCE")
-        def_lot_sz = 309 if active_sym == "ADANIENT" else 500
+        spec_close = get_asset_spec(symbol=symbol or state.get("symbol"), contract=sym)
+        active_sym = spec_close.symbol
+        def_lot_sz = spec_close.lot_size
         qty = int(active.get("qty", def_lot_sz))
         pts = round(exit_p - actual_entry, 2)
         pnl = round(pts * qty, 2)

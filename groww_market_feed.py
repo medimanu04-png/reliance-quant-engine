@@ -1125,7 +1125,8 @@ class GrowwMarketFeed:
             r = sess.get(url, timeout=2.5)
             if r.status_code == 200:
                 d = r.json()
-                close = float(d.get("close") or (2816.80 if underlying == "ADANIENT" else 1219.20))
+                spec_u = get_asset_spec(symbol=underlying)
+                close = float(d.get("close") or spec_u.default_spot)
                 change = float(d.get("dayChange", 0.0) or 0.0)
                 day_change_perc = float(d.get("dayChangePerc", 0.0) or 0.0)
                 ltp = float(d.get("ltp")) if ("ltp" in d and d["ltp"] is not None) else round(close + change, 2)
@@ -1448,7 +1449,7 @@ class GrowwMarketFeed:
                             "put_iv": float(pe_greeks.get("iv", 20.0) or 20.0),
                             "groww_contract_ce": ce.get("trading_symbol"),
                             "groww_contract_pe": pe.get("trading_symbol"),
-                            "market_lot": 309 if underlying == "ADANIENT" else 500,
+                            "market_lot": get_asset_spec(symbol=underlying).lot_size,
                             "expiry": expiry_iso
                         })
                     if parsed_chain:
@@ -1500,7 +1501,7 @@ class GrowwMarketFeed:
                         "put_delta": float(pe.get("delta", -0.5) or -0.5) if pe.get("delta") is not None else -0.5,
                         "groww_contract_ce": ce.get("growwContractId"),
                         "groww_contract_pe": pe.get("growwContractId"),
-                        "market_lot": int(ce.get("marketLot", 0) or pe.get("marketLot", 0) or (309 if underlying == "ADANIENT" else 500)),
+                        "market_lot": int(ce.get("marketLot", 0) or pe.get("marketLot", 0) or get_asset_spec(symbol=underlying).lot_size),
                         "expiry": expiry_iso
                     })
                 if parsed_chain:
@@ -1557,7 +1558,7 @@ class GrowwMarketFeed:
                             "put_delta": float(pe.get("greeks", {}).get("delta", -0.5) or -0.5),
                             "groww_contract_ce": ce.get("growwContractId"),
                             "groww_contract_pe": pe.get("growwContractId"),
-                            "market_lot": 309 if underlying == "ADANIENT" else 500,
+                            "market_lot": get_asset_spec(symbol=underlying).lot_size,
                             "expiry": expiry_iso
                         })
                     if parsed_chain:
@@ -1613,7 +1614,7 @@ class GrowwMarketFeed:
         data = self.get_live_spot_data(symbol=underlying)
         spec = get_asset_spec(symbol=underlying)
         def_spot = spec.default_spot
-        def_close = 2816.80 if underlying == "ADANIENT" else 1167.70
+        def_close = spec.default_spot
         base_ltp = float(data.get("spot_ltp", def_spot))
         prev_close = float(data.get("prev_close", def_close))
 
@@ -2161,16 +2162,16 @@ class GrowwMarketFeed:
         # 3. Resilient institutional estimation if depth not reported by feed
         spec = get_asset_spec(symbol=underlying)
         def_spot = spec.default_spot
-        def_close = 2816.80 if underlying == "ADANIENT" else 1167.70
+        def_close = spec.default_spot
         def_vol = spec.volume_norm
-        skew_div = 50.0 if underlying == "ADANIENT" else 25.0
+        skew_div = spec.strike_step
         ltp = float(spot_data.get("spot_ltp", def_spot))
         if buy_qty == 0 or sell_qty == 0:
             close = float(spot_data.get("prev_close", def_close))
             change = ltp - close
             vol = int(spot_data.get("volume", def_vol))
-            skew = max(-0.40, min(0.40, change / skew_div))
-            base_depth = max(30000 if underlying == "ADANIENT" else 50000, int(vol * 0.05))
+            skew = max(-0.40, min(0.40, change / max(1.0, float(skew_div))))
+            base_depth = max(spec.lot_size * 100, int(vol * 0.05))
             buy_qty = int(base_depth * (1.0 + skew))
             sell_qty = int(base_depth * (1.0 - skew))
 
@@ -2196,7 +2197,7 @@ class GrowwMarketFeed:
         norm_obi = round((buy_qty - sell_qty) / max(1, tot_q), 3) if tot_q > 0 else 0.0
         kyle_lambda = round(abs(best_ask - best_bid) / max(1000, tot_q) * 1e5, 4) if tot_q > 0 else 0.01
 
-        spread_thresh = 0.10 if underlying == "ADANIENT" else 0.04
+        spread_thresh = spec.spread_threshold
         if ratio >= 1.30 or micro_spread >= spread_thresh or norm_obi >= 0.15:
             bias = "BUYER_DOMINANCE"
         elif ratio <= 0.77 or micro_spread <= -spread_thresh or norm_obi <= -0.15:

@@ -537,8 +537,10 @@ class TelegramNotifier:
     ) -> str:
         """Formats an institutional grade entry alert for Telegram (supports both CE and PE)."""
         spot = cls._resolve_live_spot(spot, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(contract=contract):
-            lot_size = 309
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(contract=contract)
+        if lot_size in (250, 0):
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         target_price = round(entry_price + target_pts, 2)
@@ -619,8 +621,10 @@ class TelegramNotifier:
     ) -> str:
         """Formats an institutional grade ARMED PRE-ALERT for Telegram (Preparing for Breakout, DO NOT BUY YET)."""
         spot = cls._resolve_live_spot(spot, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(contract=contract):
-            lot_size = 309
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(contract=contract)
+        if lot_size in (250, 0):
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         potential_gain = round(total_qty * target_pts)
@@ -677,8 +681,10 @@ class TelegramNotifier:
     ) -> str:
         """Formats a TARGET HIT celebration alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(symbol, contract):
-            lot_size = 309
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        if lot_size in (250, 0):
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         target_pts = profit_pts or kwargs.get("target_pts", 10.0)
@@ -722,8 +728,10 @@ class TelegramNotifier:
     ) -> str:
         """Formats a STOP LOSS risk preservation alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(symbol, contract):
-            lot_size = 309
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        if lot_size in (250, 0):
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         stop_pts = loss_pts or kwargs.get("sl_pts", 9.0)
@@ -769,8 +777,10 @@ class TelegramNotifier:
     ) -> str:
         """Formats a TRAILING STOP LOSS alert (Move SL to Cost) for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(symbol, contract):
-            lot_size = 309
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        if lot_size in (250, 0):
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         locked_pts = secured_pts or kwargs.get("locked_pts", 5.0)
@@ -814,8 +824,10 @@ class TelegramNotifier:
     ) -> str:
         """Formats a BREAKEVEN ALERT (+3.5 pts reached, SL moved to Cost) for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(symbol, contract):
-            lot_size = 309
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        if lot_size in (250, 0):
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         be_sl = round(entry_price + 0.10, 2)
@@ -859,7 +871,7 @@ class TelegramNotifier:
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol, contract)
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size in (250, 500) and spec.symbol == "ADANIENT":
+        if lot_size in (250, 0):
             lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
@@ -903,8 +915,10 @@ class TelegramNotifier:
     ) -> str:
         """Formats an AUTO-SQUARE-OFF EOD CUTOFF alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(symbol, contract):
-            lot_size = 309
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        if lot_size in (250, 0):
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
         return f"""

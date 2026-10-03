@@ -14,7 +14,7 @@ import math
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
-from asset_config import get_asset_spec
+from asset_config import get_asset_spec, resolve_symbol
 
 try:
     import requests
@@ -496,25 +496,24 @@ class NSEIndiaFetcher:
         Retrieves or dynamically computes option contract volume, Open Interest (OI),
         and Put-Call dynamics for the specific ATM strike contract directly from Groww.
         """
-        sym = (symbol or "").upper().strip()
-        if not sym:
-            sym = "ADANIENT" if spot >= 2000 else "RELIANCE"
-        lot_size = 309 if sym == "ADANIENT" else 500
+        sym = resolve_symbol(symbol=symbol)
+        spec = get_asset_spec(symbol=sym)
+        lot_size = spec.lot_size
         try:
             from groww_market_feed import GrowwMarketFeed
             groww_feed = GrowwMarketFeed.get_instance()
             groww_chain = groww_feed.get_live_option_chain(symbol=sym, force_refresh=force_refresh)
             if groww_chain:
                 atm_contract = min(groww_chain, key=lambda x: abs(x["strike"] - atm_strike))
-                call_oi = atm_contract.get("call_oi", 1073 if sym == "ADANIENT" else 2450000)
-                put_oi = atm_contract.get("put_oi", 2310 if sym == "ADANIENT" else 3350000)
+                call_oi = atm_contract.get("call_oi", spec.fallback_call_oi)
+                put_oi = atm_contract.get("put_oi", spec.fallback_put_oi)
                 call_change = atm_contract.get("call_change", 0.0)
                 put_change = atm_contract.get("put_change", 0.0)
                 pcr_oi = round(put_oi / call_oi, 2) if call_oi > 0 else 1.25
                 return {
                     "atm_strike": atm_contract["strike"],
-                    "call_volume": atm_contract.get("call_volume", 2770 if sym == "ADANIENT" else 98500),
-                    "put_volume": atm_contract.get("put_volume", 5075 if sym == "ADANIENT" else 84200),
+                    "call_volume": atm_contract.get("call_volume", spec.fallback_call_vol),
+                    "put_volume": atm_contract.get("put_volume", spec.fallback_put_vol),
                     "call_oi": call_oi,
                     "put_oi": put_oi,
                     "call_oi_change_pct": round(call_change, 1),
@@ -531,10 +530,10 @@ class NSEIndiaFetcher:
             pass
 
         # Neutral un-biased baseline fallback when broker feed is offline
-        call_vol = 2770 if sym == "ADANIENT" else 85000
-        put_vol = 5075 if sym == "ADANIENT" else 85000
-        call_oi = 1073 if sym == "ADANIENT" else 2500000
-        put_oi = 2310 if sym == "ADANIENT" else 2500000
+        call_vol = spec.fallback_call_vol
+        put_vol = spec.fallback_put_vol
+        call_oi = spec.fallback_call_oi
+        put_oi = spec.fallback_put_oi
         call_oi_change = 0.0
         put_oi_change = 0.0
         pcr_oi = round(put_oi / call_oi, 2) if call_oi > 0 else 1.00
@@ -563,9 +562,7 @@ class NSEIndiaFetcher:
         Computes complete multi-strike Open Interest (OI) distribution,
         Max Pain level, Call/Put Walls, and Cumulative PCR from Groww Live Option Chain.
         """
-        sym = (symbol or "").upper().strip()
-        if not sym:
-            sym = "ADANIENT" if spot >= 2000 else "RELIANCE"
+        sym = resolve_symbol(symbol=symbol)
         spec = get_asset_spec(symbol=sym)
         lot_size = spec.lot_size
         try:
@@ -640,7 +637,7 @@ class NSEIndiaFetcher:
 
         # Neutral baseline option chain distribution (Broker Offline)
         step_val = spec.strike_step
-        base_oi_multiplier = 0.05 if spec.symbol == "ADANIENT" else 1.0
+        base_oi_multiplier = spec.fallback_call_oi / 450000.0
         strikes = [atm_strike + (step * step_val) for step in range(-4, 5)]
         chain = []
         total_call_oi = 0
@@ -754,7 +751,7 @@ class NSEIndiaFetcher:
         sec_seed = int(now_ts * 10)
         rng = random.Random(sec_seed)
 
-        sym = scrip_symbol.upper() if scrip_symbol else ("ADANIENT" if (spot is not None and spot >= 2000) else "RELIANCE")
+        sym = resolve_symbol(symbol=scrip_symbol)
         spec = get_asset_spec(symbol=sym)
         if spot is None or spot <= 0:
             off_data = cls.get_official_data(sym)
@@ -779,7 +776,7 @@ class NSEIndiaFetcher:
         dte = expiry_meta["dte"]
         T = max(1.0, float(dte)) / 365.0
         r = 0.0675
-        sigma = 0.355 if sym == "ADANIENT" else 0.212
+        sigma = spec.bsm_sigma
 
         def compute_strike_metrics(k: int, base_c_override: float = 0.0, base_p_override: float = 0.0, base_c_oi_lots: int = 2415, base_p_oi_lots: int = 3599, c_oi_chg: float = 10.0, p_oi_chg: float = 10.0, delta_c_override: float = None, delta_p_override: float = None):
             # Black-Scholes Greeks
@@ -858,19 +855,19 @@ class NSEIndiaFetcher:
         # Real-time broker prices directly queried from Groww API live option chain for selected expiry:
         gw_low_ce = 0.0
         gw_low_pe = 0.0
-        gw_low_c_oi = 1073 if sym == "ADANIENT" else 2415
-        gw_low_p_oi = 2310 if sym == "ADANIENT" else 3599
-        gw_low_c_chg = 0.0 if sym == "ADANIENT" else 0.35
-        gw_low_p_chg = 0.0 if sym == "ADANIENT" else -4.15
+        gw_low_c_oi = max(1, spec.fallback_call_oi // spec.lot_size)
+        gw_low_p_oi = max(1, spec.fallback_put_oi // spec.lot_size)
+        gw_low_c_chg = 0.25
+        gw_low_p_chg = -2.50
         gw_low_delta_c = None
         gw_low_delta_p = None
 
         gw_high_ce = 0.0
         gw_high_pe = 0.0
-        gw_high_c_oi = 729 if sym == "ADANIENT" else 3462
-        gw_high_p_oi = 700 if sym == "ADANIENT" else 3720
-        gw_high_c_chg = 0.0 if sym == "ADANIENT" else 0.15
-        gw_high_p_chg = 0.0 if sym == "ADANIENT" else -4.30
+        gw_high_c_oi = max(1, int((spec.fallback_call_oi * 0.9) // spec.lot_size))
+        gw_high_p_oi = max(1, int((spec.fallback_put_oi * 0.9) // spec.lot_size))
+        gw_high_c_chg = 0.15
+        gw_high_p_chg = -2.50
         gw_high_delta_c = None
         gw_high_delta_p = None
 
@@ -1167,9 +1164,7 @@ class NSEIndiaFetcher:
         - Derivative F&O Positioning (Long/Short Call & Put contracts)
         - Smart Money Confluence & Absorption Ratio
         """
-        sym = (symbol or "").upper().strip()
-        if not sym:
-            sym = "ADANIENT" if (spot is not None and spot >= 2000) else "RELIANCE"
+        sym = resolve_symbol(symbol=symbol)
         spec = get_asset_spec(symbol=sym)
         if spot is None or spot <= 0:
             off_data = cls.get_official_data(sym)
@@ -1182,7 +1177,7 @@ class NSEIndiaFetcher:
         now_ts = time.time()
         rng = random.Random(int(now_ts * 5))
 
-        base_vol = max(500000 if sym == "ADANIENT" else 1000000, int(volume))
+        base_vol = max(spec.volume_norm // 4, int(volume))
         tot_turnover_cr = round((base_vol * spot) / 1e7, 2)
 
         # Micro-variations matching live trading activity
@@ -1201,28 +1196,29 @@ class NSEIndiaFetcher:
         fii_net_cr = round(((fii_buyers - fii_sellers) * spot) / 1e7, 2)
         fii_buy_cr = round((fii_buyers * spot) / 1e7, 2)
         fii_sell_cr = round((fii_sellers * spot) / 1e7, 2)
-        fii_orders = (850 if sym == "ADANIENT" else 1380) + rng.randint(-25, 45)
+        vol_scale = spec.volume_norm / 4725000.0
+        fii_orders = int(1380 * vol_scale) + rng.randint(-25, 45)
 
         dii_buyers = int(dii_vol * (dii_buy_ratio / 100.0))
         dii_sellers = dii_vol - dii_buyers
         dii_net_cr = round(((dii_buyers - dii_sellers) * spot) / 1e7, 2)
         dii_buy_cr = round((dii_buyers * spot) / 1e7, 2)
         dii_sell_cr = round((dii_sellers * spot) / 1e7, 2)
-        dii_orders = (520 if sym == "ADANIENT" else 860) + rng.randint(-15, 30)
+        dii_orders = int(860 * vol_scale) + rng.randint(-15, 30)
 
         pro_buyers = int(pro_vol * (pro_buy_ratio / 100.0))
         pro_sellers = pro_vol - pro_buyers
         pro_net_cr = round(((pro_buyers - pro_sellers) * spot) / 1e7, 2)
         pro_buy_cr = round((pro_buyers * spot) / 1e7, 2)
         pro_sell_cr = round((pro_sellers * spot) / 1e7, 2)
-        pro_orders = (2800 if sym == "ADANIENT" else 4720) + rng.randint(-60, 90)
+        pro_orders = int(4720 * vol_scale) + rng.randint(-60, 90)
 
         ret_buyers = int(ret_vol * (ret_buy_ratio / 100.0))
         ret_sellers = ret_vol - ret_buyers
         ret_net_cr = round(((ret_buyers - ret_sellers) * spot) / 1e7, 2)
         ret_buy_cr = round((ret_buyers * spot) / 1e7, 2)
         ret_sell_cr = round((ret_sellers * spot) / 1e7, 2)
-        ret_orders = (8500 if sym == "ADANIENT" else 14350) + rng.randint(-120, 200)
+        ret_orders = int(14350 * vol_scale) + rng.randint(-120, 200)
 
         tot_buyers_count = fii_orders + dii_orders + pro_orders + ret_orders
         smart_money_net_cr = round(fii_net_cr + dii_net_cr, 2)
