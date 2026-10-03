@@ -433,8 +433,8 @@ class TradeJournalManager:
 
             entry_p = float(gt.get("entry_price", 0.0))
             exit_p = float(gt.get("exit_price", 0.0))
-            realised_pnl = float(gt.get("realised_pnl", 0.0))
-            qty = int(gt.get("qty", 309 if sym_kw == "ADANI" else 1000))
+            spec = get_asset_spec(sym or sym_kw)
+            qty = int(gt.get("qty", spec.lot_size * spec.default_lots))
             is_closed = bool(gt.get("is_closed", False))
             
             raw_entry_t = gt.get("entry_time", "")
@@ -945,9 +945,11 @@ class ShadowMonitoringEngine:
 
         for rec in today_recs:
             sym = rec.get("symbol", "")
+            rec_spec = get_asset_spec(sym)
+            shadow_qty = int(rec.get("qty", rec_spec.lot_size * rec_spec.default_lots))
             entry = float(rec.get("entry", 30.0))
-            target = float(rec.get("target", entry + 10.0))
-            sl = float(rec.get("sl", entry - 4.5))
+            target = float(rec.get("target", entry + rec_spec.target_pts))
+            sl = float(rec.get("sl", entry - rec_spec.sl_pts))
             rec_mins = _parse_time_minutes(rec.get("timestamp"))
 
             # Auto-check user execution on Groww (Strict chronological 1-to-1 matching)
@@ -1029,7 +1031,7 @@ class ShadowMonitoringEngine:
                         rec["exit_price"] = round(target, 2)
                         rec["exit_time"] = now_dt.strftime("%I:%M:%S %p IST")
                         rec["shadow_pts"] = round(target - entry, 2)
-                        rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                        rec["shadow_pnl"] = round(rec["shadow_pts"] * shadow_qty, 2)
                         updated_any = True
                     # Check Stop-Loss Hit
                     elif live_p <= sl:
@@ -1037,7 +1039,7 @@ class ShadowMonitoringEngine:
                         rec["exit_price"] = round(sl, 2)
                         rec["exit_time"] = now_dt.strftime("%I:%M:%S %p IST")
                         rec["shadow_pts"] = round(sl - entry, 2)
-                        rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                        rec["shadow_pnl"] = round(rec["shadow_pts"] * shadow_qty, 2)
                         updated_any = True
                     # Check EOD Exit (at 3:30 PM)
                     elif now_time >= market_close:
@@ -1045,19 +1047,19 @@ class ShadowMonitoringEngine:
                         rec["exit_price"] = round(live_p, 2)
                         rec["exit_time"] = "03:30:00 PM IST"
                         rec["shadow_pts"] = round(live_p - entry, 2)
-                        rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                        rec["shadow_pnl"] = round(rec["shadow_pts"] * shadow_qty, 2)
                         updated_any = True
                     else:
                         cur_pts = round(live_p - entry, 2)
                         rec["shadow_pts"] = cur_pts
-                        rec["shadow_pnl"] = round(cur_pts * 1000, 2)
+                        rec["shadow_pnl"] = round(cur_pts * shadow_qty, 2)
 
                 elif now_time >= market_close:
                     rec["shadow_status"] = "EOD Exit"
                     rec["exit_price"] = float(rec.get("current_price", entry))
                     rec["exit_time"] = "03:30:00 PM IST"
                     rec["shadow_pts"] = round(rec["exit_price"] - entry, 2)
-                    rec["shadow_pnl"] = round(rec["shadow_pts"] * 1000, 2)
+                    rec["shadow_pnl"] = round(rec["shadow_pts"] * shadow_qty, 2)
                     updated_any = True
 
         # Check for any unclaimed Groww executed trades and make entry for them!

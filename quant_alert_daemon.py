@@ -57,6 +57,7 @@ from trade_journal_manager import (
     STARTING_CAPITAL
 )
 from fo_quant_engine import MultiIndicatorMath, UltraHighConvictionRelianceEngine
+from asset_config import get_asset_spec
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BREAKOUT_FILE = os.path.join(BASE_DIR, "breakout_triggers_log.json")
@@ -98,9 +99,10 @@ class StandaloneBreakoutManager:
             logger.debug(f"Error saving breakout records: {e}")
 
     @classmethod
-    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: float = 1.20) -> float:
+    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: float = 1.20, symbol: Optional[str] = None) -> float:
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        key = f"{today_str}_{strike}_{contract_type}"
+        sym_part = f"{symbol.upper()}_" if symbol else ""
+        key = f"{today_str}_{sym_part}{strike}_{contract_type}"
         records = cls._load_records()
 
         if key in records and isinstance(records[key], (int, float)) and records[key] > 0.0:
@@ -471,11 +473,13 @@ class RelianceQuantAlertDaemon:
         active_option_ltp = active_branch["call_ltp"] if contract_type == "CE" else active_branch["put_ltp"]
 
         # 4. Breakout Trigger Pinning & Bar Confirmation Gate
+        breakout_buffer = 3.50 if (sym == "ADANIENT" or "ADANI" in str(sym)) else 1.20
         breakout_level = StandaloneBreakoutManager.get_or_set_trigger(
             strike=recommended_strike,
             contract_type=contract_type,
             current_ltp=active_option_ltp,
-            buffer_pts=1.20
+            buffer_pts=breakout_buffer,
+            symbol=sym
         )
         gap_pts = round(breakout_level - active_option_ltp, 2)
 
@@ -546,9 +550,10 @@ class RelianceQuantAlertDaemon:
                 except Exception:
                     pass
 
-            trade_qty = int(active_trade.get("qty", 309 if sym == "ADANIENT" else 250))
-            trade_num_lots = int(active_trade.get("num_lots", 1))
-            trade_lot_size = int(active_trade.get("lot_size", 309 if sym == "ADANIENT" else 250))
+            spec = get_asset_spec(sym)
+            trade_lot_size = int(active_trade.get("lot_size", spec.lot_size))
+            trade_num_lots = int(active_trade.get("num_lots", spec.default_lots))
+            trade_qty = int(active_trade.get("qty", trade_lot_size * trade_num_lots))
 
             unreal_pts = round(cur_trade_ltp - act_entry, 2)
             unreal_pnl = round(unreal_pts * trade_qty, 2)
@@ -577,9 +582,9 @@ class RelianceQuantAlertDaemon:
                 except Exception as e:
                     logger.debug(f"Git auto-sync error on trade closure: {e}")
 
-            # Tiered Breakeven Escalator Telegram Alerts
-            # Milestone 1: At +3.5 pts -> Move SL to Cost (Risk-Free Breakeven Alert)
-            if unreal_pts >= 3.5:
+            # Tiered Breakeven Escalator Telegram Alerts (Dynamically Scaled per AssetSpec)
+            # Milestone 1: At Breakeven threshold -> Move SL to Cost
+            if unreal_pts >= spec.be_pts:
                 be_alert_key = f"tg_sent_be_{today_date}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(be_alert_key):
                     be_msg = TelegramNotifier.format_breakeven_alert(
@@ -596,8 +601,8 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(be_alert_key)
                         logger.info(f"🛡️ Telegram Breakeven Escalator Alert dispatched: {fb}")
 
-            # Milestone 2: At +5.5 pts -> Lock +3.0 pts Profit Alert
-            if unreal_pts >= 5.5:
+            # Milestone 2: At Profit Lock threshold -> Lock Guaranteed Profit
+            if unreal_pts >= spec.profit_lock_trigger:
                 lock_alert_key = f"tg_sent_lock_{today_date}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(lock_alert_key):
                     lock_msg = TelegramNotifier.format_profit_lock_alert(
@@ -614,8 +619,9 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(lock_alert_key)
                         logger.info(f"🔒 Telegram Profit Lock Alert dispatched: {fb}")
 
-            # Milestone 3: Higher trailing alert for explosive runners (> 6.5 pts)
-            if cur_trade_ltp > active_trade.get("highest_price", act_entry) and unreal_pts >= 6.5:
+            # Milestone 3: Higher trailing alert for explosive runners
+            trail_runner_trigger = spec.profit_lock_trigger + (5.0 if sym == "ADANIENT" else 1.0)
+            if cur_trade_ltp > active_trade.get("highest_price", act_entry) and unreal_pts >= trail_runner_trigger:
                 new_trail = round(act_entry + (unreal_pts * 0.65), 2)
                 trail_alert_key = f"tg_sent_trail_{today_date}_{trade_num}_{round(new_trail, 1)}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(trail_alert_key):
@@ -737,28 +743,30 @@ class RelianceQuantAlertDaemon:
                 ) if debit_spread else ""
 
                 if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key):
+                    sym_spec = get_asset_spec(sym)
+                    active_risk = self.quant_engines.get(sym, self.quant_engine).risk
                     entry_msg = TelegramNotifier.format_entry_alert(
                         contract=contract_label,
                         direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
                         entry_price=active_option_ltp,
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
-                        num_lots=self.quant_engine.risk.num_lots,
-                        lot_size=self.quant_engine.risk.lot_size,
+                        num_lots=active_risk.num_lots,
+                        lot_size=active_risk.lot_size,
                         win_prob=win_exp,
                         spot=spot,
                         rationale=(
                             f"Dual ATM Breakout confirmed ({tier_str})\n"
                             f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
                             f"• Order Type: Stop-Loss Limit (SL-LMT) | Pegged Limit: ₹{confluence_eval.get('pegged_limit_price', active_option_ltp):.2f}\n"
-                            f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{self.quant_engine.risk.limit_collar_pts:.2f})\n"
+                            f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{active_risk.limit_collar_pts:.2f})\n"
                             f"• Wick Guard: {'Passed (>=45s)' if wick_guard_passed else 'Immature'} | 2-Tick: Confirmed ({consecutive_ticks} ticks)\n"
                             f"• Macro & Basis: W-AVWAP ₹{confluence_eval.get('w_avwap', spot):.2f} | Futures Basis {confluence_eval.get('basis_pts', 0.0):+.2f} pts ({confluence_eval.get('basis_regime', 'BALANCED')})\n"
                             f"• Sizing & Risk: Half-Kelly {confluence_eval.get('half_kelly_pct', 20.0):.1f}% ({confluence_eval.get('kelly_recommended_lots', 1)} Lots) | VaR-99% ₹{confluence_eval.get('var_99_rupees', 0.0):,.0f} | Delta Eqv: {confluence_eval.get('portfolio_delta_shares', 0.0):+.1f} Sh\n"
-                            f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', 1200):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
+                            f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', sym_spec.default_strike):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
                             f"• Trend & Efficiency: KAMA @ ₹{confluence_eval.get('kama', spot):.2f} (KER: {confluence_eval.get('kaufman_efficiency_ratio', 0.5):.2f}) | FVG: {confluence_eval.get('fvg_status', 'NEUTRAL')}\n"
                             f"• Routing & Slicing: {confluence_eval.get('routing_mode', 'ZERO_SLIPPAGE_ROUTING')} | {confluence_eval.get('slicing_regime', 'DIRECT_PEGGED')}\n"
-                            f"• Stop Loss Protection: Set SL-LMT order Trigger ₹{max(0.05, active_option_ltp - dynamic_sl_pts):.2f} / Limit ₹{max(0.05, active_option_ltp - dynamic_sl_pts - self.quant_engine.risk.limit_collar_pts):.2f}. (Emergency: Exit at Market if limit breached!){spread_text}"
+                            f"• Stop Loss Protection: Set SL-LMT order Trigger ₹{max(0.05, active_option_ltp - dynamic_sl_pts):.2f} / Limit ₹{max(0.05, active_option_ltp - dynamic_sl_pts - active_risk.limit_collar_pts):.2f}. (Emergency: Exit at Market if limit breached!){spread_text}"
                         )
                     )
                     buttons = TelegramNotifier.get_entry_ce_buttons(f"{sym} {recommended_strike} CE", symbol=sym) if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"{sym} {recommended_strike} PE", symbol=sym)

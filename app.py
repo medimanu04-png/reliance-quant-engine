@@ -2240,9 +2240,11 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
         pass
 
     if "_APP_INDICATOR_CACHE" in st.session_state:
-        if len(st.session_state["_APP_INDICATOR_CACHE"]) > 15:
-            st.session_state["_APP_INDICATOR_CACHE"].clear()
-        st.session_state["_APP_INDICATOR_CACHE"][ind_cache_key] = df
+        cache_dict = st.session_state["_APP_INDICATOR_CACHE"]
+        while len(cache_dict) >= 20:
+            first_key = next(iter(cache_dict))
+            del cache_dict[first_key]
+        cache_dict[ind_cache_key] = df
 
     return df
 
@@ -2327,11 +2329,12 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
 
     # Pin breakout trigger level persistently so it remains stationary across refreshes
     breakout_session_key = f"breakout_level_{active_sym}_{plan_strike}_{plan_contract_type}"
+    breakout_buffer = 3.50 if (active_sym == "ADANIENT" or "ADANI" in str(active_sym)) else 1.20
     breakout_level = BreakoutTriggerManager.get_or_set_trigger(
         strike=plan_strike,
         contract_type=plan_contract_type,
         current_ltp=active_live_ltp,
-        buffer_pts=1.20,
+        buffer_pts=breakout_buffer,
         manual_override=tp.get("custom_trigger_override", 0.0),
         symbol=active_sym
     )
@@ -7761,8 +7764,9 @@ if df is not None and not df.empty:
         # ==============================================================================
         # 9. DAILY TRADE PERFORMANCE JOURNAL, SHADOW MONITORING & CALENDAR HISTORY
         # ==============================================================================
-        # Calculate capital allocation on today's suggested strike price (Mandate: strictly 1 Lot = 250 Qty)
-        today_strike_price = float(estimated_premium if estimated_premium > 0 else (current_option_ltp if current_option_ltp > 0 else 37.65))
+        # Calculate capital allocation on today's suggested strike price (Mandate: strictly 2 Lots)
+        default_prem = get_asset_spec(scrip_symbol).default_call_price
+        today_strike_price = float(estimated_premium if estimated_premium > 0 else (current_option_ltp if current_option_ltp > 0 else default_prem))
         today_2lot_capital = round(num_lots * lot_size * today_strike_price, 2)
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
 

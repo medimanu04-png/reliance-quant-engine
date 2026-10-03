@@ -33,7 +33,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Dict, Any, List, Tuple, Optional
-from asset_config import get_asset_spec
+from asset_config import get_asset_spec, ASSET_SPECS, resolve_symbol
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -50,44 +50,29 @@ if sys.stdout.encoding != 'utf-8':
 # 0. CENTRALIZED MULTI-ASSET REGISTRY & SPECIFICATIONS
 # ============================================================================
 ASSET_REGISTRY: Dict[str, Dict[str, Any]] = {
-    "RELIANCE": {
-        "symbol": "RELIANCE",
-        "name": "Reliance Industries Ltd",
-        "yfinance_ticker": "RELIANCE.NS",
-        "lot_size": 250,
-        "num_lots": 2,
-        "strike_step": 10.0,
-        "spread_step": 20,
-        "beta": 1.15,
-        "target_pts": 7.0,
-        "stop_loss_pts": 5.0,
-        "limit_collar_pts": 0.65,
-        "estimated_tax_per_lot": 65.0,
-        "daily_sl_cap_rupees": 5000.0,
-        "parent_sector": "NIFTY ENERGY",
-        "avg_daily_volume": 4725000,
-        "has_crude_coupling": True,
-        "groww_slug": "reliance-industries-ltd",
-    },
-    "ADANIENT": {
-        "symbol": "ADANIENT",
-        "name": "Adani Enterprises Ltd",
-        "yfinance_ticker": "ADANIENT.NS",
-        "lot_size": 309,
-        "num_lots": 2,
-        "strike_step": 50.0,
-        "spread_step": 100,
-        "beta": 1.65,
-        "target_pts": 35.0,
-        "stop_loss_pts": 15.0,
-        "limit_collar_pts": 1.80,
-        "estimated_tax_per_lot": 85.0,
-        "daily_sl_cap_rupees": 9270.0,
-        "parent_sector": "NIFTY 50",
-        "avg_daily_volume": 1850000,
-        "has_crude_coupling": False,
-        "groww_slug": "adani-enterprises-ltd",
+    sym: {
+        "symbol": spec.symbol,
+        "name": spec.full_name,
+        "yfinance_ticker": spec.yf_symbol,
+        "lot_size": spec.lot_size,
+        "num_lots": spec.default_lots,
+        "strike_step": float(spec.strike_step),
+        "spread_step": spec.strike_step * 2,
+        "beta": 1.65 if sym == "ADANIENT" else 1.15,
+        "target_pts": spec.target_pts,
+        "stop_loss_pts": spec.sl_pts,
+        "be_pts": spec.be_pts,
+        "profit_lock_trigger": spec.profit_lock_trigger,
+        "profit_lock_locked": spec.profit_lock_locked,
+        "limit_collar_pts": 1.80 if sym == "ADANIENT" else 0.65,
+        "estimated_tax_per_lot": 85.0 if sym == "ADANIENT" else 65.0,
+        "daily_sl_cap_rupees": spec.daily_sl_cap_rupees,
+        "parent_sector": "NIFTY 50" if sym == "ADANIENT" else "NIFTY ENERGY",
+        "avg_daily_volume": spec.volume_norm,
+        "has_crude_coupling": (sym == "RELIANCE"),
+        "groww_slug": spec.groww_company_slug,
     }
+    for sym, spec in ASSET_SPECS.items()
 }
 
 
@@ -97,10 +82,10 @@ ASSET_REGISTRY: Dict[str, Dict[str, Any]] = {
 @dataclass
 class RelianceRiskBudget:
     total_capital: float = 73643.72
-    lot_size: int = 250  # NSE standard lot size
+    lot_size: int = 500  # NSE standard lot size (500 Reliance, 309 Adani)
     num_lots: int = 2    # Standard 2 lots mandate
-    target_pts: float = 7.0  # Optimal Intraday Target
-    stop_loss_pts: float = 5.0  # Optimal Stop Loss
+    target_pts: float = 10.0  # Optimal Intraday Target
+    stop_loss_pts: float = 4.5  # Optimal Stop Loss
     limit_collar_pts: float = 0.65  # Institutional Stop-Limit execution collar
     estimated_tax_per_lot: float = 65.0  # Estimated statutory charges
     daily_sl_cap_rupees: float = 5000.0  # Strict 1-and-Done Cap for 2 lots
@@ -108,31 +93,19 @@ class RelianceRiskBudget:
 
     @classmethod
     def for_symbol(cls, symbol: str = "RELIANCE", spot: float = 0.0) -> "RelianceRiskBudget":
-        """Instantiates risk budget calibrated specifically to the active scrip."""
+        """Instantiates risk budget calibrated specifically to the active scrip from canonical AssetSpec."""
         rb = cls()
-        sym = (symbol or "").upper().strip()
-        if "ADANI" in sym:
-            cfg = ASSET_REGISTRY["ADANIENT"]
-            rb.total_capital = 85000.0
-            rb.lot_size = cfg["lot_size"]
-            rb.num_lots = cfg["num_lots"]
-            rb.target_pts = cfg["target_pts"]
-            rb.stop_loss_pts = cfg["stop_loss_pts"]
-            rb.limit_collar_pts = cfg["limit_collar_pts"]
-            rb.estimated_tax_per_lot = cfg["estimated_tax_per_lot"]
-            rb.daily_sl_cap_rupees = cfg["daily_sl_cap_rupees"]
-            rb.max_daily_sl_trades = 1
-        else:
-            cfg = ASSET_REGISTRY["RELIANCE"]
-            rb.total_capital = 73643.72
-            rb.lot_size = cfg["lot_size"]
-            rb.num_lots = cfg["num_lots"]
-            rb.target_pts = cfg["target_pts"]
-            rb.stop_loss_pts = cfg["stop_loss_pts"]
-            rb.limit_collar_pts = cfg["limit_collar_pts"]
-            rb.estimated_tax_per_lot = cfg["estimated_tax_per_lot"]
-            rb.daily_sl_cap_rupees = cfg["daily_sl_cap_rupees"]
-            rb.max_daily_sl_trades = 1
+        spec = get_asset_spec(symbol)
+        is_adani = (spec.symbol == "ADANIENT")
+        rb.total_capital = 85000.0 if is_adani else 73643.72
+        rb.lot_size = spec.lot_size
+        rb.num_lots = spec.default_lots
+        rb.target_pts = spec.target_pts
+        rb.stop_loss_pts = spec.sl_pts
+        rb.limit_collar_pts = 1.80 if is_adani else 0.65
+        rb.estimated_tax_per_lot = 85.0 if is_adani else 65.0
+        rb.daily_sl_cap_rupees = spec.daily_sl_cap_rupees
+        rb.max_daily_sl_trades = 1
         return rb
 
     def check_daily_sl_cap(self, daily_realized_loss: float = 0.0, daily_sl_count: int = 0) -> Tuple[bool, str]:
@@ -183,14 +156,9 @@ class RelianceRiskBudget:
 
     def adapt_to_volatility(self, atr_15m: float, delta: float = 0.52, india_vix: float = 14.5):
         """
-        Dynamically adapts target and stop-loss points using India VIX Elasticity Multiplier (Recommendation 3).
+        Dynamically adapts target and stop-loss points using India VIX Elasticity Multiplier.
         Reference: CBOE Implied Move Dynamics.
-        
-        Formula:
-          Target Pts = 7.5 * (India VIX / 14.0) ** 0.65
-          SL Pts = 3.5 * (India VIX / 14.0) ** 0.50
-        
-        Ensures targets remain statistically achievable within current session's empirical range.
+        Proportionally scales off the active scrip's nominal target_pts and stop_loss_pts.
         """
         safe_vix = max(8.0, min(35.0, india_vix if india_vix else 14.5))
         vix_ratio = safe_vix / 14.0
@@ -199,8 +167,11 @@ class RelianceRiskBudget:
         target_elasticity = (vix_ratio ** 0.65)
         sl_elasticity = (vix_ratio ** 0.50)
         
-        base_tgt = 7.5 * target_elasticity
-        base_sl = 3.5 * sl_elasticity
+        nominal_tgt = self.target_pts if self.target_pts > 0 else 10.0
+        nominal_sl = self.stop_loss_pts if self.stop_loss_pts > 0 else 4.5
+
+        base_tgt = nominal_tgt * target_elasticity
+        base_sl = nominal_sl * sl_elasticity
         
         # If 15m ATR is available, blend with ATR expected move
         if atr_15m and atr_15m > 0:
@@ -209,8 +180,13 @@ class RelianceRiskBudget:
             base_tgt = (base_tgt * 0.60) + (atr_move * 1.5 * 0.40)
             base_sl = (base_sl * 0.60) + (atr_move * 0.75 * 0.40)
             
-        dynamic_sl = round(min(5.5, max(2.2, base_sl)), 1)
-        dynamic_tgt = round(min(12.5, max(5.0, max(dynamic_sl * 2.05, base_tgt))), 1)
+        min_sl = round(nominal_sl * 0.55, 1)
+        max_sl = round(nominal_sl * 1.45, 1)
+        dynamic_sl = round(min(max_sl, max(min_sl, base_sl)), 1)
+
+        min_tgt = round(nominal_tgt * 0.65, 1)
+        max_tgt = round(nominal_tgt * 1.55, 1)
+        dynamic_tgt = round(min(max_tgt, max(min_tgt, max(dynamic_sl * 2.05, base_tgt))), 1)
         
         self.stop_loss_pts = dynamic_sl
         self.target_pts = dynamic_tgt
@@ -2912,40 +2888,42 @@ class MultiIndicatorMath:
         unrealized_pnl_pts: float = 0.0,
         option_ltp: float = 18.0,
         iv: float = 0.212,
-        dte: int = 30
+        dte: int = 30,
+        lot_size: int = 500
     ) -> Tuple[bool, float, str]:
         """
-        Options Time Value Decay Acceleration Guard (Suggestion 9).
+        Options Time Value Decay Acceleration Guard.
         
         Theta decay accelerates non-linearly throughout the day:
-        - Before 12:00 PM: ~₹0.08/hr (manageable for 250 qty)
-        - After 02:00 PM: ~₹0.16/hr (doubled drag)
+        - Before 12:00 PM: Manageable decay
+        - After 02:00 PM: Accelerating decay
         - After 02:45 PM: Theta cliff — only allow trades with > +5 pts unrealized P&L
         
         Returns: (is_theta_safe, theta_drag_rs_per_hr, guard_description)
         """
         T = max(1, dte) / 365.0
         daily_theta = (option_ltp * iv) / (2.0 * math.sqrt(T) * 365.0) if T > 0 else 0.10
+        eff_units = float(lot_size) if lot_size > 0 else 500.0
         
         # Intraday theta acceleration multiplier based on time of day
         if current_time < time(12, 0):
             accel_mult = 1.0
-            theta_hr_rs = round(daily_theta * 250.0 / 6.25 * accel_mult, 2)  # ~6.25 trading hours
+            theta_hr_rs = round(daily_theta * eff_units / 6.25 * accel_mult, 2)  # ~6.25 trading hours
             guard_desc = "THETA_MANAGEABLE (Pre-Noon — Low Decay Zone)"
             is_safe = True
         elif current_time < time(14, 0):
             accel_mult = 1.35
-            theta_hr_rs = round(daily_theta * 250.0 / 6.25 * accel_mult, 2)
+            theta_hr_rs = round(daily_theta * eff_units / 6.25 * accel_mult, 2)
             guard_desc = "THETA_MODERATE (12:00-14:00 — Accelerating Decay)"
             is_safe = True
         elif current_time < time(14, 45):
             accel_mult = 2.0
-            theta_hr_rs = round(daily_theta * 250.0 / 6.25 * accel_mult, 2)
+            theta_hr_rs = round(daily_theta * eff_units / 6.25 * accel_mult, 2)
             guard_desc = "THETA_HIGH_DRAG (14:00-14:45 — Double Decay Rate)"
             is_safe = unrealized_pnl_pts >= 2.0  # Only stay if in profit
         else:
             accel_mult = 3.5
-            theta_hr_rs = round(daily_theta * 250.0 / 6.25 * accel_mult, 2)
+            theta_hr_rs = round(daily_theta * eff_units / 6.25 * accel_mult, 2)
             guard_desc = "THETA_CLIFF (After 14:45 — Critical Decay Zone)"
             is_safe = unrealized_pnl_pts >= 5.0  # Only hold positions with strong unrealized profit
         
@@ -3851,7 +3829,8 @@ class MultiIndicatorMath:
 
         Returns: (full_kelly_pct, half_kelly_pct, lots, risk_cap, status, cvar_adjustment)
         """
-        eff_lot_size = lot_size if (lot_size is not None and lot_size > 0) else get_asset_spec(symbol).lot_size
+        spec = get_asset_spec(symbol)
+        eff_lot_size = lot_size if (lot_size is not None and lot_size > 0) else spec.lot_size
         p = max(0.10, min(0.95, win_rate / 100.0 if win_rate > 1.0 else win_rate))
         q = 1.0 - p
         b = max(1.0, reward_risk_ratio)
@@ -3889,7 +3868,8 @@ class MultiIndicatorMath:
         effective_risk_pct = min(0.04, half_kelly) if half_kelly > 0 else 0.015
 
         risk_capital = round(capital * effective_risk_pct, 2)
-        opt_risk_per_unit = max(2.5, min(6.5, atr * 0.52))
+        nominal_sl = spec.sl_pts
+        opt_risk_per_unit = max(2.0, min(nominal_sl * 1.30, max(nominal_sl * 0.65, atr * 0.52)))
         risk_per_contract = opt_risk_per_unit * eff_lot_size
 
         calculated_lots = max(1, round(risk_capital / max(1.0, risk_per_contract)))
@@ -4061,8 +4041,14 @@ class MultiIndicatorMath:
         time_scaling = math.sqrt(max(0.5, horizon_minutes / 45.0))
 
         scaled_target = base_target_pts * rv_multiplier * time_scaling
-        dyn_target = round(min(10.0, max(5.0, scaled_target)), 1)
-        dyn_sl = round(min(6.0, max(3.5, dyn_target / max(1.2, reward_risk_ratio))), 1)
+        target_lower = max(2.5, base_target_pts * 0.65)
+        target_upper = max(target_lower + 2.0, base_target_pts * 1.45)
+        dyn_target = round(min(target_upper, max(target_lower, scaled_target)), 1)
+
+        raw_sl = dyn_target / max(1.2, reward_risk_ratio)
+        sl_lower = max(1.5, base_sl_pts * 0.60)
+        sl_upper = max(sl_lower + 1.5, base_sl_pts * 1.40)
+        dyn_sl = round(min(sl_upper, max(sl_lower, raw_sl)), 1)
 
         if rv_multiplier >= 1.25:
             regime = "HIGH_EXPANSION_EXTENDED_BARRIER"
@@ -4696,6 +4682,9 @@ class UltraHighConvictionRelianceEngine:
         time_allowed = market_open <= current_time <= market_close and current_time <= cutoff
         auto_sq_active = current_time >= auto_sq
         spot = c5m["close"][-1]
+        active_spec = get_asset_spec(symbol or getattr(self, "symbol", "RELIANCE"))
+        active_sym = active_spec.symbol
+        is_adani = (active_sym == "ADANIENT")
 
         # VECTOR 1: Multi-Timeframe Trend & ORB-15 Structure (20 pts)
         ema9 = MultiIndicatorMath.calculate_ema(c5m["close"], 9)[-1]
@@ -5171,9 +5160,10 @@ class UltraHighConvictionRelianceEngine:
         elif fvg_status == "BEARISH_FVG_RESISTANCE_RETEST":
             v2_cl_d_bear += 2.0  # Retesting institutional seller imbalance zone
 
-        # Stand down if option bid-ask spread > 0.35 pts (prevents spread slippage losses on 1 lot)
+        # Stand down if option bid-ask spread exceeds asset risk threshold (prevents spread slippage losses on 1 lot)
         opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
-        spread_stand_down = (opt_spread > 0.35) and not is_synthetic_feed
+        max_allowed_spread = 0.80 if is_adani else 0.35
+        spread_stand_down = (opt_spread > max_allowed_spread) and not is_synthetic_feed
 
         # Corwin-Schultz (2012) High-Low Effective Spread Estimator -> Cluster C
         cs_spread_pct, cs_regime = MultiIndicatorMath.calculate_corwin_schultz_spread(c5m["high"], c5m["low"])
@@ -5214,8 +5204,8 @@ class UltraHighConvictionRelianceEngine:
         v2_bull = min(18.0, max(0.0, v2_cl_a_bull + v2_cl_b_bull + v2_cl_c_bull + v2_cl_d_bull))
         v2_bear = min(18.0, max(0.0, v2_cl_a_bear + v2_cl_b_bear + v2_cl_c_bear + v2_cl_d_bear))
 
-        call_wall = float(chain_oi.get("call_wall", atm_strike + 10))
-        put_wall = float(chain_oi.get("put_wall", atm_strike - 10))
+        call_wall = float(chain_oi.get("call_wall", atm_strike + active_spec.strike_step))
+        put_wall = float(chain_oi.get("put_wall", atm_strike - active_spec.strike_step))
         pcr = chain_oi.get("overall_pcr", 1.0)
 
         # Dealer Net Gamma Exposure (GEX), Gamma Flip Level & Max Pain Dynamic Gravity Model
@@ -5440,7 +5430,9 @@ class UltraHighConvictionRelianceEngine:
 
         v4_bull = 0.0
         v4_bear = 0.0
-        atr_pts = 6.0 if atr_15m >= 7.5 else (3.5 if atr_15m >= 5.5 else 0.0)
+        atr_hi_thresh = active_spec.default_spot * 0.0064
+        atr_lo_thresh = active_spec.default_spot * 0.0047
+        atr_pts = 6.0 if atr_15m >= atr_hi_thresh else (3.5 if atr_15m >= atr_lo_thresh else 0.0)
         v4_bull += atr_pts
         v4_bear += atr_pts
 
@@ -5676,7 +5668,7 @@ class UltraHighConvictionRelianceEngine:
         v5_bear = min(15.0, max(0.0, v5_bear))
 
         # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
-        expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
+        expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=active_sym)
         expiry_date_str = expiry_plan.get("selected_expiry", "27-OCT-2026")
         dte_val = expiry_plan.get("dte", 30)
 
@@ -5770,7 +5762,7 @@ class UltraHighConvictionRelianceEngine:
         # Options Time Value Decay Acceleration Guard (Suggestion 9)
         opt_ref_ltp = float(opt_telemetry.get("call_ltp", 18.0))
         is_theta_safe, theta_drag_rs_per_hr, theta_guard_desc = MultiIndicatorMath.calculate_theta_acceleration_guard(
-            current_time=current_time, unrealized_pnl_pts=0.0, option_ltp=opt_ref_ltp, iv=iv, dte=dte_val
+            current_time=current_time, unrealized_pnl_pts=0.0, option_ltp=opt_ref_ltp, iv=iv, dte=dte_val, lot_size=self.risk.lot_size
         )
         if not is_theta_safe:
             v6_bull = max(0.0, v6_bull - 3.0)
@@ -6761,7 +6753,7 @@ def main(symbol: str = "RELIANCE"):
     session_time = time(10, 15)
 
     nse_data = NSEIndiaFetcher.get_scrip_official_data(symbol)
-    spot_val = float(nse_data.get('spot_ltp', 2820.0 if symbol == 'ADANIENT' else 1226.0))
+    spot_val = float(nse_data.get('spot_ltp', get_asset_spec(symbol).default_spot))
     corridor = NSEIndiaFetcher.get_atm_corridor(spot_val, symbol=symbol)
     chain_preview = NSEIndiaFetcher.get_full_option_chain_oi(corridor['lower_strike'], spot_val, symbol=symbol)
     atm_telemetry = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(corridor['lower_strike'], spot_val, scrip_symbol=symbol)
