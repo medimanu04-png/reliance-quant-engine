@@ -1941,13 +1941,20 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
 
     # Anchor spot price — unified Groww live feed for both scrips
     _anchor_sym = "ADANIENT" if is_adani else "RELIANCE"
+    last_hist_close = float(df['Close'].iloc[-1]) if (df is not None and not df.empty and 'Close' in df.columns) else (2816.80 if is_adani else 1167.70)
+    now_ist = datetime.now(IST)
+    is_mkt_open = (now_ist.weekday() < 5) and (9 * 60 + 15 <= now_ist.hour * 60 + now_ist.minute <= 15 * 60 + 30)
     try:
         from groww_market_feed import GrowwMarketFeed
-        gw_feed_data = GrowwMarketFeed.get_instance().get_live_spot_data(symbol=_anchor_sym)
-        gw_spot = float(gw_feed_data.get("spot_ltp", 0.0))
-        base_p = gw_spot if gw_spot > 0 else (float(df['Close'].iloc[-1]) if (df is not None and not df.empty and 'Close' in df.columns) else (2820.0 if is_adani else 1210.0))
+        gw_feed_inst = GrowwMarketFeed.get_instance()
+        if gw_feed_inst.is_connected and is_mkt_open:
+            gw_feed_data = gw_feed_inst.get_live_spot_data(symbol=_anchor_sym)
+            gw_spot = float(gw_feed_data.get("spot_ltp", 0.0))
+            base_p = gw_spot if gw_spot > 0 else last_hist_close
+        else:
+            base_p = last_hist_close
     except Exception:
-        base_p = float(df['Close'].iloc[-1]) if (df is not None and not df.empty and 'Close' in df.columns) else (2820.0 if is_adani else 1210.0)
+        base_p = last_hist_close
 
     # Resilient Real Data Session Cache
     is_synthetic_feed = False
@@ -1988,7 +1995,10 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
             df['Low'] = df['Low'] / 2.0
 
         # Live Forming Candle Synthesis with 0-Delay Spot
-        if base_p > 0 and len(df) > 0:
+        # Strictly activate ONLY when market is open AND the last candle belongs to today's active session
+        last_candle_date = df.index[-1].date() if hasattr(df.index[-1], "date") else None
+        is_today_candle = (last_candle_date == now_ist.date())
+        if is_mkt_open and is_today_candle and base_p > 0 and len(df) > 0:
             df.iloc[-1, df.columns.get_loc('Close')] = base_p
             if base_p > df.iloc[-1]['High']:
                 df.iloc[-1, df.columns.get_loc('High')] = base_p
@@ -4071,10 +4081,16 @@ if df is not None and not df.empty:
     
     # Ground spot strictly on authentic Groww / NSE official data (unified for both scrips)
     is_adani_active = (scrip_symbol == "ADANIENT")
+    now_ist = datetime.now(IST)
+    is_mkt_open = (now_ist.weekday() < 5) and (9 * 60 + 15 <= now_ist.hour * 60 + now_ist.minute <= 15 * 60 + 30)
     from groww_market_feed import GrowwMarketFeed
-    gw_spot_data = GrowwMarketFeed.get_instance().get_live_spot_data(symbol=scrip_symbol)
-    gw_live_spot = gw_spot_data.get("spot_ltp", 0.0)
-    spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) > 0) else float(latest['Close'])
+    gw_inst = GrowwMarketFeed.get_instance()
+    if gw_inst.is_connected and is_mkt_open:
+        gw_spot_data = gw_inst.get_live_spot_data(symbol=scrip_symbol)
+        gw_live_spot = gw_spot_data.get("spot_ltp", 0.0)
+        spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) > 0) else float(latest['Close'])
+    else:
+        spot = float(latest['Close'])
 
     # Strike Pinning & Dynamic Dual ATM Corridor Resolution
     corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=scrip_symbol)
