@@ -701,11 +701,11 @@ def generate_live_dashboard():
         <div class="desk-badge-group">
             <div class="desk-pill">
                 <span>Nifty Desk</span>
-                <strong>50 Qty (2L)</strong>
+                <strong>130 Qty (2L)</strong>
             </div>
             <div class="desk-pill">
                 <span>Sensex Desk</span>
-                <strong>20 Qty (2L)</strong>
+                <strong>40 Qty (2L)</strong>
             </div>
             <div class="desk-pill">
                 <span>Reliance Desk</span>
