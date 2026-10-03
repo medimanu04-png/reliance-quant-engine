@@ -1463,7 +1463,6 @@ if active_route == "":
             </div>
         </a>
         """)
-        st.page_link(p_nifty, label="📈 Open NIFTY 50 Desk", use_container_width=True)
 
     with col_idx2:
         st.html(f"""
@@ -1499,7 +1498,6 @@ if active_route == "":
             </div>
         </a>
         """)
-        st.page_link(p_sensex, label="🏛️ Open BSE SENSEX Desk", use_container_width=True)
 
     st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
@@ -1542,7 +1540,6 @@ if active_route == "":
             </div>
         </a>
         """)
-        st.page_link(p_reliance, label="⚡ Open RELIANCE Desk", use_container_width=True)
 
     with col_eq2:
         st.html(f"""
@@ -1578,7 +1575,6 @@ if active_route == "":
             </div>
         </a>
         """)
-        st.page_link(p_adani, label="🔥 Open ADANI Desk", use_container_width=True)
     # --------------------------------------------------------------------------
     # INSTITUTIONAL PERFORMANCE & LIVE FORWARD TRADE DESK SUITE
     # --------------------------------------------------------------------------
