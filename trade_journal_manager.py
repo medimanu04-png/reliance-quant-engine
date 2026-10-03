@@ -1256,28 +1256,29 @@ class SequentialTradeEngine:
 
     @classmethod
     def get_state_file_path(cls, symbol: Optional[str] = None) -> str:
-        if symbol and "ADANI" in symbol.upper():
-            return os.path.join(BASE_DIR, "sequential_trade_state_ADANIENT.json")
-        return SEQUENTIAL_STATE_FILE
+        sym = resolve_symbol(symbol=symbol)
+        if sym == "RELIANCE":
+            return SEQUENTIAL_STATE_FILE
+        return os.path.join(BASE_DIR, f"sequential_trade_state_{sym}.json")
 
     @classmethod
     def get_state(cls, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Loads and returns current sequential engine state for the specified symbol."""
-        state_file = cls.get_state_file_path(symbol)
+        sym_kw = resolve_symbol(symbol=symbol)
+        state_file = cls.get_state_file_path(sym_kw)
         if os.path.exists(state_file):
             try:
                 with open(state_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
                     if isinstance(state, dict) and "current_state" in state:
                         if "symbol" not in state:
-                            state["symbol"] = "ADANIENT" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
+                            state["symbol"] = sym_kw
                         return state
             except Exception as e:
                 logger.debug(f"Error reading sequential state ({state_file}): {e}")
 
         # Initialize default state based on today's journal for this symbol
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        sym_kw = "ADANI" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
         journal = TradeJournalManager.load_journal(symbol=sym_kw)
         today_trades = [
             t for t in journal 
@@ -1321,7 +1322,7 @@ class SequentialTradeEngine:
             last_closed = closed_trades[-1] if closed_trades else None
             init_state = {
                 "current_state": cls.STATE_IDLE,
-                "symbol": "ADANIENT" if sym_kw == "ADANI" else "RELIANCE",
+                "symbol": sym_kw,
                 "active_trade": None,
                 "last_closed_trade": {
                     "trade_num": len(closed_trades),

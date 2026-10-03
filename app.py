@@ -1776,8 +1776,7 @@ scrip_total_qty = scrip_lot * scrip_lots_count
 scrip_target_pts = spec.target_pts
 scrip_sl_pts = spec.sl_pts
 scrip_be_pts = spec.be_pts
-scrip_color = "#F59E0B" if is_adani else "#38BDF8"
-scrip_accent = "rgba(245, 158, 11, 0.15)" if is_adani else "rgba(56, 189, 248, 0.15)"
+scrip_min_gate = spec.min_confluence_gate
 
 # Sync active scoped values to active keys so switching scrips never cross-pollinates
 st.session_state["live_broker_ltp"] = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
@@ -1952,8 +1951,8 @@ def fetch_global_news_and_macro(force_key: str = "", scrip_sym: str = "RELIANCE"
     news_items = []
     macro_data = {"crude": "Neutral (Steady)", "global_sentiment": "Bullish Bias"}
     sentiment_score = 0.0
-    is_adani_sel = (scrip_sym == "ADANIENT" or "ADANI" in scrip_sym)
-    ticker_sym = "ADANIENT.NS" if is_adani_sel else "RELIANCE.NS"
+    spec_news = get_asset_spec(scrip_sym)
+    ticker_sym = spec_news.yf_symbol
 
     BULLISH_KEYWORDS = ["profit", "gain", "relief", "tax", "deal", "growth", "cut in windfall", "surge", "expansion", "dividend", "rise", "rally", "record"]
     BEARISH_KEYWORDS = ["loss", "fall", "slump", "drop", "penalty", "downgrade", "sanction", "decline", "tariff", "war", "investigation"]
@@ -1996,7 +1995,21 @@ def fetch_global_news_and_macro(force_key: str = "", scrip_sym: str = "RELIANCE"
         news_items = []
 
     if len(news_items) < 4:
-        if is_adani_sel:
+        if spec_news.symbol == "NIFTY":
+            defaults = [
+                {"title": "NSE Nifty 50 Benchmark Market Flow & Heavyweight Breadth", "summary": "Financial services, IT, and consumer giants demonstrate balanced capital rotation across intraday trading bands.", "provider": "Benchmark Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "India Domestic Macro: RBI Liquidity & Credit Policy Monitoring", "summary": "Systemic liquidity conditions and monthly headline inflation metrics remain well anchored within comfort corridors.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "FII & DII Derivative Open Interest & Index Gamma Structure", "summary": "Institutional positioning across headline Nifty 50 options strikes indicates disciplined dual-sided liquidity buffers.", "provider": "Derivatives Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Corporate Earnings & Benchmark Trailing Multiples Overview", "summary": "Broad market index valuation bands reflect steady domestic mutual fund inflows and systematic investment support.", "provider": "Quant Research", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
+            ]
+        elif spec_news.symbol == "SENSEX":
+            defaults = [
+                {"title": "BSE Sensex 30 Bluechip Weighted Momentum & Turnover Flow", "summary": "Top 30 constituent powerhouses sustain orderly volume absorption and steady institutional execution.", "provider": "Benchmark Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "BSE F&O Derivatives Open Interest & Concentration Analysis", "summary": "Key strike clusters exhibit strong open interest buildup and robust volatility suppression into active trading hours.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Domestic Banking & Industrial Sector Contribution Tracking", "summary": "Banking and capital goods heavyweights provide balanced underpinning to benchmark index trajectories.", "provider": "Sector Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Global Macro Resilience & Emerging Market Equity Allocations", "summary": "Institutional allocations to frontline Indian benchmarks maintain structural outperformance premiums.", "provider": "Macro Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
+            ]
+        elif spec_news.symbol == "ADANIENT":
             defaults = [
                 {"title": "Adani Enterprises Infrastructure & Incubation Operational Flow", "summary": "Solar manufacturing, airport operations, and green hydrogen projects maintain targeted capex momentum.", "provider": "Institutional Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
                 {"title": "Adani Group Energy & Utility Asset Telemetry", "summary": "Operational metrics across domestic power, transmission, and port utility hubs show robust quarterly utilization.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
@@ -2337,9 +2350,9 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
 def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key: str = ""):
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     df = pd.DataFrame()
-    is_adani = (scrip == "ADANI ENTERPRISES" or scrip == "ADANIENT")
-    symbol_yf = "ADANIENT.NS" if is_adani else "RELIANCE.NS"
-    cache_filename = "adanient_5m_cache.parquet" if is_adani else "reliance_5m_cache.parquet"
+    cur_spec = get_asset_spec(scrip)
+    symbol_yf = cur_spec.yf_symbol
+    cache_filename = f"{cur_spec.symbol.lower()}_5m_cache.parquet"
 
     # 1. Fast local parquet cache (0-latency instant load < 5ms)
     cache_file = os.path.join(os.path.dirname(__file__), "data_cache", cache_filename)
@@ -2351,13 +2364,12 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
         except Exception:
             pass
 
-    # 2. Try Groww official charting API (0-delay, supports both RELIANCE & ADANIENT)
+    # 2. Try Groww official charting API (0-delay, supports all configured assets)
     if df is None or df.empty or len(df) < 30:
         try:
             from groww_market_feed import GrowwMarketFeed
             gw_feed = GrowwMarketFeed.get_instance()
-            _gw_sym = "ADANIENT" if is_adani else "RELIANCE"
-            df = gw_feed.get_historical_candles(symbol=_gw_sym, interval=interval, days=5)
+            df = gw_feed.get_historical_candles(symbol=cur_spec.symbol, interval=interval, days=5)
         except Exception:
             df = pd.DataFrame()
 
@@ -2369,20 +2381,19 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
                 return t.history(period="5d", interval=interval)
             with ThreadPoolExecutor(max_workers=1) as ex:
                 fut = ex.submit(_get_hist)
-                df = fut.result(timeout=1.0)  # Fast timeout prevents UI stalls
+                df = fut.result(timeout=1.5)  # Fast timeout prevents UI stalls
         except Exception:
             df = pd.DataFrame()
 
-    # Anchor spot price — unified Groww live feed for both scrips
-    _anchor_sym = "ADANIENT" if is_adani else "RELIANCE"
-    last_hist_close = float(df['Close'].iloc[-1]) if (df is not None and not df.empty and 'Close' in df.columns) else (2816.80 if is_adani else 1167.70)
+    # Anchor spot price — unified Groww live feed for all scrips
+    last_hist_close = float(df['Close'].iloc[-1]) if (df is not None and not df.empty and 'Close' in df.columns) else cur_spec.default_spot
     now_ist = datetime.now(IST)
     is_mkt_open = (now_ist.weekday() < 5) and (9 * 60 + 15 <= now_ist.hour * 60 + now_ist.minute <= 15 * 60 + 30)
     try:
         from groww_market_feed import GrowwMarketFeed
         gw_feed_inst = GrowwMarketFeed.get_instance()
         if gw_feed_inst.is_connected and is_mkt_open:
-            gw_feed_data = gw_feed_inst.get_live_spot_data(symbol=_anchor_sym)
+            gw_feed_data = gw_feed_inst.get_live_spot_data(symbol=cur_spec.symbol)
             gw_spot = float(gw_feed_data.get("spot_ltp", 0.0))
             base_p = gw_spot if gw_spot > 0 else last_hist_close
         else:
@@ -2392,7 +2403,7 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
 
     # Resilient Real Data Session Cache
     is_synthetic_feed = False
-    sess_cache_key = f"cached_real_df_{'adani' if is_adani else 'reliance'}"
+    sess_cache_key = f"cached_real_df_{cur_spec.symbol.lower()}"
     if df is not None and not df.empty and len(df) >= 30:
         try:
             st.session_state[sess_cache_key] = df.copy()
@@ -2404,25 +2415,25 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
     if df is None or df.empty or len(df) < 30:
         is_synthetic_feed = True
         dates = pd.date_range(end=datetime.now(IST), periods=60, freq="5min" if interval == "5m" else "15min")
-        step_delta = 15.0 if is_adani else 6.80
+        step_delta = cur_spec.strike_step * 0.3
         prev_p = base_p - step_delta
         t_steps = np.linspace(0, 1, 60)
-        oscillation = 2.50 if is_adani else 0.80
+        oscillation = cur_spec.strike_step * 0.08
         closes = prev_p + (base_p - prev_p) * (t_steps ** 1.1) + np.sin(t_steps * 14) * oscillation
         closes[-1] = base_p
-        closes[-2] = base_p - (1.50 if is_adani else 0.75)
-        wick_range = (1.50, 4.50) if is_adani else (0.40, 1.40)
+        closes[-2] = base_p - (cur_spec.strike_step * 0.04)
+        wick_range = (cur_spec.strike_step * 0.05, cur_spec.strike_step * 0.15)
         highs = closes + np.random.uniform(wick_range[0], wick_range[1], 60)
         lows = closes - np.random.uniform(wick_range[0], wick_range[1], 60)
         opens = np.roll(closes, 1)
         opens[0] = prev_p
-        vol_range = (25000, 90000) if is_adani else (60000, 160000)
+        vol_range = (int(cur_spec.volume_norm * 0.005), int(cur_spec.volume_norm * 0.02))
         volumes = np.random.randint(vol_range[0], vol_range[1], 60)
         volumes[-1] = vol_range[1] * 2
         df = pd.DataFrame({"Open": opens, "High": highs, "Low": lows, "Close": closes, "Volume": volumes}, index=dates)
     else:
         # If unadjusted pre-bonus data received (>2000) for RELIANCE ONLY, adjust to bonus-split price
-        if not is_adani and df['Close'].iloc[-1] > 2000:
+        if cur_spec.symbol == "RELIANCE" and df['Close'].iloc[-1] > 2000:
             df['Close'] = df['Close'] / 2.0
             df['Open'] = df['Open'] / 2.0
             df['High'] = df['High'] / 2.0
@@ -2690,7 +2701,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     is_pe_dominant = (plan_contract_type == "PE")
 
     if corridor is None or low is None or high is None:
-        cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+        cur_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
         dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=cur_sym)
         dyn_atm = dyn_corridor["lower_strike"]
         stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
@@ -2715,9 +2726,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_tradable = tp.get("is_tradable", False)
     plan_contract_type = tp.get("recommended_contract_type", "CE")
     plan_strike = tp.get("atm_strike", corridor["lower_strike"])
-    active_sym = tp.get("scrip_symbol", "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE")
-    active_scrip_name = tp.get("scrip_name", "ADANI ENTERPRISES" if active_sym == "ADANIENT" else "RELIANCE")
+    active_sym = tp.get("scrip_symbol", resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE")))
     spec_plan = get_asset_spec(symbol=active_sym)
+    active_scrip_name = tp.get("scrip_name", spec_plan.display_name)
     plan_target_pts = tp.get("target_pts", spec_plan.target_pts)
     plan_sl_pts = tp.get("sl_pts", spec_plan.sl_pts)
     plan_num_lots = tp.get("num_lots", 1)
@@ -4069,7 +4080,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
     is_pe_dominant = (plan_contract_type == "PE")
 
-    cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+    cur_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
     dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=cur_sym)
     dyn_atm = dyn_corridor["lower_strike"]
 
@@ -4283,7 +4294,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     # ==============================================================================
     # PARTICIPANT BUYER/SELLER CLASSIFICATION (FII • DII • PRO • RETAIL)
     # ==============================================================================
-    cur_flow_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+    cur_flow_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
     part_flow = NSEIndiaFetcher.get_participant_flow(spot, stock_volume, symbol=cur_flow_sym)
     fii = part_flow["participants"]["FII"]
     dii = part_flow["participants"]["DII"]
@@ -4525,7 +4536,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 @st.fragment(run_every="6s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
     # Dynamically pull current real-time spot from live feed on each tick (both scrips)
-    _feed_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+    _feed_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
     try:
         from groww_market_feed import GrowwMarketFeed
         spot_tick_info = GrowwMarketFeed.get_instance().get_dynamic_spot_tick(symbol=_feed_sym)
@@ -4749,8 +4760,11 @@ if df is not None and not df.empty:
     elif breadth_bearish:
         v1_bull = max(0.0, v1_bull - 3.0)  # Broad market selling drag penalty
 
-    # Sector Alignment (NIFTY Energy for Reliance, NIFTY 50 / Infra for Adani)
-    if is_adani:
+    # Sector Alignment (NIFTY Energy for Reliance, NIFTY 50 / Infra for Adani, Benchmark Index for Nifty/Sensex)
+    if spec.parent_sector == "BENCHMARK INDEX":
+        sec_pct = nifty_pct
+        sec_name = spec.full_name
+    elif is_adani:
         sec_pct = nifty_pct
         sec_name = "NIFTY 50"
     else:
@@ -4766,7 +4780,7 @@ if df is not None and not df.empty:
         v1_bull = max(0.0, v1_bull - 1.5)
 
     # Crude Oil Refining Margin Alignment — strictly applicable to Reliance O2C
-    if not is_adani:
+    if spec.has_crude_coupling:
         if crude_rallying:
             v1_bull += 2.0  # Crude rally fuels Reliance O2C refining tailwind
         elif crude_dumping_severe:
@@ -4823,7 +4837,7 @@ if df is not None and not df.empty:
         v1_bear = max(0.0, v1_bear - 1.5)
 
     # Crude Oil Sector Alignment — strictly applicable to Reliance O2C
-    if not is_adani:
+    if spec.has_crude_coupling:
         if crude_dumping_severe:
             v1_bear += 3.5  # Downside breakdown confirmed by energy sector margin compression
         elif crude_dumping_mild:
@@ -4975,7 +4989,7 @@ if df is not None and not df.empty:
 
     # Level-2 Order Book Bid/Ask Imbalance & Stoikov Micro-Price
     from groww_market_feed import GrowwMarketFeed
-    ob_sym = scrip_symbol if 'scrip_symbol' in locals() or 'scrip_symbol' in globals() else ("ADANIENT" if is_adani else "RELIANCE")
+    ob_sym = scrip_symbol
     ob_depth = GrowwMarketFeed.get_instance().get_order_book_imbalance(symbol=ob_sym)
     depth_ratio = float(ob_depth.get("imbalance_ratio", 1.0))
     depth_buyer_agg = depth_ratio >= 1.25
@@ -5349,17 +5363,20 @@ if df is not None and not df.empty:
     # Live ATM Implied Volatility & IV Rank (IVR / IVP)
     dte_val = expiry_plan.get("dte", 30)
     T_val = dte_val / 365.0
-    fallback_atm_ltp = 65.0 if is_adani else 18.50
+    fallback_atm_ltp = spec.default_call_price
     ref_atm_ltp = live_broker_ltp if live_broker_ltp > 0.0 else float(low_data.get("call_ltp", fallback_atm_ltp) if atm_strike == lower_atm else high_data.get("call_ltp", fallback_atm_ltp))
     if T_val > 0 and spot > 0 and ref_atm_ltp > 0:
         # Annualized ATM IV from current option premium (Brenner-Subrahmanyam approximation)
         approx_iv = (ref_atm_ltp / (spot * 0.40)) * math.sqrt(1.0 / T_val)
-        rel_iv = round(max(0.12, min(0.65, approx_iv)), 3)
+        rel_iv = round(max(0.08, min(0.65, approx_iv)), 3)
     else:
-        rel_iv = 0.355 if is_adani else 0.212
+        rel_iv = spec.bsm_sigma
 
-    # Historical IV Range (Adani: min 22.0%, max 60.0%, median 34.0%; Reliance: min 14.5%, max 35.0%, median 20.5%)
-    if is_adani:
+    # Historical IV Range
+    if spec.parent_sector == "BENCHMARK INDEX":
+        iv_min = 0.100
+        iv_max = 0.250
+    elif is_adani:
         iv_min = 0.220
         iv_max = 0.600
     else:
@@ -5559,7 +5576,7 @@ if df is not None and not df.empty:
 
     # Vector 6: Dynamic Greek Delta, Expiry Shield & Liquidity (12 pts)
     # Estimate Delta for CE vs PE dynamically calibrated to active asset IV
-    active_sigma = rel_iv if ('rel_iv' in locals() and rel_iv > 0) else (0.355 if is_adani else 0.212)
+    active_sigma = rel_iv if ('rel_iv' in locals() and rel_iv > 0) else spec.bsm_sigma
     norm_cdf_d1 = 0.52
     dte_val = expiry_plan.get("dte", 30)
     T_val = dte_val / 365.0
@@ -5577,7 +5594,7 @@ if df is not None and not df.empty:
     v6_bull = delta_score_bull + dte_score + liquidity_spread_score
     v6_bear = delta_score_bear + dte_score + liquidity_spread_score
 
-    # Vector 7 / Macro Alignment: NIFTY 50 & NIFTY Energy Relative Momentum Beta Coupling (Suggestion 2)
+    # Vector 7 / Macro Alignment: Relative Momentum Beta Coupling
     nifty_energy_info = benchmarks.get("NIFTY ENERGY", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
     energy_pct = float(nifty_energy_info.get("pct_change", 0.0))
     nifty_info = benchmarks.get("NIFTY 50", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
@@ -5587,11 +5604,13 @@ if df is not None and not df.empty:
 
     try:
         from fo_quant_engine import MultiIndicatorMath
+        _target_sec_pct = nifty_pct if (spec.parent_sector == "BENCHMARK INDEX" or is_adani) else energy_pct
+        _target_sec_name = spec.full_name if spec.parent_sector == "BENCHMARK INDEX" else ("NIFTY 50" if is_adani else "NIFTY ENERGY")
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = MultiIndicatorMath.calculate_sectoral_alignment(
             nifty_pct, energy_pct, reliance_pct,
             symbol=scrip_symbol,
-            sector_pct=(nifty_pct if is_adani else energy_pct),
-            sector_name=("NIFTY 50" if is_adani else "NIFTY ENERGY")
+            sector_pct=_target_sec_pct,
+            sector_name=_target_sec_name
         )
     except Exception:
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = 0.0, "NEUTRAL", 1.0, 1.10, "NORMAL", True
@@ -5606,7 +5625,7 @@ if df is not None and not df.empty:
     try:
         from fo_quant_engine import MultiIndicatorMath
         has_index_drag_app, drag_pen_app, index_drag_regime_app = MultiIndicatorMath.calculate_index_beta_drag(
-            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=(1.65 if is_adani else 1.15),
+            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=spec.beta,
             symbol=scrip_symbol
         )
         if has_index_drag_app:
@@ -5626,11 +5645,11 @@ if df is not None and not df.empty:
     raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear - news_modifier
 
     # Sector Divergence Liquidity Trap Filter:
-    # When Reliance breaks out UP while Energy is negative, or DOWN while Energy is positive
+    # Strictly applicable to Reliance against Nifty Energy
     is_sector_divergence_trap = (
         (spot > rel_ref_close and energy_pct < -0.15 and reliance_pct > 0.10) or
         (spot < rel_ref_close and energy_pct > 0.15 and reliance_pct < -0.10)
-    ) if (scrip_symbol != "ADANIENT") else False
+    ) if (scrip_symbol == "RELIANCE") else False
 
     # Enhancement 1: Midday "Chop Zone" Time-of-Day Filter (11:30 AM – 01:15 PM IST)
     # Volume drops ~55% during this window, false breakouts peak, theta decay accelerates.
@@ -5777,7 +5796,7 @@ if df is not None and not df.empty:
     dte = expiry_plan.get("dte", max(1, (expiry_dt.date() - today_dt.date()).days))
     T = dte / 365.0
     r = 0.0675
-    sigma = active_sigma if ('active_sigma' in locals() and active_sigma > 0) else (rel_iv if ('rel_iv' in locals() and rel_iv > 0) else (0.355 if is_adani else 0.212))
+    sigma = active_sigma if ('active_sigma' in locals() and active_sigma > 0) else (rel_iv if ('rel_iv' in locals() and rel_iv > 0) else spec.bsm_sigma)
     if T > 0 and sigma > 0:
         d1 = (math.log(spot / atm_strike) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
         d2 = d1 - sigma * math.sqrt(T)
@@ -5809,13 +5828,12 @@ if df is not None and not df.empty:
     estimated_premium = round(current_option_ltp + 1.20, 2)  # Breakout trigger level
 
     # Enhancement: Institutional Volatility-Adaptive SL & Profit Target
-    # Dynamically calibrated by Scrip Scale (Adani ~3000 vs Reliance ~1200)
-    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else (14.0 if is_adani else 6.50)
+    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else (spec.strike_step * 0.7)
     bs_delta = norm_cdf_d1 if ('norm_cdf_d1' in dir() or 'norm_cdf_d1' in locals()) else 0.50
     vix_val_current = float(benchmarks.get("INDIA VIX", {}).get("price", 13.50)) if "benchmarks" in locals() or "benchmarks" in globals() else 13.50
     vix_scaler = max(0.85, min(1.30, vix_val_current / 13.50))
 
-    if is_adani:
+    if scrip_symbol in ("ADANIENT", "NIFTY", "SENSEX"):
         volatility_adapted_sl = scrip_sl_pts
         atr_dynamic_sl = volatility_adapted_sl
         effective_sl_pts = scrip_sl_pts if not is_sim_active else sl_pts
@@ -5838,22 +5856,17 @@ if df is not None and not df.empty:
     is_sl_dynamic = not is_sim_active
 
     # Enhancement 3: Tiered Trailing Stop-Loss & Breakeven Escalator (BOCPD Adaptive)
-    # If Bayesian Online Changepoint Detection flags regime uncertainty (cp_prob >= 0.65), instantly tighten trailing thresholds
-    if is_adani:
-        be_offset = 8.0 if ('cp_prob' in locals() and cp_prob >= 0.65) else scrip_be_pts
-        lock_offset = 18.0
+    if 'cp_prob' in locals() and cp_prob >= 0.65:
+        be_offset = round(scrip_be_pts * 0.65, 2)
+        lock_offset = round(spec.profit_lock_trigger * 0.85, 2)
     else:
-        if 'cp_prob' in locals() and cp_prob >= 0.65:
-            be_offset = 2.0  # Tightened from 3.5 to lock profits faster during regime shifts
-            lock_offset = 3.8
-        else:
-            be_offset = 3.5
-            lock_offset = 5.5
+        be_offset = scrip_be_pts
+        lock_offset = spec.profit_lock_trigger
 
     breakeven_trigger_price = round(estimated_premium + be_offset, 2)
-    breakeven_sl = round(estimated_premium + 0.10, 2)
+    breakeven_sl = round(estimated_premium + spec.escalator_t1_lock, 2)
     lock_profit_trigger_price = round(estimated_premium + lock_offset, 2)
-    lock_profit_sl = round(estimated_premium + (be_offset - 0.50), 2)
+    lock_profit_sl = round(estimated_premium + spec.escalator_t2_lock, 2)
     trailing_activation_pts = be_offset
     trailing_active = False
 
@@ -5880,8 +5893,8 @@ if df is not None and not df.empty:
     if iv_gate_failed and not is_sim_active:
         is_tradable = False
 
-    # Gate B: Crude Oil Dumping (<= -2.5%) Stand Down for CE (Refining margin collapse strictly on Reliance)
-    crude_gate_failed = bool(not is_adani and recommended_contract_type == "CE" and crude_dumping_severe)
+    # Gate B: Crude Oil Dumping (<= -2.5%) Stand Down for CE (Refining margin collapse strictly on assets with crude coupling)
+    crude_gate_failed = bool(spec.has_crude_coupling and recommended_contract_type == "CE" and crude_dumping_severe)
     if crude_gate_failed and not is_sim_active:
         is_tradable = False
 
@@ -6758,8 +6771,8 @@ if df is not None and not df.empty:
                     cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
                     cap_sub_desc = "🛡️ Protected from chop & theta decay"
                 elif is_sector_divergence_trap:
-                    _sec_title = "NIFTY Infra / 50" if is_adani else "NIFTY Energy"
-                    _sec_pct_val = nifty_pct if is_adani else energy_pct
+                    _sec_title = "NIFTY 50" if spec.parent_sector == "BENCHMARK INDEX" else ("NIFTY Infra / 50" if is_adani else "NIFTY Energy")
+                    _sec_pct_val = nifty_pct if (is_adani or spec.parent_sector == "BENCHMARK INDEX") else energy_pct
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE SETUP &bull; STAND DOWN"
                     stand_down_badge = f"⚠️ SECTOR DIVERGENCE TRAP ACTIVE"
                     stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
@@ -7252,7 +7265,10 @@ if df is not None and not df.empty:
             sim_v6 = v6_score
 
         # Pre-computed behavioral narratives
-        if is_adani:
+        if spec.parent_sector == "BENCHMARK INDEX":
+            macro_beh_str = f"Benchmark Macro Telemetry: NIFTY 50 is at {nifty_pct:+.2f}%, INDIA VIX at {vix_val:.2f} ({vix_pct_chg:+.2f}%). Domestic capital flow momentum is aligned."
+            v1_macro_metric = ("Benchmark Macro Telemetry", f"VIX {vix_val:.2f} ({vix_pct_chg:+.2f}%)", "🟢 Steady Volatility (+2)" if vix_stable_regime else "🟡 High Volatility (0)")
+        elif is_adani:
             macro_beh_str = f"NIFTY 50 Index Beta is at {nifty_pct:+.2f}% with Adani Infra momentum. Crude oil sits at {crude_pct:+.2f}% (Macro Commodity Steady)."
             v1_macro_metric = ("NIFTY Infra / Sectoral Beta", f"NIFTY {nifty_pct:+.2f}% | Crude {crude_pct:+.2f}%", "🟢 Sectoral Tailwind (+2)" if nifty_pct > 0.2 else ("🔴 Market Drag (-3)" if nifty_pct < -0.5 else "🟡 Steady Beta"))
         else:
@@ -8079,7 +8095,7 @@ if df is not None and not df.empty:
                 pass
 
 
-        def_vol = 1850000 if is_adani else 4725000
+        def_vol = spec.volume_norm
         active_day_vol = int(df['Volume'].iloc[-1]) if (df is not None and not df.empty and 'Volume' in df.columns and int(df['Volume'].iloc[-1]) > 0) else int(nse_data.get('volume', def_vol) if (nse_data and nse_data.get('volume')) else def_vol)
         if stream_live_1s:
             render_dynamic_1s_atm_feed(spot, live_broker_ltp, active_day_vol, rel_vol, user_strike_choice, trade_plan=trade_plan)
@@ -9045,8 +9061,8 @@ if df is not None and not df.empty:
             st.session_state[f"num_lots_{scrip_symbol}"] = c_lots
             st.session_state["num_lots"] = c_lots
 
-            target_max = 120.0 if is_adani else 40.0
-            target_step = 1.0 if is_adani else 0.5
+            target_max = round(spec.target_pts * 2.5, 1)
+            target_step = 1.0 if spec.target_pts >= 20.0 else 0.5
             c_target = st.number_input(
                 f"Target Points (pts) — {scrip_symbol}",
                 min_value=1.0,
@@ -9058,8 +9074,8 @@ if df is not None and not df.empty:
             st.session_state[f"target_pts_{scrip_symbol}"] = c_target
             st.session_state["target_pts"] = c_target
 
-            sl_max = 60.0 if is_adani else 25.0
-            sl_step = 1.0 if is_adani else 0.5
+            sl_max = round(spec.sl_pts * 2.5, 1)
+            sl_step = 1.0 if spec.sl_pts >= 15.0 else 0.5
             c_sl = st.number_input(
                 f"Stop Loss Reference Cap (pts) — {scrip_symbol}",
                 min_value=1.0,
@@ -9101,7 +9117,9 @@ if df is not None and not df.empty:
                     st.session_state["session_sl_count"] = 0
                     st.rerun()
 
-            if is_adani:
+            if spec.parent_sector == "BENCHMARK INDEX":
+                macro_gate_desc = "Benchmark Liquidity & Volatility Gate Active"
+            elif is_adani:
                 macro_gate_desc = "NIFTY Infra / Sectoral Beta Gate Active"
             else:
                 macro_gate_desc = "Brent/MCX Crude O2C Margin Gate Active"

@@ -5166,7 +5166,7 @@ class UltraHighConvictionRelianceEngine:
 
         # Stand down if option bid-ask spread exceeds asset risk threshold (prevents spread slippage losses on 1 lot)
         opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
-        max_allowed_spread = 0.80 if is_adani else 0.35
+        max_allowed_spread = 2.5 if active_sym in ("NIFTY", "SENSEX") else (0.80 if is_adani else 0.35)
         spread_stand_down = (opt_spread > max_allowed_spread) and not is_synthetic_feed
 
         # Corwin-Schultz (2012) High-Low Effective Spread Estimator -> Cluster C
@@ -5807,11 +5807,11 @@ class UltraHighConvictionRelianceEngine:
             rel_ref_close = float(c5m["open"][0])
 
         reliance_pct = ((spot - rel_ref_close) / rel_ref_close) * 100.0 if rel_ref_close > 0 else 0.0
-        rolling_beta_val = 1.65 if is_adani_asset else 1.15
+        rolling_beta_val = active_spec.beta
         alpha_spread, rs_bias = MultiIndicatorMath.calculate_nifty_relative_strength(
             stock_pct=reliance_pct, nifty_pct=nifty_pct, beta=rolling_beta_val, symbol=active_sym
         )
-        effective_sec_pct = sector_pct if sector_pct is not None else (nifty_pct if is_adani_asset else energy_pct)
+        effective_sec_pct = sector_pct if sector_pct is not None else (nifty_pct if (is_adani_asset or active_spec.parent_sector == "BENCHMARK INDEX") else energy_pct)
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = MultiIndicatorMath.calculate_sectoral_alignment(
             nifty_pct=nifty_pct, energy_pct=effective_sec_pct, reliance_pct=reliance_pct,
             bank_nifty_pct=bank_nifty_pct, symbol=active_sym, sector_pct=effective_sec_pct
@@ -5894,7 +5894,7 @@ class UltraHighConvictionRelianceEngine:
         else:
             lambda_L, kendall_tau, copula_regime = 0.0, 0.0, "NO_INDEPENDENT_BENCHMARK_SERIES"
 
-        is_tail_contagion_active = (lambda_L >= 0.60) and ((effective_sec_pct < -0.20 if not is_adani_asset else nifty_pct < -0.30) or nifty_pct < -0.30)
+        is_tail_contagion_active = (lambda_L >= 0.60) and ((effective_sec_pct < -0.20 if active_spec.parent_sector != "BENCHMARK INDEX" else False) or nifty_pct < -0.30)
         if is_tail_contagion_active:
             macro_bull = max(0.0, macro_bull - 4.5)  # Severe tail-dependence contagion penalty
             macro_bear += 3.0
@@ -5904,7 +5904,9 @@ class UltraHighConvictionRelianceEngine:
         is_bullish_lean = spot > rel_ref_close
         is_bearish_lean = spot < rel_ref_close
 
-        if not is_adani_asset:
+        if active_spec.parent_sector == "BENCHMARK INDEX":
+            is_sector_divergence_trap = False
+        elif not is_adani_asset:
             # Moderate divergence gets score penalty rather than hard binary veto
             if is_bullish_lean and energy_pct < -0.30 and reliance_pct > 0.15:
                 macro_bull = max(0.0, macro_bull - 2.5)
@@ -6199,7 +6201,7 @@ class UltraHighConvictionRelianceEngine:
         sl_limit_collar = round(sl_premium - self.risk.limit_collar_pts, 2)
 
         # Defined-Risk Debit Spread Recommendation (ATM Long + OTM Short Hedge)
-        spread_step = 100 if "ADANI" in self.symbol else 20
+        spread_step = active_spec.strike_step * 2
         chain_rows = chain_oi.get("chain", [])
         if recommended_type == "CE":
             otm_strike = atm_strike + spread_step
