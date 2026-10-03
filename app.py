@@ -1395,18 +1395,23 @@ st.sidebar.html(f"""
 symbol = scrip_yf
 scrip_choice = st.session_state.get("selected_scrip", "RELIANCE")
 lot_size = scrip_lot
-num_lots = scrip_lots_count
-total_trading_qty = scrip_total_qty
-target_pts = scrip_target_pts
-sl_pts = scrip_sl_pts
+st.session_state["lot_size"] = lot_size
+num_lots = int(st.session_state.get(f"num_lots_{scrip_symbol}", scrip_lots_count))
+st.session_state["num_lots"] = num_lots
+total_trading_qty = num_lots * lot_size
+target_pts = float(st.session_state.get(f"target_pts_{scrip_symbol}", scrip_target_pts))
+st.session_state["target_pts"] = target_pts
+sl_pts = float(st.session_state.get(f"sl_pts_{scrip_symbol}", scrip_sl_pts))
+st.session_state["sl_pts"] = sl_pts
 MIN_HIT_PERCENTAGE = float(st.session_state.get("MIN_HIT_PERCENTAGE", 60.0))
-max_daily_sl_allowed = int(st.session_state.get("max_daily_sl_allowed", 1))
+max_daily_sl_allowed = int(st.session_state.get(f"max_daily_sl_allowed_{scrip_symbol}", 1))
+st.session_state["max_daily_sl_allowed"] = max_daily_sl_allowed
 sim_scenario = st.session_state.get("sim_scenario", "🟢 Live Market Flow")
 simulated_time_mode = bool(st.session_state.get("simulated_time_mode", False))
-strike_selection_pref = st.session_state.get("strike_selection_pref", "Auto-Detect Best Strike")
+strike_selection_pref = st.session_state.get(f"strike_selection_pref_{scrip_symbol}", st.session_state.get("strike_selection_pref", "Auto-Detect Best Strike"))
 stream_live_1s = bool(st.session_state.get("stream_live_1s", True))
-live_broker_ltp = float(st.session_state.get("live_broker_ltp", 0.0))
-custom_trigger_override = float(st.session_state.get("custom_trigger_override", 0.0))
+live_broker_ltp = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
+custom_trigger_override = float(st.session_state.get(f"custom_trigger_override_{scrip_symbol}", 0.0))
 contract_expiry_label = "Next Monthly Expiry"
 
 if "allow_orb_early_entry" not in st.session_state:
@@ -8533,69 +8538,149 @@ if df is not None and not df.empty:
         col_cfg_left, col_cfg_right = st.columns(2)
 
         with col_cfg_left:
-            st.markdown("### 🎯 Risk & Position Sizing Parameters")
-            c_lots = st.number_input(f"Number of Lots ({scrip_symbol}: {lot_size} Qty/Lot)", min_value=1, max_value=4, value=st.session_state.get("num_lots", 1), key="ui_num_lots")
+            st.markdown(f"### 🎯 Risk & Position Sizing Parameters ({scrip_symbol})")
+            c_lots = st.number_input(
+                f"Number of Lots ({scrip_symbol}: {lot_size} Qty/Lot)",
+                min_value=1,
+                max_value=10,
+                value=int(st.session_state.get(f"num_lots_{scrip_symbol}", scrip_lots_count)),
+                key=f"ui_num_lots_{scrip_symbol}"
+            )
+            st.session_state[f"num_lots_{scrip_symbol}"] = c_lots
             st.session_state["num_lots"] = c_lots
 
-            c_target = st.number_input("Target Points (pts)", min_value=1.0, max_value=30.0, value=st.session_state.get("target_pts", 10.0), step=0.5, key="ui_target_pts")
+            target_max = 120.0 if is_adani else 40.0
+            target_step = 1.0 if is_adani else 0.5
+            c_target = st.number_input(
+                f"Target Points (pts) — {scrip_symbol}",
+                min_value=1.0,
+                max_value=target_max,
+                value=float(st.session_state.get(f"target_pts_{scrip_symbol}", scrip_target_pts)),
+                step=target_step,
+                key=f"ui_target_pts_{scrip_symbol}"
+            )
+            st.session_state[f"target_pts_{scrip_symbol}"] = c_target
             st.session_state["target_pts"] = c_target
 
-            c_sl = st.number_input("Stop Loss Reference Cap (pts)", min_value=1.0, max_value=30.0, value=st.session_state.get("sl_pts", 5.0), step=0.5, key="ui_sl_pts")
+            sl_max = 60.0 if is_adani else 25.0
+            sl_step = 1.0 if is_adani else 0.5
+            c_sl = st.number_input(
+                f"Stop Loss Reference Cap (pts) — {scrip_symbol}",
+                min_value=1.0,
+                max_value=sl_max,
+                value=float(st.session_state.get(f"sl_pts_{scrip_symbol}", scrip_sl_pts)),
+                step=sl_step,
+                key=f"ui_sl_pts_{scrip_symbol}"
+            )
+            st.session_state[f"sl_pts_{scrip_symbol}"] = c_sl
             st.session_state["sl_pts"] = c_sl
 
-            c_gate = st.slider("Directional Gate Threshold (%)", min_value=50.0, max_value=85.0, value=st.session_state.get("MIN_HIT_PERCENTAGE", 60.0), step=1.0, key="ui_min_hit")
+            c_gate = st.slider(
+                f"Directional Gate Threshold (%) — {scrip_symbol}",
+                min_value=50.0,
+                max_value=85.0,
+                value=float(st.session_state.get("MIN_HIT_PERCENTAGE", 60.0)),
+                step=1.0,
+                key=f"ui_min_hit_{scrip_symbol}"
+            )
             st.session_state["MIN_HIT_PERCENTAGE"] = c_gate
 
-            c_max_sl = st.number_input("Max Daily Stop Losses Before Auto-Lock", min_value=1, max_value=5, value=st.session_state.get("max_daily_sl_allowed", 1), key="ui_max_sl")
+            c_max_sl = st.number_input(
+                f"Max Daily Stop Losses Before Auto-Lock — {scrip_symbol}",
+                min_value=1,
+                max_value=5,
+                value=int(st.session_state.get(f"max_daily_sl_allowed_{scrip_symbol}", 1)),
+                key=f"ui_max_sl_{scrip_symbol}"
+            )
+            st.session_state[f"max_daily_sl_allowed_{scrip_symbol}"] = c_max_sl
             st.session_state["max_daily_sl_allowed"] = c_max_sl
 
             col_sl_stat, col_sl_rst = st.columns([2, 1])
             with col_sl_stat:
-                st.caption(f"🛡️ Daily SL Hits: **{st.session_state.get('session_sl_count', 0)} / {c_max_sl}**")
+                st.caption(f"🛡️ Daily SL Hits ({scrip_symbol}): **{st.session_state.get(f'session_sl_count_{scrip_symbol}', 0)} / {c_max_sl}**")
             with col_sl_rst:
-                if st.button("Reset SL Hits", key="ui_rst_sl_cnt_btn"):
+                if st.button("Reset SL Hits", key=f"ui_rst_sl_cnt_btn_{scrip_symbol}"):
+                    st.session_state[f"session_sl_count_{scrip_symbol}"] = 0
                     st.session_state["session_sl_count"] = 0
                     st.rerun()
 
+            if is_adani:
+                macro_gate_desc = "NIFTY Infra / Sectoral Beta Gate Active"
+            else:
+                macro_gate_desc = "Brent/MCX Crude O2C Margin Gate Active"
+
             st.html(f"""
             <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 10px 14px; margin: 10px 0; font-size: 0.74rem; color: #CBD5E1; line-height: 1.5;">
-                🛡️ <b>Capital-Preserving Institutional Model:</b><br>
-                Sizing: <b>1 Lot ({lot_size} Qty)</b> | Risk Cap: <b>&le; 4.0% Account Cash</b><br>
-                Dynamic Stop Loss: <b>1.5× 5m ATR</b> | Target: <b>+10.0 pts</b><br>
+                🛡️ <b>Capital-Preserving Institutional Model ({scrip_symbol}):</b><br>
+                Sizing: <b>{c_lots} Lot{'s' if c_lots > 1 else ''} ({c_lots * lot_size} Qty)</b> | Risk Cap: <b>~₹{c_sl * c_lots * lot_size:,.0f} (&le; 4.0% Account Cash)</b><br>
+                Dynamic Stop Loss: <b>1.5× 5m ATR (-{c_sl:.1f} pts Max)</b> | Target: <b>+{c_target:.1f} pts</b><br>
                 IV Filter: <b>IVP &lt; 50% Clean Window</b> (Crush Lock if &gt;70%)<br>
-                Macro Gate: <b>Brent/MCX Crude O2C Margin Gate Active</b>
+                Macro Gate: <b>{macro_gate_desc}</b>
             </div>
             """)
 
-            st.markdown("### 🔒 Policy Safeguards & Market Timing")
-            st.success("✅ **STRIKE**: Strictly At-The-Money (ATM)")
-            st.success("✅ **EXPIRY**: Strictly Next Monthly Expiry (Non-Near)")
+            st.markdown(f"### 🔒 Policy Safeguards & Market Timing ({scrip_symbol})")
+            st.success(f"✅ **STRIKE**: Dual ATM Corridor ({scrip_symbol} {lower_atm} & {upper_atm})")
+            st.success(f"✅ **EXPIRY**: Strictly Next Monthly Expiry ({expiry_date_str}, {dte} DTE)")
             
             c_early_entry = st.checkbox(
-                "⚡ Allow Early Entry (09:15 - 09:30 AM Opening Window)",
+                f"⚡ Allow Early Entry (09:15 - 09:30 AM Opening Window) — {scrip_symbol}",
                 value=st.session_state.get("allow_orb_early_entry", True),
-                key="ui_early_entry_cb",
+                key=f"ui_early_entry_cb_{scrip_symbol}",
                 help="When enabled, allows trade execution during the 09:15-09:30 AM opening range breakout formation when confluence exceeds institutional threshold."
             )
             st.session_state["allow_orb_early_entry"] = c_early_entry
 
-            c_strike_pref = st.radio("Strike Selection Override", ["Auto-Detect Best Strike", "Lower ATM", "Upper ATM"], index=["Auto-Detect Best Strike", "Lower ATM", "Upper ATM"].index(st.session_state.get("strike_selection_pref", "Auto-Detect Best Strike")), key="ui_strike_pref")
-            st.session_state["strike_selection_pref"] = c_strike_pref
+            strike_options = ["Auto-Detect Best Strike", f"Lower ATM (₹{lower_atm})", f"Upper ATM (₹{upper_atm})"]
+            pref_val = st.session_state.get(f"strike_selection_pref_{scrip_symbol}", st.session_state.get("strike_selection_pref", "Auto-Detect Best Strike"))
+            idx_pref = 0
+            if "Lower ATM" in pref_val:
+                idx_pref = 1
+            elif "Upper ATM" in pref_val:
+                idx_pref = 2
+            c_strike_pref = st.radio(
+                f"Dual ATM Strike Preference — {scrip_symbol}",
+                strike_options,
+                index=idx_pref,
+                key=f"ui_strike_pref_{scrip_symbol}"
+            )
+            if "Lower ATM" in c_strike_pref:
+                st.session_state["strike_selection_pref"] = "Lower ATM"
+                st.session_state[f"strike_selection_pref_{scrip_symbol}"] = "Lower ATM"
+            elif "Upper ATM" in c_strike_pref:
+                st.session_state["strike_selection_pref"] = "Upper ATM"
+                st.session_state[f"strike_selection_pref_{scrip_symbol}"] = "Upper ATM"
+            else:
+                st.session_state["strike_selection_pref"] = "Auto-Detect Best Strike"
+                st.session_state[f"strike_selection_pref_{scrip_symbol}"] = "Auto-Detect Best Strike"
 
-            c_broker_ltp = st.number_input("Broker Option Premium Sync (0.0 = Auto Feed)", value=st.session_state.get("live_broker_ltp", 0.0), step=0.05, key="ui_broker_ltp")
+            c_broker_ltp = st.number_input(
+                f"Broker Option Premium Sync — {scrip_symbol} (0.0 = Auto Feed)",
+                value=float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0)),
+                step=0.05,
+                key=f"ui_broker_ltp_{scrip_symbol}"
+            )
+            st.session_state[f"live_broker_ltp_{scrip_symbol}"] = c_broker_ltp
             st.session_state["live_broker_ltp"] = c_broker_ltp
 
-            c_override = st.number_input("Breakout Buy Trigger Control (0.0 = Auto Pin)", value=st.session_state.get("custom_trigger_override", 0.0), step=0.1, key="ui_trigger_override")
+            c_override = st.number_input(
+                f"Breakout Buy Trigger Control — {scrip_symbol} (0.0 = Auto Pin)",
+                value=float(st.session_state.get(f"custom_trigger_override_{scrip_symbol}", 0.0)),
+                step=0.1,
+                key=f"ui_trigger_override_{scrip_symbol}"
+            )
+            st.session_state[f"custom_trigger_override_{scrip_symbol}"] = c_override
             st.session_state["custom_trigger_override"] = c_override
-            if st_button_stretch("🔄 Re-pin Trigger to Current Market", key="ui_repin_btn"):
+            if st_button_stretch(f"🔄 Re-pin Trigger to Current Market ({scrip_symbol})", key=f"ui_repin_btn_{scrip_symbol}"):
                 BreakoutTriggerManager.reset_trigger(atm_strike, recommended_contract_type)
+                st.session_state[f"custom_trigger_override_{scrip_symbol}"] = 0.0
                 st.session_state["custom_trigger_override"] = 0.0
-                st.success("Trigger re-pinned!")
+                st.success(f"Trigger re-pinned for {scrip_symbol}!")
                 st.rerun()
 
         with col_cfg_right:
-            st.markdown("### ⚡ Real-Time Scenario Simulation Hub (9 Mock Events)")
-            st.caption("Select and force-trigger any scenario to audit screen alerts, trade execution card, and Telegram alerts.")
+            st.markdown(f"### ⚡ Real-Time Scenario Simulation Hub (9 Mock Events — {scrip_symbol})")
+            st.caption(f"Select and force-trigger any scenario calibrated to {scrip_name} ({lot_size} Qty/Lot, Target +{c_target:.1f}p, SL -{c_sl:.1f}p).")
 
             sim_grid1, sim_grid2, sim_grid3 = st.columns(3)
             with sim_grid1:
@@ -8664,7 +8749,7 @@ if df is not None and not df.empty:
                     st.rerun()
 
             if is_sim_active:
-                st.info(f"⚡ **Active Simulation**: `{st.session_state.get('sim_scenario')}`")
+                st.info(f"⚡ **Active Simulation ({scrip_symbol})**: `{st.session_state.get('sim_scenario')}`")
 
             st.markdown("---")
             st.markdown("### 🕒 Session Clock Simulation & Broker/Telegram APIs")
