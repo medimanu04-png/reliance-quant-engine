@@ -14,6 +14,7 @@ import math
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
+from asset_config import get_asset_spec
 
 try:
     import requests
@@ -565,7 +566,8 @@ class NSEIndiaFetcher:
         sym = (symbol or "").upper().strip()
         if not sym:
             sym = "ADANIENT" if spot >= 2000 else "RELIANCE"
-        lot_size = 309 if sym == "ADANIENT" else 500
+        spec = get_asset_spec(symbol=sym)
+        lot_size = spec.lot_size
         try:
             from groww_market_feed import GrowwMarketFeed
             groww_feed = GrowwMarketFeed.get_instance()
@@ -637,15 +639,17 @@ class NSEIndiaFetcher:
             pass
 
         # Neutral baseline option chain distribution (Broker Offline)
-        strikes = [atm_strike + (step * 10) for step in range(-4, 5)]
+        step_val = spec.strike_step
+        base_oi_multiplier = 0.05 if spec.symbol == "ADANIENT" else 1.0
+        strikes = [atm_strike + (step * step_val) for step in range(-4, 5)]
         chain = []
         total_call_oi = 0
         total_put_oi = 0
 
         for k in strikes:
-            dist = (k - spot) / 10.0
-            base_call = int(2200000 * math.exp(-0.15 * max(0.0, -dist)))
-            base_put = int(2500000 * math.exp(-0.15 * max(0.0, dist)))
+            dist = (k - spot) / float(step_val)
+            base_call = int(2200000 * base_oi_multiplier * math.exp(-0.15 * max(0.0, -dist)))
+            base_put = int(2500000 * base_oi_multiplier * math.exp(-0.15 * max(0.0, dist)))
 
             c_oi = base_call
             p_oi = base_put
@@ -751,11 +755,12 @@ class NSEIndiaFetcher:
         rng = random.Random(sec_seed)
 
         sym = scrip_symbol.upper() if scrip_symbol else ("ADANIENT" if (spot is not None and spot >= 2000) else "RELIANCE")
+        spec = get_asset_spec(symbol=sym)
         if spot is None or spot <= 0:
             off_data = cls.get_official_data(sym)
-            spot = float(off_data.get("spot_ltp", 2820.0 if sym == "ADANIENT" else 1226.0))
-        lot_size = 309 if sym == "ADANIENT" else 250
-        target_pts = 35.0 if sym == "ADANIENT" else 7.0
+            spot = float(off_data.get("spot_ltp", spec.default_spot))
+        lot_size = spec.lot_size
+        target_pts = spec.target_pts
 
         # Dynamic Dual ATM Corridor calculation
         corridor = cls.get_atm_corridor(spot, symbol=sym)
@@ -1090,7 +1095,7 @@ class NSEIndiaFetcher:
                     "symbol": f"{active_k} CE ({selected_expiry_str})",
                     "type": "BUY (Ask Hit)",
                     "participant": "🌐 FII (Block Sweep)",
-                    "qty": rng.choice([500, 1000, 1500, 2000]),
+                    "qty": rng.choice(list(spec.tape_quantities)),
                     "price": active_data["call_ltp"],
                     "color": "#10B981"
                 },
@@ -1099,7 +1104,7 @@ class NSEIndiaFetcher:
                     "symbol": f"{active_k} PE ({selected_expiry_str})",
                     "type": "SELL (Bid Hit)",
                     "participant": "👥 Retail (Stop Panic)",
-                    "qty": rng.choice([500, 1000, 1500]),
+                    "qty": rng.choice(list(spec.tape_quantities[:3])),
                     "price": active_data["put_ltp"],
                     "color": "#EF4444"
                 },
@@ -1108,7 +1113,7 @@ class NSEIndiaFetcher:
                     "symbol": f"{active_k} CE ({selected_expiry_str})",
                     "type": "BUY (Sweep)",
                     "participant": "⚡ PRO (HFT Algo Fill)",
-                    "qty": rng.choice([500, 1000]),
+                    "qty": rng.choice(list(spec.tape_quantities[:2])),
                     "price": round(active_data["call_ltp"] + rng.uniform(-0.05, 0.05), 2),
                     "color": "#38BDF8"
                 },
@@ -1117,7 +1122,7 @@ class NSEIndiaFetcher:
                     "symbol": f"{active_k} CE ({selected_expiry_str})",
                     "type": "BUY (Accumulate)",
                     "participant": "🏛️ DII (Institutional SIP)",
-                    "qty": rng.choice([1000, 1500, 2500]),
+                    "qty": rng.choice(list(spec.tape_quantities[1:] if len(spec.tape_quantities) > 1 else spec.tape_quantities)),
                     "price": round(active_data["call_ltp"] + rng.uniform(-0.02, 0.02), 2),
                     "color": "#10B981"
                 }
@@ -1165,12 +1170,13 @@ class NSEIndiaFetcher:
         sym = (symbol or "").upper().strip()
         if not sym:
             sym = "ADANIENT" if (spot is not None and spot >= 2000) else "RELIANCE"
+        spec = get_asset_spec(symbol=sym)
         if spot is None or spot <= 0:
             off_data = cls.get_official_data(sym)
-            spot = float(off_data.get("spot_ltp", 2820.0 if sym == "ADANIENT" else 1226.0))
+            spot = float(off_data.get("spot_ltp", spec.default_spot))
         if volume is None or volume <= 0:
             off_data = cls.get_official_data(sym)
-            volume = int(off_data.get("volume", 1850000 if sym == "ADANIENT" else 4725000))
+            volume = int(off_data.get("volume", spec.volume_norm))
 
         import time, random
         now_ts = time.time()

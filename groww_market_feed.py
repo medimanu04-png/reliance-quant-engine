@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
+from asset_config import get_asset_spec
 
 logger = logging.getLogger(__name__)
 
@@ -1610,8 +1611,9 @@ class GrowwMarketFeed:
         """
         slug, underlying = self._resolve_groww_slug(symbol)
         data = self.get_live_spot_data(symbol=underlying)
-        def_spot = 2820.0 if underlying == "ADANIENT" else 1210.0
-        def_close = 2816.80 if underlying == "ADANIENT" else 1219.20
+        spec = get_asset_spec(symbol=underlying)
+        def_spot = spec.default_spot
+        def_close = 2816.80 if underlying == "ADANIENT" else 1167.70
         base_ltp = float(data.get("spot_ltp", def_spot))
         prev_close = float(data.get("prev_close", def_close))
 
@@ -2157,9 +2159,10 @@ class GrowwMarketFeed:
                     sell_qty = d_sell_sum
 
         # 3. Resilient institutional estimation if depth not reported by feed
-        def_spot = 2820.0 if underlying == "ADANIENT" else 1226.00
-        def_close = 2816.80 if underlying == "ADANIENT" else 1219.20
-        def_vol = 2500000 if underlying == "ADANIENT" else 13138735
+        spec = get_asset_spec(symbol=underlying)
+        def_spot = spec.default_spot
+        def_close = 2816.80 if underlying == "ADANIENT" else 1167.70
+        def_vol = spec.volume_norm
         skew_div = 50.0 if underlying == "ADANIENT" else 25.0
         ltp = float(spot_data.get("spot_ltp", def_spot))
         if buy_qty == 0 or sell_qty == 0:

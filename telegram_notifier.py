@@ -318,39 +318,47 @@ class TelegramNotifier:
     # INLINE KEYBOARD ACTION BUTTONS FOR TELEGRAM (DYNAMIC SYMBOL / URL RESOLUTION)
     # =========================================================================
     @staticmethod
-    def _resolve_symbol(symbol: str = "RELIANCE", contract: str = "") -> str:
+    def _resolve_symbol(symbol: str = "", contract: str = "") -> str:
+        from asset_config import resolve_symbol
         if symbol and symbol.strip().upper() not in ("RELIANCE", ""):
-            return symbol.strip().upper()
+            return resolve_symbol(symbol, contract)
         if contract:
-            c_up = contract.upper()
-            if "ADANI" in c_up:
-                return "ADANIENT"
-        return "RELIANCE"
+            return resolve_symbol(symbol, contract)
+        # Attempt to auto-detect active selection from Streamlit session if in app context
+        try:
+            import sys
+            if "streamlit" in sys.modules:
+                st = sys.modules["streamlit"]
+                sel = st.session_state.get("selected_scrip")
+                if sel:
+                    return resolve_symbol(sel, contract)
+        except Exception:
+            pass
+        return resolve_symbol(symbol, contract)
 
     @classmethod
-    def _get_groww_urls(cls, symbol: str = "RELIANCE", contract: str = "") -> Tuple[str, str, str]:
+    def _get_groww_urls(cls, symbol: str = "", contract: str = "") -> Tuple[str, str, str]:
+        from asset_config import get_asset_spec
         sym = cls._resolve_symbol(symbol, contract)
-        if "ADANI" in sym:
-            slug = "adani-enterprises-ltd"
-            name = "ADANI ENTERPRISES"
-        else:
-            slug = "reliance-industries-ltd"
-            name = "RELIANCE"
-        opt_url = f"https://groww.in/options/{slug}"
-        stock_url = f"https://groww.in/stocks/{slug}"
-        return opt_url, stock_url, name
+        spec = get_asset_spec(sym)
+        opt_url = f"https://groww.in/options/{spec.groww_company_slug}"
+        stock_url = f"https://groww.in/stocks/{spec.groww_company_slug}"
+        return opt_url, stock_url, spec.symbol
 
     @classmethod
     def _spot_label(cls, symbol: str = "", contract: str = "") -> str:
+        from asset_config import get_asset_spec
         sym = cls._resolve_symbol(symbol, contract)
-        name = "Adani Enterprises" if "ADANI" in sym else "Reliance"
-        return f"{name} Spot"
+        spec = get_asset_spec(sym)
+        return f"{spec.full_name.replace(' Ltd.', '')} Spot"
 
     @classmethod
     def _resolve_live_spot(cls, spot: float, symbol: str = "", contract: str = "") -> float:
         if spot > 0.0:
             return spot
+        from asset_config import get_asset_spec
         sym = cls._resolve_symbol(symbol, contract)
+        spec = get_asset_spec(sym)
         try:
             from groww_market_feed import GrowwMarketFeed
             gw_data = GrowwMarketFeed.get_instance().get_live_spot_data(symbol=sym)
@@ -359,10 +367,10 @@ class TelegramNotifier:
                 return live_spot
         except Exception:
             pass
-        return 2816.80 if "ADANI" in sym else 1226.40
+        return spec.default_spot
 
     @classmethod
-    def get_entry_ce_buttons(cls, contract: str = "", symbol: str = "RELIANCE") -> Dict[str, Any]:
+    def get_entry_ce_buttons(cls, contract: str = "", symbol: str = "") -> Dict[str, Any]:
         """Green action buttons for CALL (CE) Trade Entry confirmation."""
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
@@ -375,7 +383,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_entry_pe_buttons(cls, contract: str = "", symbol: str = "RELIANCE") -> Dict[str, Any]:
+    def get_entry_pe_buttons(cls, contract: str = "", symbol: str = "") -> Dict[str, Any]:
         """Red/Crimson action buttons for PUT (PE) Trade Entry confirmation."""
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
@@ -388,7 +396,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_armed_buttons(cls, contract: str = "", symbol: str = "RELIANCE") -> Dict[str, Any]:
+    def get_armed_buttons(cls, contract: str = "", symbol: str = "") -> Dict[str, Any]:
         """Yellow warning buttons for ARMED state pre-alert."""
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
@@ -401,7 +409,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_target_hit_buttons(cls, symbol: str = "RELIANCE", contract: str = "") -> Dict[str, Any]:
+    def get_target_hit_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Green profit celebration buttons for Target Hit."""
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
@@ -414,7 +422,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_stop_loss_buttons(cls, symbol: str = "RELIANCE", contract: str = "") -> Dict[str, Any]:
+    def get_stop_loss_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Red capital preservation buttons for Stop Loss."""
         opt_url, _, _ = cls._get_groww_urls(symbol, contract)
         return {
@@ -426,7 +434,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_trailing_sl_buttons(cls, symbol: str = "RELIANCE", contract: str = "") -> Dict[str, Any]:
+    def get_trailing_sl_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Amber/Cyan buttons for Trailing Stop Loss to Cost."""
         opt_url, _, _ = cls._get_groww_urls(symbol, contract)
         return {
@@ -438,7 +446,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_auto_sq_buttons(cls, symbol: str = "RELIANCE", contract: str = "") -> Dict[str, Any]:
+    def get_auto_sq_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Purple urgency buttons for EOD Auto-Square-Off."""
         opt_url, _, _ = cls._get_groww_urls(symbol, contract)
         return {
@@ -450,7 +458,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_chop_buttons(cls, symbol: str = "RELIANCE", contract: str = "") -> Dict[str, Any]:
+    def get_chop_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Neutral observation buttons for Choppiness Stand Down."""
         _, stock_url, _ = cls._get_groww_urls(symbol, contract)
         return {
@@ -462,7 +470,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def get_circuit_breaker_buttons(cls, symbol: str = "RELIANCE", contract: str = "") -> Dict[str, Any]:
+    def get_circuit_breaker_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Burgundy/Red lock buttons for Circuit Breaker Daily Limit alert."""
         opt_url, stock_url, _ = cls._get_groww_urls(symbol, contract)
         return {
@@ -847,17 +855,20 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a PROFIT LOCK ALERT (+5.5 pts reached, lock +3.0 pts profit) for Telegram."""
+        """Formats a PROFIT LOCK ALERT (Locks +3.0 pts for Reliance / +12.0 pts for Adani) for Telegram."""
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol, contract)
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size == 250 and "ADANI" in cls._resolve_symbol(symbol, contract):
-            lot_size = 309
+        if lot_size in (250, 500) and spec.symbol == "ADANIENT":
+            lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
-        lock_sl = round(entry_price + 3.0, 2)
-        locked_pnl = round(3.0 * total_qty)
+        locked_pts = kwargs.get("locked_pts", spec.profit_lock_locked)
+        lock_sl = round(entry_price + locked_pts, 2)
+        locked_pnl = round(locked_pts * total_qty)
         gain_pts = round(current_ltp - entry_price, 2)
         return f"""
-🔒 <b>PROFIT LOCK ESCALATOR ACTIVATED (+3.0 PTS GUARANTEED)</b> 🔒
+🔒 <b>PROFIT LOCK ESCALATOR ACTIVATED (+{locked_pts:.1f} PTS GUARANTEED)</b> 🔒
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏆 <b>STATUS:</b> <b>GUARANTEED PROFIT LOCKED IN CAPITAL</b>
 📌 <b>Contract:</b> <code>{contract}</code>
@@ -865,7 +876,7 @@ class TelegramNotifier:
 
 💵 <b>Original Entry:</b> ₹{entry_price:.2f}
 ⚡ <b>Current Option LTP:</b> <b>₹{current_ltp:.2f}</b>
-🔒 <b>New Locked SL:</b> <b>₹{lock_sl:.2f} (+3.0 pts guaranteed profit)</b>
+🔒 <b>New Locked SL:</b> <b>₹{lock_sl:.2f} (+{locked_pts:.1f} pts guaranteed profit)</b>
 💰 <b>Guaranteed Minimum Profit:</b> <b>+₹{locked_pnl:,.2f}</b>
 📦 <b>Position Sizing:</b> {num_lots} Lot ({total_qty:,} Units)
 📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}

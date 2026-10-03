@@ -33,6 +33,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Dict, Any, List, Tuple, Optional
+from asset_config import get_asset_spec
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -2484,14 +2485,16 @@ class MultiIndicatorMath:
         reward_risk_ratio: float = 2.22,
         capital: float = 73643.72,
         atr: float = 8.5,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         target_risk_pct: Optional[float] = None,
-        sl_pts: Optional[float] = None
+        sl_pts: Optional[float] = None,
+        symbol: Optional[str] = None
     ) -> Tuple[float, float, int, float, str]:
         """
         Dynamic Half-Kelly ($0.5 f^*$) Volatility-Targeted Position Sizing Engine:
         Target Lots = max(1, round((Target Risk % * Capital) / (Option Risk * Lot Size)))
         """
+        eff_lot_size = lot_size if (lot_size is not None and lot_size > 0) else get_asset_spec(symbol).lot_size
         p = max(0.10, min(0.95, win_rate / 100.0 if win_rate > 1.0 else win_rate))
         q = 1.0 - p
         b = max(1.0, reward_risk_ratio)
@@ -2512,7 +2515,7 @@ class MultiIndicatorMath:
             opt_risk_per_unit = float(sl_pts)
         else:
             opt_risk_per_unit = max(2.5, min(25.0, atr * 0.52))
-        risk_per_contract = opt_risk_per_unit * lot_size
+        risk_per_contract = opt_risk_per_unit * eff_lot_size
         
         # Explicit Institutional Formula: max(1, round((effective_risk_pct * capital) / risk_per_contract))
         calculated_lots = max(1, round(risk_capital / max(1.0, risk_per_contract)))
@@ -2600,12 +2603,13 @@ class MultiIndicatorMath:
         spot: float,
         option_ltp: float,
         num_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         delta: float = 0.52,
         iv: float = 0.212,
         dte: int = 30,
         contract_type: str = "CE",
-        confidence_level: float = 0.99
+        confidence_level: float = 0.99,
+        symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Value-at-Risk (VaR 95% & 99%) & Real-Time Portfolio Greek Neutrality Framework.
@@ -2615,7 +2619,8 @@ class MultiIndicatorMath:
         2. Net Portfolio Delta = Qty * Contract Delta (in underlying shares)
         3. Portfolio Greek Neutrality: Quantifies directional beta exposure vs market-neutral delta-gamma hedging.
         """
-        qty = num_lots * lot_size
+        eff_lot_size = lot_size if (lot_size is not None and lot_size > 0) else get_asset_spec(symbol).lot_size
+        qty = num_lots * eff_lot_size
         position_notional = round(qty * option_ltp, 2)
         daily_vol = iv / math.sqrt(252.0)
         
@@ -2664,7 +2669,7 @@ class MultiIndicatorMath:
             "portfolio_theta_daily_rs": pos_theta_rs,
             "portfolio_vega_rs": pos_vega_rs,
             "neutrality_regime": neutrality_regime,
-            "max_risk_cap_rupees": round(num_lots * lot_size * 4.5, 2)
+            "max_risk_cap_rupees": round(num_lots * eff_lot_size * get_asset_spec(symbol).sl_pts, 2)
         }
 
     @staticmethod
@@ -2674,10 +2679,11 @@ class MultiIndicatorMath:
         bid_qty: int = 1000,
         ask_qty: int = 1000,
         target_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         urgency: str = "PASSIVE",
         entry_trigger: float = 0.0,
-        max_collar_pts: float = 0.30
+        max_collar_pts: float = 0.30,
+        symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Passive Limit Pegging, VWAP Slicing & Zero-Slippage Routing Protocol.
@@ -2689,6 +2695,7 @@ class MultiIndicatorMath:
            market impact and adverse selection.
         3. Zero-Slippage SL-LMT Routing Collar: Strictly limits fill slippage within max_collar_pts (0.30 pts = Rs. 75).
         """
+        eff_lot_size = lot_size if (lot_size is not None and lot_size > 0) else get_asset_spec(symbol).lot_size
         b = max(0.05, float(bid_price))
         a = max(b + 0.05, float(ask_price))
         spread = round(a - b, 2)
@@ -2712,7 +2719,7 @@ class MultiIndicatorMath:
             routing_mode = "ZERO_SLIPPAGE_COLLAR_ROUTING (SL-LMT Execution Cap)"
             
         slippage_saved_pts = round(max(0.0, a - pegged_limit), 2)
-        slippage_saved_rs = round(slippage_saved_pts * target_lots * lot_size, 2)
+        slippage_saved_rs = round(slippage_saved_pts * target_lots * eff_lot_size, 2)
         
         # VWAP Slicing Schedule
         if target_lots > 1:
@@ -3828,7 +3835,8 @@ class MultiIndicatorMath:
         reward_risk_ratio: float = 2.22,
         capital: float = 73643.72,
         atr: float = 8.5,
-        lot_size: int = 250
+        lot_size: Optional[int] = None,
+        symbol: Optional[str] = None
     ) -> Tuple[float, float, int, float, str, float]:
         """
         Conditional Kelly Criterion with Tail Risk (CVaR) Adjustment.
@@ -3843,6 +3851,7 @@ class MultiIndicatorMath:
 
         Returns: (full_kelly_pct, half_kelly_pct, lots, risk_cap, status, cvar_adjustment)
         """
+        eff_lot_size = lot_size if (lot_size is not None and lot_size > 0) else get_asset_spec(symbol).lot_size
         p = max(0.10, min(0.95, win_rate / 100.0 if win_rate > 1.0 else win_rate))
         q = 1.0 - p
         b = max(1.0, reward_risk_ratio)
@@ -3881,7 +3890,7 @@ class MultiIndicatorMath:
 
         risk_capital = round(capital * effective_risk_pct, 2)
         opt_risk_per_unit = max(2.5, min(6.5, atr * 0.52))
-        risk_per_contract = opt_risk_per_unit * lot_size
+        risk_per_contract = opt_risk_per_unit * eff_lot_size
 
         calculated_lots = max(1, round(risk_capital / max(1.0, risk_per_contract)))
         recommended_lots = min(3, calculated_lots)
@@ -4348,16 +4357,18 @@ class MultiIndicatorMath:
         amihud_illiquidity: float,
         bid_ask_spread: float,
         order_size_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         avg_daily_volume: float = 5000000.0,
-        daily_volatility: float = 0.015
+        daily_volatility: float = 0.015,
+        symbol: Optional[str] = None
     ) -> Dict[str, float]:
         """
         Expected Slippage & Market Impact Model.
         Reference: Almgren & Chriss (2000) Optimal Execution; Kyle (1985).
         Combines half bid-ask spread with temporary and permanent price impact.
         """
-        total_shares = order_size_lots * lot_size
+        eff_lot_size = lot_size if (lot_size is not None and lot_size > 0) else get_asset_spec(symbol).lot_size
+        total_shares = order_size_lots * eff_lot_size
         half_spread = max(0.05, bid_ask_spread / 2.0)
         temp_impact = max(0.0, kyle_lambda * (total_shares / 1000.0))
         participation_rate = total_shares / max(100000.0, avg_daily_volume)

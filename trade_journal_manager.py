@@ -21,6 +21,7 @@ import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
 logger = logging.getLogger(__name__)
+from asset_config import get_asset_spec
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 JOURNAL_FILE = os.path.join(BASE_DIR, "daily_trade_journal.json")
@@ -478,12 +479,13 @@ class TradeJournalManager:
 
             # Strict Rule: If this trade was ALREADY cross-verified and stored in journal, KEEP ITS ORIGINAL GIVEN DETAILS!
             # Never overwrite a completed morning trade with an afternoon scan or different strike!
+            spec_exec = get_asset_spec(symbol=sym_kw, contract=sym)
             if existing and existing.get("suggested_entry") is not None and existing.get("trade_given_time"):
                 trade_given_time = existing["trade_given_time"]
                 sugg_contract = existing.get("suggested_contract") or existing.get("instrument") or sym
                 sugg_entry = float(existing["suggested_entry"])
-                sugg_exit = float(existing.get("suggested_exit", round(sugg_entry + 10.0, 2)))
-                sugg_sl = float(existing.get("suggested_sl", round(max(0.05, sugg_entry - 4.5), 2)))
+                sugg_exit = float(existing.get("suggested_exit", round(sugg_entry + spec_exec.target_pts, 2)))
+                sugg_sl = float(existing.get("suggested_sl", round(max(0.05, sugg_entry - spec_exec.sl_pts), 2)))
                 confluence = float(existing.get("confluence_score", 78.5))
                 trade_type = existing.get("type", "BUY PE" if "PE" in sym else "BUY CE")
             else:
@@ -491,10 +493,10 @@ class TradeJournalManager:
                 matched_signal = SignalTracker.find_matching_signal(symbol=sym, actual_entry_time=actual_entry_time_str, date_str=today_str)
                 if matched_signal:
                     trade_given_time = matched_signal.get("trade_given_time", actual_entry_time_str)
-                    sugg_contract = matched_signal.get("full_contract") or f"{sym_kw} {matched_signal.get('strike', 1200)} {matched_signal.get('contract_type', 'PE')} ({matched_signal.get('expiry', '27-OCT-2026')})"
+                    sugg_contract = matched_signal.get("full_contract") or f"{sym_kw} {matched_signal.get('strike', spec_exec.default_strike)} {matched_signal.get('contract_type', 'PE')} ({matched_signal.get('expiry', '27-OCT-2026')})"
                     sugg_entry = float(matched_signal.get("suggested_entry", entry_p))
-                    sugg_exit = float(matched_signal.get("suggested_exit", round(sugg_entry + 10.0, 2)))
-                    sugg_sl = float(matched_signal.get("suggested_sl", round(max(0.05, sugg_entry - 4.5), 2)))
+                    sugg_exit = float(matched_signal.get("suggested_exit", round(sugg_entry + spec_exec.target_pts, 2)))
+                    sugg_sl = float(matched_signal.get("suggested_sl", round(max(0.05, sugg_entry - spec_exec.sl_pts), 2)))
                     confluence = float(matched_signal.get("confluence_score", 78.5))
                     trade_type = f"BUY {matched_signal.get('contract_type', 'PE' if 'PE' in sym else 'CE')}"
                 else:
@@ -502,8 +504,8 @@ class TradeJournalManager:
                     trade_given_time = actual_entry_time_str or "09:15:00 AM IST"
                     sugg_contract = sym
                     sugg_entry = entry_p
-                    sugg_exit = round(entry_p + 10.0, 2)
-                    sugg_sl = round(max(0.05, entry_p - 4.5), 2)
+                    sugg_exit = round(entry_p + spec_exec.target_pts, 2)
+                    sugg_sl = round(max(0.05, entry_p - spec_exec.sl_pts), 2)
                     confluence = 75.0
                     trade_type = "BUY CE" if "CE" in sym else ("BUY PE" if "PE" in sym else "BUY")
 
@@ -601,7 +603,7 @@ class TradeJournalManager:
             return 0
 
     @classmethod
-    def get_summary_kpi(cls, entries: List[Dict[str, Any]], today_strike_price: float = None, starting_cash: float = None) -> Dict[str, Any]:
+    def get_summary_kpi(cls, entries: List[Dict[str, Any]], today_strike_price: float = None, starting_cash: float = None, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Calculates executive performance metrics strictly anchored on verified executions."""
         total_days = len(entries)
         traded_days = [e for e in entries if e.get("status") in ["HIT", "FAIL"]]
@@ -617,11 +619,17 @@ class TradeJournalManager:
         starting_capital = starting_cash if (starting_cash is not None and starting_cash > 0) else STARTING_CAPITAL
         total_cash = round(starting_capital + total_profit, 2)
         
-        # Today's 2-lot required capital (Standard 250 units/lot)
-        if today_strike_price is not None and today_strike_price > 0:
-            today_2lot_capital = round(2 * 250 * today_strike_price, 2)
-        else:
-            today_2lot_capital = round(2 * 250 * 37.65, 2)
+        # Today's required capital for configured lot count
+        entry_sym = symbol
+        if not entry_sym and entries:
+            for e in entries:
+                c = str(e.get("contract", "") or e.get("symbol", "") or e.get("trading_symbol", ""))
+                if "ADANI" in c.upper():
+                    entry_sym = "ADANIENT"
+                    break
+        spec = get_asset_spec(symbol=entry_sym)
+        ref_prem = today_strike_price if (today_strike_price is not None and today_strike_price > 0) else spec.default_call_price
+        today_2lot_capital = round(spec.default_lots * spec.lot_size * ref_prem, 2)
         
         win_rate = (len(hits) / len(traded_days) * 100.0) if len(traded_days) > 0 else 0.0
         profit_factor = (total_captured / total_lost) if total_lost > 0 else (total_captured if total_captured > 0 else 1.0)
@@ -1487,6 +1495,7 @@ class SequentialTradeEngine:
         cls.save_state(state, symbol=active_sym)
 
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        spec_c = get_asset_spec(contract=contract, symbol=active_sym)
         try:
             SignalTracker.save_signal({
                 "date": today_str,
@@ -1494,7 +1503,7 @@ class SequentialTradeEngine:
                 "full_contract": instrument,
                 "symbol": contract,
                 "contract_type": "PE" if "PE" in contract else "CE",
-                "strike": int("".join(filter(str.isdigit, contract)) or 1200),
+                "strike": int("".join(filter(str.isdigit, contract)) or spec_c.default_strike),
                 "expiry": expiry,
                 "suggested_entry": actual_p,
                 "suggested_exit": target_p,
@@ -1559,7 +1568,8 @@ class SequentialTradeEngine:
             parsed_strike = int(m.group(1))
         else:
             digits = re.findall(r'\d{3,5}', contract)
-            parsed_strike = int(digits[-1]) if digits else 1200
+            spec_fallback = get_asset_spec(symbol=active_sym)
+            parsed_strike = int(digits[-1]) if digits else spec_fallback.default_strike
 
         limit_entry = round(float(planned_entry) + 0.35, 2)
 

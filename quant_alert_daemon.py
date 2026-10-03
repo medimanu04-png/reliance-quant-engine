@@ -354,7 +354,9 @@ class RelianceQuantAlertDaemon:
 
         if spot <= 0:
             nse_data = NSEIndiaFetcher.get_scrip_official_data(sym)
-            spot = float(nse_data.get("spot_ltp", 2820.00 if sym == "ADANIENT" else 1226.00))
+            from asset_config import get_asset_spec
+            spec = get_asset_spec(sym)
+            spot = float(nse_data.get("spot_ltp", spec.default_spot))
 
         self.last_spot[sym] = spot
 
@@ -440,12 +442,16 @@ class RelianceQuantAlertDaemon:
             bot_token = tg_config.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
             chat_id = tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
             if tg_enabled and not TelegramNotifier.is_alert_sent(cb_alert_key):
+                from asset_config import get_asset_spec
+                spec = get_asset_spec(sym)
+                est_cb_loss = float(spec.lot_size * spec.sl_pts)
                 cb_msg = TelegramNotifier.format_daily_circuit_breaker_alert(
-                    date_str=today_date,
-                    realized_pnl=-2250.0,
-                    remaining_capital=STARTING_CAPITAL - 2250.0
+                    reason=f"1 Loss Limit Reached (-₹{est_cb_loss:,.2f})",
+                    spot=spot,
+                    symbol=sym
                 )
-                ok, fb = TelegramNotifier.send_message(bot_token, chat_id, cb_msg)
+                buttons = TelegramNotifier.get_circuit_breaker_buttons(symbol=sym)
+                ok, fb = TelegramNotifier.send_message(bot_token, chat_id, cb_msg, reply_markup=buttons)
                 if ok:
                     TelegramNotifier.record_alert_sent(cb_alert_key)
                     logger.info(f"🚨 Daily Circuit Breaker Alert sent to Telegram: {fb}")
@@ -584,7 +590,7 @@ class RelianceQuantAlertDaemon:
                         lot_size=trade_lot_size,
                         spot=spot
                     )
-                    buttons = TelegramNotifier.get_trailing_sl_buttons()
+                    buttons = TelegramNotifier.get_trailing_sl_buttons(symbol=sym, contract=inst_sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, be_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(be_alert_key)
@@ -602,7 +608,7 @@ class RelianceQuantAlertDaemon:
                         lot_size=trade_lot_size,
                         spot=spot
                     )
-                    buttons = TelegramNotifier.get_trailing_sl_buttons()
+                    buttons = TelegramNotifier.get_trailing_sl_buttons(symbol=sym, contract=inst_sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, lock_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(lock_alert_key)
@@ -625,7 +631,7 @@ class RelianceQuantAlertDaemon:
                         lot_size=trade_lot_size,
                         spot=spot
                     )
-                    buttons = TelegramNotifier.get_trailing_sl_buttons()
+                    buttons = TelegramNotifier.get_trailing_sl_buttons(symbol=sym, contract=inst_sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, trail_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(trail_alert_key)
@@ -647,7 +653,7 @@ class RelianceQuantAlertDaemon:
                         lot_size=trade_lot_size,
                         spot=spot
                     )
-                    buttons = TelegramNotifier.get_target_hit_buttons()
+                    buttons = TelegramNotifier.get_target_hit_buttons(symbol=sym, contract=inst_sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, tgt_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(target_key)
@@ -669,7 +675,7 @@ class RelianceQuantAlertDaemon:
                         lot_size=trade_lot_size,
                         spot=spot
                     )
-                    buttons = TelegramNotifier.get_stop_loss_buttons()
+                    buttons = TelegramNotifier.get_stop_loss_buttons(symbol=sym, contract=inst_sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, sl_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(sl_key)
@@ -841,7 +847,7 @@ class RelianceQuantAlertDaemon:
                             chop_val=64.8,
                             reason="Fractal Choppiness Index (CHOP > 61.8 Threshold)"
                         )
-                        buttons = TelegramNotifier.get_chop_buttons()
+                        buttons = TelegramNotifier.get_chop_buttons(symbol=sym)
                         ok, fb = TelegramNotifier.send_message(bot_token, chat_id, chop_msg, reply_markup=buttons)
                         if ok:
                             TelegramNotifier.record_alert_sent(chop_alert_key)

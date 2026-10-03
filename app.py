@@ -10,8 +10,11 @@ import json
 import os
 import math
 import pytz
+from typing import Optional, List, Dict, Any, Tuple
 
 IST = pytz.timezone("Asia/Kolkata")
+from asset_config import get_asset_spec
+from groww_market_feed import GrowwMarketFeed
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
 from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR, SequentialTradeEngine, ShadowMonitoringEngine
@@ -101,27 +104,37 @@ class BreakoutTriggerManager:
             pass
 
     @classmethod
-    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: float = 1.20, manual_override: float = 0.0) -> float:
+    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: float = 1.20, manual_override: float = 0.0, symbol: Optional[str] = None) -> float:
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        key = f"{today_str}_{strike}_{contract_type}"
-        session_key = f"breakout_level_{strike}_{contract_type}"
+        sym = (symbol or "").upper().strip()
+        key = f"{today_str}_{sym}_{strike}_{contract_type}" if sym else f"{today_str}_{strike}_{contract_type}"
+        session_key = f"breakout_level_{sym}_{strike}_{contract_type}" if sym else f"breakout_level_{strike}_{contract_type}"
+        legacy_key = f"{today_str}_{strike}_{contract_type}"
+        legacy_session_key = f"breakout_level_{strike}_{contract_type}"
 
         if manual_override > 0.0:
             override_val = round(float(manual_override), 2)
             st.session_state[session_key] = override_val
+            st.session_state[legacy_session_key] = override_val
             records = cls._load_records()
             records[key] = override_val
             cls._save_records(records)
             return override_val
 
-        # 1. Check Streamlit session state
+        # 1. Check Streamlit session state (scoped first, then legacy fallback)
         if session_key in st.session_state and isinstance(st.session_state[session_key], (int, float)) and st.session_state[session_key] > 0.0:
             return float(st.session_state[session_key])
+        if legacy_session_key in st.session_state and isinstance(st.session_state[legacy_session_key], (int, float)) and st.session_state[legacy_session_key] > 0.0:
+            return float(st.session_state[legacy_session_key])
 
         # 2. Check persistent disk file (guards against F5 / browser reload)
         records = cls._load_records()
         if key in records and isinstance(records[key], (int, float)) and records[key] > 0.0:
             val = float(records[key])
+            st.session_state[session_key] = val
+            return val
+        if legacy_key in records and isinstance(records[legacy_key], (int, float)) and records[legacy_key] > 0.0:
+            val = float(records[legacy_key])
             st.session_state[session_key] = val
             return val
 
@@ -136,22 +149,28 @@ class BreakoutTriggerManager:
         return 0.0
 
     @classmethod
-    def reset_trigger(cls, strike: int = None, contract_type: str = None, current_ltp: float = 0.0, buffer_pts: float = 1.20) -> float:
+    def reset_trigger(cls, strike: int = None, contract_type: str = None, current_ltp: float = 0.0, buffer_pts: float = 1.20, symbol: Optional[str] = None) -> float:
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        sym = (symbol or "").upper().strip()
         records = cls._load_records()
         if strike and contract_type:
-            key = f"{today_str}_{strike}_{contract_type}"
-            session_key = f"breakout_level_{strike}_{contract_type}"
+            key = f"{today_str}_{sym}_{strike}_{contract_type}" if sym else f"{today_str}_{strike}_{contract_type}"
+            session_key = f"breakout_level_{sym}_{strike}_{contract_type}" if sym else f"breakout_level_{strike}_{contract_type}"
+            legacy_key = f"{today_str}_{strike}_{contract_type}"
+            legacy_session_key = f"breakout_level_{strike}_{contract_type}"
             if current_ltp > 0.05:
                 new_val = round(float(current_ltp) + float(buffer_pts), 2)
                 records[key] = new_val
                 cls._save_records(records)
                 st.session_state[session_key] = new_val
+                st.session_state[legacy_session_key] = new_val
                 return new_val
             else:
                 records.pop(key, None)
+                records.pop(legacy_key, None)
                 cls._save_records(records)
                 st.session_state.pop(session_key, None)
+                st.session_state.pop(legacy_session_key, None)
                 return 0.0
         else:
             for k in list(records.keys()):
@@ -1325,32 +1344,24 @@ scrip_choice = st.sidebar.selectbox(
 )
 st.session_state["selected_scrip"] = scrip_choice
 is_adani = (scrip_choice == "ADANI ENTERPRISES")
+scrip_symbol = "ADANIENT" if is_adani else "RELIANCE"
+spec = get_asset_spec(symbol=scrip_symbol)
 
-# Dynamic Scrip Configuration
-if is_adani:
-    scrip_symbol = "ADANIENT"
-    scrip_name = "ADANI ENTERPRISES QUANT DESK"
-    scrip_yf = "ADANIENT.NS"
-    scrip_lot = 309
-    scrip_lots_count = 2
-    scrip_total_qty = 618
-    scrip_target_pts = 35.0
-    scrip_sl_pts = 15.0
-    scrip_be_pts = 12.0
-    scrip_color = "#F59E0B"
-    scrip_accent = "rgba(245, 158, 11, 0.15)"
-else:
-    scrip_symbol = "RELIANCE"
-    scrip_name = "RELIANCE QUANT DESK"
-    scrip_yf = "RELIANCE.NS"
-    scrip_lot = 500
-    scrip_lots_count = 2
-    scrip_total_qty = 1000
-    scrip_target_pts = 7.0
-    scrip_sl_pts = 5.0
-    scrip_be_pts = 3.0
-    scrip_color = "#38BDF8"
-    scrip_accent = "rgba(56, 189, 248, 0.15)"
+scrip_name = spec.display_name
+scrip_yf = spec.yf_symbol
+scrip_lot = spec.lot_size
+scrip_lots_count = spec.default_lots
+scrip_total_qty = scrip_lot * scrip_lots_count
+scrip_target_pts = spec.target_pts
+scrip_sl_pts = spec.sl_pts
+scrip_be_pts = spec.be_pts
+scrip_color = "#F59E0B" if is_adani else "#38BDF8"
+scrip_accent = "rgba(245, 158, 11, 0.15)" if is_adani else "rgba(56, 189, 248, 0.15)"
+
+# Sync active scoped values to active keys so switching scrips never cross-pollinates
+st.session_state["live_broker_ltp"] = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
+st.session_state["custom_trigger_override"] = float(st.session_state.get(f"custom_trigger_override_{scrip_symbol}", 0.0))
+st.session_state["strike_selection_pref"] = st.session_state.get(f"strike_selection_pref_{scrip_symbol}", "Auto-Detect Best Strike")
 
 st.sidebar.html(f"""
 <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1.5px solid {scrip_color}; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
@@ -1615,7 +1626,7 @@ class MultiTimeframeMatrixEngine:
     ) -> dict:
         # 1. 15-Minute Structural Frame (Macro Compass)
         if active_timeframe == "15m":
-            df_15m = df_active.copy()
+            df_15m = df_active
         else:
             try:
                 # Vectorized Resampling from 5m to 15m
@@ -1627,9 +1638,9 @@ class MultiTimeframeMatrixEngine:
                     'Volume': 'sum'
                 }).dropna()
                 if len(df_15m) < 10:
-                    df_15m = df_active.copy()
+                    df_15m = df_active
             except Exception:
-                df_15m = df_active.copy()
+                df_15m = df_active
 
         # Compute M15 Indicators
         ema9_15 = float(df_15m['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
@@ -2007,6 +2018,19 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
 
     st.session_state["is_synthetic_feed"] = is_synthetic_feed
 
+    # High-Performance Indicator Cache Guard:
+    # If candle count, timestamp, and closing price have not ticked, return cached indicator dataframe
+    last_ts_str = str(df.index[-1]) if len(df) > 0 else ""
+    last_c_val = float(df['Close'].iloc[-1]) if len(df) > 0 else 0.0
+    last_v_val = int(df['Volume'].iloc[-1]) if len(df) > 0 else 0
+    ind_cache_key = f"ind_{scrip}_{interval}_{len(df)}_{last_ts_str}_{last_c_val:.2f}_{last_v_val}"
+    
+    if "_APP_INDICATOR_CACHE" not in st.session_state:
+        st.session_state["_APP_INDICATOR_CACHE"] = {}
+    cached_df = st.session_state["_APP_INDICATOR_CACHE"].get(ind_cache_key)
+    if cached_df is not None:
+        return cached_df
+
     # All Indicators
     df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
@@ -2215,6 +2239,11 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
     except Exception:
         pass
 
+    if "_APP_INDICATOR_CACHE" in st.session_state:
+        if len(st.session_state["_APP_INDICATOR_CACHE"]) > 15:
+            st.session_state["_APP_INDICATOR_CACHE"].clear()
+        st.session_state["_APP_INDICATOR_CACHE"][ind_cache_key] = df
+
     return df
 
 
@@ -2297,13 +2326,14 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         active_live_ltp = broker_call_ltp
 
     # Pin breakout trigger level persistently so it remains stationary across refreshes
-    breakout_session_key = f"breakout_level_{plan_strike}_{plan_contract_type}"
+    breakout_session_key = f"breakout_level_{active_sym}_{plan_strike}_{plan_contract_type}"
     breakout_level = BreakoutTriggerManager.get_or_set_trigger(
         strike=plan_strike,
         contract_type=plan_contract_type,
         current_ltp=active_live_ltp,
         buffer_pts=1.20,
-        manual_override=tp.get("custom_trigger_override", 0.0)
+        manual_override=tp.get("custom_trigger_override", 0.0),
+        symbol=active_sym
     )
     st.session_state[breakout_session_key] = breakout_level
 
@@ -2364,7 +2394,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     lot_size=plan_lot_size,
                     spot=spot_tick
                 )
-                buttons = TelegramNotifier.get_target_hit_buttons()
+                buttons = TelegramNotifier.get_target_hit_buttons(symbol=active_sym, contract=f"{active_sym} {plan_strike} {plan_contract_type}")
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
@@ -2485,7 +2515,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     lot_size=plan_lot_size,
                     spot=spot_tick
                 )
-                buttons = TelegramNotifier.get_stop_loss_buttons()
+                buttons = TelegramNotifier.get_stop_loss_buttons(symbol=active_sym, contract=f"{active_sym} {plan_strike} {plan_contract_type}")
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
@@ -2602,7 +2632,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     num_lots=plan_num_lots,
                     spot=spot_tick
                 )
-                buttons = TelegramNotifier.get_trailing_sl_buttons()
+                buttons = TelegramNotifier.get_trailing_sl_buttons(symbol=active_sym, contract=f"{active_sym} {plan_strike} {plan_contract_type}")
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
@@ -2712,7 +2742,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     reason="Mandatory intraday EOD cut-off before broker auto-square-off charges at 03:15 PM",
                     spot=spot_tick
                 )
-                buttons = TelegramNotifier.get_auto_sq_buttons()
+                buttons = TelegramNotifier.get_auto_sq_buttons(symbol=active_sym, contract=f"{active_sym} {plan_strike} {plan_contract_type}")
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
@@ -2820,9 +2850,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     sl_count=tp.get('session_sl_count', 2),
                     max_allowed=tp.get('max_daily_sl_allowed', 2),
                     capital_preserved=tp.get('account_cash', 73643.72),
-                    spot=spot_tick
+                    spot=spot_tick,
+                    symbol=active_sym
                 )
-                buttons = TelegramNotifier.get_circuit_breaker_buttons()
+                buttons = TelegramNotifier.get_circuit_breaker_buttons(symbol=active_sym)
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
@@ -2928,7 +2959,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     chop_val=64.8,
                     reason="Fractal Choppiness Index (CHOP 64.8 > 61.8 Threshold)"
                 )
-                buttons = TelegramNotifier.get_chop_buttons()
+                buttons = TelegramNotifier.get_chop_buttons(symbol=active_sym)
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
                     st.session_state[alert_sent_key] = True
@@ -3040,9 +3071,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     total_pnl=profit_rs,
                     num_lots=act_lots,
                     lot_size=plan_lot_size,
-                    spot=spot_tick
+                    spot=spot_tick,
+                    symbol=active_sym
                 )
-                buttons = TelegramNotifier.get_target_hit_buttons()
+                buttons = TelegramNotifier.get_target_hit_buttons(symbol=active_sym, contract=act_inst)
                 TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 TelegramNotifier.record_alert_sent(target_alert_key)
 
@@ -3082,9 +3114,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     total_loss=loss_rs,
                     num_lots=act_lots,
                     lot_size=plan_lot_size,
-                    spot=spot_tick
+                    spot=spot_tick,
+                    symbol=active_sym
                 )
-                buttons = TelegramNotifier.get_stop_loss_buttons()
+                buttons = TelegramNotifier.get_stop_loss_buttons(symbol=active_sym, contract=act_inst)
                 TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 TelegramNotifier.record_alert_sent(sl_alert_key)
 
@@ -8705,7 +8738,7 @@ if df is not None and not df.empty:
             st.session_state[f"custom_trigger_override_{scrip_symbol}"] = c_override
             st.session_state["custom_trigger_override"] = c_override
             if st_button_stretch(f"🔄 Re-pin Trigger to Current Market ({scrip_symbol})", key=f"ui_repin_btn_{scrip_symbol}"):
-                BreakoutTriggerManager.reset_trigger(atm_strike, recommended_contract_type)
+                BreakoutTriggerManager.reset_trigger(atm_strike, recommended_contract_type, symbol=scrip_symbol)
                 st.session_state[f"custom_trigger_override_{scrip_symbol}"] = 0.0
                 st.session_state["custom_trigger_override"] = 0.0
                 st.success(f"Trigger re-pinned for {scrip_symbol}!")
