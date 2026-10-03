@@ -802,8 +802,9 @@ class RelianceQuantAlertDaemon:
                     logger.debug(f"SignalTracker save error in daemon: {e}")
 
                 try:
+                    exp_clean = expiry_date.replace("-", "").upper()
                     ShadowMonitoringEngine.log_signal(
-                        symbol=f"RELIANCE26OCT{recommended_strike}{contract_type}",
+                        symbol=f"{sym}{exp_clean}{recommended_strike}{contract_type}",
                         action=f"BUY {contract_type}",
                         entry=active_option_ltp,
                         target=round(active_option_ltp + dynamic_target_pts, 2),
