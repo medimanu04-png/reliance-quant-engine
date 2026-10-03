@@ -1446,7 +1446,7 @@ if active_route == "":
             </div>
         </div>
         """)
-        if st.button("⚡ OPEN RELIANCE QUANT DESK ↗ (/Reliance)", key="btn_launch_reliance_hp", use_container_width=True):
+        if st_button_stretch("⚡ OPEN RELIANCE QUANT DESK ↗ (/Reliance)", key="btn_launch_reliance_hp"):
             st.switch_page(p_reliance)
 
     with col_d2:
@@ -1477,7 +1477,7 @@ if active_route == "":
             </div>
         </div>
         """)
-        if st.button("🔥 OPEN ADANI QUANT DESK ↗ (/Adani)", key="btn_launch_adani_hp", use_container_width=True):
+        if st_button_stretch("🔥 OPEN ADANI QUANT DESK ↗ (/Adani)", key="btn_launch_adani_hp"):
             st.switch_page(p_adani)
             
     st.stop()
