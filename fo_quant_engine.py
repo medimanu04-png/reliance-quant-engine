@@ -60,6 +60,33 @@ class RelianceRiskBudget:
     daily_sl_cap_rupees: float = 5000.0  # Strict 1-and-Done Cap for 2 lots
     max_daily_sl_trades: int = 1  # 1-and-Done Rule (trading ceases immediately if 1 SL is hit)
 
+    @classmethod
+    def for_symbol(cls, symbol: str = "RELIANCE", spot: float = 1200.0) -> "RelianceRiskBudget":
+        """Instantiates risk budget calibrated specifically to the active scrip."""
+        rb = cls()
+        sym = (symbol or "").upper()
+        if sym == "ADANIENT" or spot >= 2000.0:
+            rb.total_capital = 85000.0
+            rb.lot_size = 309
+            rb.num_lots = 2
+            rb.target_pts = 35.0
+            rb.stop_loss_pts = 15.0
+            rb.limit_collar_pts = 1.80
+            rb.estimated_tax_per_lot = 85.0
+            rb.daily_sl_cap_rupees = 9270.0
+            rb.max_daily_sl_trades = 1
+        else:
+            rb.total_capital = 73643.72
+            rb.lot_size = 500
+            rb.num_lots = 2
+            rb.target_pts = 7.0
+            rb.stop_loss_pts = 5.0
+            rb.limit_collar_pts = 0.65
+            rb.estimated_tax_per_lot = 65.0
+            rb.daily_sl_cap_rupees = 5000.0
+            rb.max_daily_sl_trades = 1
+        return rb
+
     def check_daily_sl_cap(self, daily_realized_loss: float = 0.0, daily_sl_count: int = 0) -> Tuple[bool, str]:
         """
         1-and-Done Daily SL Cap Enforcement.
@@ -75,26 +102,34 @@ class RelianceRiskBudget:
     def calculate_tiered_escalator_sl(
         current_ltp: float,
         entry_price: float,
-        initial_sl: float
+        initial_sl: float,
+        symbol: Optional[str] = None,
+        target_pts: Optional[float] = None
     ) -> Tuple[float, str, str]:
         """
         Tiered Trailing Breakeven Escalator Protocol:
-        - Tier 0: LTP < Entry + 3.0 pts -> Maintain Initial SL
-        - Tier 1: LTP >= Entry + 3.0 pts -> Move SL to Cost + 0.10 pts (Risk-Free Breakeven)
-        - Tier 2: LTP >= Entry + 5.0 pts -> Lock SL to Entry + 2.50 pts (Lock in Rs. 2,500+ profit)
+        Dynamically adapts thresholds for RELIANCE vs ADANI ENTERPRISES.
         """
+        sym = (symbol or "").upper()
+        is_adani = (sym == "ADANIENT" or (target_pts and target_pts > 20.0) or entry_price > 60.0)
         profit_pts = round(current_ltp - entry_price, 2)
-        if profit_pts >= 5.0:
-            current_sl = round(entry_price + 2.50, 2)
-            tier_status = "TIER_2_PROFIT_LOCK (+5.0 pts hit -> SL locked at +2.50 pts)"
+
+        t1_thresh = 15.0 if is_adani else 3.0
+        t2_thresh = 25.0 if is_adani else 5.0
+        t1_lock = 0.50 if is_adani else 0.10
+        t2_lock = 12.0 if is_adani else 2.50
+
+        if profit_pts >= t2_thresh:
+            current_sl = round(entry_price + t2_lock, 2)
+            tier_status = f"TIER_2_PROFIT_LOCK (+{t2_thresh:.1f} pts hit -> SL locked at +{t2_lock:.2f} pts)"
             action = "LOCK_PROFIT_TRAILING"
-        elif profit_pts >= 3.0:
-            current_sl = round(entry_price + 0.10, 2)
-            tier_status = "TIER_1_BREAKEVEN (+3.0 pts hit -> SL moved to Cost +0.10 pts)"
+        elif profit_pts >= t1_thresh:
+            current_sl = round(entry_price + t1_lock, 2)
+            tier_status = f"TIER_1_BREAKEVEN (+{t1_thresh:.1f} pts hit -> SL moved to Cost +{t1_lock:.2f} pts)"
             action = "MOVE_SL_TO_COST_RISK_FREE"
         else:
             current_sl = initial_sl
-            tier_status = f"TIER_0_INITIAL_PROTECTION (Profit {profit_pts:+.2f} pts < +3.5 pts trigger)"
+            tier_status = f"TIER_0_INITIAL_PROTECTION (Profit {profit_pts:+.2f} pts < +{t1_thresh:.1f} pts trigger)"
             action = "MAINTAIN_INITIAL_STOP_LOSS"
         return current_sl, tier_status, action
 
@@ -153,6 +188,9 @@ class RelianceRiskBudget:
     def net_max_risk_rupees(self) -> float:
         """Total risk including statutory transaction charges."""
         return self.max_risk_rupees + (self.estimated_tax_per_lot * self.num_lots)
+
+
+RiskBudget = RelianceRiskBudget
 
 
 # ============================================================================
@@ -1476,17 +1514,23 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_nifty_relative_strength(
-        reliance_pct: float,
-        nifty_pct: float,
-        beta: float = 1.15
+        stock_pct: float = 0.0,
+        nifty_pct: float = 0.0,
+        beta: float = 1.15,
+        reliance_pct: Optional[float] = None,
+        symbol: Optional[str] = None
     ) -> Tuple[float, str]:
         """
         Beta-Adjusted Relative Strength / Alpha Spread vs NIFTY 50 benchmark.
-        Alpha Spread = Reliance% - (Beta * Nifty%)
+        Alpha Spread = Stock% - (Beta * Nifty%)
         Returns: (alpha_spread, bias)
         """
+        if reliance_pct is not None:
+            stock_pct = reliance_pct
+        if symbol and symbol.upper() == "ADANIENT" and beta == 1.15:
+            beta = 1.65
         expected_ret = beta * nifty_pct
-        alpha_spread = reliance_pct - expected_ret
+        alpha_spread = stock_pct - expected_ret
         if alpha_spread >= 0.35:
             bias = "STRONG_OUTPERFORMANCE"
         elif alpha_spread >= 0.15:
@@ -1717,42 +1761,55 @@ class MultiIndicatorMath:
         reliance_pct: float,
         reliance_returns_5m: Optional[List[float]] = None,
         energy_returns_5m: Optional[List[float]] = None,
-        bank_nifty_pct: Optional[float] = None
+        bank_nifty_pct: Optional[float] = None,
+        symbol: Optional[str] = None,
+        sector_pct: Optional[float] = None,
+        sector_name: Optional[str] = None
     ) -> Tuple[float, str, float, float, str, bool]:
         """
         Multi-Asset Beta & Sector Alignment Engine (Suggestion 2 & 3-Factor Cross-Asset Alignment).
-        Reliance constitutes ~10% of NIFTY 50 and ~33% of NIFTY ENERGY.
-        When Reliance, Nifty Energy, and Nifty Bank simultaneously align,
-        false breakouts drop under 8%.
+        Dynamically adapts sector benchmark:
+        - For Reliance: NIFTY ENERGY
+        - For Adani: NIFTY INFRA / NIFTY 50 Benchmark
         
-        Relative Strength Ratio = Reliance Ret_15m / NIFTY Energy Ret_15m
-        Beta Coupling = Corr(Reliance_5m, Energy_5m) * (sigma_Reliance / sigma_Energy)
+        Relative Strength Ratio = Stock Ret_15m / Sector Ret_15m
+        Beta Coupling = Corr(Stock_5m, Sector_5m) * (sigma_Stock / sigma_Sector)
         Rule: Requires Corr >= +0.65 before entering >1 lot sizing.
         
         Returns: (alignment_score, alignment_regime, rs_ratio, beta_coupling, coupling_regime, is_coupled)
         """
+        sym = (symbol or "").upper()
+        if sym == "ADANIENT":
+            sec_pct = sector_pct if sector_pct is not None else nifty_pct
+            sec_label = sector_name or "NIFTY Infra / 50"
+            sym_label = "Adani"
+        else:
+            sec_pct = sector_pct if sector_pct is not None else energy_pct
+            sec_label = sector_name or "Energy"
+            sym_label = "Reliance"
+
         # Relative Strength Ratio
-        rs_ratio = round(reliance_pct / energy_pct, 2) if abs(energy_pct) > 0.02 else (1.0 if reliance_pct >= 0 else -1.0)
+        rs_ratio = round(reliance_pct / sec_pct, 2) if abs(sec_pct) > 0.02 else (1.0 if reliance_pct >= 0 else -1.0)
 
         # Calculate Beta Coupling & Correlation
         r_rets = reliance_returns_5m if reliance_returns_5m else [reliance_pct * 0.15, reliance_pct * 0.25, reliance_pct * 0.35]
-        e_rets = energy_returns_5m if energy_returns_5m else [energy_pct * 0.15, energy_pct * 0.25, energy_pct * 0.35]
+        e_rets = energy_returns_5m if energy_returns_5m else [sec_pct * 0.15, sec_pct * 0.25, sec_pct * 0.35]
         beta_coupling, corr, coupling_regime, is_coupled = MultiIndicatorMath.calculate_nifty_energy_beta_coupling(r_rets, e_rets)
 
-        is_all_bull = (nifty_pct > 0.05) and (energy_pct > 0.08) and (reliance_pct > 0.05)
-        is_all_bear = (nifty_pct < -0.05) and (energy_pct < -0.08) and (reliance_pct < -0.05)
+        is_all_bull = (nifty_pct > 0.05) and (sec_pct > 0.08) and (reliance_pct > 0.05)
+        is_all_bear = (nifty_pct < -0.05) and (sec_pct < -0.08) and (reliance_pct < -0.05)
 
         # 3-Factor confirmation with Nifty Bank
         bank_bull_confirm = bank_nifty_pct is not None and bank_nifty_pct > 0.05
         bank_bear_confirm = bank_nifty_pct is not None and bank_nifty_pct < -0.05
 
         # Sector divergence traps
-        is_energy_drag = (reliance_pct > 0.10) and (energy_pct < -0.15)
-        is_energy_support = (reliance_pct < -0.10) and (energy_pct > 0.15)
+        is_sec_drag = (reliance_pct > 0.10) and (sec_pct < -0.15)
+        is_sec_support = (reliance_pct < -0.10) and (sec_pct > 0.15)
 
         if is_all_bull and corr >= 0.65 and bank_bull_confirm:
             score = 6.0
-            regime = "TRIPLE_AXIS_BULLISH_CONFLUENCE (Reliance + Energy + Bank Nifty Sync)"
+            regime = f"TRIPLE_AXIS_BULLISH_CONFLUENCE ({sym_label} + {sec_label} + Bank Nifty Sync)"
         elif is_all_bull and corr >= 0.65:
             score = 5.0
             regime = "TRIPLE_BULLISH_CONFLUENCE_CONFIRMED"
@@ -1761,19 +1818,19 @@ class MultiIndicatorMath:
             regime = "TRIPLE_BULLISH_CONFLUENCE"
         elif is_all_bear and corr >= 0.65 and bank_bear_confirm:
             score = -6.0
-            regime = "TRIPLE_AXIS_BEARISH_CONFLUENCE (Reliance + Energy + Bank Nifty Sync)"
+            regime = f"TRIPLE_AXIS_BEARISH_CONFLUENCE ({sym_label} + {sec_label} + Bank Nifty Sync)"
         elif is_all_bear and corr >= 0.65:
             score = -5.0
             regime = "TRIPLE_BEARISH_CONFLUENCE_CONFIRMED"
         elif is_all_bear:
             score = -3.5
             regime = "TRIPLE_BEARISH_CONFLUENCE"
-        elif is_energy_drag:
+        elif is_sec_drag:
             score = -4.5
-            regime = "ENERGY_SECTOR_DIVERGENCE_TRAP"
-        elif is_energy_support:
+            regime = f"{sec_label.upper().replace(' ', '_')}_SECTOR_DIVERGENCE_TRAP"
+        elif is_sec_support:
             score = 4.5
-            regime = "ENERGY_SECTOR_SUPPORT_TRAP"
+            regime = f"{sec_label.upper().replace(' ', '_')}_SECTOR_SUPPORT_TRAP"
         else:
             score = 0.0
             regime = "NEUTRAL_SECTOR_ALIGNMENT"
@@ -2297,11 +2354,16 @@ class MultiIndicatorMath:
         else:
             basis_momentum = 0.0
             
-        if basis_pts >= 5.0 or (basis_momentum >= 0.8 and basis_pts > 2.0):
+        # Proportional basis thresholds scaled to underlying spot price (~0.35% carry accumulation)
+        bull_thresh = round(spot * 0.0035, 2)
+        mom_thresh = round(spot * 0.0006, 2)
+        carry_thresh = round(spot * 0.0015, 2)
+
+        if basis_pts >= bull_thresh or (basis_momentum >= mom_thresh and basis_pts > carry_thresh):
             regime = "INSTITUTIONAL_FUTURES_LONG_ACCUMULATION"
         elif basis_pts <= 0.0:
             regime = "FUTURES_DISCOUNT_BEARISH_HEDGING"
-        elif basis_momentum <= -0.8:
+        elif basis_momentum <= -mom_thresh:
             regime = "FUTURES_BASIS_DECAY_SELLER_DOMINANCE"
         else:
             regime = "NORMAL_CARRY_PREMIUM"
@@ -4114,40 +4176,38 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_index_beta_drag(
-        reliance_pct: float,
-        nifty_pct: float,
-        rolling_beta: float = 1.15
+        stock_pct: float = 0.0,
+        nifty_pct: float = 0.0,
+        rolling_beta: float = 1.15,
+        reliance_pct: Optional[float] = None,
+        symbol: Optional[str] = None
     ) -> Tuple[bool, float, str]:
         """
         Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry (Upgrade 2).
         Reference: Kyle (1985), Biais et al. (1995) Order Flow Fragmentation & Index Arbitrage.
-
-        Reliance constitutes ~9-10% of NIFTY 50. If NIFTY breaks down by > 0.60% (or breaks out by > 0.60%)
-        while Reliance holds artificially or lags, Reliance almost invariably suffers a delayed
-        "catch-up" liquidation or short squeeze.
-
-        Expected Reliance Move = rolling_beta * nifty_pct
-        Drag Discrepancy = reliance_pct - Expected Move
-
-        Returns: (is_drag_active, penalty_pts, regime)
         """
-        expected_move = rolling_beta * nifty_pct
-        drag = reliance_pct - expected_move
+        if reliance_pct is not None:
+            stock_pct = reliance_pct
+        if symbol and symbol.upper() == "ADANIENT" and rolling_beta == 1.15:
+            rolling_beta = 1.65
 
-        # Case 1: Broader market institutional liquidation (NIFTY drops heavily, Reliance hasn't dropped yet)
-        if nifty_pct <= -0.60 and reliance_pct > (nifty_pct * 0.50):
+        expected_move = rolling_beta * nifty_pct
+        drag = stock_pct - expected_move
+
+        # Case 1: Broader market institutional liquidation (NIFTY drops heavily, stock hasn't dropped yet)
+        if nifty_pct <= -0.60 and stock_pct > (nifty_pct * 0.50):
             penalty = 4.0
             regime = "SEVERE_INDEX_DOWNWARD_DRAG_LIQUIDATION_RISK"
             return True, penalty, regime
 
-        # Case 2: Broad market upward rally (NIFTY surges heavily, Reliance lagging)
-        if nifty_pct >= 0.60 and reliance_pct < (nifty_pct * 0.50):
+        # Case 2: Broad market upward rally (NIFTY surges heavily, stock lagging)
+        if nifty_pct >= 0.60 and stock_pct < (nifty_pct * 0.50):
             penalty = 4.0
             regime = "SEVERE_INDEX_UPWARD_LAG_SQUEEZE_RISK"
             return True, penalty, regime
 
         # Case 3: Moderate Index Drag
-        if nifty_pct <= -0.35 and reliance_pct >= 0.0:
+        if nifty_pct <= -0.35 and stock_pct >= 0.0:
             penalty = 2.0
             regime = "MODERATE_INDEX_DIVERGENCE_DRAG"
             return True, penalty, regime
@@ -4473,8 +4533,9 @@ class QuantConfig:
 # 3. ULTRA-HIGH-CONVICTION ENGINE (>= 90% HIT PROBABILITY GATE)
 # ============================================================================
 class UltraHighConvictionRelianceEngine:
-    def __init__(self, quant_config: Optional[QuantConfig] = None):
-        self.risk = RelianceRiskBudget()
+    def __init__(self, quant_config: Optional[QuantConfig] = None, symbol: Optional[str] = "RELIANCE"):
+        self.symbol = (symbol or "RELIANCE").upper()
+        self.risk = RelianceRiskBudget.for_symbol(self.symbol)
         self.config = quant_config or QuantConfig()
         
         # State buffers across evaluations
@@ -4541,7 +4602,9 @@ class UltraHighConvictionRelianceEngine:
         allow_orb_early_entry: bool = True,
         benchmark_c5m: Optional[Dict[str, List[float]]] = None,
         market_breadth: Optional[Dict[str, Any]] = None,
-        is_backtest: bool = False
+        is_backtest: bool = False,
+        symbol: Optional[str] = None,
+        sector_pct: Optional[float] = None
     ) -> Dict[str, Any]:
 
         """
@@ -4708,8 +4771,10 @@ class UltraHighConvictionRelianceEngine:
         pdh_val = float(max(c15m["high"][:min(len(c15m["high"]), 75)])) if len(c15m["high"]) > 10 else float(max(c5m["high"]))
         pdl_val = float(min(c15m["low"][:min(len(c15m["low"]), 75)])) if len(c15m["low"]) > 10 else float(min(c5m["low"]))
         actual_prev_close = spot
+        active_sym = (symbol or getattr(self, "symbol", "RELIANCE") or ("ADANIENT" if spot >= 2000 else "RELIANCE")).upper()
+        is_adani_asset = (active_sym == "ADANIENT" or spot >= 2000.0)
         try:
-            official_data = NSEIndiaFetcher.get_reliance_official_data()
+            official_data = NSEIndiaFetcher.get_reliance_official_data(symbol=active_sym)
             if isinstance(official_data, dict) and float(official_data.get("prev_close", 0.0)) > 100.0:
                 actual_prev_close = float(official_data["prev_close"])
         except Exception:
@@ -4984,11 +5049,12 @@ class UltraHighConvictionRelianceEngine:
             v2_cl_c_bull = max(0.0, v2_cl_c_bull - 5.0)
             v2_cl_c_bear = max(0.0, v2_cl_c_bear - 5.0)
 
-        # Strike & OI Telemetry (Strict 10-point Strike Interval for RELIANCE)
-        strike_step = 10
+        # Strike & OI Telemetry (Dynamic Strike Interval: 10-point for RELIANCE, 50-point for ADANIENT)
+        active_sym = (symbol or "").upper()
+        strike_step = 50 if active_sym == "ADANIENT" else 10
         atm_strike = int(round(spot / strike_step) * strike_step)
-        chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True)
-        opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True)
+        chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True, symbol=active_sym)
+        opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True, symbol=active_sym)
         is_synthetic_feed = False if is_backtest else (opt_telemetry.get("is_synthetic", False) or chain_oi.get("is_synthetic", False))
 
         # Microstructure Micro-Price Imbalance & Spread Cushion Evaluation
@@ -5680,9 +5746,14 @@ class UltraHighConvictionRelianceEngine:
             rel_ref_close = float(c5m["open"][0])
 
         reliance_pct = ((spot - rel_ref_close) / rel_ref_close) * 100.0 if rel_ref_close > 0 else 0.0
-        alpha_spread, rs_bias = MultiIndicatorMath.calculate_nifty_relative_strength(reliance_pct, nifty_pct)
+        rolling_beta_val = 1.65 if is_adani_asset else 1.15
+        alpha_spread, rs_bias = MultiIndicatorMath.calculate_nifty_relative_strength(
+            stock_pct=reliance_pct, nifty_pct=nifty_pct, beta=rolling_beta_val, symbol=active_sym
+        )
+        effective_sec_pct = sector_pct if sector_pct is not None else (nifty_pct if is_adani_asset else energy_pct)
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = MultiIndicatorMath.calculate_sectoral_alignment(
-            nifty_pct, energy_pct, reliance_pct, bank_nifty_pct=bank_nifty_pct
+            nifty_pct=nifty_pct, energy_pct=effective_sec_pct, reliance_pct=reliance_pct,
+            bank_nifty_pct=bank_nifty_pct, symbol=active_sym, sector_pct=effective_sec_pct
         )
 
         # Bug 3 Directional Bias Fix: Symmetric Macro Vector (+/- 5.0 pts max)
@@ -5762,7 +5833,7 @@ class UltraHighConvictionRelianceEngine:
         else:
             lambda_L, kendall_tau, copula_regime = 0.0, 0.0, "NO_INDEPENDENT_BENCHMARK_SERIES"
 
-        is_tail_contagion_active = (lambda_L >= 0.60) and (energy_pct < -0.20 or nifty_pct < -0.30)
+        is_tail_contagion_active = (lambda_L >= 0.60) and ((effective_sec_pct < -0.20 if not is_adani_asset else nifty_pct < -0.30) or nifty_pct < -0.30)
         if is_tail_contagion_active:
             macro_bull = max(0.0, macro_bull - 4.5)  # Severe tail-dependence contagion penalty
             macro_bear += 3.0
@@ -5772,25 +5843,33 @@ class UltraHighConvictionRelianceEngine:
         is_bullish_lean = spot > rel_ref_close
         is_bearish_lean = spot < rel_ref_close
 
-        # Moderate divergence gets score penalty rather than hard binary veto
-        if is_bullish_lean and energy_pct < -0.30 and reliance_pct > 0.15:
-            macro_bull = max(0.0, macro_bull - 2.5)
-        elif is_bearish_lean and energy_pct > 0.30 and reliance_pct < -0.15:
-            macro_bear = max(0.0, macro_bear - 2.5)
+        if not is_adani_asset:
+            # Moderate divergence gets score penalty rather than hard binary veto
+            if is_bullish_lean and energy_pct < -0.30 and reliance_pct > 0.15:
+                macro_bull = max(0.0, macro_bull - 2.5)
+            elif is_bearish_lean and energy_pct > 0.30 and reliance_pct < -0.15:
+                macro_bear = max(0.0, macro_bear - 2.5)
 
-        # Extreme divergence trap (>0.80% opposing direction or Copula tail contagion)
-        is_sector_divergence_trap = (
-            (is_bullish_lean and energy_pct < -0.80 and reliance_pct > 0.50)
-        ) or (
-            (is_bearish_lean and energy_pct > 0.80 and reliance_pct < -0.50)
-        ) or (
-            is_bullish_lean and is_tail_contagion_active  # Copula tail risk vetoes long setups
-        )
+            # Extreme divergence trap (>0.80% opposing direction or Copula tail contagion)
+            is_sector_divergence_trap = (
+                (is_bullish_lean and energy_pct < -0.80 and reliance_pct > 0.50)
+            ) or (
+                (is_bearish_lean and energy_pct > 0.80 and reliance_pct < -0.50)
+            ) or (
+                is_bullish_lean and is_tail_contagion_active  # Copula tail risk vetoes long setups
+            )
+        else:
+            # For Adani, evaluate parent index tail risk instead of energy divergence
+            is_sector_divergence_trap = (
+                (is_bullish_lean and nifty_pct < -0.90 and reliance_pct > 0.80) or
+                (is_bearish_lean and nifty_pct > 0.90 and reliance_pct < -0.80) or
+                (is_bullish_lean and is_tail_contagion_active)
+            )
         is_high_market_impact = (kyle_regime == "LIQUIDITY_VACUUM_TRAP")
 
         # Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry (Upgrade 2)
         has_index_drag, drag_penalty, index_drag_regime = MultiIndicatorMath.calculate_index_beta_drag(
-            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=1.15
+            stock_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=rolling_beta_val, symbol=active_sym
         )
         if has_index_drag:
             if "DOWNWARD_DRAG" in index_drag_regime:
@@ -6667,6 +6746,10 @@ def main():
     print("\n" + "=" * 95)
     print("A+ CONFLUENCE VALIDATED: Score exceeds 90% threshold for highest statistical edge.")
     print("=" * 95)
+
+
+# Universal multi-asset engine alias
+UltraHighConvictionQuantEngine = UltraHighConvictionRelianceEngine
 
 
 if __name__ == "__main__":

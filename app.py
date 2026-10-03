@@ -1098,9 +1098,11 @@ def render_auto_rescan_controller():
         try:
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
-            with ThreadPoolExecutor(max_workers=3) as ex:
-                ex.submit(gw._fetch_reliance_spot_now)
-                ex.submit(gw._fetch_reliance_chain_now)
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                ex.submit(gw._fetch_reliance_spot_now, "RELIANCE")
+                ex.submit(gw._fetch_reliance_spot_now, "ADANIENT")
+                ex.submit(gw._fetch_reliance_chain_now, None, "RELIANCE")
+                ex.submit(gw._fetch_reliance_chain_now, None, "ADANIENT")
                 ex.submit(gw._execute_live_benchmark_fetch)
         except Exception:
             pass
@@ -1147,7 +1149,7 @@ st.markdown("---")
 # ==============================================================================
 is_rescan = st.session_state.get("just_rescanned", False)
 manual_rescan = st.session_state.get("manual_rescan_clicked", False)
-nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan)
+nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=cur_sel_scrip)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
 if manual_rescan:
@@ -1281,7 +1283,8 @@ st.markdown("---")
 # 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR
 # ==============================================================================
 if "lot_size" not in st.session_state:
-    st.session_state["lot_size"] = 250  # Revised NSE standard lot size for RELIANCE
+    _init_scrip = st.session_state.get("selected_scrip", "RELIANCE")
+    st.session_state["lot_size"] = 309 if _init_scrip == "ADANI ENTERPRISES" else 250  # Dynamic lot size per scrip
 if "num_lots" not in st.session_state:
     st.session_state["num_lots"] = 1
 if "target_pts" not in st.session_state:
@@ -1912,12 +1915,13 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
         except Exception:
             pass
 
-    # 2. Try Groww official charting API for Reliance if parquet is unavailable
-    if (df is None or df.empty or len(df) < 30) and not is_adani:
+    # 2. Try Groww official charting API (0-delay, supports both RELIANCE & ADANIENT)
+    if df is None or df.empty or len(df) < 30:
         try:
             from groww_market_feed import GrowwMarketFeed
             gw_feed = GrowwMarketFeed.get_instance()
-            df = gw_feed.get_reliance_historical_candles(interval=interval, days=5)
+            _gw_sym = "ADANIENT" if is_adani else "RELIANCE"
+            df = gw_feed.get_historical_candles(symbol=_gw_sym, interval=interval, days=5)
         except Exception:
             df = pd.DataFrame()
 
@@ -1933,20 +1937,15 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
         except Exception:
             df = pd.DataFrame()
 
-    # Anchor spot price
-    if is_adani:
-        base_p = 2820.00
-        if df is not None and not df.empty and 'Close' in df.columns:
-            base_p = float(df['Close'].iloc[-1])
-    else:
-        gw_spot = 1210.00
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            gw_feed_data = GrowwMarketFeed.get_instance().get_reliance_live_data()
-            gw_spot = float(gw_feed_data.get("spot_ltp", 1210.00))
-            base_p = gw_spot if (0 < gw_spot < 2000) else 1210.00
-        except Exception:
-            base_p = 1210.00
+    # Anchor spot price — unified Groww live feed for both scrips
+    _anchor_sym = "ADANIENT" if is_adani else "RELIANCE"
+    try:
+        from groww_market_feed import GrowwMarketFeed
+        gw_feed_data = GrowwMarketFeed.get_instance().get_live_spot_data(symbol=_anchor_sym)
+        gw_spot = float(gw_feed_data.get("spot_ltp", 0.0))
+        base_p = gw_spot if gw_spot > 0 else (float(df['Close'].iloc[-1]) if (df is not None and not df.empty and 'Close' in df.columns) else (2820.0 if is_adani else 1210.0))
+    except Exception:
+        base_p = float(df['Close'].iloc[-1]) if (df is not None and not df.empty and 'Close' in df.columns) else (2820.0 if is_adani else 1210.0)
 
     # Resilient Real Data Session Cache
     is_synthetic_feed = False
@@ -2225,9 +2224,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     is_pe_dominant = (plan_contract_type == "PE")
 
     if corridor is None or low is None or high is None:
-        dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+        cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+        dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=cur_sym)
         dyn_atm = dyn_corridor["lower_strike"]
-        cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES" or spot >= 2000) else "RELIANCE"
         stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
             atm_strike=dyn_atm, 
             spot=spot, 
@@ -2250,7 +2249,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_tradable = tp.get("is_tradable", False)
     plan_contract_type = tp.get("recommended_contract_type", "CE")
     plan_strike = tp.get("atm_strike", corridor["lower_strike"])
-    active_sym = tp.get("scrip_symbol", "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES" or spot >= 2000) else "RELIANCE")
+    active_sym = tp.get("scrip_symbol", "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE")
     active_scrip_name = tp.get("scrip_name", "ADANI ENTERPRISES" if active_sym == "ADANIENT" else "RELIANCE")
     plan_target_pts = tp.get("target_pts", 10.0)
     plan_sl_pts = tp.get("sl_pts", 4.5)
@@ -3544,9 +3543,11 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             """)
         else:
             if plan_sector_trap:
+                is_cur_adani = (active_sym == "ADANIENT" or st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
+                sec_disp_name = "NIFTY INFRA / 50" if is_cur_adani else "NIFTY ENERGY"
                 standdown_title = "SECTOR DIVERGENCE TRAP ACTIVE"
-                standdown_desc = f"Directional score is <b style='color: #34D399;'>{plan_score:.1f}%</b> (> {plan_gate:.0f}% Gate), but <b style='color: #F87171;'>{active_scrip_name} ({plan_rel_pct:+.2f}%)</b> is diverging from parent sector <b style='color: #38BDF8;'>NIFTY ENERGY ({plan_energy_pct:+.2f}%)</b>. Buying options against the broader sector carries severe mean-reversion whipsaw risk. BUY trigger is <b>LOCKED</b> until sector alignment is restored."
-                standdown_source = f"Institutional Sector Coupling Filter (Nifty Energy {plan_energy_pct:+.2f}% vs {active_scrip_name} {plan_rel_pct:+.2f}%)"
+                standdown_desc = f"Directional score is <b style='color: #34D399;'>{plan_score:.1f}%</b> (> {plan_gate:.0f}% Gate), but <b style='color: #F87171;'>{active_scrip_name} ({plan_rel_pct:+.2f}%)</b> is diverging from parent sector <b style='color: #38BDF8;'>{sec_disp_name} ({plan_energy_pct:+.2f}%)</b>. Buying options against the broader sector carries severe mean-reversion whipsaw risk. BUY trigger is <b>LOCKED</b> until sector alignment is restored."
+                standdown_source = f"Institutional Sector Coupling Filter ({sec_disp_name} {plan_energy_pct:+.2f}% vs {active_scrip_name} {plan_rel_pct:+.2f}%)"
             elif plan_choppy:
                 standdown_title = "CONSOLIDATION CHOP FILTER ACTIVE"
                 standdown_desc = f"Choppiness Index (CHOP {plan_chop_val:.1f} > 61.8) indicates extreme fractal consolidation. Live premium monitoring continues with 0 delay in background, but the BUY trigger is <b>LOCKED</b> to prevent false breakout traps and rapid option theta decay."
@@ -3595,10 +3596,10 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
     is_pe_dominant = (plan_contract_type == "PE")
 
-    dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+    cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+    dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=cur_sym)
     dyn_atm = dyn_corridor["lower_strike"]
 
-    cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES" or spot >= 2000) else "RELIANCE"
     stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
         atm_strike=dyn_atm, 
         spot=spot, 
@@ -3809,7 +3810,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     # ==============================================================================
     # PARTICIPANT BUYER/SELLER CLASSIFICATION (FII • DII • PRO • RETAIL)
     # ==============================================================================
-    part_flow = NSEIndiaFetcher.get_reliance_participant_flow(spot, stock_volume)
+    cur_flow_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+    part_flow = NSEIndiaFetcher.get_participant_flow(spot, stock_volume, symbol=cur_flow_sym)
     fii = part_flow["participants"]["FII"]
     dii = part_flow["participants"]["DII"]
     pro = part_flow["participants"]["PRO"]
@@ -4049,17 +4051,14 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
 @st.fragment(run_every="6s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
-    # Dynamically pull current real-time spot from live feed on each tick
-    is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
-    if not is_adani_active:
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            spot_tick_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
-            gw_spot_val = float(spot_tick_info.get("spot_ltp", spot))
-            live_spot = gw_spot_val if (0 < gw_spot_val < 2000) else spot
-        except Exception:
-            live_spot = spot
-    else:
+    # Dynamically pull current real-time spot from live feed on each tick (both scrips)
+    _feed_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES") else "RELIANCE"
+    try:
+        from groww_market_feed import GrowwMarketFeed
+        spot_tick_info = GrowwMarketFeed.get_instance().get_dynamic_spot_tick(symbol=_feed_sym)
+        gw_spot_val = float(spot_tick_info.get("spot_ltp", spot))
+        live_spot = gw_spot_val if gw_spot_val > 0 else spot
+    except Exception:
         live_spot = spot
     render_atm_call_put_content(live_spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, is_streaming=True, trade_plan=trade_plan)
 
@@ -4068,18 +4067,15 @@ if df is not None and not df.empty:
     latest = df.iloc[-1]
     prev = df.iloc[-2]
     
-    # Ground spot strictly on authentic Groww / NSE official data
-    is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
+    # Ground spot strictly on authentic Groww / NSE official data (unified for both scrips)
+    is_adani_active = (scrip_symbol == "ADANIENT")
     from groww_market_feed import GrowwMarketFeed
-    gw_spot_data = GrowwMarketFeed.get_instance().get_live_spot_data(symbol="ADANIENT" if is_adani_active else "RELIANCE")
-    gw_live_spot = gw_spot_data.get("spot_ltp", 2816.80 if is_adani_active else 1226.00)
-    if is_adani_active:
-        spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) > 2000) else float(latest['Close'])
-    else:
-        spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) < 2000) else float(latest['Close'])
+    gw_spot_data = GrowwMarketFeed.get_instance().get_live_spot_data(symbol=scrip_symbol)
+    gw_live_spot = gw_spot_data.get("spot_ltp", 0.0)
+    spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) > 0) else float(latest['Close'])
 
     # Strike Pinning & Dynamic Dual ATM Corridor Resolution
-    corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+    corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=scrip_symbol)
     lower_atm = corridor["lower_strike"]
     upper_atm = corridor["upper_strike"]
     closest_atm = corridor["closest_strike"]
@@ -4093,7 +4089,8 @@ if df is not None and not df.empty:
         user_strike_choice = None  # Auto-Detect Best Strike
 
     # Dynamic Pre-Bias Resolution from Live Spot vs VWAP and Previous Close
-    initial_pclose = float(df['Close'].iloc[0]) if (is_adani_active and len(df) > 0) else (float(nse_data.get("prev_close", 1226.00)) if nse_data else 1226.00)
+    _nse_pclose = float(nse_data.get("prev_close", df['Close'].iloc[0] if len(df) > 0 else spot)) if nse_data else (float(df['Close'].iloc[0]) if len(df) > 0 else spot)
+    initial_pclose = _nse_pclose
     initial_vwap = float(df['VWAP'].iloc[-1]) if 'VWAP' in df.columns else initial_pclose
     pre_bias = "BEARISH" if (spot < initial_pclose - 1.5 or (spot < initial_vwap and spot < initial_pclose)) else "BULLISH"
 
@@ -4199,7 +4196,7 @@ if df is not None and not df.empty:
 
     # Enhancement 3: Relative Strength / Alpha Divergence vs NIFTY 50
     # Spot vs Benchmark percentage delta: detects institutional accumulation/distribution
-    rel_pct_ref = float(df['Close'].iloc[0]) if (is_adani and len(df) > 0) else (float(nse_data.get("prev_close", 1219.20)) if nse_data else 1219.20)
+    rel_pct_ref = float(nse_data.get("prev_close", df['Close'].iloc[0] if (df is not None and len(df) > 0) else spot)) if nse_data else (float(df['Close'].iloc[0]) if (df is not None and len(df) > 0) else spot)
     rel_change_pct = ((spot - rel_pct_ref) / rel_pct_ref) * 100.0 if rel_pct_ref > 0 else 0.0
     alpha_spread = round(rel_change_pct - nifty_pct, 2)
     alpha_bull_divergence = alpha_spread >= 0.30  # Outperforming NIFTY significantly (Institutional Buy Absorption)
@@ -4273,23 +4270,30 @@ if df is not None and not df.empty:
     elif breadth_bearish:
         v1_bull = max(0.0, v1_bull - 3.0)  # Broad market selling drag penalty
 
-    # NIFTY Energy Sector Alignment
-    energy_data = benchmarks.get("NIFTY ENERGY", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
-    energy_pct = float(energy_data.get("pct_change", 0.35))
-    energy_sector_bull = energy_pct >= 0.20
-    energy_sector_bear = energy_pct <= -0.20
-    if energy_sector_bull:
-        v1_bull += 1.5  # NIFTY Energy Sector Tailwind
-    elif energy_sector_bear:
+    # Sector Alignment (NIFTY Energy for Reliance, NIFTY 50 / Infra for Adani)
+    if is_adani:
+        sec_pct = nifty_pct
+        sec_name = "NIFTY 50"
+    else:
+        energy_data = benchmarks.get("NIFTY ENERGY", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
+        sec_pct = float(energy_data.get("pct_change", 0.35))
+        sec_name = "NIFTY Energy"
+
+    sec_sector_bull = sec_pct >= 0.20
+    sec_sector_bear = sec_pct <= -0.20
+    if sec_sector_bull:
+        v1_bull += 1.5  # Parent Sector Tailwind
+    elif sec_sector_bear:
         v1_bull = max(0.0, v1_bull - 1.5)
 
-    # Crude Oil Refining Margin Alignment
-    if crude_rallying:
-        v1_bull += 2.0  # Crude rally fuels Reliance O2C refining tailwind
-    elif crude_dumping_severe:
-        v1_bull = max(0.0, v1_bull - 4.5)  # Severe crude dump creates heavy institutional selling pressure
-    elif crude_dumping_mild:
-        v1_bull = max(0.0, v1_bull - 2.0)
+    # Crude Oil Refining Margin Alignment — strictly applicable to Reliance O2C
+    if not is_adani:
+        if crude_rallying:
+            v1_bull += 2.0  # Crude rally fuels Reliance O2C refining tailwind
+        elif crude_dumping_severe:
+            v1_bull = max(0.0, v1_bull - 4.5)  # Severe crude dump creates heavy institutional selling pressure
+        elif crude_dumping_mild:
+            v1_bull = max(0.0, v1_bull - 2.0)
 
     # Triple-Timeframe Institutional Invariance
     if mtf_matrix["is_triple_bullish"]:
@@ -4334,18 +4338,19 @@ if df is not None and not df.empty:
     elif breadth_bullish:
         v1_bear = max(0.0, v1_bear - 2.5)
 
-    if energy_sector_bear:
-        v1_bear += 1.5  # NIFTY Energy Sector Breakdown
-    elif energy_sector_bull:
+    if sec_sector_bear:
+        v1_bear += 1.5  # Parent Sector Breakdown
+    elif sec_sector_bull:
         v1_bear = max(0.0, v1_bear - 1.5)
 
-    # Crude Oil Sector Alignment
-    if crude_dumping_severe:
-        v1_bear += 3.5  # Downside breakdown confirmed by energy sector margin compression
-    elif crude_dumping_mild:
-        v1_bear += 1.5
-    elif crude_rallying:
-        v1_bear = max(0.0, v1_bear - 3.0)  # Crude rally acts as support for spot
+    # Crude Oil Sector Alignment — strictly applicable to Reliance O2C
+    if not is_adani:
+        if crude_dumping_severe:
+            v1_bear += 3.5  # Downside breakdown confirmed by energy sector margin compression
+        elif crude_dumping_mild:
+            v1_bear += 1.5
+        elif crude_rallying:
+            v1_bear = max(0.0, v1_bear - 3.0)  # Crude rally acts as support for spot
 
     if mtf_matrix["is_triple_bearish"]:
         v1_bear += 4.0  # M15 + M5 Structural Synchronization Bonus
@@ -4491,7 +4496,8 @@ if df is not None and not df.empty:
 
     # Level-2 Order Book Bid/Ask Imbalance & Stoikov Micro-Price
     from groww_market_feed import GrowwMarketFeed
-    ob_depth = GrowwMarketFeed.get_instance().get_reliance_order_book_imbalance()
+    ob_sym = scrip_symbol if 'scrip_symbol' in locals() or 'scrip_symbol' in globals() else ("ADANIENT" if is_adani else "RELIANCE")
+    ob_depth = GrowwMarketFeed.get_instance().get_order_book_imbalance(symbol=ob_sym)
     depth_ratio = float(ob_depth.get("imbalance_ratio", 1.0))
     depth_buyer_agg = depth_ratio >= 1.25
     depth_seller_agg = depth_ratio <= 0.80
@@ -5103,10 +5109,17 @@ if df is not None and not df.empty:
     try:
         from fo_quant_engine import MultiIndicatorMath
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = MultiIndicatorMath.calculate_sectoral_alignment(
-            nifty_pct, energy_pct, reliance_pct
+            nifty_pct, energy_pct, reliance_pct,
+            symbol=scrip_symbol,
+            sector_pct=(nifty_pct if is_adani else energy_pct),
+            sector_name=("NIFTY 50" if is_adani else "NIFTY ENERGY")
         )
     except Exception:
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = 0.0, "NEUTRAL", 1.0, 1.10, "NORMAL", True
+
+    # Composite Probability Scores (Symmetric Dual-Directional: Bullish vs Bearish)
+    macro_bull = 5.0 + sec_score
+    macro_bear = -5.0 - sec_score
 
     # Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry (Upgrade 2)
     has_index_drag_app = False
@@ -5114,7 +5127,8 @@ if df is not None and not df.empty:
     try:
         from fo_quant_engine import MultiIndicatorMath
         has_index_drag_app, drag_pen_app, index_drag_regime_app = MultiIndicatorMath.calculate_index_beta_drag(
-            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=1.15
+            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=(1.65 if is_adani else 1.15),
+            symbol=scrip_symbol
         )
         if has_index_drag_app:
             if "DOWNWARD_DRAG" in index_drag_regime_app:
@@ -5128,10 +5142,7 @@ if df is not None and not df.empty:
     except Exception:
         pass
 
-    # Composite Probability Scores (Symmetric Dual-Directional: Bullish vs Bearish)
     news_modifier = (news_sentiment_score / 10.0) * 5.0
-    macro_bull = 5.0 + sec_score
-    macro_bear = -5.0 - sec_score
     raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull + news_modifier
     raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear - news_modifier
 
@@ -5434,7 +5445,7 @@ if df is not None and not df.empty:
         sl_pts=effective_sl_pts
     )
     half_kelly = half_kelly_pct / 100.0
-    prev_close_ref = float(df['Close'].iloc[0]) if (is_adani_active and len(df) > 0) else float(nse_data.get("prev_close", 1219.20) if nse_data else 1219.20)
+    prev_close_ref = float(nse_data.get("prev_close", df['Close'].iloc[0] if (df is not None and len(df) > 0) else spot)) if nse_data else (float(df['Close'].iloc[0]) if (df is not None and len(df) > 0) else spot)
 
 
     # Render Persistent Sticky Top Header
@@ -5460,8 +5471,21 @@ if df is not None and not df.empty:
 
     @st.fragment(run_every="6s")
     def render_reliance_spot_hero():
-        is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
-        if is_adani_active:
+        hero_sym = scrip_symbol
+        from groww_market_feed import GrowwMarketFeed
+        try:
+            spot_info = GrowwMarketFeed.get_instance().get_dynamic_spot_tick(symbol=hero_sym)
+            fallback_curr = float(spot)
+            fallback_prev = float(prev_close_ref) if prev_close_ref > 0 else fallback_curr
+            curr_spot = float(spot_info.get("spot_ltp", fallback_curr))
+            p_close = float(spot_info.get("prev_close", fallback_prev))
+            s_diff = float(spot_info.get("diff", round(curr_spot - p_close, 2)))
+            s_diff_pct = float(spot_info.get("diff_pct", round((s_diff / max(1.0, p_close)) * 100.0, 2)))
+            t_dir = str(spot_info.get("tick_direction", "UP" if s_diff >= 0 else "DOWN"))
+            t_delta = float(spot_info.get("tick_delta", round(curr_spot - float(latest.get("Open", curr_spot)), 2) if ('latest' in locals() or 'latest' in globals()) else 0.0))
+            f_time = str(spot_info.get("timestamp", datetime.now(IST).strftime("%I:%M:%S %p IST")))
+            badge_label = "GROWW 0-DELAY (1s)"
+        except Exception:
             curr_spot = float(spot)
             p_close = float(prev_close_ref) if prev_close_ref > 0 else float(spot)
             s_diff = round(curr_spot - p_close, 2)
@@ -5469,20 +5493,8 @@ if df is not None and not df.empty:
             t_dir = "UP" if s_diff >= 0 else "DOWN"
             t_delta = round(curr_spot - float(latest.get("Open", curr_spot)), 2) if ('latest' in locals() or 'latest' in globals()) else 0.0
             f_time = datetime.now(IST).strftime("%I:%M:%S %p IST")
-            badge_label = "NSE 5M FEED"
-            hero_title = f"⚡ {scrip_symbol} LIVE SPOT"
-        else:
-            from groww_market_feed import GrowwMarketFeed
-            spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
-            curr_spot = float(spot_info.get("spot_ltp", 1210.00))
-            p_close = float(spot_info.get("prev_close", 1219.20))
-            s_diff = float(spot_info.get("diff", round(curr_spot - p_close, 2)))
-            s_diff_pct = float(spot_info.get("diff_pct", round((s_diff / max(1.0, p_close)) * 100.0, 2)))
-            t_dir = str(spot_info.get("tick_direction", "UP"))
-            t_delta = float(spot_info.get("tick_delta", 0.0))
-            f_time = str(spot_info.get("timestamp", datetime.now(IST).strftime("%I:%M:%S %p IST")))
             badge_label = "GROWW 0-DELAY (1s)"
-            hero_title = "⚡ RELIANCE LIVE SPOT"
+        hero_title = f"⚡ {hero_sym} LIVE SPOT"
         
         delta_color = "#10B981" if s_diff >= 0 else "#EF4444"
         delta_arrow = "↑" if s_diff >= 0 else "↓"
@@ -5538,13 +5550,13 @@ if df is not None and not df.empty:
 
     @st.fragment(run_every="6s")
     def render_quant_radar_kpis():
-        is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
-        if not is_adani_active:
+        radar_sym = scrip_symbol
+        try:
             from groww_market_feed import GrowwMarketFeed
-            spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
+            spot_info = GrowwMarketFeed.get_instance().get_dynamic_spot_tick(symbol=radar_sym)
             gw_spot_val = float(spot_info.get("spot_ltp", spot))
-            curr_spot = gw_spot_val if (0 < gw_spot_val < 2000) else spot
-        else:
+            curr_spot = gw_spot_val if gw_spot_val > 0 else spot
+        except Exception:
             curr_spot = spot
         spot_drift = curr_spot - spot
         live_bull = min(96.0, max(10.0, round(bullish_score + (spot_drift * 0.35), 1)))
@@ -6267,17 +6279,19 @@ if df is not None and not df.empty:
                     cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
                     cap_sub_desc = "🛡️ Protected from chop & theta decay"
                 elif is_sector_divergence_trap:
+                    _sec_title = "NIFTY Infra / 50" if is_adani else "NIFTY Energy"
+                    _sec_pct_val = nifty_pct if is_adani else energy_pct
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE SETUP &bull; STAND DOWN"
                     stand_down_badge = f"⚠️ SECTOR DIVERGENCE TRAP ACTIVE"
                     stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
-                    stand_down_sub = f"{scrip_symbol} ({reliance_pct:+.2f}%) is diverging from its parent sector NIFTY Energy ({energy_pct:+.2f}%) &bull; High mean-reversion trap risk"
+                    stand_down_sub = f"{scrip_symbol} ({reliance_pct:+.2f}%) is diverging from its parent sector {_sec_title} ({_sec_pct_val:+.2f}%) &bull; High mean-reversion trap risk"
                     gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
                     gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
                     gate_card_title = "SECTOR DIVERGENCE GUARD"
                     gate_card_val = "🛑 DIVERGENCE TRAP"
-                    gate_card_sub = f"Energy {energy_pct:+.2f}% vs {scrip_symbol} {reliance_pct:+.2f}%"
+                    gate_card_sub = f"{_sec_title} {_sec_pct_val:+.2f}% vs {scrip_symbol} {reliance_pct:+.2f}%"
                     why_stand_down_html = f"""
-                    <b style="color: #FFFFFF;">Why Stand Down?</b> Confluence score is strong at <b>{dominant_score:.1f}%</b>, but {scrip_symbol} (<b style='color: #F87171;'>{reliance_pct:+.2f}%</b>) is moving in direct opposition to its parent benchmark index <b style='color: #38BDF8;'>NIFTY ENERGY ({energy_pct:+.2f}%)</b>. Taking a short (PUT / PE) position against a rallying sector carries severe snapback and whipsaw risk. Institutional policy mandates standing down until sector alignment is restored.
+                    <b style="color: #FFFFFF;">Why Stand Down?</b> Confluence score is strong at <b>{dominant_score:.1f}%</b>, but {scrip_symbol} (<b style='color: #F87171;'>{reliance_pct:+.2f}%</b>) is moving in direct opposition to its parent benchmark index <b style='color: #38BDF8;'>{_sec_title.upper()} ({_sec_pct_val:+.2f}%)</b>. Taking a directional position against a divergent parent sector carries severe snapback and whipsaw risk. Institutional policy mandates standing down until sector alignment is restored.
                     """
                     dot_color = "#EF4444"
                     cap_badge_title = "🛡️ SECTOR SHIELD ACTIVE"
@@ -7586,7 +7600,7 @@ if df is not None and not df.empty:
                 pass
 
 
-        active_day_vol = int(df['Volume'].iloc[-1]) if (is_adani and df is not None and not df.empty and 'Volume' in df.columns) else int(nse_data.get('volume', 4725000) if nse_data else 4725000)
+        active_day_vol = int(df['Volume'].iloc[-1]) if (df is not None and not df.empty and 'Volume' in df.columns and int(df['Volume'].iloc[-1]) > 0) else int(nse_data.get('volume', 4725000) if (nse_data and nse_data.get('volume')) else 4725000)
         if stream_live_1s:
             render_dynamic_1s_atm_feed(spot, live_broker_ltp, active_day_vol, rel_vol, user_strike_choice, trade_plan=trade_plan)
         else:
