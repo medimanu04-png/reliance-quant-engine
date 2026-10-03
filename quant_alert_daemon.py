@@ -583,9 +583,25 @@ class RelianceQuantAlertDaemon:
                     "peak_profit_rs": float(active_trade.get("peak_profit", max(0.0, unreal_pnl))),
                     "unrealized_pnl_2lots": unreal_pnl,
                     "target_pts": spec.target_pts,
+                    "target_2_pts": getattr(spec, "target_2_pts", spec.target_pts * 2.0),
                     "sl_pts": spec.sl_pts,
                     "confluence_score": float(active_trade.get("confluence_score", 70.0)),
                     "market_status": "🟢 LIVE IN-TRADE",
+                    "strategy_mode": "OPTION 1: MULTI-TRANCHE RUNNER (50/50)",
+                    "tranche_1": {
+                        "status": active_trade.get("t1_status", "PENDING"),
+                        "target_pts": spec.target_pts,
+                        "qty_pct": "50%",
+                        "exit_price": active_trade.get("t1_exit_price"),
+                        "pnl_rs": active_trade.get("t1_pnl", 0.0)
+                    },
+                    "tranche_2": {
+                        "status": active_trade.get("t2_status", "PENDING_T1"),
+                        "target_pts": getattr(spec, "target_2_pts", spec.target_pts * 2.0),
+                        "qty_pct": "50%",
+                        "trailing_sl": f"COST LOCK (₹{act_entry:.2f})" if active_trade.get("t1_status") == "BANKED" else f"INITIAL SL (-{spec.sl_pts} pts)",
+                        "pnl_rs": active_trade.get("t2_pnl", 0.0)
+                    },
                     "last_update": datetime.now(IST).strftime("%I:%M:%S %p IST")
                 }
                 with open(os.path.join(BASE_DIR, "active_trade_state.json"), "w", encoding="utf-8") as f_st:
@@ -600,6 +616,22 @@ class RelianceQuantAlertDaemon:
                 starting_cash=STARTING_CAPITAL,
                 symbol=sym
             )
+            if trade_update.get("tranche_event") == "T1_BANKED":
+                t1_pnl_val = float(trade_update.get("t1_pnl", 0.0))
+                logger.info(f"🎯 TRANCHE 1 (50%) BANKED! Secured: ₹{t1_pnl_val:,.2f} | Runner SL locked at Cost ₹{act_entry:.2f}")
+                if tg_enabled:
+                    try:
+                        t1_msg = (
+                            f"🎯 *TRANCHE 1 (50%) BANKED & SECURED!*\n"
+                            f"• Contract: {inst_sym}\n"
+                            f"• Exit: ₹{cur_trade_ltp:.2f} (+{round(cur_trade_ltp - act_entry, 2)} pts)\n"
+                            f"• Banked P&L: +₹{t1_pnl_val:,.2f}\n"
+                            f"• 🚀 *Tranche 2 (50% Runner)*: Trailing SL locked at Cost (₹{act_entry:.2f}). Pure risk-free upside!\n"
+                            f"• Target 2: ₹{float(active_trade.get('target_2', act_entry + getattr(spec, 'target_2_pts', spec.target_pts * 2.0))):.2f}"
+                        )
+                        TelegramNotifier.send_message(bot_token, chat_id, t1_msg)
+                    except Exception as e:
+                        logger.debug(f"Telegram T1 dispatch error: {e}")
             if trade_update.get("closed_trade"):
                 try:
                     from git_sync_manager import GitSyncManager

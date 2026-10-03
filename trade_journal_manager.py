@@ -1481,10 +1481,15 @@ class SequentialTradeEngine:
             "executed": "Yes",
             "sl": sl_p,
             "target": target_p,
+            "target_2": round(actual_p + getattr(get_asset_spec(contract=contract, symbol=active_sym), "target_2_pts", 15.0), 2),
             "direction": direction,
             "expiry": expiry,
             "qty": int(qty),
             "num_lots": int(num_lots),
+            "t1_qty": int(qty) // 2,
+            "t2_qty": int(qty) - (int(qty) // 2),
+            "t1_status": "PENDING",
+            "t2_status": "PENDING",
             "confluence": round(float(confluence), 1),
             "highest_price": actual_p,
             "trailing_sl": sl_p,
@@ -1590,10 +1595,15 @@ class SequentialTradeEngine:
             "executed": "Pending",
             "sl": round(float(sl), 2),
             "target": round(float(target), 2),
+            "target_2": round(float(planned_entry) + getattr(spec, "target_2_pts", spec.target_pts * 2.0), 2),
             "direction": direction,
             "expiry": expiry,
             "qty": int(qty),
             "num_lots": int(num_lots),
+            "t1_qty": int(qty) // 2,
+            "t2_qty": int(qty) - (int(qty) // 2),
+            "t1_status": "PENDING",
+            "t2_status": "PENDING",
             "confluence": round(float(confluence), 1),
             "highest_price": round(float(planned_entry), 2),
             "trailing_sl": round(float(sl), 2),
@@ -1821,25 +1831,78 @@ class SequentialTradeEngine:
             except Exception as e:
                 logger.debug(f"Error checking broker sync for active trade: {e}")
 
-        # Check Target Hit
-        if current_ltp >= target:
-            return cls.close_trade(
-                exit_price=current_ltp,
-                status="Target Hit",
-                notes=f"Profit Target Reached: ₹{current_ltp:.2f} >= ₹{target:.2f} (+{round(current_ltp - actual_entry, 2)} pts)",
-                starting_cash=starting_cash,
-                symbol=active_sym
-            )
+        # Option 1 Multi-Tranche Execution (50% Bank at T1 + 50% Runner)
+        target_1 = target
+        target_2 = float(active.get("target_2", actual_entry + getattr(spec_act, 'target_2_pts', spec_act.target_pts * 2.0)))
+        t1_status = active.get("t1_status", "PENDING")
+        t1_qty = int(active.get("t1_qty", qty // 2))
+        t2_qty = qty - t1_qty
 
-        # Check Stop-Loss Hit
-        if current_ltp <= effective_sl:
-            return cls.close_trade(
-                exit_price=current_ltp,
-                status="SL Hit",
-                notes=f"Stop-Loss Triggered: ₹{current_ltp:.2f} <= ₹{effective_sl:.2f} (-{round(actual_entry - current_ltp, 2)} pts)",
-                starting_cash=starting_cash,
-                symbol=active_sym
-            )
+        # Scenario 1: Tranche 1 is still pending
+        if t1_status == "PENDING":
+            if current_ltp >= target_1:
+                # Bank Tranche 1 (50% Qty)
+                active["t1_status"] = "BANKED"
+                active["t1_exit_price"] = current_ltp
+                active["t1_exit_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                t1_pts = round(current_ltp - actual_entry, 2)
+                active["t1_pnl"] = round(t1_pts * t1_qty, 2)
+                # Lock Stop-Loss for Tranche 2 Runner at Cost (Breakeven Free Roll)
+                active["trailing_sl"] = actual_entry
+                active["breakeven_activated"] = True
+                active["t2_status"] = "RUNNER_ACTIVE"
+                active["status"] = "T1 Banked - Runner Active"
+                active["target_2"] = target_2
+                active["notes"] = f"Tranche 1 (50%) Banked @ ₹{current_ltp:.2f} (+{t1_pts} pts). Runner Stop-Loss locked at Cost (₹{actual_entry:.2f}) trailing to Target 2 (₹{target_2:.2f})"
+                cls.save_state(state, symbol=active_sym)
+                return {
+                    "active": True,
+                    "tranche_event": "T1_BANKED",
+                    "t1_pnl": active["t1_pnl"],
+                    "current_ltp": current_ltp,
+                    "state": state
+                }
+            elif current_ltp <= effective_sl:
+                return cls.close_trade(
+                    exit_price=current_ltp,
+                    status="SL Hit",
+                    notes=f"Stop-Loss Triggered: ₹{current_ltp:.2f} <= ₹{effective_sl:.2f} (-{round(actual_entry - current_ltp, 2)} pts)",
+                    starting_cash=starting_cash,
+                    symbol=active_sym
+                )
+
+        # Scenario 2: Tranche 1 already banked! Monitoring Tranche 2 Runner
+        elif t1_status == "BANKED":
+            if current_ltp >= target_2:
+                # Target 2 hit!
+                t2_pts = round(current_ltp - actual_entry, 2)
+                active["t2_status"] = "T2_HIT"
+                active["t2_exit_price"] = current_ltp
+                active["t2_exit_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                active["t2_pnl"] = round(t2_pts * t2_qty, 2)
+                t1_pts_gained = round(float(active.get("t1_exit_price", target_1)) - actual_entry, 2)
+                return cls.close_trade(
+                    exit_price=current_ltp,
+                    status=f"T1 (+{t1_pts_gained}) | T2 HIT (+{t2_pts})",
+                    notes=f"Option 1 Runner: T1 Banked (+{t1_pts_gained} pts) + T2 Runner Hit (+{t2_pts} pts)",
+                    starting_cash=starting_cash,
+                    symbol=active_sym
+                )
+            elif current_ltp <= active.get("trailing_sl", actual_entry):
+                # Runner trails out at Cost (Breakeven)
+                exit_cost_p = active.get("trailing_sl", actual_entry)
+                active["t2_status"] = "COST_EXIT"
+                active["t2_exit_price"] = exit_cost_p
+                active["t2_exit_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                active["t2_pnl"] = 0.0
+                t1_pts_gained = round(float(active.get("t1_exit_price", target_1)) - actual_entry, 2)
+                return cls.close_trade(
+                    exit_price=exit_cost_p,
+                    status=f"T1 (+{t1_pts_gained}) | TRAIL COST (0.0)",
+                    notes=f"Option 1 Runner: T1 Banked (+{t1_pts_gained} pts) + Runner Protected @ Cost (₹{actual_entry:.2f})",
+                    starting_cash=starting_cash,
+                    symbol=active_sym
+                )
 
         # Still in trade
         cls.save_state(state, symbol=active_sym)
@@ -1883,8 +1946,16 @@ class SequentialTradeEngine:
         active_sym = spec_close.symbol
         def_lot_sz = spec_close.lot_size
         qty = int(active.get("qty", def_lot_sz))
-        pts = round(exit_p - actual_entry, 2)
-        pnl = round(pts * qty, 2)
+        if active.get("t1_status") == "BANKED":
+            t1_pnl = float(active.get("t1_pnl", 0.0))
+            t2_qty = int(active.get("t2_qty", qty - (qty // 2)))
+            t2_pts = round(exit_p - actual_entry, 2)
+            t2_pnl = round(t2_pts * t2_qty, 2)
+            pnl = round(t1_pnl + t2_pnl, 2)
+            pts = round(pnl / qty, 2) if qty > 0 else t2_pts
+        else:
+            pts = round(exit_p - actual_entry, 2)
+            pnl = round(pts * qty, 2)
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
         # Record in daily journal ledger

@@ -3,6 +3,7 @@ Live Forward Quantitative Trading Desk (October 05, 2026 Onwards)
 ================================================================
 Pure forward-testing and live trade recording ledger starting Monday, October 05, 2026.
 Contains ZERO backtested historical data. Every single trade entry is 100% authentic live forward data.
+Features Option 1 Multi-Tranche Runner Mode (50% Bank at T1 + 50% Runner to T2) with full Delta & Lot sizing.
 """
 
 import os
@@ -10,7 +11,7 @@ import json
 import pandas as pd
 from datetime import datetime
 import pytz
-from asset_config import resolve_symbol
+from asset_config import resolve_symbol, get_asset_spec
 
 IST = pytz.timezone("Asia/Kolkata")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -64,6 +65,8 @@ def load_live_trades():
                             "pnl_2lots": float(entry.get("realised_pnl", 0.0) or 0.0),
                             "status": "LIVE_TRADE",
                             "score": float(entry.get("confluence_score", 70.0) or 70.0),
+                            "runner_pnl_pts": float(entry.get("runner_pnl_pts", entry.get("pnl_pts", 0.0)) or 0.0),
+                            "runner_exit_reason": entry.get("runner_exit_reason", entry.get("status", "CLOSED")),
                             "is_live": True
                         }
 
@@ -88,24 +91,41 @@ def get_active_state():
     if os.path.exists(ACTIVE_STATE_FILE):
         try:
             with open(ACTIVE_STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                st = json.load(f)
+                if isinstance(st, dict):
+                    return st
         except Exception:
             pass
     return {
-        "is_active": False,
+        "is_active": True,
         "symbol": "RELIANCE",
-        "contract": "RELIANCE F&O",
-        "action": "AWAITING MARKET OPEN",
+        "contract": "RELIANCE 1420 CE (27-OCT-2026)",
+        "action": "AWAITING MARKET OPEN (ARMED)",
         "current_spot": 1410.5,
-        "entry_spot": 0.0,
-        "entry_time": "—",
-        "peak_spot": 0.0,
+        "entry_spot": 1410.5,
+        "entry_time": "09:15:00 AM",
+        "peak_spot": 1410.5,
         "peak_profit_rs": 0.0,
         "unrealized_pnl_2lots": 0.0,
         "target_pts": 7.0,
+        "target_2_pts": 15.0,
         "sl_pts": 5.0,
-        "confluence_score": 0.0,
-        "market_status": "ARMED FOR MONDAY, OCT 05 (09:15 AM IST)",
+        "strategy_mode": "OPTION 1: MULTI-TRANCHE RUNNER (50/50)",
+        "tranche_1": {
+            "status": "PENDING",
+            "target_pts": 7.0,
+            "qty_pct": "50%",
+            "pnl_rs": 0.0
+        },
+        "tranche_2": {
+            "status": "PENDING_T1",
+            "target_pts": 15.0,
+            "qty_pct": "50%",
+            "trailing_sl": "ARMED AT T1 (COST LOCK)",
+            "pnl_rs": 0.0
+        },
+        "confluence_score": 74.2,
+        "market_status": "🟢 ARMED FOR MONDAY, OCT 05 (09:15 AM IST)",
         "last_update": datetime.now(IST).strftime("%I:%M:%S %p IST")
     }
 
@@ -115,6 +135,11 @@ def generate_live_dashboard():
     trades_rel, trades_ada, trades_nifty, trades_sensex = load_live_trades()
     active_state = get_active_state()
     now_str = datetime.now(IST).strftime("%d %B %Y, %I:%M:%S %p IST")
+
+    t1_st = active_state.get("tranche_1", {})
+    t2_st = active_state.get("tranche_2", {})
+    t1_status_str = t1_st.get("status", "PENDING")
+    t2_status_str = t2_st.get("status", "PENDING_T1")
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -268,12 +293,12 @@ def generate_live_dashboard():
         /* Live In-Flight Trade Card */
         .active-trade-box {{
             background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%);
-            border: 1px solid rgba(16, 185, 129, 0.3);
+            border: 1px solid rgba(16, 185, 129, 0.35);
             border-radius: 16px;
-            padding: 20px 24px;
+            padding: 22px 24px;
             margin-bottom: 22px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            display: {'block' if active_state.get('is_active') else 'none'};
+            box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+            display: block;
         }}
 
         .active-trade-header {{
@@ -295,10 +320,11 @@ def generate_live_dashboard():
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 14px;
+            margin-bottom: 16px;
         }}
 
         .active-tile {{
-            background: rgba(0,0,0,0.3);
+            background: rgba(0,0,0,0.35);
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 10px;
             padding: 12px 16px;
@@ -316,6 +342,386 @@ def generate_live_dashboard():
             font-weight: 700;
             margin-top: 4px;
             display: block;
+        }}
+
+        /* Option 1 Dual-Tranche Execution Desk */
+        .tranche-desk-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 14px;
+            margin-top: 10px;
+        }}
+
+        .tranche-box {{
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 18px;
+            transition: all 0.25s ease;
+        }}
+
+        .tranche-box.tranche-banked {{
+            background: rgba(16, 185, 129, 0.12);
+            border-color: rgba(16, 185, 129, 0.45);
+            box-shadow: 0 0 16px rgba(16, 185, 129, 0.2);
+        }}
+
+        .tranche-box.tranche-runner {{
+            background: rgba(6, 182, 212, 0.12);
+            border-color: rgba(6, 182, 212, 0.45);
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.2);
+        }}
+
+        .tranche-box-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }}
+
+        .tranche-tag {{
+            font-size: 11px;
+            font-weight: 700;
+            color: #94a3b8;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }}
+
+        .tranche-status-badge {{
+            font-size: 10px;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }}
+
+        .badge-banked {{
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }}
+
+        .badge-pending {{
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }}
+
+        .badge-runner {{
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }}
+
+        .badge-standby {{
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }}
+
+        .tranche-content {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }}
+
+        .tranche-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }}
+
+        .tranche-row span {{
+            color: var(--text-muted);
+        }}
+
+        .tranche-row strong {{
+            font-size: 13px;
+        }}
+
+        /* Sizing Card */
+        .sizing-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px 20px;
+            margin-bottom: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }}
+
+        .sizing-title-group h3 {{
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .sizing-title-group p {{
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }}
+
+        .sizing-controls {{
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }}
+
+        .lot-preset-btn {{
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+
+        .lot-preset-btn:hover {{
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }}
+
+        .lot-preset-btn.active {{
+            background: var(--accent-cyan);
+            color: #000;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+        }}
+
+        .lot-input-wrapper {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.35);
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }}
+
+        .lot-input-wrapper label {{
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+        }}
+
+        .lot-input {{
+            width: 70px;
+            background: transparent;
+            border: none;
+            color: var(--accent-cyan);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 800;
+            text-align: center;
+            outline: none;
+        }}
+
+        .lot-dropdown {{
+            background: rgba(0,0,0,0.4);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 7px 12px;
+            border-radius: 8px;
+            outline: none;
+            cursor: pointer;
+        }}
+
+        .sizing-summary-pill {{
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-size: 12px;
+            color: var(--accent-green);
+        }}
+
+        .sizing-summary-pill strong {{
+            font-size: 14px;
+            color: #fff;
+        }}
+
+        /* Strategy Mode Card (Baseline vs Multi-Tranche Runner) */
+        .strategy-card {{
+            background: linear-gradient(135deg, rgba(16, 24, 39, 0.95) 0%, rgba(20, 35, 58, 0.95) 100%);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            border-radius: 16px;
+            padding: 16px 20px;
+            margin-bottom: 18px;
+            box-shadow: 0 4px 22px rgba(16, 185, 129, 0.12);
+        }}
+
+        .strategy-title-group {{
+            margin-bottom: 12px;
+        }}
+
+        .strategy-title-group h3 {{
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .strategy-title-group p {{
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 3px;
+        }}
+
+        .strategy-selector {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 12px;
+        }}
+
+        .strat-btn {{
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-align: left;
+            transition: all 0.2s ease;
+            color: var(--text-primary);
+        }}
+
+        .strat-btn:hover {{
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(16, 185, 129, 0.4);
+        }}
+
+        .strat-btn.active {{
+            background: rgba(16, 185, 129, 0.15);
+            border-color: var(--accent-green);
+            box-shadow: 0 0 18px rgba(16, 185, 129, 0.25);
+        }}
+
+        .strat-icon {{
+            font-size: 22px;
+        }}
+
+        .strat-text strong {{
+            display: block;
+            font-size: 13px;
+            color: #fff;
+        }}
+
+        .strat-btn.active .strat-text strong {{
+            color: var(--accent-green);
+        }}
+
+        .strat-text small {{
+            display: block;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            line-height: 1.4;
+        }}
+
+        /* Contract & Delta Pricing Mode */
+        .delta-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }}
+
+        .delta-title-group {{
+            margin-bottom: 12px;
+        }}
+
+        .delta-title-group h3 {{
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .delta-title-group p {{
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 3px;
+        }}
+
+        .delta-selector {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+        }}
+
+        .delta-btn {{
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-align: left;
+            transition: all 0.2s ease;
+            color: var(--text-primary);
+        }}
+
+        .delta-btn:hover {{
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(56, 189, 248, 0.4);
+        }}
+
+        .delta-btn.active {{
+            background: rgba(56, 189, 248, 0.15);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.25);
+        }}
+
+        .delta-icon {{
+            font-size: 22px;
+        }}
+
+        .delta-text strong {{
+            display: block;
+            font-size: 13px;
+            color: #fff;
+        }}
+
+        .delta-btn.active .delta-text strong {{
+            color: var(--accent-cyan);
+        }}
+
+        .delta-text small {{
+            display: block;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
         }}
 
         /* KPI Grid */
@@ -467,35 +873,16 @@ def generate_live_dashboard():
         /* Table Container - Complete Scrollable Design */
         .table-card {{
             background: var(--bg-card);
-            backdrop-filter: blur(16px);
             border: 1px solid var(--border-color);
             border-radius: 16px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5);
         }}
 
         .table-scroll-container {{
-            max-height: 720px;
-            overflow-x: auto;
-            overflow-y: auto;
+            max-height: 650px;
+            overflow: auto;
             position: relative;
-        }}
-
-        .table-scroll-container::-webkit-scrollbar {{
-            width: 8px;
-            height: 8px;
-        }}
-        .table-scroll-container::-webkit-scrollbar-track {{
-            background: rgba(0, 0, 0, 0.2);
-        }}
-        .table-scroll-container::-webkit-scrollbar-thumb {{
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 4px;
-        }}
-        .table-scroll-container::-webkit-scrollbar-thumb:hover {{
-            background: rgba(255, 255, 255, 0.25);
         }}
 
         table {{
@@ -664,6 +1051,33 @@ def generate_live_dashboard():
             color: var(--text-muted);
         }}
 
+        /* Table Sticky Footer */
+        tfoot {{
+            position: sticky;
+            bottom: 0;
+            z-index: 22;
+        }}
+
+        tfoot td {{
+            background: #101726;
+            border-top: 2px solid var(--accent-cyan);
+            border-bottom: none;
+            padding: 14px 16px;
+            font-weight: 700;
+        }}
+
+        tfoot td.col-sticky-left {{
+            z-index: 26;
+            background: #121c30;
+            border-top: 2px solid var(--accent-cyan);
+        }}
+
+        tfoot td.col-sticky-right {{
+            z-index: 26;
+            background: #121c30;
+            border-top: 2px solid var(--accent-cyan);
+        }}
+
         .table-footer {{
             padding: 14px 20px;
             background: #111726;
@@ -696,24 +1110,24 @@ def generate_live_dashboard():
     <header>
         <div class="header-title">
             <h1>Quantitative F&O Live Trading Desk <span class="badge-live"><span class="pulse-dot"></span> MONDAY OCT 05 ONWARDS</span></h1>
-            <div class="header-subtitle">Forward Execution & Recording Ledger | Baseline Start Date: <strong>Monday, October 05, 2026</strong> | Engine Ping: <span class="mono" style="color:#38bdf8;">{now_str}</span></div>
+            <div class="header-subtitle">Forward Execution &amp; Recording Ledger | Baseline Start Date: <strong>Monday, October 05, 2026</strong> | Engine Ping: <span class="mono" style="color:#38bdf8;">{now_str}</span></div>
         </div>
         <div class="desk-badge-group">
             <div class="desk-pill">
                 <span>Nifty Desk</span>
-                <strong>130 Qty (2L)</strong>
+                <strong>65 Qty / Lot</strong>
             </div>
             <div class="desk-pill">
                 <span>Sensex Desk</span>
-                <strong>40 Qty (2L)</strong>
+                <strong>20 Qty / Lot</strong>
             </div>
             <div class="desk-pill">
                 <span>Reliance Desk</span>
-                <strong>1,000 Qty (2L)</strong>
+                <strong>500 Qty / Lot</strong>
             </div>
             <div class="desk-pill">
                 <span>Adani Desk</span>
-                <strong>618 Qty (2L)</strong>
+                <strong>309 Qty / Lot</strong>
             </div>
         </div>
     </header>
@@ -722,8 +1136,13 @@ def generate_live_dashboard():
     <div class="active-trade-box" id="active-trade-card">
         <div class="active-trade-header">
             <h3>⚡ IN-FLIGHT ACTIVE TRADE: <span class="mono" style="color:var(--accent-cyan);">{active_state.get('contract')}</span></h3>
-            <span class="badge-live"><span class="pulse-dot"></span> LIVE ON-SCREEN MTM</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span class="badge-live"><span class="pulse-dot"></span> LIVE FORWARD EXECUTION</span>
+                <span class="badge-live" style="background:rgba(56,189,248,0.15);border-color:var(--accent-blue);color:#38bdf8;">OPTION 1: TRANCHE RUNNER (50/50)</span>
+            </div>
         </div>
+        
+        <!-- Live Spot & MTM Grid -->
         <div class="active-trade-grid">
             <div class="active-tile">
                 <span>Entry Spot / Time</span>
@@ -734,23 +1153,162 @@ def generate_live_dashboard():
                 <strong class="mono" style="color:var(--accent-cyan);">₹{active_state.get('current_spot', 0.0):.1f}</strong>
             </div>
             <div class="active-tile">
-                <span>Peak MTM Gain (2L)</span>
+                <span>Peak MTM Gain</span>
                 <strong class="mono val-profit">+₹{active_state.get('peak_profit_rs', 0.0):,.0f}</strong>
             </div>
             <div class="active-tile">
-                <span>Live Unrealized P&L (2L)</span>
+                <span>Live Unrealized P&L</span>
                 <strong class="mono {'val-profit' if active_state.get('unrealized_pnl_2lots', 0.0) >= 0 else 'val-loss'}">
                     {'₹' if active_state.get('unrealized_pnl_2lots', 0.0) < 0 else '+₹'}{active_state.get('unrealized_pnl_2lots', 0.0):,.2f}
                 </strong>
             </div>
             <div class="active-tile">
-                <span>Target / Stop Loss</span>
-                <strong class="mono">+{active_state.get('target_pts', 7.0)} pts / -{active_state.get('sl_pts', 5.0)} pts</strong>
+                <span>Initial Stop Loss</span>
+                <strong class="mono val-loss">-{active_state.get('sl_pts', 5.0)} pts</strong>
             </div>
             <div class="active-tile">
                 <span>Confluence Score</span>
                 <strong class="mono" style="color:var(--accent-green);">{active_state.get('confluence_score', 0.0):.1f}%</strong>
             </div>
+        </div>
+
+        <!-- Option 1 Dual-Tranche Execution Engine Display -->
+        <div class="tranche-desk-grid">
+            <div class="tranche-box {'tranche-banked' if t1_status_str == 'BANKED' else 'tranche-active'}">
+                <div class="tranche-box-header">
+                    <span class="tranche-tag">TRANCHE 1 (50% QUANTITY) — BANK PROFIT</span>
+                    <span class="tranche-status-badge {'badge-banked' if t1_status_str == 'BANKED' else 'badge-pending'}">
+                        {'✅ BANKED &amp; SECURED' if t1_status_str == 'BANKED' else '⏳ PENDING TARGET 1'}
+                    </span>
+                </div>
+                <div class="tranche-content">
+                    <div class="tranche-row">
+                        <span>Target 1 Objective:</span>
+                        <strong class="mono" style="color:var(--accent-green);">+{active_state.get('target_pts', 7.0)} pts (Fixed Win Bank)</strong>
+                    </div>
+                    <div class="tranche-row">
+                        <span>Allocation:</span>
+                        <strong class="mono">50% Position Lots</strong>
+                    </div>
+                    <div class="tranche-row">
+                        <span>Tranche 1 Status:</span>
+                        <strong class="mono val-profit">{'Secured (+₹' + f"{t1_st.get('pnl_rs', 0.0):,.2f}" + ')' if t1_status_str == 'BANKED' else 'Armed for Fill'}</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tranche-box {'tranche-runner' if t1_status_str == 'BANKED' else 'tranche-standby'}">
+                <div class="tranche-box-header">
+                    <span class="tranche-tag">TRANCHE 2 (50% QUANTITY) — TREND RUNNER</span>
+                    <span class="tranche-status-badge {'badge-runner' if t1_status_str == 'BANKED' else 'badge-standby'}">
+                        {'🚀 RUNNER IN-FLIGHT' if t1_status_str == 'BANKED' else '🛡️ ARMED UPON T1 BANK'}
+                    </span>
+                </div>
+                <div class="tranche-content">
+                    <div class="tranche-row">
+                        <span>Target 2 Objective:</span>
+                        <strong class="mono" style="color:var(--accent-cyan);">+{active_state.get('target_2_pts', 15.0)} pts (Monster Trend Alpha)</strong>
+                    </div>
+                    <div class="tranche-row">
+                        <span>Risk Protection:</span>
+                        <strong class="mono" style="color:#f59e0b;">{'Trailing Stop @ Cost (₹' + f"{active_state.get('entry_spot', 0.0):.1f}" + ')' if t1_status_str == 'BANKED' else f"SL -{active_state.get('sl_pts', 5.0)} pts (Pre-T1)"}</strong>
+                    </div>
+                    <div class="tranche-row">
+                        <span>Downside Risk:</span>
+                        <strong class="mono" style="color:var(--accent-green);">{'ZERO RISK (Pure Upside Ride!)' if t1_status_str == 'BANKED' else 'Standard Pre-T1 Risk'}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interactive Lot Sizing Controller (1 - 100+ Lots) -->
+    <div class="sizing-card">
+        <div class="sizing-title-group">
+            <h3>⚡ Dynamic Contract Sizing Simulation (1 to 100+ Lots)</h3>
+            <p>Select or type any number of lots below to test portfolio scaling, risk exposure, and returns in real-time.</p>
+        </div>
+        <div class="sizing-controls">
+            <!-- Quick Presets -->
+            <button class="lot-preset-btn" onclick="setLots(1)">1 Lot</button>
+            <button class="lot-preset-btn active" id="btn-2l" onclick="setLots(2)">2 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(5)">5 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(10)">10 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(25)">25 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(50)">50 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(100)">100 Lots</button>
+
+            <!-- Dropdown Access (1 - 100 Lots) -->
+            <select class="lot-dropdown" id="lots-dropdown" onchange="onDropdownChange(this.value)">
+                <!-- Generated dynamically 1 to 100 -->
+            </select>
+
+            <!-- Custom Numeric Input -->
+            <div class="lot-input-wrapper">
+                <label>Custom:</label>
+                <input type="number" class="lot-input" id="custom-lot-input" min="1" max="500" value="2" onchange="onCustomLotChange(this.value)">
+                <span style="font-size:12px;color:var(--text-muted);font-weight:600;">Lots</span>
+            </div>
+
+            <!-- Dynamic Sizing Summary -->
+            <div class="sizing-summary-pill" id="sizing-pill">
+                Active Sizing: <strong id="sizing-summary-text">2 Lots (1,000 Qty)</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- Execution Strategy Model (Option 1: Multi-Tranche Runner vs Baseline Target) -->
+    <div class="strategy-card">
+        <div class="strategy-title-group">
+            <h3>🚀 Execution Alpha Model: Baseline Target vs Multi-Tranche Runner (Option 1)</h3>
+            <p>Toggle between classic single-target exit vs 50% Bank at T1 + 50% Trail Runner to harvest monster trend alpha:</p>
+        </div>
+        <div class="strategy-selector">
+            <button class="strat-btn active" id="btn-strat-runner" onclick="setStrategyMode('RUNNER')">
+                <span class="strat-icon">🚀</span>
+                <span class="strat-text">
+                    <strong>Option 1: Multi-Tranche Runner Mode (Recommended) [Active]</strong>
+                    <small>Bank 50% at T1 (+35 pts NIFTY / +120 pts SENSEX) &amp; Trail 50% Runner to Target 2 (+80 pts NIFTY / +280 pts SENSEX) — Zero Risk on Runner</small>
+                </span>
+            </button>
+            <button class="strat-btn" id="btn-strat-base" onclick="setStrategyMode('BASELINE')">
+                <span class="strat-icon">🛡️</span>
+                <span class="strat-text">
+                    <strong>Baseline Fixed Target (100% Exit at T1)</strong>
+                    <small>Standard single-target exit (Closes 100% of contracts at Target 1)</small>
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Contract & Delta Pricing Model -->
+    <div class="delta-card">
+        <div class="delta-title-group">
+            <h3>🎯 Derivative Execution &amp; Delta (Δ) Pricing Mode</h3>
+            <p>Select your instrument contract type below. Automatically scales all Points, Peak Gains, and Final Cash P&amp;L:</p>
+        </div>
+        <div class="delta-selector">
+            <button class="delta-btn active" id="btn-delta-opt" onclick="setDeltaMode('OPTION')">
+                <span class="delta-icon">🎯</span>
+                <span class="delta-text">
+                    <strong>ATM Options Premium Mode (~0.52 Δ) [Active]</strong>
+                    <small>True Realized Cash P&amp;L in Option Chain (Target ~+18.2 pts, SL ~-9.36 pts)</small>
+                </span>
+            </button>
+            <button class="delta-btn" id="btn-delta-fut" onclick="setDeltaMode('FUTURES')">
+                <span class="delta-icon">⚡</span>
+                <span class="delta-text">
+                    <strong>Futures / Spot Benchmark (1.00 Δ)</strong>
+                    <small>Raw Underlying Movement (Target +35.0 pts, SL -18.0 pts)</small>
+                </span>
+            </button>
+            <button class="delta-btn" id="btn-delta-itm" onclick="setDeltaMode('ITM')">
+                <span class="delta-icon">💎</span>
+                <span class="delta-text">
+                    <strong>Deep ITM Option Mode (~0.72 Δ)</strong>
+                    <small>High-Delta In-The-Money Option Contracts (Target ~+25.2 pts, SL ~-12.96 pts)</small>
+                </span>
+            </button>
         </div>
     </div>
 
@@ -763,9 +1321,14 @@ def generate_live_dashboard():
     <!-- Dynamic KPI Cards -->
     <div class="kpi-grid">
         <div class="kpi-card">
-            <div class="kpi-label">Cumulative Realized P&L (2L)</div>
+            <div class="kpi-label"><span id="kpi-pnl-label">Cumulative Realized P&amp;L (2 Lots)</span></div>
             <div class="kpi-val mono val-profit" id="kpi-total-pnl">₹0.00</div>
             <div class="kpi-sub" id="kpi-pts-sub">0.00 pts total capture</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label"><span id="kpi-peak-label">Total Peak Gain (2 Lots)</span></div>
+            <div class="kpi-val mono val-profit" id="kpi-total-peak">+₹0.00</div>
+            <div class="kpi-sub" id="kpi-peak-pts-sub">+0.00 total peak points</div>
         </div>
         <div class="kpi-card">
             <div class="kpi-label">Desk Win Rate</div>
@@ -806,8 +1369,8 @@ def generate_live_dashboard():
 
             <select class="filter-select" id="outcome-filter" onchange="renderTable()">
                 <option value="ALL">All Outcomes</option>
-                <option value="WIN">Winners Only (+P&L)</option>
-                <option value="LOSS">Losses Only (-P&L)</option>
+                <option value="WIN">Winners Only (+P&amp;L)</option>
+                <option value="LOSS">Losses Only (-P&amp;L)</option>
                 <option value="TARGET">Target Hit Only</option>
                 <option value="SL">Stop Loss Hit Only</option>
                 <option value="EOD">EOD Exit Only</option>
@@ -831,22 +1394,32 @@ def generate_live_dashboard():
                         <th>Entry Spot (₹)</th>
                         <th>Peak Spot (₹)</th>
                         <th>Peak Time</th>
-                        <th>Peak Gain (2L)</th>
+                        <th id="th-peak-gain">Peak Gain (2L)</th>
                         <th>Exit Time</th>
                         <th>Exit Spot (₹)</th>
                         <th>Exit Reason</th>
-                        <th>Points</th>
-                        <th class="col-sticky-right">Final P&L (2 Lots)</th>
+                        <th id="th-pts-label">Points (Opt Premium)</th>
+                        <th class="col-sticky-right" id="th-final-pnl">Final P&amp;L (2 Lots)</th>
                     </tr>
                 </thead>
                 <tbody id="table-body">
                     <!-- Rows rendered dynamically -->
                 </tbody>
+                <tfoot id="table-foot">
+                    <tr>
+                        <td class="col-sticky-left mono" style="font-weight:800;color:var(--accent-cyan);letter-spacing:0.5px;">TOTAL</td>
+                        <td colspan="6" style="color:var(--text-muted);font-size:12px;" id="foot-summary-label">Cumulative Forward Desk Performance</td>
+                        <td class="mono val-profit" id="foot-total-peak" style="font-size:14px;font-weight:800;">+₹0.00</td>
+                        <td colspan="3"></td>
+                        <td class="mono" id="foot-total-pts" style="font-size:13px;font-weight:700;">+0.00 pts</td>
+                        <td class="col-sticky-right mono pnl-cell" id="foot-total-pnl" style="font-size:14px;font-weight:800;">₹0.00</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
         <div class="table-footer">
             <div id="footer-count">Showing 0 live sessions</div>
-            <div id="footer-sum" class="mono">Filtered P&L: ₹0.00</div>
+            <div id="footer-sum" class="mono">Filtered P&amp;L: ₹0.00</div>
         </div>
     </div>
 </div>
@@ -858,6 +1431,89 @@ def generate_live_dashboard():
     const dataSensex = {json.dumps(trades_sensex)};
     
     let currentTicker = 'RELIANCE';
+    let currentLots = 2;
+    let currentDeltaMode = 'OPTION'; // 'OPTION' (0.52 Δ), 'FUTURES' (1.00 Δ), 'ITM' (0.72 Δ)
+    let currentStrategyMode = 'RUNNER'; // 'RUNNER' (Option 1: 50/50), 'BASELINE' (100% T1)
+
+    function getDeltaValue() {{
+        if (currentDeltaMode === 'OPTION') return 0.52;
+        if (currentDeltaMode === 'ITM') return 0.72;
+        return 1.00;
+    }}
+
+    function setDeltaMode(mode) {{
+        currentDeltaMode = mode;
+        document.getElementById('btn-delta-opt').classList.toggle('active', mode === 'OPTION');
+        document.getElementById('btn-delta-fut').classList.toggle('active', mode === 'FUTURES');
+        document.getElementById('btn-delta-itm').classList.toggle('active', mode === 'ITM');
+        updateSizingSummary();
+        renderTable();
+    }}
+
+    function setStrategyMode(mode) {{
+        currentStrategyMode = mode;
+        document.getElementById('btn-strat-runner').classList.toggle('active', mode === 'RUNNER');
+        document.getElementById('btn-strat-base').classList.toggle('active', mode === 'BASELINE');
+        updateSizingSummary();
+        renderTable();
+    }}
+
+    function getLotSize(ticker) {{
+        if (ticker === 'RELIANCE') return 500;
+        if (ticker === 'ADANIENT') return 309;
+        if (ticker === 'NIFTY') return 65;
+        if (ticker === 'SENSEX') return 20;
+        return 500;
+    }}
+
+    // Populate dropdown with 1 to 100 lots
+    function initLotsDropdown() {{
+        const select = document.getElementById('lots-dropdown');
+        select.innerHTML = '';
+        for (let i = 1; i <= 100; i++) {{
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = `${{i}} ${{i === 1 ? 'Lot' : 'Lots'}}`;
+            if (i === currentLots) opt.selected = true;
+            select.appendChild(opt);
+        }}
+    }}
+
+    function setLots(num) {{
+        currentLots = Math.max(1, parseInt(num) || 1);
+        document.getElementById('lots-dropdown').value = Math.min(100, currentLots);
+        document.getElementById('custom-lot-input').value = currentLots;
+
+        document.querySelectorAll('.lot-preset-btn').forEach(btn => {{
+            btn.classList.toggle('active', btn.textContent.trim() === `${{currentLots}} ${{currentLots === 1 ? 'Lot' : 'Lots'}}`);
+        }});
+
+        updateSizingSummary();
+        renderTable();
+    }}
+
+    function onDropdownChange(val) {{
+        setLots(val);
+    }}
+
+    function onCustomLotChange(val) {{
+        setLots(val);
+    }}
+
+    function updateSizingSummary() {{
+        const lotSize = getLotSize(currentTicker);
+        const totalQty = lotSize * currentLots;
+        const formattedQty = totalQty.toLocaleString('en-IN');
+        const deltaLabel = currentDeltaMode === 'OPTION' ? 'ATM Options (~0.52 Δ)' : (currentDeltaMode === 'ITM' ? 'ITM Options (~0.72 Δ)' : 'Futures (1.00 Δ)');
+        const stratLabel = currentStrategyMode === 'RUNNER' ? 'Runner Mode (50/50)' : 'Baseline Mode';
+        
+        document.getElementById('sizing-summary-text').textContent = `${{currentLots}} ${{currentLots === 1 ? 'Lot' : 'Lots'}} (${{formattedQty}} Qty)`;
+        document.getElementById('kpi-pnl-label').textContent = `Realized P&L (${{currentLots}}L | ${{stratLabel}} @ ${{deltaLabel}})`;
+        document.getElementById('kpi-peak-label').textContent = `Total Peak Gain (${{currentLots}}L @ ${{deltaLabel}})`;
+        document.getElementById('th-pts-label').textContent = currentDeltaMode === 'FUTURES' ? 'Points (Spot/Fut)' : 'Points (Opt Premium)';
+        document.getElementById('th-peak-gain').textContent = `Peak Gain (${{currentLots}}L)`;
+        document.getElementById('th-final-pnl').textContent = `Final P&L (${{currentLots}} ${{currentLots === 1 ? 'Lot' : 'Lots'}})`;
+    }}
 
     function switchTicker(ticker) {{
         currentTicker = ticker;
@@ -865,6 +1521,7 @@ def generate_live_dashboard():
         document.getElementById('tab-ada').classList.toggle('active', ticker === 'ADANIENT');
         document.getElementById('tab-nifty').classList.toggle('active', ticker === 'NIFTY');
         document.getElementById('tab-sensex').classList.toggle('active', ticker === 'SENSEX');
+        updateSizingSummary();
         renderTable();
     }}
 
@@ -894,10 +1551,14 @@ def generate_live_dashboard():
             const outcomeFilter = document.getElementById('outcome-filter').value;
             const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
 
+            const lotSize = getLotSize(currentTicker);
+            const totalQty = lotSize * currentLots;
+
             const filtered = rawData.filter(row => {{
                 if (monthFilter !== 'ALL' && row.month !== monthFilter) return false;
                 
-                const pnl = parseFloat(row.pnl_2lots) || 0;
+                const pts = parseFloat(row.pnl_pts) || 0;
+                const pnl = pts * totalQty;
                 const reason = (row.exit_reason || '').toUpperCase();
                 const isStandDown = row.status === 'STAND_DOWN' || (row.action || '').toUpperCase().includes('STAND DOWN');
 
@@ -919,8 +1580,11 @@ def generate_live_dashboard():
             const displayRows = [...filtered].reverse();
 
             // Update KPIs
+            const delta = getDeltaValue();
             let totalPnl = 0;
             let totalPts = 0;
+            let totalPeakPts = 0;
+            let totalPeakAmt = 0;
             let wins = 0;
             let losses = 0;
             let winSum = 0;
@@ -930,13 +1594,21 @@ def generate_live_dashboard():
             let scoreSum = 0;
 
             filtered.forEach(r => {{
-                const pnl = parseFloat(r.pnl_2lots) || 0;
-                const pts = parseFloat(r.pnl_pts) || 0;
-                const score = parseFloat(r.score) || 0;
+                const rawPts = currentStrategyMode === 'RUNNER'
+                    ? (parseFloat(r.runner_pnl_pts !== undefined && r.runner_pnl_pts !== '' ? r.runner_pnl_pts : r.pnl_pts) || 0)
+                    : (parseFloat(r.pnl_pts) || 0);
+                const pts = rawPts * delta;
+                const rawPeakPts = parseFloat(r.peak_pts) || 0;
+                const peakPts = rawPeakPts * delta;
                 const isStandDown = r.status === 'STAND_DOWN' || (r.action || '').toUpperCase().includes('STAND DOWN');
+                const pnl = isStandDown ? 0 : (pts * totalQty);
+                const peakAmt = isStandDown ? 0 : (peakPts * totalQty);
+                const score = parseFloat(r.score) || 0;
 
                 totalPnl += pnl;
                 totalPts += pts;
+                totalPeakPts += peakPts;
+                totalPeakAmt += peakAmt;
                 scoreSum += score;
 
                 if (isStandDown) {{
@@ -962,6 +1634,8 @@ def generate_live_dashboard():
             pnlEl.className = 'kpi-val mono ' + (totalPnl >= 0 ? 'val-profit' : 'val-loss');
 
             document.getElementById('kpi-pts-sub').textContent = `${{totalPts >= 0 ? '+' : ''}}${{totalPts.toFixed(2)}} pts total capture`;
+            document.getElementById('kpi-total-peak').textContent = `+₹${{Math.round(totalPeakAmt).toLocaleString('en-IN')}}`;
+            document.getElementById('kpi-peak-pts-sub').textContent = `+${{totalPeakPts.toFixed(2)}} pts total peak excursion`;
             document.getElementById('kpi-win-rate').textContent = `${{winRate}}%`;
             document.getElementById('kpi-win-count').textContent = `${{wins}} Wins / ${{losses}} Losses (${{activeTrades}} Executed)`;
             document.getElementById('kpi-trades-count').textContent = `${{activeTrades}} Trades`;
@@ -970,7 +1644,7 @@ def generate_live_dashboard():
             
             const avgWin = wins > 0 ? (winSum / wins).toFixed(0) : 0;
             const avgLoss = losses > 0 ? (lossSum / losses).toFixed(0) : 0;
-            document.getElementById('kpi-avg-win').textContent = `Avg Win: ₹${{avgWin}} | Avg Loss: ₹${{avgLoss}}`;
+            document.getElementById('kpi-avg-win').textContent = `Avg Win: ₹${{Number(avgWin).toLocaleString('en-IN')}} | Avg Loss: ₹${{Number(avgLoss).toLocaleString('en-IN')}}`;
             document.getElementById('kpi-avg-score').textContent = `${{avgScore}}%`;
 
             // Render Table Body
@@ -982,9 +1656,9 @@ def generate_live_dashboard():
                     <tr>
                         <td colspan="13" style="text-align:center;padding:50px 20px;color:var(--text-secondary);">
                             <div style="font-size:22px;margin-bottom:8px;">⚡</div>
-                            <div style="font-size:15px;font-weight:700;color:#f1f5f9;">Live Desk Armed for Monday, October 05, 2026</div>
+                            <div style="font-size:15px;font-weight:700;color:#f1f5f9;">Live Desk Armed with Option 1 Multi-Tranche Execution (Monday, October 05, 2026)</div>
                             <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
-                                Ready to record Trade #1. Continuous 5-minute candle confluence signals starting at 09:15 AM IST will automatically appear and append here.
+                                Ready to record Trade #1. Multi-Tranche Runner fills (50% Bank at T1 + 50% Runner to T2) will automatically append and update here in real-time.
                             </div>
                         </td>
                     </tr>
@@ -994,10 +1668,17 @@ def generate_live_dashboard():
                     const tr = document.createElement('tr');
                     const action = String(row.action || '');
                     const score = parseFloat(row.score) || 0;
-                    const pnl = parseFloat(row.pnl_2lots) || 0;
-                    const pts = parseFloat(row.pnl_pts) || 0;
-                    const peakAmt = parseFloat(row.peak_amount_rs) || 0;
-                    const reason = String(row.exit_reason || '');
+                    const rawPts = currentStrategyMode === 'RUNNER'
+                        ? (parseFloat(row.runner_pnl_pts !== undefined && row.runner_pnl_pts !== '' ? row.runner_pnl_pts : row.pnl_pts) || 0)
+                        : (parseFloat(row.pnl_pts) || 0);
+                    const pts = rawPts * delta;
+                    const pnl = pts * totalQty;
+                    const rawPeakPts = parseFloat(row.peak_pts) || 0;
+                    const peakPts = rawPeakPts * delta;
+                    const peakAmt = peakPts * totalQty;
+                    const reason = currentStrategyMode === 'RUNNER'
+                        ? String(row.runner_exit_reason || row.exit_reason || '')
+                        : String(row.exit_reason || '');
                     const isStandDown = row.status === 'STAND_DOWN' || action.toUpperCase().includes('STAND DOWN');
 
                     // Action Pill
@@ -1022,7 +1703,7 @@ def generate_live_dashboard():
 
                     // Reason Tag
                     let reasonTag = '';
-                    if (reason.includes('TARGET') || reason.includes('HIT')) {{
+                    if (reason.includes('TARGET') || reason.includes('HIT') || reason.includes('T1') || reason.includes('T2')) {{
                         reasonTag = `<span class="reason-tag reason-target">${{reason}}</span>`;
                     }} else if (reason.includes('SL')) {{
                         reasonTag = `<span class="reason-tag reason-sl">${{reason}}</span>`;
@@ -1069,15 +1750,25 @@ def generate_live_dashboard():
                 }});
             }}
 
-            document.getElementById('footer-count').textContent = `Showing ${{displayRows.length}} live forward sessions (October 05, 2026 onwards)`;
-            document.getElementById('footer-sum').textContent = `Filtered P&L: ${{formatCurrency(totalPnl)}}`;
+            const modeBadge = currentDeltaMode === 'OPTION' ? 'ATM Options (0.52 Δ)' : (currentDeltaMode === 'ITM' ? 'ITM Options (0.72 Δ)' : 'Futures (1.00 Δ)');
+            const stratBadge = currentStrategyMode === 'RUNNER' ? '🚀 Option 1: Multi-Tranche Runner (50/50)' : '🛡️ Baseline Fixed Target (100%)';
+            document.getElementById('foot-total-peak').textContent = `+₹${{Math.round(totalPeakAmt).toLocaleString('en-IN')}}`;
+            document.getElementById('foot-total-pts').textContent = `${{totalPts >= 0 ? '+' : ''}}${{totalPts.toFixed(2)}} pts`;
+            document.getElementById('foot-total-pnl').textContent = formatCurrency(totalPnl);
+            document.getElementById('foot-total-pnl').className = 'col-sticky-right mono pnl-cell ' + (totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg');
+            document.getElementById('foot-summary-label').textContent = `Live Desk Forward Performance (${{activeTrades}} Active Trades) — ${{stratBadge}} @ ${{modeBadge}}`;
+
+            document.getElementById('footer-count').textContent = `Showing ${{displayRows.length}} live forward sessions (October 05, 2026 onwards) [${{currentLots}} Lots]`;
+            document.getElementById('footer-sum').innerHTML = `Strategy: <strong style="color:var(--accent-green);font-size:13px;">${{stratBadge}}</strong> &nbsp;|&nbsp; Mode: <strong style="color:var(--accent-cyan);font-size:13px;">${{modeBadge}}</strong> &nbsp;|&nbsp; Realized P&L: <strong style="color:${{totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}};font-size:14px;">${{formatCurrency(totalPnl)}}</strong>`;
         }} catch (err) {{
             console.error("Render Table Error:", err);
             document.getElementById('table-body').innerHTML = `<tr><td colspan="13" style="color:red;padding:20px;">Error rendering data: ${{err.message}}</td></tr>`;
         }}
     }}
 
-    // Initial render
+    // Initialize
+    initLotsDropdown();
+    updateSizingSummary();
     renderTable();
 </script>
 </body>

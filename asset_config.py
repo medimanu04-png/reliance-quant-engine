@@ -16,6 +16,7 @@ class AssetSpec:
     lot_size: int                  # F&O Market Lot Size: 500 (Reliance) | 309 (Adani)
     default_lots: int              # Standard trading lot count: 2
     target_pts: float              # Quantitative profit target (points)
+    target_2_pts: float            # Option 1 Multi-Tranche Runner Target 2 (points)
     sl_pts: float                  # Quantitative stop-loss (points)
     be_pts: float                  # Breakeven threshold (points to move SL to cost)
     profit_lock_trigger: float     # Points gained to activate guaranteed profit lock
@@ -60,6 +61,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         lot_size=500,
         default_lots=2,
         target_pts=7.0,
+        target_2_pts=15.0,
         sl_pts=5.0,
         be_pts=3.5,
         profit_lock_trigger=5.0,
@@ -103,6 +105,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         lot_size=309,
         default_lots=2,
         target_pts=35.0,
+        target_2_pts=40.0,
         sl_pts=15.0,
         be_pts=12.0,
         profit_lock_trigger=20.0,
@@ -146,6 +149,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         lot_size=65,
         default_lots=2,
         target_pts=35.0,
+        target_2_pts=80.0,
         sl_pts=18.0,
         be_pts=18.0,
         profit_lock_trigger=28.0,
@@ -189,6 +193,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         lot_size=20,
         default_lots=2,
         target_pts=120.0,
+        target_2_pts=280.0,
         sl_pts=60.0,
         be_pts=60.0,
         profit_lock_trigger=95.0,
