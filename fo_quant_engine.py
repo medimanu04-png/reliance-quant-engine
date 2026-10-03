@@ -2369,11 +2369,12 @@ class MultiIndicatorMath:
         capital: float = 73643.72,
         atr: float = 8.5,
         lot_size: int = 250,
-        target_risk_pct: Optional[float] = None
+        target_risk_pct: Optional[float] = None,
+        sl_pts: Optional[float] = None
     ) -> Tuple[float, float, int, float, str]:
         """
         Dynamic Half-Kelly ($0.5 f^*$) Volatility-Targeted Position Sizing Engine:
-        Target Lots = max(1, round((Target Risk % * Capital) / (ATR_14 * Lot Size)))
+        Target Lots = max(1, round((Target Risk % * Capital) / (Option Risk * Lot Size)))
         """
         p = max(0.10, min(0.95, win_rate / 100.0 if win_rate > 1.0 else win_rate))
         q = 1.0 - p
@@ -2390,13 +2391,16 @@ class MultiIndicatorMath:
 
         risk_capital = round(capital * effective_risk_pct, 2)
         
-        # Standard option expected move risk = ATR_14 * 0.52 (delta)
-        opt_risk_per_unit = max(2.5, min(6.5, atr * 0.52))
+        # Option risk per unit: if actual SL points is given, use it directly; else estimate from ATR * delta
+        if sl_pts is not None and sl_pts > 0:
+            opt_risk_per_unit = float(sl_pts)
+        else:
+            opt_risk_per_unit = max(2.5, min(25.0, atr * 0.52))
         risk_per_contract = opt_risk_per_unit * lot_size
         
         # Explicit Institutional Formula: max(1, round((effective_risk_pct * capital) / risk_per_contract))
         calculated_lots = max(1, round(risk_capital / max(1.0, risk_per_contract)))
-        recommended_lots = min(3, calculated_lots) # Strict 3-lot ceiling for 73k account
+        recommended_lots = min(3, calculated_lots) # Strict 3-lot ceiling
         
         status = "OPTIMAL_HALF_KELLY_SIZING" if f_star > 0.15 else "CONSERVATIVE_CAPITAL_PRESERVATION"
         return round(f_star * 100.0, 1), round(half_kelly * 100.0, 1), recommended_lots, risk_capital, status

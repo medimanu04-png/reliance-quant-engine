@@ -4856,20 +4856,25 @@ if df is not None and not df.empty:
     vix_stable_regime = (11.0 <= vix_val <= 20.0) and (vix_pct_chg >= -2.5)
     vix_crush_warning = vix_pct_chg < -3.5  # Warning: Severe IV crush eating option premium
 
-    # Live Reliance ATM Implied Volatility & IV Rank (IVR / IVP)
+    # Live ATM Implied Volatility & IV Rank (IVR / IVP)
     dte_val = expiry_plan.get("dte", 30)
     T_val = dte_val / 365.0
-    ref_atm_ltp = live_broker_ltp if live_broker_ltp > 0.0 else float(low_data.get("call_ltp", 18.50) if atm_strike == lower_atm else high_data.get("call_ltp", 18.50))
+    fallback_atm_ltp = 65.0 if is_adani else 18.50
+    ref_atm_ltp = live_broker_ltp if live_broker_ltp > 0.0 else float(low_data.get("call_ltp", fallback_atm_ltp) if atm_strike == lower_atm else high_data.get("call_ltp", fallback_atm_ltp))
     if T_val > 0 and spot > 0 and ref_atm_ltp > 0:
         # Annualized ATM IV from current option premium (Brenner-Subrahmanyam approximation)
         approx_iv = (ref_atm_ltp / (spot * 0.40)) * math.sqrt(1.0 / T_val)
-        rel_iv = round(max(0.12, min(0.50, approx_iv)), 3)
+        rel_iv = round(max(0.12, min(0.65, approx_iv)), 3)
     else:
-        rel_iv = 0.212
+        rel_iv = 0.355 if is_adani else 0.212
 
-    # Reliance 1-Year Historical IV Range (NSE: min 14.5%, max 35.0%, median 20.5%)
-    iv_min = 0.145
-    iv_max = 0.350
+    # Historical IV Range (Adani: min 22.0%, max 60.0%, median 34.0%; Reliance: min 14.5%, max 35.0%, median 20.5%)
+    if is_adani:
+        iv_min = 0.220
+        iv_max = 0.600
+    else:
+        iv_min = 0.145
+        iv_max = 0.350
     iv_percentile = round(max(0.0, min(100.0, ((rel_iv - iv_min) / (iv_max - iv_min)) * 100.0)), 1)
     iv_elevated_crush_risk = iv_percentile > 70.0  # High IV: naked options buying is statistically disadvantageous
     iv_cheap_window = iv_percentile < 50.0  # Cheap IV: optimal statistical edge for naked options buying
@@ -5063,18 +5068,19 @@ if df is not None and not df.empty:
     v5_bear = min(15.0, max(0.0, v5_bear))
 
     # Vector 6: Dynamic Greek Delta, Expiry Shield & Liquidity (12 pts)
-    # Estimate Delta for CE vs PE
+    # Estimate Delta for CE vs PE dynamically calibrated to active asset IV
+    active_sigma = rel_iv if ('rel_iv' in locals() and rel_iv > 0) else (0.355 if is_adani else 0.212)
     norm_cdf_d1 = 0.52
     dte_val = expiry_plan.get("dte", 30)
     T_val = dte_val / 365.0
-    if T_val > 0:
-        d1_val = (math.log(spot / atm_strike) + (0.0675 + 0.5 * (0.212 ** 2)) * T_val) / (0.212 * math.sqrt(T_val))
+    if T_val > 0 and active_sigma > 0:
+        d1_val = (math.log(spot / atm_strike) + (0.0675 + 0.5 * (active_sigma ** 2)) * T_val) / (active_sigma * math.sqrt(T_val))
         norm_cdf_d1 = (1.0 + math.erf(d1_val / math.sqrt(2.0))) / 2.0
     delta_ce = norm_cdf_d1
     delta_pe = 1.0 - norm_cdf_d1
 
     delta_score_bull = 6.0 if (0.46 <= delta_ce <= 0.60) else (4.0 if (0.40 <= delta_ce <= 0.68) else 2.0)
-    delta_score_bear = 6.0 if (0.46 <= delta_pe <= 0.60) else (4.0 if (0.40 <= delta_pe <= 0.68) else 2.0)
+    delta_score_bear = 6.0 if (0.40 <= delta_pe <= 0.60) else (4.0 if (0.35 <= delta_pe <= 0.68) else 2.0)
     dte_score = 3.0 if dte_val >= 7 else (1.5 if dte_val >= 3 else 0.0)
     liquidity_spread_score = 3.0  # Dual ATM corridor tight bid-ask spread
 
@@ -5272,11 +5278,11 @@ if df is not None and not df.empty:
         atm_strike = best_strike_meta["strike"]
         is_best_strk = True
 
-    # Institutional Black-Scholes Option Pricing (Calibrated to Real Market IV ~21.2% & RBI Risk-Free Rate 6.75%)
+    # Institutional Black-Scholes Option Pricing (Calibrated to Real Market IV & RBI Risk-Free Rate 6.75%)
     dte = expiry_plan.get("dte", max(1, (expiry_dt.date() - today_dt.date()).days))
     T = dte / 365.0
     r = 0.0675
-    sigma = 0.212
+    sigma = active_sigma if ('active_sigma' in locals() and active_sigma > 0) else (rel_iv if ('rel_iv' in locals() and rel_iv > 0) else (0.355 if is_adani else 0.212))
     if T > 0 and sigma > 0:
         d1 = (math.log(spot / atm_strike) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
         d2 = d1 - sigma * math.sqrt(T)
@@ -5284,7 +5290,9 @@ if df is not None and not df.empty:
         norm_cdf_d2 = (1.0 + math.erf(d2 / math.sqrt(2.0))) / 2.0
         model_call_ltp = round(spot * norm_cdf_d1 - atm_strike * math.exp(-r * T) * norm_cdf_d2, 2)
     else:
+        norm_cdf_d1 = 0.50
         model_call_ltp = round(max(0.0, spot - atm_strike), 2)
+    active_delta = norm_cdf_d1 if recommended_contract_type == "CE" else (norm_cdf_d1 - 1.0)
 
     # Prioritize user's live broker quote if specified (> 0), otherwise calibrate with real broker stream quote
     if live_broker_ltp > 0.0:
@@ -5417,7 +5425,8 @@ if df is not None and not df.empty:
         reward_risk_ratio=b_ratio,
         capital=account_cash,
         atr=stock_atr,
-        lot_size=lot_size
+        lot_size=lot_size,
+        sl_pts=effective_sl_pts
     )
     half_kelly = half_kelly_pct / 100.0
     prev_close_ref = float(df['Close'].iloc[0]) if (is_adani_active and len(df) > 0) else float(nse_data.get("prev_close", 1219.20) if nse_data else 1219.20)
@@ -6745,6 +6754,13 @@ if df is not None and not df.empty:
             sim_v6 = v6_score
 
         # Pre-computed behavioral narratives
+        if is_adani:
+            macro_beh_str = f"NIFTY 50 Index Beta is at {nifty_pct:+.2f}% with Adani Infra momentum. Crude oil sits at {crude_pct:+.2f}% (Macro Commodity Steady)."
+            v1_macro_metric = ("NIFTY Infra / Sectoral Beta", f"NIFTY {nifty_pct:+.2f}% | Crude {crude_pct:+.2f}%", "🟢 Sectoral Tailwind (+2)" if nifty_pct > 0.2 else ("🔴 Market Drag (-3)" if nifty_pct < -0.5 else "🟡 Steady Beta"))
+        else:
+            macro_beh_str = f"MCX/Brent Crude Oil is at {crude_pct:+.2f}% ({'Refining Margin Tailwind (+2.0)' if crude_rallying else ('O2C Margin Drag Warning (-4.5)' if crude_dumping_severe else 'Steady')})."
+            v1_macro_metric = ("Brent / MCX Crude Telemetry", f"{crude_pct:+.2f}% (₹{crude_price:,.0f})", "🟢 O2C Tailwind (+2)" if crude_rallying else ("🔴 Severe Margin Drag (-4.5)" if crude_dumping_severe else "🟡 Steady"))
+
         v1_beh = (
             f"Multi-Timeframe Matrix: M15 Structural Regime is {mtf_matrix['m15']['regime'].replace('_', ' ')} ({mtf_matrix['m15']['desc']}) with 9/20/50 EMAs stacked. "
             f"M5 Setup Trigger is {mtf_matrix['m5']['trigger'].replace('_', ' ')}. "
@@ -6752,7 +6768,7 @@ if df is not None and not df.empty:
             f"SuperTrend active at ₹{latest['SuperTrend']:.2f} ({'Buy Regime' if st_bullish else 'Sell Regime'}). "
             f"15m ORB sits at ₹{orb_l:.2f} - ₹{orb_h:.2f} ({'Breakout Above ORB High' if orb_breakout else ('Breakdown Below ORB Low' if orb_breakdown else 'Inside 15m Range')}). "
             f"NIFTY 50 Index Beta is at {nifty_pct:+.2f}%. "
-            f"MCX/Brent Crude Oil is at {crude_pct:+.2f}% ({'Refining Margin Tailwind (+2.0)' if crude_rallying else ('O2C Margin Drag Warning (-4.5)' if crude_dumping_severe else 'Steady')})."
+            f"{macro_beh_str}"
         )
         v2_beh = (
             f"Spot price is sustaining {spot - latest['VWAP']:+.2f} pts {'above' if above_vwap else 'below'} institutional Session VWAP (₹{latest['VWAP']:.2f}, Z-score: {vwap_z:+.2f}σ). "
@@ -6778,9 +6794,10 @@ if df is not None and not df.empty:
             f"RSI at {latest['RSI']:.1f} and MACD histogram at {latest['MACD_Hist']:+.2f} reflect "
             f"{'harmonious upward momentum with zero divergence, confirming directional expansion' if (rsi_sweetspot_bull and macd_expanding_bull) else ('strong downward velocity' if (rsi_sweetspot_bear and macd_expanding_bear) else 'controlled oscillator velocity')} against spot."
         )
+        v6_risk_val = effective_sl_pts * lot_size * kelly_recommended_lots
         v6_beh = (
-            f"Protocol dynamically routes execution to the {expiry_date_str} monthly cycle ({dte} DTE). "
-            f"Terminal week 0-DTE accelerated decay is completely neutralized, maintaining contract delta (~{norm_cdf_d1:.2f}) and providing a stable execution buffer."
+            f"Protocol dynamically routes {scrip_name} execution to {scrip_symbol} {atm_strike} {recommended_contract_type} ({expiry_date_str}, {dte} DTE). "
+            f"Terminal week 0-DTE accelerated decay is completely neutralized with {scrip_symbol} ATM IV at {sigma*100.0:.1f}%, maintaining contract delta ({active_delta:+.2f}) and Half-Kelly sizing ({kelly_recommended_lots} lot{'s' if kelly_recommended_lots > 1 else ''} / {lot_size*kelly_recommended_lots} qty, Risk: ₹{v6_risk_val:,.0f}) within account risk limits."
         )
 
         vector_tiles_data = [
@@ -6795,7 +6812,7 @@ if df is not None and not df.empty:
                     ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", f"{'🟢' if mtf_matrix['m15']['is_bullish'] else ('🔴' if mtf_matrix['m15']['is_bearish'] else '🟡')} 9/20/50 EMA Stack"),
                     ("Central Pivot Range (CPR)", f"P ₹{float(latest.get('CPR_P', spot)):.1f} | TC ₹{float(latest.get('CPR_TC', spot)):.1f} | BC ₹{float(latest.get('CPR_BC', spot)):.1f}", f"{'🟢 Narrow Breakout' if latest.get('CPR_Regime') == 'NARROW_CPR_TRENDING_BREAKOUT' else ('🛑 Wide Range Chop' if latest.get('CPR_Regime') == 'WIDE_CPR_RANGEBOUND_CHOP' else '🟡 Normal CPR')}"),
                     ("W-AVWAP & Donchian-20", f"W-AVWAP ₹{float(latest.get('W_AVWAP', spot)):.1f} | [{float(latest.get('Donchian_Low', spot)):.1f} - {float(latest.get('Donchian_High', spot)):.1f}]", f"{'🟢 Weekly Acceptance' if spot >= float(latest.get('W_AVWAP', spot)) else '🔴 Below W-AVWAP'}"),
-                    ("Brent / MCX Crude Telemetry", f"{crude_pct:+.2f}% (₹{crude_price:,.0f})", "🟢 O2C Tailwind (+2)" if crude_rallying else ("🔴 Severe Margin Drag (-4.5)" if crude_dumping_severe else "🟡 Steady")),
+                    v1_macro_metric,
                     ("15m ORB & Camarilla H4/L4", f"ORB: ₹{orb_h:.1f} | H4: ₹{cam_h4:.1f}", "🟢 Breakout (+5)" if (orb_breakout or cam_breakout_bull) else ("🔴 Breakdown (+5)" if (orb_breakdown or cam_breakdown_bear) else "🟡 Value Range"))
                 ],
                 "behavior": v1_beh
@@ -6872,10 +6889,10 @@ if df is not None and not df.empty:
                 "max": 12.0,
                 "source": "Dynamic 10-Day Mandate + Black-Scholes Greeks + Dynamic Half-Kelly",
                 "metrics": [
-                    ("Dynamic Active Contract", f"{expiry_date_str} ({dte} DTE)", f"🟢 {active_mandate_expiry.split('-')[1].upper() if '-' in active_mandate_expiry else 'MONTHLY'} Mandate Active"),
-                    ("Dynamic Half-Kelly Sizing", f"{half_kelly_pct:.1f}% ({kelly_recommended_lots} Lots | ₹{kelly_risk_capital:,.0f})", f"{'🟢 ' + kelly_status.replace('_', ' ') if 'OPTIMAL' in kelly_status else '🟡 ' + kelly_status.replace('_', ' ')}"),
-                    ("Decay Avoidance Protocol", "10-Day Window Enforcement", "🟢 0-DTE Decay 100% Bypassed"),
-                    ("Greeks Protection Shield", f"Delta: ~{norm_cdf_d1:.2f} | IV: 21.2%", "🟢 Theta Drag Insulated (+12)")
+                    ("Dynamic Active Contract", f"{scrip_symbol} {atm_strike} {recommended_contract_type} ({expiry_date_str})", f"🟢 {dte} DTE Mandate Active"),
+                    ("Dynamic Half-Kelly Sizing", f"{half_kelly_pct:.1f}% ({kelly_recommended_lots} Lot{'s' if kelly_recommended_lots > 1 else ''} | {lot_size * kelly_recommended_lots} Qty | Risk: ₹{v6_risk_val:,.0f})", f"{'🟢 ' + kelly_status.replace('_', ' ') if 'OPTIMAL' in kelly_status else '🟡 ' + kelly_status.replace('_', ' ')}"),
+                    ("Decay Avoidance Protocol", "10-Day Window Enforcement", f"🟢 0-DTE Decay 100% Bypassed ({scrip_symbol})"),
+                    ("Greeks Protection Shield", f"Delta: {active_delta:+.2f} ({recommended_contract_type}) | IV: {sigma*100.0:.1f}%", f"🟢 Theta Drag Insulated (+{sim_v6:.0f})")
                 ],
                 "behavior": v6_beh
             }

@@ -744,7 +744,7 @@ class NSEIndiaFetcher:
         dte = expiry_meta["dte"]
         T = max(1.0, float(dte)) / 365.0
         r = 0.0675
-        sigma = 0.212
+        sigma = 0.355 if sym == "ADANIENT" else 0.212
 
         def compute_strike_metrics(k: int, base_c_override: float = 0.0, base_p_override: float = 0.0, base_c_oi_lots: int = 2415, base_p_oi_lots: int = 3599, c_oi_chg: float = 10.0, p_oi_chg: float = 10.0, delta_c_override: float = None, delta_p_override: float = None):
             # Black-Scholes Greeks
