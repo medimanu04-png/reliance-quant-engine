@@ -39,4 +39,7 @@ telegram_config.json
 # Scratch files
 Program_1.py
 scratch_*
+scratch/
+data_cache/
+
 

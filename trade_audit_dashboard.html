@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantitative F&O Trading Audit (Flexible Lot Sizing: 1 to 100+ Lots)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0d14;
+            --bg-secondary: #101622;
+            --bg-card: rgba(22, 30, 46, 0.7);
+            --bg-card-hover: rgba(30, 41, 63, 0.9);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-accent: rgba(56, 189, 248, 0.3);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-green-bg: rgba(16, 185, 129, 0.12);
+            --accent-red: #ef4444;
+            --accent-red-bg: rgba(239, 68, 68, 0.12);
+            --accent-purple: #a855f7;
+            --accent-purple-bg: rgba(168, 85, 247, 0.12);
+            --accent-amber: #f59e0b;
+            --accent-amber-bg: rgba(245, 158, 11, 0.12);
+            --shadow-glow: 0 0 25px rgba(6, 182, 212, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: radial-gradient(circle at 50% 0%, #172033 0%, var(--bg-primary) 65%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px;
+            overflow-x: hidden;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .container {
+            max-width: 1620px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+
+        .header-title h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #fff 30%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .badge-live {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            letter-spacing: 0.8px;
+            display: inline-block;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .desk-badge-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .desk-pill {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            text-align: right;
+        }
+
+        .desk-pill span {
+            display: block;
+            color: var(--text-muted);
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        .desk-pill strong {
+            color: var(--accent-cyan);
+            font-size: 14px;
+        }
+
+        /* Lot Sizing Control Panel (Interactive 1 - 100+ Lots) */
+        .sizing-card {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 16px;
+            padding: 18px 24px;
+            margin-bottom: 22px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 18px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+
+        .sizing-title-group h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sizing-title-group p {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .sizing-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .lot-preset-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .lot-preset-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .lot-preset-btn.active {
+            background: var(--accent-cyan);
+            color: #000;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+        }
+
+        .lot-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.35);
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .lot-input-wrapper label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .lot-input {
+            width: 70px;
+            background: transparent;
+            border: none;
+            color: var(--accent-cyan);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 800;
+            text-align: center;
+            outline: none;
+        }
+
+        .lot-dropdown {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 7px 12px;
+            border-radius: 8px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .sizing-summary-pill {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-size: 12px;
+            color: var(--accent-green);
+        }
+
+        .sizing-summary-pill strong {
+            font-size: 14px;
+            color: #fff;
+        }
+
+        /* KPI Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 18px 20px;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--border-accent);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .kpi-card:hover::before {
+            opacity: 1;
+        }
+
+        .kpi-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .kpi-val {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .kpi-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .val-profit {
+            color: var(--accent-green);
+        }
+
+        .val-loss {
+            color: var(--accent-red);
+        }
+
+        /* Controls Section */
+        .controls-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 18px 22px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .nav-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-btn.active {
+            background: var(--accent-blue);
+            color: #fff;
+            box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-select, .search-box {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .filter-select:focus, .search-box:focus {
+            border-color: var(--accent-cyan);
+        }
+
+        .search-box {
+            min-width: 220px;
+        }
+
+        /* Table Container - Complete Scrollable Design */
+        .table-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .table-scroll-container {
+            max-height: 720px;
+            overflow-x: auto;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        /* Custom Scrollbar */
+        .table-scroll-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .table-scroll-container::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .table-scroll-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+        .table-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        th {
+            background: #131b2c;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+
+        /* Sticky Left Column (Date) */
+        th.col-sticky-left, td.col-sticky-left {
+            position: sticky;
+            left: 0;
+            background: #111726;
+            z-index: 10;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        th.col-sticky-left {
+            z-index: 25;
+            background: #141d30;
+        }
+
+        /* Sticky Right Column (Final P&L) */
+        th.col-sticky-right, td.col-sticky-right {
+            position: sticky;
+            right: 0;
+            background: #111726;
+            z-index: 10;
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+            text-align: right;
+            box-shadow: -6px 0 16px rgba(0,0,0,0.3);
+        }
+        th.col-sticky-right {
+            z-index: 25;
+            background: #141d30;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            color: var(--text-primary);
+        }
+
+        tbody tr {
+            transition: background 0.15s ease;
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        tbody tr:hover td.col-sticky-left,
+        tbody tr:hover td.col-sticky-right {
+            background: #182238;
+        }
+
+        /* Pill Badges */
+        .pill {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .pill-ce {
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+
+        .pill-pe {
+            background: var(--accent-purple-bg);
+            color: var(--accent-purple);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+        }
+
+        .pill-standdown {
+            background: rgba(148, 163, 184, 0.12);
+            color: var(--text-muted);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .score-chip {
+            font-size: 12px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            background: rgba(6, 182, 212, 0.12);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+        }
+
+        .score-chip.high {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .score-chip.mid {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-amber);
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+
+        .reason-tag {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }
+
+        .reason-target {
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+        }
+
+        .reason-sl {
+            background: var(--accent-red-bg);
+            color: var(--accent-red);
+        }
+
+        .reason-eod {
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--accent-blue);
+        }
+
+        .pnl-cell {
+            font-weight: 700;
+            font-size: 13px;
+            text-align: right;
+        }
+
+        .pnl-pos {
+            color: var(--accent-green);
+        }
+
+        .pnl-neg {
+            color: var(--accent-red);
+        }
+
+        .pnl-zero {
+            color: var(--text-muted);
+        }
+
+        /* Table Footer */
+        .table-footer {
+            padding: 14px 20px;
+            background: #111726;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .info-bar {
+            background: rgba(6, 182, 212, 0.08);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            border-radius: 12px;
+            padding: 12px 18px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #bae6fd;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Header -->
+    <header>
+        <div class="header-title">
+            <h1>Quantitative F&O Trading Engine <span class="badge-live">Dynamic Lot Sizing Audit</span></h1>
+            <div class="header-subtitle">Continuous 5-Minute Historical Backtest (January 01, 2026 – September 30, 2026)</div>
+        </div>
+        <div class="desk-badge-group">
+            <div class="desk-pill">
+                <span>Reliance 1 Lot</span>
+                <strong>500 Qty</strong>
+            </div>
+            <div class="desk-pill">
+                <span>Adani 1 Lot</span>
+                <strong>309 Qty</strong>
+            </div>
+        </div>
+    </header>
+
+    <!-- Interactive Lot Sizing Controller (1 - 100+ Lots) -->
+    <div class="sizing-card">
+        <div class="sizing-title-group">
+            <h3>⚡ Dynamic Contract Sizing Simulation (1 to 100+ Lots)</h3>
+            <p>Select or type any number of lots below to test portfolio scaling, risk exposure, and returns in real-time.</p>
+        </div>
+        <div class="sizing-controls">
+            <!-- Quick Presets -->
+            <button class="lot-preset-btn" onclick="setLots(1)">1 Lot</button>
+            <button class="lot-preset-btn active" id="btn-2l" onclick="setLots(2)">2 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(5)">5 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(10)">10 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(25)">25 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(50)">50 Lots</button>
+            <button class="lot-preset-btn" onclick="setLots(100)">100 Lots</button>
+
+            <!-- Dropdown Access (1 - 100 Lots) -->
+            <select class="lot-dropdown" id="lots-dropdown" onchange="onDropdownChange(this.value)">
+                <!-- Generated dynamically 1 to 100 -->
+            </select>
+
+            <!-- Custom Numeric Input -->
+            <div class="lot-input-wrapper">
+                <label>Custom:</label>
+                <input type="number" class="lot-input" id="custom-lot-input" min="1" max="500" value="2" onchange="onCustomLotChange(this.value)">
+                <span style="font-size:12px;color:var(--text-muted);font-weight:600;">Lots</span>
+            </div>
+
+            <!-- Dynamic Sizing Summary -->
+            <div class="sizing-summary-pill" id="sizing-pill">
+                Active Sizing: <strong id="sizing-summary-text">2 Lots (1,000 Qty)</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Notice -->
+    <div class="info-bar">
+        <div>💡 <strong>100% Column Visibility Active:</strong> The table below features <strong>fixed sticky columns</strong> on both edges (Date on left, Net P&L on right) and smooth horizontal scrolling so no data is ever clipped.</div>
+        <div>Total Sessions: <strong>185 Days</strong></div>
+    </div>
+
+    <!-- Dynamic KPI Cards -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label"><span id="kpi-pnl-label">Cumulative Realized P&L (2 Lots)</span></div>
+            <div class="kpi-val mono val-profit" id="kpi-total-pnl">₹0.00</div>
+            <div class="kpi-sub" id="kpi-pts-sub">0.00 total points captured</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Desk Win Rate</div>
+            <div class="kpi-val mono" id="kpi-win-rate">0.0%</div>
+            <div class="kpi-sub" id="kpi-win-count">0 Wins / 0 Losses</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Active Trades vs Stand Downs</div>
+            <div class="kpi-val mono" id="kpi-trades-count">0</div>
+            <div class="kpi-sub" id="kpi-standdowns">0 Stand Downs (Score &lt; 68%)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Profit Factor / Risk-Reward</div>
+            <div class="kpi-val mono" id="kpi-profit-factor">0.00</div>
+            <div class="kpi-sub" id="kpi-avg-win">Avg Win: ₹0 | Avg Loss: ₹0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Confluence Score</div>
+            <div class="kpi-val mono" id="kpi-avg-score">0.0%</div>
+            <div class="kpi-sub">Min Filter: 68.0% Confluence</div>
+        </div>
+    </div>
+
+    <!-- Controls & Filters -->
+    <div class="controls-card">
+        <div class="nav-tabs">
+            <button class="nav-btn active" id="tab-rel" onclick="switchTicker('RELIANCE')">Reliance Industries</button>
+            <button class="nav-btn" id="tab-ada" onclick="switchTicker('ADANIENT')">Adani Enterprises</button>
+        </div>
+
+        <div class="filter-group">
+            <select class="filter-select" id="month-filter" onchange="renderTable()">
+                <option value="ALL">All 9 Months (Jan - Sep 2026)</option>
+                <option value="2026-01">January 2026</option>
+                <option value="2026-02">February 2026</option>
+                <option value="2026-03">March 2026</option>
+                <option value="2026-04">April 2026</option>
+                <option value="2026-05">May 2026</option>
+                <option value="2026-06">June 2026</option>
+                <option value="2026-07">July 2026</option>
+                <option value="2026-08">August 2026</option>
+                <option value="2026-09">September 2026</option>
+            </select>
+
+            <select class="filter-select" id="outcome-filter" onchange="renderTable()">
+                <option value="ALL">All Outcomes</option>
+                <option value="WIN">Winners Only (+P&L)</option>
+                <option value="LOSS">Losses Only (-P&L)</option>
+                <option value="TARGET">Target Hit Only</option>
+                <option value="SL">Stop Loss Hit Only</option>
+                <option value="EOD">EOD Exit Only</option>
+                <option value="STAND_DOWN">Stand Down Sessions</option>
+            </select>
+
+            <input type="text" class="search-box" id="search-input" placeholder="Search date, strike, spot..." oninput="renderTable()">
+        </div>
+    </div>
+
+    <!-- Table Container -->
+    <div class="table-card">
+        <div class="table-scroll-container">
+            <table id="trades-table">
+                <thead>
+                    <tr>
+                        <th class="col-sticky-left">Date</th>
+                        <th>Action / Strike</th>
+                        <th>Confluence</th>
+                        <th>Entry Time</th>
+                        <th>Entry Spot (₹)</th>
+                        <th>Peak Spot (₹)</th>
+                        <th>Peak Time</th>
+                        <th id="th-peak-gain">Peak Gain (2L)</th>
+                        <th>Exit Time</th>
+                        <th>Exit Spot (₹)</th>
+                        <th>Exit Reason</th>
+                        <th>Points</th>
+                        <th class="col-sticky-right" id="th-final-pnl">Final P&L (2 Lots)</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Rows rendered dynamically -->
+                </tbody>
+            </table>
+        </div>
+        <div class="table-footer">
+            <div id="footer-count">Showing 0 of 0 sessions</div>
+            <div id="footer-sum" class="mono">Filtered P&L: ₹0.00</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const dataReliance = [{"month": "2026-01", "date": "2026-01-01", "action": "BUY 1590 CE", "entry_time": "09:30:00", "entry_spot": "1588.3", "peak_spot": "1589.7", "peak_time": "09:35:00", "peak_pts": 0.73, "peak_amount_rs": 728.0, "least_spot": "1578.5", "least_amount_rs": -5096.0, "exit_time": "10:40:00", "exit_spot": "1578.68", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 69.1}, {"month": "2026-01", "date": "2026-01-02", "action": "BUY 1590 CE", "entry_time": "09:20:00", "entry_spot": "1586.0", "peak_spot": "1594.4", "peak_time": "15:10:00", "peak_pts": 4.37, "peak_amount_rs": 4368.0, "least_spot": "1582.6", "least_amount_rs": -1768.0, "exit_time": "15:15:00", "exit_spot": "1592.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.12, "pnl_1lot": 1560.0, "pnl_2lots": 3120.0, "status": "TRADE", "score": 69.3}, {"month": "2026-01", "date": "2026-01-05", "action": "BUY 1610 CE", "entry_time": "09:20:00", "entry_spot": "1607.5", "peak_spot": "1609.9", "peak_time": "09:25:00", "peak_pts": 1.25, "peak_amount_rs": 1248.0, "least_spot": "1597.6", "least_amount_rs": -5148.0, "exit_time": "09:30:00", "exit_spot": "1597.88", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 73.4}, {"month": "2026-01", "date": "2026-01-06", "action": "BUY 1530 PE", "entry_time": "10:10:00", "entry_spot": "1526.2", "peak_spot": "1511.0", "peak_time": "11:10:00", "peak_pts": 7.9, "peak_amount_rs": 7904.0, "least_spot": "1528.2", "least_amount_rs": -1040.0, "exit_time": "11:10:00", "exit_spot": "1512.74", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 68.2}, {"month": "2026-01", "date": "2026-01-07", "action": "BUY 1510 PE", "entry_time": "10:30:00", "entry_spot": "1505.5", "peak_spot": "1498.3", "peak_time": "14:25:00", "peak_pts": 3.74, "peak_amount_rs": 3744.0, "least_spot": "1511.2", "least_amount_rs": -2964.0, "exit_time": "15:15:00", "exit_spot": "1504.2", "exit_reason": "EOD EXIT", "pnl_pts": 0.68, "pnl_1lot": 340.0, "pnl_2lots": 680.0, "status": "TRADE", "score": 69.5}, {"month": "2026-01", "date": "2026-01-08", "action": "BUY 1490 PE", "entry_time": "09:20:00", "entry_spot": "1493.8", "peak_spot": "1479.4", "peak_time": "11:50:00", "peak_pts": 7.49, "peak_amount_rs": 7488.0, "least_spot": "1497.6", "least_amount_rs": -1976.0, "exit_time": "11:50:00", "exit_spot": "1480.34", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 69.1}, {"month": "2026-01", "date": "2026-01-09", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 63.9}, {"month": "2026-01", "date": "2026-01-12", "action": "BUY 1460 PE", "entry_time": "09:25:00", "entry_spot": "1458.5", "peak_spot": "1451.2", "peak_time": "11:55:00", "peak_pts": 3.8, "peak_amount_rs": 3796.0, "least_spot": "1468.6", "least_amount_rs": -5252.0, "exit_time": "12:25:00", "exit_spot": "1468.12", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 69.9}, {"month": "2026-01", "date": "2026-01-13", "action": "BUY 1460 PE", "entry_time": "09:55:00", "entry_spot": "1461.0", "peak_spot": "1446.2", "peak_time": "15:00:00", "peak_pts": 7.7, "peak_amount_rs": 7696.0, "least_spot": "1469.8", "least_amount_rs": -4576.0, "exit_time": "15:00:00", "exit_spot": "1447.54", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 72.1}, {"month": "2026-01", "date": "2026-01-14", "action": "BUY 1460 CE", "entry_time": "09:30:00", "entry_spot": "1455.0", "peak_spot": "1466.9", "peak_time": "12:40:00", "peak_pts": 6.19, "peak_amount_rs": 6188.0, "least_spot": "1449.6", "least_amount_rs": -2808.0, "exit_time": "15:15:00", "exit_spot": "1458.1", "exit_reason": "EOD EXIT", "pnl_pts": 1.61, "pnl_1lot": 805.0, "pnl_2lots": 1610.0, "status": "TRADE", "score": 69.2}, {"month": "2026-01", "date": "2026-01-16", "action": "BUY 1460 CE", "entry_time": "09:20:00", "entry_spot": "1462.5", "peak_spot": "1478.0", "peak_time": "10:40:00", "peak_pts": 8.06, "peak_amount_rs": 8060.0, "least_spot": "1461.4", "least_amount_rs": -572.0, "exit_time": "10:40:00", "exit_spot": "1475.96", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 71.5}, {"month": "2026-01", "date": "2026-01-19", "action": "BUY 1420 PE", "entry_time": "09:25:00", "entry_spot": "1421.7", "peak_spot": "1406.4", "peak_time": "10:30:00", "peak_pts": 7.96, "peak_amount_rs": 7956.0, "least_spot": "1430.5", "least_amount_rs": -4576.0, "exit_time": "10:30:00", "exit_spot": "1408.24", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 72.7}, {"month": "2026-01", "date": "2026-01-20", "action": "BUY 1410 PE", "entry_time": "09:35:00", "entry_spot": "1408.1", "peak_spot": "1392.2", "peak_time": "15:00:00", "peak_pts": 8.27, "peak_amount_rs": 8268.0, "least_spot": "1410.6", "least_amount_rs": -1300.0, "exit_time": "15:00:00", "exit_spot": "1394.64", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 73.6}, {"month": "2026-01", "date": "2026-01-21", "action": "BUY 1390 PE", "entry_time": "09:15:00", "entry_spot": "1394.7", "peak_spot": "1380.6", "peak_time": "10:30:00", "peak_pts": 7.33, "peak_amount_rs": 7332.0, "least_spot": "1398.2", "least_amount_rs": -1820.0, "exit_time": "10:30:00", "exit_spot": "1381.24", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 71.4}, {"month": "2026-01", "date": "2026-01-22", "action": "BUY 1410 CE", "entry_time": "09:40:00", "entry_spot": "1414.7", "peak_spot": "1417.0", "peak_time": "10:10:00", "peak_pts": 1.2, "peak_amount_rs": 1196.0, "least_spot": "1401.4", "least_amount_rs": -6916.0, "exit_time": "10:30:00", "exit_spot": "1405.08", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 74.7}, {"month": "2026-01", "date": "2026-01-23", "action": "BUY 1410 CE", "entry_time": "09:25:00", "entry_spot": "1406.5", "peak_spot": "1406.7", "peak_time": "09:30:00", "peak_pts": 0.1, "peak_amount_rs": 104.0, "least_spot": "1396.1", "least_amount_rs": -5408.0, "exit_time": "11:20:00", "exit_spot": "1396.88", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 76.2}, {"month": "2026-01", "date": "2026-01-27", "action": "BUY 1380 PE", "entry_time": "09:15:00", "entry_spot": "1375.2", "peak_spot": "1368.0", "peak_time": "09:25:00", "peak_pts": 3.74, "peak_amount_rs": 3744.0, "least_spot": "1385.4", "least_amount_rs": -5304.0, "exit_time": "09:35:00", "exit_spot": "1384.82", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 70.8}, {"month": "2026-01", "date": "2026-01-28", "action": "BUY 1400 CE", "entry_time": "09:25:00", "entry_spot": "1402.1", "peak_spot": "1404.0", "peak_time": "09:30:00", "peak_pts": 0.99, "peak_amount_rs": 988.0, "least_spot": "1389.1", "least_amount_rs": -6760.0, "exit_time": "13:20:00", "exit_spot": "1392.48", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 69.8}, {"month": "2026-01", "date": "2026-01-29", "action": "BUY 1400 CE", "entry_time": "09:15:00", "entry_spot": "1399.6", "peak_spot": "1400.5", "peak_time": "09:20:00", "peak_pts": 0.47, "peak_amount_rs": 468.0, "least_spot": "1389.5", "least_amount_rs": -5252.0, "exit_time": "09:45:00", "exit_spot": "1389.98", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 80.0}, {"month": "2026-01", "date": "2026-01-30", "action": "BUY 1380 PE", "entry_time": "09:15:00", "entry_spot": "1384.5", "peak_spot": "1382.1", "peak_time": "09:20:00", "peak_pts": 1.25, "peak_amount_rs": 1248.0, "least_spot": "1394.6", "least_amount_rs": -5252.0, "exit_time": "13:50:00", "exit_spot": "1394.12", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 76.1}, {"month": "2026-02", "date": "2026-02-01", "action": "BUY 1400 CE", "entry_time": "09:20:00", "entry_spot": "1399.9", "peak_spot": "1411.0", "peak_time": "12:10:00", "peak_pts": 5.77, "peak_amount_rs": 5772.0, "least_spot": "1379.9", "least_amount_rs": -10400.0, "exit_time": "12:15:00", "exit_spot": "1390.28", "exit_reason": "PROFIT LOCK (+2.5)", "pnl_pts": 2.5, "pnl_1lot": 1250.0, "pnl_2lots": 2500.0, "status": "TRADE", "score": 73.2}, {"month": "2026-02", "date": "2026-02-02", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.6}, {"month": "2026-02", "date": "2026-02-03", "action": "BUY 1450 CE", "entry_time": "09:15:00", "entry_spot": "1447.1", "peak_spot": "1447.8", "peak_time": "09:20:00", "peak_pts": 0.36, "peak_amount_rs": 364.0, "least_spot": "1435.4", "least_amount_rs": -6084.0, "exit_time": "09:40:00", "exit_spot": "1437.48", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 71.7}, {"month": "2026-02", "date": "2026-02-04", "action": "BUY 1450 CE", "entry_time": "09:15:00", "entry_spot": "1450.7", "peak_spot": "1464.0", "peak_time": "10:05:00", "peak_pts": 6.92, "peak_amount_rs": 6916.0, "least_spot": "1448.7", "least_amount_rs": -1040.0, "exit_time": "15:15:00", "exit_spot": "1456.4", "exit_reason": "EOD EXIT", "pnl_pts": 2.96, "pnl_1lot": 1480.0, "pnl_2lots": 2960.0, "status": "TRADE", "score": 68.2}, {"month": "2026-02", "date": "2026-02-05", "action": "BUY 1450 PE", "entry_time": "09:25:00", "entry_spot": "1447.1", "peak_spot": "1439.7", "peak_time": "14:10:00", "peak_pts": 3.85, "peak_amount_rs": 3848.0, "least_spot": "1451.8", "least_amount_rs": -2444.0, "exit_time": "15:15:00", "exit_spot": "1442.6", "exit_reason": "EOD EXIT", "pnl_pts": 2.34, "pnl_1lot": 1170.0, "pnl_2lots": 2340.0, "status": "TRADE", "score": 69.5}, {"month": "2026-02", "date": "2026-02-06", "action": "BUY 1440 PE", "entry_time": "09:35:00", "entry_spot": "1438.5", "peak_spot": "1437.0", "peak_time": "09:40:00", "peak_pts": 0.78, "peak_amount_rs": 780.0, "least_spot": "1448.5", "least_amount_rs": -5200.0, "exit_time": "10:45:00", "exit_spot": "1448.12", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.0}, {"month": "2026-02", "date": "2026-02-09", "action": "BUY 1460 CE", "entry_time": "09:20:00", "entry_spot": "1462.0", "peak_spot": "1465.9", "peak_time": "10:45:00", "peak_pts": 2.03, "peak_amount_rs": 2028.0, "least_spot": "1457.5", "least_amount_rs": -2340.0, "exit_time": "15:15:00", "exit_spot": "1462.5", "exit_reason": "EOD EXIT", "pnl_pts": 0.26, "pnl_1lot": 130.0, "pnl_2lots": 260.0, "status": "TRADE", "score": 78.9}, {"month": "2026-02", "date": "2026-02-10", "action": "BUY 1460 CE", "entry_time": "09:20:00", "entry_spot": "1464.8", "peak_spot": "1469.0", "peak_time": "09:35:00", "peak_pts": 2.18, "peak_amount_rs": 2184.0, "least_spot": "1455.1", "least_amount_rs": -5044.0, "exit_time": "13:20:00", "exit_spot": "1455.18", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.7}, {"month": "2026-02", "date": "2026-02-11", "action": "BUY 1460 CE", "entry_time": "10:20:00", "entry_spot": "1462.7", "peak_spot": "1469.5", "peak_time": "15:05:00", "peak_pts": 3.54, "peak_amount_rs": 3536.0, "least_spot": "1459.9", "least_amount_rs": -1456.0, "exit_time": "15:15:00", "exit_spot": "1469.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.28, "pnl_1lot": 1640.0, "pnl_2lots": 3280.0, "status": "TRADE", "score": 69.5}, {"month": "2026-02", "date": "2026-02-12", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 73.6}, {"month": "2026-02", "date": "2026-02-13", "action": "BUY 1440 PE", "entry_time": "09:15:00", "entry_spot": "1443.5", "peak_spot": "1430.0", "peak_time": "10:15:00", "peak_pts": 7.02, "peak_amount_rs": 7020.0, "least_spot": "1447.5", "least_amount_rs": -2080.0, "exit_time": "10:15:00", "exit_spot": "1430.04", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 69.0}, {"month": "2026-02", "date": "2026-02-16", "action": "BUY 1410 PE", "entry_time": "09:35:00", "entry_spot": "1414.0", "peak_spot": "1409.3", "peak_time": "09:45:00", "peak_pts": 2.44, "peak_amount_rs": 2444.0, "least_spot": "1424.0", "least_amount_rs": -5200.0, "exit_time": "13:00:00", "exit_spot": "1423.62", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 76.2}, {"month": "2026-02", "date": "2026-02-17", "action": "BUY 1420 PE", "entry_time": "09:35:00", "entry_spot": "1423.5", "peak_spot": "1418.6", "peak_time": "10:45:00", "peak_pts": 2.55, "peak_amount_rs": 2548.0, "least_spot": "1427.5", "least_amount_rs": -2080.0, "exit_time": "15:15:00", "exit_spot": "1422.5", "exit_reason": "EOD EXIT", "pnl_pts": 0.52, "pnl_1lot": 260.0, "pnl_2lots": 520.0, "status": "TRADE", "score": 69.0}, {"month": "2026-02", "date": "2026-02-18", "action": "BUY 1430 CE", "entry_time": "09:25:00", "entry_spot": "1429.0", "peak_spot": "1429.3", "peak_time": "09:30:00", "peak_pts": 0.16, "peak_amount_rs": 156.0, "least_spot": "1419.2", "least_amount_rs": -5096.0, "exit_time": "10:15:00", "exit_spot": "1419.38", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 73.2}, {"month": "2026-02", "date": "2026-02-19", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 66.9}, {"month": "2026-02", "date": "2026-02-20", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 75.8}, {"month": "2026-02", "date": "2026-02-23", "action": "BUY 1430 CE", "entry_time": "09:15:00", "entry_spot": "1432.8", "peak_spot": "1434.9", "peak_time": "09:20:00", "peak_pts": 1.09, "peak_amount_rs": 1092.0, "least_spot": "1422.3", "least_amount_rs": -5460.0, "exit_time": "10:45:00", "exit_spot": "1423.18", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 69.1}, {"month": "2026-02", "date": "2026-02-24", "action": "BUY 1420 PE", "entry_time": "10:10:00", "entry_spot": "1416.7", "peak_spot": "1415.0", "peak_time": "10:25:00", "peak_pts": 0.88, "peak_amount_rs": 884.0, "least_spot": "1427.2", "least_amount_rs": -5460.0, "exit_time": "14:10:00", "exit_spot": "1426.32", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 69.9}, {"month": "2026-02", "date": "2026-02-25", "action": "BUY 1430 CE", "entry_time": "09:15:00", "entry_spot": "1433.4", "peak_spot": "1435.8", "peak_time": "10:30:00", "peak_pts": 1.25, "peak_amount_rs": 1248.0, "least_spot": "1420.7", "least_amount_rs": -6604.0, "exit_time": "12:35:00", "exit_spot": "1423.78", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 77.6}, {"month": "2026-02", "date": "2026-02-26", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.6}, {"month": "2026-02", "date": "2026-02-27", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 75.8}, {"month": "2026-03", "date": "2026-03-02", "action": "BUY 1370 PE", "entry_time": "09:20:00", "entry_spot": "1369.2", "peak_spot": "1355.0", "peak_time": "12:25:00", "peak_pts": 7.38, "peak_amount_rs": 7384.0, "least_spot": "1378.4", "least_amount_rs": -4784.0, "exit_time": "12:25:00", "exit_spot": "1355.74", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 68.9}, {"month": "2026-03", "date": "2026-03-04", "action": "BUY 1310 PE", "entry_time": "09:25:00", "entry_spot": "1311.5", "peak_spot": "1307.1", "peak_time": "09:35:00", "peak_pts": 2.29, "peak_amount_rs": 2288.0, "least_spot": "1321.8", "least_amount_rs": -5356.0, "exit_time": "10:00:00", "exit_spot": "1321.12", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 73.7}, {"month": "2026-03", "date": "2026-03-05", "action": "BUY 1380 CE", "entry_time": "09:20:00", "entry_spot": "1377.9", "peak_spot": "1392.7", "peak_time": "14:40:00", "peak_pts": 7.7, "peak_amount_rs": 7696.0, "least_spot": "1368.7", "least_amount_rs": -4784.0, "exit_time": "14:40:00", "exit_spot": "1391.36", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 75.0}, {"month": "2026-03", "date": "2026-03-06", "action": "BUY 1410 CE", "entry_time": "09:20:00", "entry_spot": "1407.1", "peak_spot": "1423.8", "peak_time": "10:15:00", "peak_pts": 8.68, "peak_amount_rs": 8684.0, "least_spot": "1406.9", "least_amount_rs": -104.0, "exit_time": "10:15:00", "exit_spot": "1420.56", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 75.7}, {"month": "2026-03", "date": "2026-03-09", "action": "BUY 1410 CE", "entry_time": "09:55:00", "entry_spot": "1411.6", "peak_spot": "1412.0", "peak_time": "10:00:00", "peak_pts": 0.21, "peak_amount_rs": 208.0, "least_spot": "1401.2", "least_amount_rs": -5408.0, "exit_time": "10:10:00", "exit_spot": "1401.98", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 78.1}, {"month": "2026-03", "date": "2026-03-10", "action": "BUY 1420 CE", "entry_time": "10:40:00", "entry_spot": "1420.0", "peak_spot": "1420.8", "peak_time": "10:45:00", "peak_pts": 0.42, "peak_amount_rs": 416.0, "least_spot": "1410.0", "least_amount_rs": -5200.0, "exit_time": "11:50:00", "exit_spot": "1410.38", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.0}, {"month": "2026-03", "date": "2026-03-11", "action": "BUY 1430 CE", "entry_time": "09:15:00", "entry_spot": "1431.1", "peak_spot": "1433.6", "peak_time": "09:20:00", "peak_pts": 1.3, "peak_amount_rs": 1300.0, "least_spot": "1419.0", "least_amount_rs": -6292.0, "exit_time": "09:25:00", "exit_spot": "1421.48", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 72.9}, {"month": "2026-03", "date": "2026-03-12", "action": "BUY 1400 CE", "entry_time": "10:45:00", "entry_spot": "1404.6", "peak_spot": "1410.9", "peak_time": "11:10:00", "peak_pts": 3.28, "peak_amount_rs": 3276.0, "least_spot": "1393.1", "least_amount_rs": -5980.0, "exit_time": "14:50:00", "exit_spot": "1394.98", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.7}, {"month": "2026-03", "date": "2026-03-13", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 73.6}, {"month": "2026-03", "date": "2026-03-16", "action": "BUY 1370 PE", "entry_time": "10:10:00", "entry_spot": "1372.7", "peak_spot": "1363.5", "peak_time": "10:25:00", "peak_pts": 4.78, "peak_amount_rs": 4784.0, "least_spot": "1382.5", "least_amount_rs": -5096.0, "exit_time": "13:20:00", "exit_spot": "1382.32", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 71.4}, {"month": "2026-03", "date": "2026-03-17", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.6}, {"month": "2026-03", "date": "2026-03-18", "action": "BUY 1410 CE", "entry_time": "09:35:00", "entry_spot": "1407.5", "peak_spot": "1412.9", "peak_time": "11:10:00", "peak_pts": 2.81, "peak_amount_rs": 2808.0, "least_spot": "1405.3", "least_amount_rs": -1144.0, "exit_time": "15:15:00", "exit_spot": "1407.3", "exit_reason": "EOD EXIT", "pnl_pts": -0.1, "pnl_1lot": -50.0, "pnl_2lots": -100.0, "status": "TRADE", "score": 70.5}, {"month": "2026-03", "date": "2026-03-19", "action": "BUY 1400 PE", "entry_time": "09:35:00", "entry_spot": "1401.0", "peak_spot": "1400.3", "peak_time": "09:45:00", "peak_pts": 0.36, "peak_amount_rs": 364.0, "least_spot": "1411.0", "least_amount_rs": -5200.0, "exit_time": "10:20:00", "exit_spot": "1410.62", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 71.3}, {"month": "2026-03", "date": "2026-03-20", "action": "BUY 1410 CE", "entry_time": "09:15:00", "entry_spot": "1408.4", "peak_spot": "1422.5", "peak_time": "10:10:00", "peak_pts": 7.33, "peak_amount_rs": 7332.0, "least_spot": "1405.0", "least_amount_rs": -1768.0, "exit_time": "10:10:00", "exit_spot": "1421.86", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 75.2}, {"month": "2026-03", "date": "2026-03-23", "action": "BUY 1400 PE", "entry_time": "10:15:00", "entry_spot": "1397.0", "peak_spot": "1391.0", "peak_time": "10:45:00", "peak_pts": 3.12, "peak_amount_rs": 3120.0, "least_spot": "1408.2", "least_amount_rs": -5824.0, "exit_time": "13:50:00", "exit_spot": "1406.62", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 71.6}, {"month": "2026-03", "date": "2026-03-24", "action": "BUY 1410 CE", "entry_time": "10:00:00", "entry_spot": "1413.2", "peak_spot": "1420.1", "peak_time": "12:25:00", "peak_pts": 3.59, "peak_amount_rs": 3588.0, "least_spot": "1406.7", "least_amount_rs": -3380.0, "exit_time": "15:15:00", "exit_spot": "1412.6", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 68.2}, {"month": "2026-03", "date": "2026-03-25", "action": "BUY 1420 CE", "entry_time": "09:15:00", "entry_spot": "1416.6", "peak_spot": "1430.4", "peak_time": "11:20:00", "peak_pts": 7.18, "peak_amount_rs": 7176.0, "least_spot": "1414.1", "least_amount_rs": -1300.0, "exit_time": "11:20:00", "exit_spot": "1430.06", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 70.6}, {"month": "2026-03", "date": "2026-03-27", "action": "BUY 1380 PE", "entry_time": "10:30:00", "entry_spot": "1376.0", "peak_spot": "1362.1", "peak_time": "11:35:00", "peak_pts": 7.23, "peak_amount_rs": 7228.0, "least_spot": "1376.1", "least_amount_rs": -52.0, "exit_time": "11:35:00", "exit_spot": "1362.54", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 74.5}, {"month": "2026-03", "date": "2026-03-30", "action": "BUY 1350 PE", "entry_time": "11:00:00", "entry_spot": "1347.6", "peak_spot": "1338.3", "peak_time": "11:50:00", "peak_pts": 4.84, "peak_amount_rs": 4836.0, "least_spot": "1353.5", "least_amount_rs": -3068.0, "exit_time": "15:15:00", "exit_spot": "1342.7", "exit_reason": "EOD EXIT", "pnl_pts": 2.55, "pnl_1lot": 1275.0, "pnl_2lots": 2550.0, "status": "TRADE", "score": 80.1}, {"month": "2026-04", "date": "2026-04-01", "action": "BUY 1370 CE", "entry_time": "09:25:00", "entry_spot": "1372.0", "peak_spot": "1379.0", "peak_time": "12:05:00", "peak_pts": 3.64, "peak_amount_rs": 3640.0, "least_spot": "1362.9", "least_amount_rs": -4732.0, "exit_time": "15:15:00", "exit_spot": "1370.8", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 71.9}, {"month": "2026-04", "date": "2026-04-02", "action": "BUY 1340 PE", "entry_time": "09:55:00", "entry_spot": "1338.8", "peak_spot": "1328.1", "peak_time": "10:25:00", "peak_pts": 5.56, "peak_amount_rs": 5564.0, "least_spot": "1349.0", "least_amount_rs": -5304.0, "exit_time": "14:05:00", "exit_spot": "1348.42", "exit_reason": "PROFIT LOCK (+2.5)", "pnl_pts": 2.5, "pnl_1lot": 1250.0, "pnl_2lots": 2500.0, "status": "TRADE", "score": 68.8}, {"month": "2026-04", "date": "2026-04-06", "action": "BUY 1330 PE", "entry_time": "09:20:00", "entry_spot": "1331.2", "peak_spot": "1316.3", "peak_time": "09:40:00", "peak_pts": 7.75, "peak_amount_rs": 7748.0, "least_spot": "1332.3", "least_amount_rs": -572.0, "exit_time": "09:40:00", "exit_spot": "1317.74", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 71.7}, {"month": "2026-04", "date": "2026-04-07", "action": "BUY 1300 PE", "entry_time": "09:20:00", "entry_spot": "1296.3", "peak_spot": "1291.1", "peak_time": "11:10:00", "peak_pts": 2.7, "peak_amount_rs": 2704.0, "least_spot": "1307.9", "least_amount_rs": -6032.0, "exit_time": "15:00:00", "exit_spot": "1305.92", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 70.8}, {"month": "2026-04", "date": "2026-04-08", "action": "BUY 1330 CE", "entry_time": "09:15:00", "entry_spot": "1334.5", "peak_spot": "1348.3", "peak_time": "11:10:00", "peak_pts": 7.18, "peak_amount_rs": 7176.0, "least_spot": "1334.0", "least_amount_rs": -260.0, "exit_time": "11:10:00", "exit_spot": "1347.96", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 77.1}, {"month": "2026-04", "date": "2026-04-09", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 67.1}, {"month": "2026-04", "date": "2026-04-10", "action": "BUY 1340 CE", "entry_time": "09:35:00", "entry_spot": "1341.9", "peak_spot": "1352.3", "peak_time": "15:10:00", "peak_pts": 5.41, "peak_amount_rs": 5408.0, "least_spot": "1341.3", "least_amount_rs": -312.0, "exit_time": "15:15:00", "exit_spot": "1351.0", "exit_reason": "EOD EXIT", "pnl_pts": 4.73, "pnl_1lot": 2365.0, "pnl_2lots": 4730.0, "status": "TRADE", "score": 69.5}, {"month": "2026-04", "date": "2026-04-13", "action": "BUY 1310 PE", "entry_time": "09:25:00", "entry_spot": "1314.2", "peak_spot": "1312.9", "peak_time": "09:35:00", "peak_pts": 0.68, "peak_amount_rs": 676.0, "least_spot": "1327.6", "least_amount_rs": -6968.0, "exit_time": "10:20:00", "exit_spot": "1323.82", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 72.1}, {"month": "2026-04", "date": "2026-04-15", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 66.9}, {"month": "2026-04", "date": "2026-04-16", "action": "BUY 1340 CE", "entry_time": "09:25:00", "entry_spot": "1344.0", "peak_spot": "1344.1", "peak_time": "09:30:00", "peak_pts": 0.05, "peak_amount_rs": 52.0, "least_spot": "1332.6", "least_amount_rs": -5928.0, "exit_time": "09:55:00", "exit_spot": "1334.38", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.7}, {"month": "2026-04", "date": "2026-04-17", "action": "BUY 1350 CE", "entry_time": "09:15:00", "entry_spot": "1346.0", "peak_spot": "1364.1", "peak_time": "11:10:00", "peak_pts": 9.41, "peak_amount_rs": 9412.0, "least_spot": "1343.5", "least_amount_rs": -1300.0, "exit_time": "11:10:00", "exit_spot": "1359.46", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 72.8}, {"month": "2026-04", "date": "2026-04-20", "action": "BUY 1360 CE", "entry_time": "10:20:00", "entry_spot": "1364.8", "peak_spot": "1373.0", "peak_time": "11:50:00", "peak_pts": 4.26, "peak_amount_rs": 4264.0, "least_spot": "1361.7", "least_amount_rs": -1612.0, "exit_time": "15:15:00", "exit_spot": "1362.4", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 69.1}, {"month": "2026-04", "date": "2026-04-21", "action": "BUY 1360 PE", "entry_time": "09:35:00", "entry_spot": "1361.1", "peak_spot": "1350.4", "peak_time": "15:00:00", "peak_pts": 5.56, "peak_amount_rs": 5564.0, "least_spot": "1369.8", "least_amount_rs": -4524.0, "exit_time": "15:15:00", "exit_spot": "1354.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.69, "pnl_1lot": 1845.0, "pnl_2lots": 3690.0, "status": "TRADE", "score": 68.2}, {"month": "2026-04", "date": "2026-04-22", "action": "BUY 1360 CE", "entry_time": "10:45:00", "entry_spot": "1361.6", "peak_spot": "1365.9", "peak_time": "15:15:00", "peak_pts": 2.24, "peak_amount_rs": 2236.0, "least_spot": "1358.6", "least_amount_rs": -1560.0, "exit_time": "15:15:00", "exit_spot": "1363.0", "exit_reason": "EOD EXIT", "pnl_pts": 0.73, "pnl_1lot": 365.0, "pnl_2lots": 730.0, "status": "TRADE", "score": 75.7}, {"month": "2026-04", "date": "2026-04-23", "action": "BUY 1350 PE", "entry_time": "09:55:00", "entry_spot": "1352.5", "peak_spot": "1340.7", "peak_time": "15:15:00", "peak_pts": 6.14, "peak_amount_rs": 6136.0, "least_spot": "1355.0", "least_amount_rs": -1300.0, "exit_time": "15:15:00", "exit_spot": "1342.6", "exit_reason": "EOD EXIT", "pnl_pts": 5.15, "pnl_1lot": 2575.0, "pnl_2lots": 5150.0, "status": "TRADE", "score": 69.5}, {"month": "2026-04", "date": "2026-04-24", "action": "BUY 1340 PE", "entry_time": "09:35:00", "entry_spot": "1338.5", "peak_spot": "1325.2", "peak_time": "15:00:00", "peak_pts": 6.92, "peak_amount_rs": 6916.0, "least_spot": "1339.0", "least_amount_rs": -260.0, "exit_time": "15:15:00", "exit_spot": "1328.6", "exit_reason": "EOD EXIT", "pnl_pts": 5.15, "pnl_1lot": 2575.0, "pnl_2lots": 5150.0, "status": "TRADE", "score": 68.2}, {"month": "2026-04", "date": "2026-04-27", "action": "BUY 1340 CE", "entry_time": "10:05:00", "entry_spot": "1339.3", "peak_spot": "1354.2", "peak_time": "13:40:00", "peak_pts": 7.75, "peak_amount_rs": 7748.0, "least_spot": "1332.9", "least_amount_rs": -3328.0, "exit_time": "13:40:00", "exit_spot": "1352.76", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 72.2}, {"month": "2026-04", "date": "2026-04-28", "action": "BUY 1360 CE", "entry_time": "09:15:00", "entry_spot": "1365.0", "peak_spot": "1379.6", "peak_time": "10:25:00", "peak_pts": 7.59, "peak_amount_rs": 7592.0, "least_spot": "1358.6", "least_amount_rs": -3328.0, "exit_time": "10:25:00", "exit_spot": "1378.46", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 70.8}, {"month": "2026-04", "date": "2026-04-29", "action": "BUY 1400 CE", "entry_time": "09:15:00", "entry_spot": "1404.9", "peak_spot": "1425.5", "peak_time": "10:20:00", "peak_pts": 10.71, "peak_amount_rs": 10712.0, "least_spot": "1398.1", "least_amount_rs": -3536.0, "exit_time": "10:20:00", "exit_spot": "1418.36", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 74.3}, {"month": "2026-04", "date": "2026-04-30", "action": "BUY 1410 CE", "entry_time": "11:30:00", "entry_spot": "1406.6", "peak_spot": "1421.5", "peak_time": "13:10:00", "peak_pts": 7.75, "peak_amount_rs": 7748.0, "least_spot": "1402.1", "least_amount_rs": -2340.0, "exit_time": "13:10:00", "exit_spot": "1420.06", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 78.5}, {"month": "2026-05", "date": "2026-05-04", "action": "BUY 1440 CE", "entry_time": "09:15:00", "entry_spot": "1443.7", "peak_spot": "1458.0", "peak_time": "12:45:00", "peak_pts": 7.44, "peak_amount_rs": 7436.0, "least_spot": "1436.1", "least_amount_rs": -3952.0, "exit_time": "12:45:00", "exit_spot": "1457.16", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 79.3}, {"month": "2026-05", "date": "2026-05-05", "action": "BUY 1470 CE", "entry_time": "09:15:00", "entry_spot": "1466.5", "peak_spot": "1473.4", "peak_time": "09:35:00", "peak_pts": 3.59, "peak_amount_rs": 3588.0, "least_spot": "1454.1", "least_amount_rs": -6448.0, "exit_time": "10:25:00", "exit_spot": "1456.88", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 80.2}, {"month": "2026-05", "date": "2026-05-06", "action": "BUY 1470 CE", "entry_time": "09:15:00", "entry_spot": "1469.3", "peak_spot": "1471.3", "peak_time": "09:20:00", "peak_pts": 1.04, "peak_amount_rs": 1040.0, "least_spot": "1456.3", "least_amount_rs": -6760.0, "exit_time": "10:00:00", "exit_spot": "1459.68", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 80.8}, {"month": "2026-05", "date": "2026-05-07", "action": "BUY 1430 PE", "entry_time": "09:15:00", "entry_spot": "1433.1", "peak_spot": "1430.4", "peak_time": "09:20:00", "peak_pts": 1.4, "peak_amount_rs": 1404.0, "least_spot": "1443.4", "least_amount_rs": -5356.0, "exit_time": "09:40:00", "exit_spot": "1442.72", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 69.1}, {"month": "2026-05", "date": "2026-05-08", "action": "BUY 1420 PE", "entry_time": "09:15:00", "entry_spot": "1425.0", "peak_spot": "1418.0", "peak_time": "09:45:00", "peak_pts": 3.64, "peak_amount_rs": 3640.0, "least_spot": "1441.7", "least_amount_rs": -8684.0, "exit_time": "14:40:00", "exit_spot": "1434.62", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 75.4}, {"month": "2026-05", "date": "2026-05-11", "action": "BUY 1420 PE", "entry_time": "09:35:00", "entry_spot": "1416.2", "peak_spot": "1400.6", "peak_time": "12:50:00", "peak_pts": 8.11, "peak_amount_rs": 8112.0, "least_spot": "1421.7", "least_amount_rs": -2860.0, "exit_time": "12:50:00", "exit_spot": "1402.74", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 69.3}, {"month": "2026-05", "date": "2026-05-12", "action": "BUY 1390 PE", "entry_time": "09:15:00", "entry_spot": "1391.5", "peak_spot": "1377.4", "peak_time": "10:10:00", "peak_pts": 7.33, "peak_amount_rs": 7332.0, "least_spot": "1391.3", "least_amount_rs": 104.0, "exit_time": "10:10:00", "exit_spot": "1378.04", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 70.9}, {"month": "2026-05", "date": "2026-05-13", "action": "BUY 1360 PE", "entry_time": "10:00:00", "entry_spot": "1356.5", "peak_spot": "1353.0", "peak_time": "11:10:00", "peak_pts": 1.82, "peak_amount_rs": 1820.0, "least_spot": "1366.4", "least_amount_rs": -5148.0, "exit_time": "12:50:00", "exit_spot": "1366.12", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 71.2}, {"month": "2026-05", "date": "2026-05-14", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.9}, {"month": "2026-05", "date": "2026-05-15", "action": "BUY 1340 PE", "entry_time": "09:35:00", "entry_spot": "1342.6", "peak_spot": "1329.2", "peak_time": "14:50:00", "peak_pts": 6.97, "peak_amount_rs": 6968.0, "least_spot": "1348.0", "least_amount_rs": -2808.0, "exit_time": "15:15:00", "exit_spot": "1337.0", "exit_reason": "EOD EXIT", "pnl_pts": 2.91, "pnl_1lot": 1455.0, "pnl_2lots": 2910.0, "status": "TRADE", "score": 70.5}, {"month": "2026-05", "date": "2026-05-18", "action": "BUY 1320 PE", "entry_time": "09:55:00", "entry_spot": "1320.1", "peak_spot": "1320.0", "peak_time": "10:00:00", "peak_pts": 0.05, "peak_amount_rs": 52.0, "least_spot": "1329.8", "least_amount_rs": -5044.0, "exit_time": "10:30:00", "exit_spot": "1329.72", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 70.3}, {"month": "2026-05", "date": "2026-05-19", "action": "BUY 1340 CE", "entry_time": "09:20:00", "entry_spot": "1339.7", "peak_spot": "1344.0", "peak_time": "09:25:00", "peak_pts": 2.24, "peak_amount_rs": 2236.0, "least_spot": "1327.7", "least_amount_rs": -6240.0, "exit_time": "14:35:00", "exit_spot": "1330.08", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 70.3}, {"month": "2026-05", "date": "2026-05-20", "action": "BUY 1330 CE", "entry_time": "10:35:00", "entry_spot": "1333.7", "peak_spot": "1349.1", "peak_time": "11:45:00", "peak_pts": 8.01, "peak_amount_rs": 8008.0, "least_spot": "1329.4", "least_amount_rs": -2236.0, "exit_time": "11:45:00", "exit_spot": "1347.16", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 71.2}, {"month": "2026-05", "date": "2026-05-21", "action": "BUY 1360 CE", "entry_time": "09:15:00", "entry_spot": "1361.4", "peak_spot": "1361.5", "peak_time": "09:20:00", "peak_pts": 0.05, "peak_amount_rs": 52.0, "least_spot": "1351.5", "least_amount_rs": -5148.0, "exit_time": "10:35:00", "exit_spot": "1351.78", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 74.1}, {"month": "2026-05", "date": "2026-05-22", "action": "BUY 1360 CE", "entry_time": "09:30:00", "entry_spot": "1355.9", "peak_spot": "1367.4", "peak_time": "13:00:00", "peak_pts": 5.98, "peak_amount_rs": 5980.0, "least_spot": "1351.3", "least_amount_rs": -2392.0, "exit_time": "15:15:00", "exit_spot": "1354.9", "exit_reason": "PROFIT LOCK (+2.5)", "pnl_pts": 2.5, "pnl_1lot": 1250.0, "pnl_2lots": 2500.0, "status": "TRADE", "score": 68.2}, {"month": "2026-05", "date": "2026-05-25", "action": "BUY 1360 CE", "entry_time": "09:20:00", "entry_spot": "1364.6", "peak_spot": "1368.8", "peak_time": "15:15:00", "peak_pts": 2.18, "peak_amount_rs": 2184.0, "least_spot": "1357.5", "least_amount_rs": -3692.0, "exit_time": "15:15:00", "exit_spot": "1366.5", "exit_reason": "EOD EXIT", "pnl_pts": 0.99, "pnl_1lot": 495.0, "pnl_2lots": 990.0, "status": "TRADE", "score": 72.3}, {"month": "2026-05", "date": "2026-05-26", "action": "BUY 1370 CE", "entry_time": "10:35:00", "entry_spot": "1368.0", "peak_spot": "1368.0", "peak_time": "10:40:00", "peak_pts": 0.0, "peak_amount_rs": 0.0, "least_spot": "1355.8", "least_amount_rs": -6344.0, "exit_time": "12:45:00", "exit_spot": "1358.38", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.2}, {"month": "2026-05", "date": "2026-05-27", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 65.1}, {"month": "2026-05", "date": "2026-05-29", "action": "BUY 1350 PE", "entry_time": "10:20:00", "entry_spot": "1345.6", "peak_spot": "1331.0", "peak_time": "13:10:00", "peak_pts": 7.59, "peak_amount_rs": 7592.0, "least_spot": "1349.8", "least_amount_rs": -2184.0, "exit_time": "13:10:00", "exit_spot": "1332.14", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 69.1}, {"month": "2026-06", "date": "2026-06-01", "action": "BUY 1320 PE", "entry_time": "09:20:00", "entry_spot": "1321.7", "peak_spot": "1321.5", "peak_time": "09:25:00", "peak_pts": 0.1, "peak_amount_rs": 104.0, "least_spot": "1332.8", "least_amount_rs": -5772.0, "exit_time": "09:35:00", "exit_spot": "1331.32", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.7}, {"month": "2026-06", "date": "2026-06-02", "action": "BUY 1320 PE", "entry_time": "10:00:00", "entry_spot": "1315.2", "peak_spot": "1301.5", "peak_time": "11:35:00", "peak_pts": 7.12, "peak_amount_rs": 7124.0, "least_spot": "1316.0", "least_amount_rs": -416.0, "exit_time": "11:35:00", "exit_spot": "1301.74", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 70.1}, {"month": "2026-06", "date": "2026-06-03", "action": "BUY 1310 PE", "entry_time": "09:25:00", "entry_spot": "1307.7", "peak_spot": "1301.1", "peak_time": "11:35:00", "peak_pts": 3.43, "peak_amount_rs": 3432.0, "least_spot": "1317.8", "least_amount_rs": -5252.0, "exit_time": "14:20:00", "exit_spot": "1317.32", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 70.3}, {"month": "2026-06", "date": "2026-06-04", "action": "BUY 1310 PE", "entry_time": "09:25:00", "entry_spot": "1306.5", "peak_spot": "1293.2", "peak_time": "13:20:00", "peak_pts": 6.92, "peak_amount_rs": 6916.0, "least_spot": "1310.9", "least_amount_rs": -2288.0, "exit_time": "15:15:00", "exit_spot": "1305.5", "exit_reason": "EOD EXIT", "pnl_pts": 0.52, "pnl_1lot": 260.0, "pnl_2lots": 520.0, "status": "TRADE", "score": 68.7}, {"month": "2026-06", "date": "2026-06-05", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 69.1}, {"month": "2026-06", "date": "2026-06-08", "action": "BUY 1280 PE", "entry_time": "09:45:00", "entry_spot": "1278.1", "peak_spot": "1263.2", "peak_time": "15:00:00", "peak_pts": 7.75, "peak_amount_rs": 7748.0, "least_spot": "1282.6", "least_amount_rs": -2340.0, "exit_time": "15:00:00", "exit_spot": "1264.64", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 71.6}, {"month": "2026-06", "date": "2026-06-09", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 74.0}, {"month": "2026-06", "date": "2026-06-10", "action": "BUY 1290 CE", "entry_time": "09:15:00", "entry_spot": "1289.0", "peak_spot": "1300.4", "peak_time": "09:30:00", "peak_pts": 5.93, "peak_amount_rs": 5928.0, "least_spot": "1279.0", "least_amount_rs": -5200.0, "exit_time": "10:40:00", "exit_spot": "1279.38", "exit_reason": "PROFIT LOCK (+2.5)", "pnl_pts": 2.5, "pnl_1lot": 1250.0, "pnl_2lots": 2500.0, "status": "TRADE", "score": 72.6}, {"month": "2026-06", "date": "2026-06-11", "action": "BUY 1260 PE", "entry_time": "09:15:00", "entry_spot": "1257.1", "peak_spot": "1256.4", "peak_time": "09:25:00", "peak_pts": 0.36, "peak_amount_rs": 364.0, "least_spot": "1267.5", "least_amount_rs": -5408.0, "exit_time": "10:15:00", "exit_spot": "1266.72", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 69.1}, {"month": "2026-06", "date": "2026-06-12", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 68.7}, {"month": "2026-06", "date": "2026-06-15", "action": "BUY 1310 CE", "entry_time": "09:15:00", "entry_spot": "1308.5", "peak_spot": "1321.0", "peak_time": "09:40:00", "peak_pts": 6.5, "peak_amount_rs": 6500.0, "least_spot": "1303.4", "least_amount_rs": -2652.0, "exit_time": "15:15:00", "exit_spot": "1308.6", "exit_reason": "EOD EXIT", "pnl_pts": 0.05, "pnl_1lot": 25.0, "pnl_2lots": 50.0, "status": "TRADE", "score": 78.8}, {"month": "2026-06", "date": "2026-06-16", "action": "BUY 1310 CE", "entry_time": "09:25:00", "entry_spot": "1311.8", "peak_spot": "1326.8", "peak_time": "10:45:00", "peak_pts": 7.8, "peak_amount_rs": 7800.0, "least_spot": "1311.1", "least_amount_rs": -364.0, "exit_time": "10:45:00", "exit_spot": "1325.26", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 72.9}, {"month": "2026-06", "date": "2026-06-17", "action": "BUY 1330 CE", "entry_time": "10:05:00", "entry_spot": "1331.2", "peak_spot": "1333.8", "peak_time": "15:05:00", "peak_pts": 1.35, "peak_amount_rs": 1352.0, "least_spot": "1326.0", "least_amount_rs": -2704.0, "exit_time": "15:15:00", "exit_spot": "1332.7", "exit_reason": "EOD EXIT", "pnl_pts": 0.78, "pnl_1lot": 390.0, "pnl_2lots": 780.0, "status": "TRADE", "score": 68.5}, {"month": "2026-06", "date": "2026-06-18", "action": "BUY 1330 CE", "entry_time": "10:20:00", "entry_spot": "1330.4", "peak_spot": "1333.0", "peak_time": "13:20:00", "peak_pts": 1.35, "peak_amount_rs": 1352.0, "least_spot": "1322.0", "least_amount_rs": -4368.0, "exit_time": "15:15:00", "exit_spot": "1329.9", "exit_reason": "EOD EXIT", "pnl_pts": -0.26, "pnl_1lot": -130.0, "pnl_2lots": -260.0, "status": "TRADE", "score": 71.2}, {"month": "2026-06", "date": "2026-06-19", "action": "BUY 1330 CE", "entry_time": "09:15:00", "entry_spot": "1332.0", "peak_spot": "1338.2", "peak_time": "10:10:00", "peak_pts": 3.22, "peak_amount_rs": 3224.0, "least_spot": "1322.1", "least_amount_rs": -5148.0, "exit_time": "11:05:00", "exit_spot": "1322.38", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 76.9}, {"month": "2026-06", "date": "2026-06-22", "action": "BUY 1340 CE", "entry_time": "09:20:00", "entry_spot": "1342.4", "peak_spot": "1344.9", "peak_time": "09:25:00", "peak_pts": 1.3, "peak_amount_rs": 1300.0, "least_spot": "1332.6", "least_amount_rs": -5096.0, "exit_time": "12:05:00", "exit_spot": "1332.78", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 77.5}, {"month": "2026-06", "date": "2026-06-23", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 70.0}, {"month": "2026-06", "date": "2026-06-24", "action": "BUY 1310 PE", "entry_time": "09:15:00", "entry_spot": "1306.3", "peak_spot": "1297.5", "peak_time": "09:50:00", "peak_pts": 4.58, "peak_amount_rs": 4576.0, "least_spot": "1317.2", "least_amount_rs": -5668.0, "exit_time": "12:55:00", "exit_spot": "1315.92", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 76.8}, {"month": "2026-06", "date": "2026-06-25", "action": "BUY 1320 CE", "entry_time": "09:45:00", "entry_spot": "1323.0", "peak_spot": "1327.9", "peak_time": "10:15:00", "peak_pts": 2.55, "peak_amount_rs": 2548.0, "least_spot": "1315.0", "least_amount_rs": -4160.0, "exit_time": "15:15:00", "exit_spot": "1316.2", "exit_reason": "EOD EXIT", "pnl_pts": -3.54, "pnl_1lot": -1770.0, "pnl_2lots": -3540.0, "status": "TRADE", "score": 68.7}, {"month": "2026-06", "date": "2026-06-29", "action": "BUY 1310 PE", "entry_time": "09:15:00", "entry_spot": "1310.8", "peak_spot": "1296.0", "peak_time": "13:45:00", "peak_pts": 7.7, "peak_amount_rs": 7696.0, "least_spot": "1313.5", "least_amount_rs": -1404.0, "exit_time": "13:45:00", "exit_spot": "1297.34", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 72.8}, {"month": "2026-06", "date": "2026-06-30", "action": "BUY 1290 PE", "entry_time": "09:30:00", "entry_spot": "1291.6", "peak_spot": "1290.0", "peak_time": "09:40:00", "peak_pts": 0.83, "peak_amount_rs": 832.0, "least_spot": "1300.0", "least_amount_rs": -4368.0, "exit_time": "15:05:00", "exit_spot": "1294.2", "exit_reason": "EOD EXIT", "pnl_pts": -1.35, "pnl_1lot": -675.0, "pnl_2lots": -1350.0, "status": "TRADE", "score": 68.7}, {"month": "2026-07", "date": "2026-07-01", "action": "BUY 1300 CE", "entry_time": "09:25:00", "entry_spot": "1301.3", "peak_spot": "1312.2", "peak_time": "11:15:00", "peak_pts": 5.67, "peak_amount_rs": 5668.0, "least_spot": "1297.0", "least_amount_rs": -2236.0, "exit_time": "15:15:00", "exit_spot": "1307.0", "exit_reason": "EOD EXIT", "pnl_pts": 2.96, "pnl_1lot": 1480.0, "pnl_2lots": 2960.0, "status": "TRADE", "score": 71.6}, {"month": "2026-07", "date": "2026-07-02", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 70.6}, {"month": "2026-07", "date": "2026-07-03", "action": "BUY 1310 CE", "entry_time": "09:30:00", "entry_spot": "1309.1", "peak_spot": "1310.0", "peak_time": "11:55:00", "peak_pts": 0.47, "peak_amount_rs": 468.0, "least_spot": "1302.0", "least_amount_rs": -3692.0, "exit_time": "15:15:00", "exit_spot": "1304.5", "exit_reason": "EOD EXIT", "pnl_pts": -2.39, "pnl_1lot": -1195.0, "pnl_2lots": -2390.0, "status": "TRADE", "score": 68.0}, {"month": "2026-07", "date": "2026-07-06", "action": "BUY 1310 CE", "entry_time": "10:30:00", "entry_spot": "1310.7", "peak_spot": "1325.5", "peak_time": "10:55:00", "peak_pts": 7.7, "peak_amount_rs": 7696.0, "least_spot": "1308.0", "least_amount_rs": -1404.0, "exit_time": "10:55:00", "exit_spot": "1324.16", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 69.1}, {"month": "2026-07", "date": "2026-07-07", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 75.1}, {"month": "2026-07", "date": "2026-07-08", "action": "BUY 1280 PE", "entry_time": "09:20:00", "entry_spot": "1281.7", "peak_spot": "1277.4", "peak_time": "09:40:00", "peak_pts": 2.24, "peak_amount_rs": 2236.0, "least_spot": "1292.9", "least_amount_rs": -5824.0, "exit_time": "10:10:00", "exit_spot": "1291.32", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 70.0}, {"month": "2026-07", "date": "2026-07-09", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 60.7}, {"month": "2026-07", "date": "2026-07-10", "action": "BUY 1300 CE", "entry_time": "09:20:00", "entry_spot": "1299.5", "peak_spot": "1308.8", "peak_time": "15:15:00", "peak_pts": 4.84, "peak_amount_rs": 4836.0, "least_spot": "1296.4", "least_amount_rs": -1612.0, "exit_time": "15:15:00", "exit_spot": "1308.8", "exit_reason": "EOD EXIT", "pnl_pts": 4.84, "pnl_1lot": 2420.0, "pnl_2lots": 4840.0, "status": "TRADE", "score": 69.5}, {"month": "2026-07", "date": "2026-07-13", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 66.9}, {"month": "2026-07", "date": "2026-07-14", "action": "BUY 1300 CE", "entry_time": "10:05:00", "entry_spot": "1300.1", "peak_spot": "1308.0", "peak_time": "11:00:00", "peak_pts": 4.11, "peak_amount_rs": 4108.0, "least_spot": "1290.2", "least_amount_rs": -5148.0, "exit_time": "14:35:00", "exit_spot": "1290.48", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 68.3}, {"month": "2026-07", "date": "2026-07-15", "action": "BUY 1300 CE", "entry_time": "09:20:00", "entry_spot": "1303.7", "peak_spot": "1310.4", "peak_time": "09:25:00", "peak_pts": 3.48, "peak_amount_rs": 3484.0, "least_spot": "1294.1", "least_amount_rs": -4992.0, "exit_time": "15:15:00", "exit_spot": "1295.1", "exit_reason": "EOD EXIT", "pnl_pts": -4.47, "pnl_1lot": -2235.0, "pnl_2lots": -4470.0, "status": "TRADE", "score": 68.5}, {"month": "2026-07", "date": "2026-07-16", "action": "BUY 1300 CE", "entry_time": "09:30:00", "entry_spot": "1303.7", "peak_spot": "1309.4", "peak_time": "09:40:00", "peak_pts": 2.96, "peak_amount_rs": 2964.0, "least_spot": "1294.3", "least_amount_rs": -4888.0, "exit_time": "15:15:00", "exit_spot": "1294.8", "exit_reason": "EOD EXIT", "pnl_pts": -4.63, "pnl_1lot": -2315.0, "pnl_2lots": -4630.0, "status": "TRADE", "score": 68.7}, {"month": "2026-07", "date": "2026-07-17", "action": "BUY 1310 CE", "entry_time": "09:35:00", "entry_spot": "1312.6", "peak_spot": "1326.9", "peak_time": "14:25:00", "peak_pts": 7.44, "peak_amount_rs": 7436.0, "least_spot": "1312.4", "least_amount_rs": -104.0, "exit_time": "14:25:00", "exit_spot": "1326.06", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 72.8}, {"month": "2026-07", "date": "2026-07-20", "action": "BUY 1330 CE", "entry_time": "09:15:00", "entry_spot": "1332.3", "peak_spot": "1345.8", "peak_time": "09:25:00", "peak_pts": 7.02, "peak_amount_rs": 7020.0, "least_spot": "1326.0", "least_amount_rs": -3276.0, "exit_time": "09:25:00", "exit_spot": "1345.76", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 82.7}, {"month": "2026-07", "date": "2026-07-21", "action": "BUY 1320 PE", "entry_time": "09:15:00", "entry_spot": "1317.1", "peak_spot": "1303.4", "peak_time": "14:15:00", "peak_pts": 7.12, "peak_amount_rs": 7124.0, "least_spot": "1319.9", "least_amount_rs": -1456.0, "exit_time": "14:15:00", "exit_spot": "1303.64", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 69.5}, {"month": "2026-07", "date": "2026-07-22", "action": "BUY 1290 PE", "entry_time": "09:30:00", "entry_spot": "1294.5", "peak_spot": "1287.1", "peak_time": "10:55:00", "peak_pts": 3.85, "peak_amount_rs": 3848.0, "least_spot": "1297.7", "least_amount_rs": -1664.0, "exit_time": "15:15:00", "exit_spot": "1291.0", "exit_reason": "EOD EXIT", "pnl_pts": 1.82, "pnl_1lot": 910.0, "pnl_2lots": 1820.0, "status": "TRADE", "score": 70.1}, {"month": "2026-07", "date": "2026-07-23", "action": "BUY 1280 PE", "entry_time": "09:20:00", "entry_spot": "1283.3", "peak_spot": "1268.4", "peak_time": "14:50:00", "peak_pts": 7.75, "peak_amount_rs": 7748.0, "least_spot": "1287.3", "least_amount_rs": -2080.0, "exit_time": "14:50:00", "exit_spot": "1269.84", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 70.8}, {"month": "2026-07", "date": "2026-07-24", "action": "BUY 1260 PE", "entry_time": "09:30:00", "entry_spot": "1263.9", "peak_spot": "1263.8", "peak_time": "09:35:00", "peak_pts": 0.05, "peak_amount_rs": 52.0, "least_spot": "1274.4", "least_amount_rs": -5460.0, "exit_time": "10:50:00", "exit_spot": "1273.52", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 77.7}, {"month": "2026-07", "date": "2026-07-27", "action": "BUY 1290 CE", "entry_time": "09:35:00", "entry_spot": "1285.7", "peak_spot": "1285.7", "peak_time": "09:40:00", "peak_pts": 0.0, "peak_amount_rs": 0.0, "least_spot": "1278.0", "least_amount_rs": -4004.0, "exit_time": "15:15:00", "exit_spot": "1279.8", "exit_reason": "EOD EXIT", "pnl_pts": -3.07, "pnl_1lot": -1535.0, "pnl_2lots": -3070.0, "status": "TRADE", "score": 68.7}, {"month": "2026-07", "date": "2026-07-28", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 66.5}, {"month": "2026-07", "date": "2026-07-29", "action": "BUY 1280 CE", "entry_time": "09:35:00", "entry_spot": "1277.2", "peak_spot": "1282.0", "peak_time": "13:30:00", "peak_pts": 2.5, "peak_amount_rs": 2496.0, "least_spot": "1269.0", "least_amount_rs": -4264.0, "exit_time": "15:15:00", "exit_spot": "1275.2", "exit_reason": "EOD EXIT", "pnl_pts": -1.04, "pnl_1lot": -520.0, "pnl_2lots": -1040.0, "status": "TRADE", "score": 68.5}, {"month": "2026-07", "date": "2026-07-30", "action": "BUY 1290 CE", "entry_time": "10:40:00", "entry_spot": "1285.5", "peak_spot": "1297.0", "peak_time": "12:40:00", "peak_pts": 5.98, "peak_amount_rs": 5980.0, "least_spot": "1284.1", "least_amount_rs": -728.0, "exit_time": "15:15:00", "exit_spot": "1292.6", "exit_reason": "EOD EXIT", "pnl_pts": 3.69, "pnl_1lot": 1845.0, "pnl_2lots": 3690.0, "status": "TRADE", "score": 69.5}, {"month": "2026-07", "date": "2026-07-31", "action": "BUY 1300 CE", "entry_time": "09:40:00", "entry_spot": "1298.0", "peak_spot": "1309.1", "peak_time": "15:05:00", "peak_pts": 5.77, "peak_amount_rs": 5772.0, "least_spot": "1296.0", "least_amount_rs": -1040.0, "exit_time": "15:05:00", "exit_spot": "1308.7", "exit_reason": "EOD EXIT", "pnl_pts": 5.56, "pnl_1lot": 2780.0, "pnl_2lots": 5560.0, "status": "TRADE", "score": 70.3}, {"month": "2026-08", "date": "2026-08-03", "action": "BUY 1310 CE", "entry_time": "09:15:00", "entry_spot": "1312.2", "peak_spot": "1314.9", "peak_time": "10:40:00", "peak_pts": 1.4, "peak_amount_rs": 1404.0, "least_spot": "1306.3", "least_amount_rs": -3068.0, "exit_time": "15:15:00", "exit_spot": "1309.0", "exit_reason": "EOD EXIT", "pnl_pts": -1.66, "pnl_1lot": -830.0, "pnl_2lots": -1660.0, "status": "TRADE", "score": 74.3}, {"month": "2026-08", "date": "2026-08-04", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 66.0}, {"month": "2026-08", "date": "2026-08-05", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 72.4}, {"month": "2026-08", "date": "2026-08-06", "action": "BUY 1300 CE", "entry_time": "09:35:00", "entry_spot": "1299.0", "peak_spot": "1313.4", "peak_time": "11:20:00", "peak_pts": 7.49, "peak_amount_rs": 7488.0, "least_spot": "1298.2", "least_amount_rs": -416.0, "exit_time": "11:20:00", "exit_spot": "1312.46", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 68.1}, {"month": "2026-08", "date": "2026-08-07", "action": "BUY 1330 CE", "entry_time": "09:15:00", "entry_spot": "1327.3", "peak_spot": "1327.6", "peak_time": "09:20:00", "peak_pts": 0.16, "peak_amount_rs": 156.0, "least_spot": "1317.2", "least_amount_rs": -5252.0, "exit_time": "09:45:00", "exit_spot": "1317.68", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 78.0}, {"month": "2026-08", "date": "2026-08-10", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 69.5}, {"month": "2026-08", "date": "2026-08-11", "action": "BUY 1320 PE", "entry_time": "09:35:00", "entry_spot": "1317.6", "peak_spot": "1317.2", "peak_time": "09:45:00", "peak_pts": 0.21, "peak_amount_rs": 208.0, "least_spot": "1328.7", "least_amount_rs": -5772.0, "exit_time": "13:25:00", "exit_spot": "1327.22", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 69.9}, {"month": "2026-08", "date": "2026-08-12", "action": "BUY 1320 PE", "entry_time": "09:20:00", "entry_spot": "1316.8", "peak_spot": "1309.5", "peak_time": "10:15:00", "peak_pts": 3.8, "peak_amount_rs": 3796.0, "least_spot": "1323.5", "least_amount_rs": -3484.0, "exit_time": "15:15:00", "exit_spot": "1320.5", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 72.4}, {"month": "2026-08", "date": "2026-08-13", "action": "BUY 1310 PE", "entry_time": "09:30:00", "entry_spot": "1310.6", "peak_spot": "1308.7", "peak_time": "11:30:00", "peak_pts": 0.99, "peak_amount_rs": 988.0, "least_spot": "1316.9", "least_amount_rs": -3276.0, "exit_time": "15:15:00", "exit_spot": "1314.3", "exit_reason": "EOD EXIT", "pnl_pts": -1.92, "pnl_1lot": -960.0, "pnl_2lots": -1920.0, "status": "TRADE", "score": 68.5}, {"month": "2026-08", "date": "2026-08-14", "action": "BUY 1310 PE", "entry_time": "09:20:00", "entry_spot": "1309.1", "peak_spot": "1301.6", "peak_time": "11:30:00", "peak_pts": 3.9, "peak_amount_rs": 3900.0, "least_spot": "1313.1", "least_amount_rs": -2080.0, "exit_time": "15:15:00", "exit_spot": "1308.7", "exit_reason": "EOD EXIT", "pnl_pts": 0.21, "pnl_1lot": 105.0, "pnl_2lots": 210.0, "status": "TRADE", "score": 69.5}, {"month": "2026-08", "date": "2026-08-17", "action": "BUY 1310 PE", "entry_time": "09:20:00", "entry_spot": "1306.0", "peak_spot": "1298.4", "peak_time": "11:15:00", "peak_pts": 3.95, "peak_amount_rs": 3952.0, "least_spot": "1317.7", "least_amount_rs": -6084.0, "exit_time": "13:00:00", "exit_spot": "1315.62", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 68.8}, {"month": "2026-08", "date": "2026-08-18", "action": "BUY 1320 CE", "entry_time": "09:25:00", "entry_spot": "1322.5", "peak_spot": "1328.4", "peak_time": "09:40:00", "peak_pts": 3.07, "peak_amount_rs": 3068.0, "least_spot": "1318.7", "least_amount_rs": -1976.0, "exit_time": "15:15:00", "exit_spot": "1321.3", "exit_reason": "EOD EXIT", "pnl_pts": -0.62, "pnl_1lot": -310.0, "pnl_2lots": -620.0, "status": "TRADE", "score": 69.0}, {"month": "2026-08", "date": "2026-08-19", "action": "BUY 1310 PE", "entry_time": "09:20:00", "entry_spot": "1313.0", "peak_spot": "1304.0", "peak_time": "15:10:00", "peak_pts": 4.68, "peak_amount_rs": 4680.0, "least_spot": "1317.7", "least_amount_rs": -2444.0, "exit_time": "15:15:00", "exit_spot": "1306.6", "exit_reason": "EOD EXIT", "pnl_pts": 3.33, "pnl_1lot": 1665.0, "pnl_2lots": 3330.0, "status": "TRADE", "score": 73.3}, {"month": "2026-08", "date": "2026-08-20", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 70.1}, {"month": "2026-08", "date": "2026-08-21", "action": "BUY 1310 PE", "entry_time": "09:30:00", "entry_spot": "1309.2", "peak_spot": "1308.0", "peak_time": "10:10:00", "peak_pts": 0.62, "peak_amount_rs": 624.0, "least_spot": "1314.0", "least_amount_rs": -2496.0, "exit_time": "15:15:00", "exit_spot": "1314.0", "exit_reason": "EOD EXIT", "pnl_pts": -2.5, "pnl_1lot": -1250.0, "pnl_2lots": -2500.0, "status": "TRADE", "score": 72.4}, {"month": "2026-08", "date": "2026-08-24", "action": "BUY 1320 CE", "entry_time": "09:20:00", "entry_spot": "1317.2", "peak_spot": "1317.1", "peak_time": "09:25:00", "peak_pts": -0.05, "peak_amount_rs": -52.0, "least_spot": "1304.6", "least_amount_rs": -6552.0, "exit_time": "11:20:00", "exit_spot": "1307.58", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 70.8}, {"month": "2026-08", "date": "2026-08-25", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 62.3}, {"month": "2026-08", "date": "2026-08-26", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 70.8}, {"month": "2026-08", "date": "2026-08-27", "action": "BUY 1300 PE", "entry_time": "10:25:00", "entry_spot": "1296.1", "peak_spot": "1287.3", "peak_time": "11:20:00", "peak_pts": 4.58, "peak_amount_rs": 4576.0, "least_spot": "1296.9", "least_amount_rs": -416.0, "exit_time": "15:15:00", "exit_spot": "1288.5", "exit_reason": "EOD EXIT", "pnl_pts": 3.95, "pnl_1lot": 1975.0, "pnl_2lots": 3950.0, "status": "TRADE", "score": 69.9}, {"month": "2026-08", "date": "2026-08-28", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 72.8}, {"month": "2026-08", "date": "2026-08-31", "action": "BUY 1270 PE", "entry_time": "09:40:00", "entry_spot": "1273.1", "peak_spot": "1272.5", "peak_time": "09:45:00", "peak_pts": 0.31, "peak_amount_rs": 312.0, "least_spot": "1282.8", "least_amount_rs": -5044.0, "exit_time": "11:30:00", "exit_spot": "1282.72", "exit_reason": "SL HIT (-5.0)", "pnl_pts": -5.0, "pnl_1lot": -2500.0, "pnl_2lots": -5000.0, "status": "TRADE", "score": 68.0}, {"month": "2026-09", "date": "2026-09-01", "action": "BUY 1300 CE", "entry_time": "10:05:00", "entry_spot": "1301.5", "peak_spot": "1311.7", "peak_time": "11:40:00", "peak_pts": 5.3, "peak_amount_rs": 5304.0, "least_spot": "1300.0", "least_amount_rs": -780.0, "exit_time": "15:15:00", "exit_spot": "1302.6", "exit_reason": "EOD EXIT", "pnl_pts": 0.57, "pnl_1lot": 285.0, "pnl_2lots": 570.0, "status": "TRADE", "score": 72.4}, {"month": "2026-09", "date": "2026-09-02", "action": "BUY 1310 CE", "entry_time": "10:15:00", "entry_spot": "1307.8", "peak_spot": "1321.8", "peak_time": "10:30:00", "peak_pts": 7.28, "peak_amount_rs": 7280.0, "least_spot": "1307.0", "least_amount_rs": -416.0, "exit_time": "10:30:00", "exit_spot": "1321.26", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 71.3}, {"month": "2026-09", "date": "2026-09-03", "action": "BUY 1310 PE", "entry_time": "10:35:00", "entry_spot": "1307.2", "peak_spot": "1305.0", "peak_time": "11:10:00", "peak_pts": 1.14, "peak_amount_rs": 1144.0, "least_spot": "1312.0", "least_amount_rs": -2496.0, "exit_time": "15:15:00", "exit_spot": "1309.1", "exit_reason": "EOD EXIT", "pnl_pts": -0.99, "pnl_1lot": -495.0, "pnl_2lots": -990.0, "status": "TRADE", "score": 68.2}, {"month": "2026-09", "date": "2026-09-04", "action": "BUY 1320 CE", "entry_time": "09:45:00", "entry_spot": "1322.9", "peak_spot": "1333.0", "peak_time": "12:05:00", "peak_pts": 5.25, "peak_amount_rs": 5252.0, "least_spot": "1322.5", "least_amount_rs": -208.0, "exit_time": "15:15:00", "exit_spot": "1329.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.17, "pnl_1lot": 1585.0, "pnl_2lots": 3170.0, "status": "TRADE", "score": 73.8}, {"month": "2026-09", "date": "2026-09-07", "action": "BUY 1320 PE", "entry_time": "09:45:00", "entry_spot": "1316.1", "peak_spot": "1303.2", "peak_time": "15:05:00", "peak_pts": 6.71, "peak_amount_rs": 6708.0, "least_spot": "1319.5", "least_amount_rs": -1768.0, "exit_time": "15:15:00", "exit_spot": "1308.0", "exit_reason": "EOD EXIT", "pnl_pts": 4.21, "pnl_1lot": 2105.0, "pnl_2lots": 4210.0, "status": "TRADE", "score": 73.2}, {"month": "2026-09", "date": "2026-09-08", "action": "BUY 1300 PE", "entry_time": "09:25:00", "entry_spot": "1299.2", "peak_spot": "1288.0", "peak_time": "13:55:00", "peak_pts": 5.82, "peak_amount_rs": 5824.0, "least_spot": "1304.0", "least_amount_rs": -2496.0, "exit_time": "15:15:00", "exit_spot": "1292.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.74, "pnl_1lot": 1870.0, "pnl_2lots": 3740.0, "status": "TRADE", "score": 70.3}, {"month": "2026-09", "date": "2026-09-09", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 68.7}, {"month": "2026-09", "date": "2026-09-10", "action": "BUY 1280 PE", "entry_time": "09:20:00", "entry_spot": "1280.8", "peak_spot": "1267.1", "peak_time": "15:05:00", "peak_pts": 7.12, "peak_amount_rs": 7124.0, "least_spot": "1280.9", "least_amount_rs": -52.0, "exit_time": "15:05:00", "exit_spot": "1267.34", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 68.7}, {"month": "2026-09", "date": "2026-09-11", "action": "BUY 1260 PE", "entry_time": "09:25:00", "entry_spot": "1262.3", "peak_spot": "1253.3", "peak_time": "10:50:00", "peak_pts": 4.68, "peak_amount_rs": 4680.0, "least_spot": "1265.5", "least_amount_rs": -1664.0, "exit_time": "15:15:00", "exit_spot": "1263.0", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 69.3}, {"month": "2026-09", "date": "2026-09-15", "action": "BUY 1250 PE", "entry_time": "09:20:00", "entry_spot": "1252.6", "peak_spot": "1237.4", "peak_time": "14:45:00", "peak_pts": 7.9, "peak_amount_rs": 7904.0, "least_spot": "1259.1", "least_amount_rs": -3380.0, "exit_time": "14:45:00", "exit_spot": "1239.14", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 78.5}, {"month": "2026-09", "date": "2026-09-16", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 67.7}, {"month": "2026-09", "date": "2026-09-17", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 73.2}, {"month": "2026-09", "date": "2026-09-18", "action": "BUY 1240 PE", "entry_time": "10:35:00", "entry_spot": "1239.8", "peak_spot": "1238.4", "peak_time": "10:40:00", "peak_pts": 0.73, "peak_amount_rs": 728.0, "least_spot": "1246.4", "least_amount_rs": -3432.0, "exit_time": "15:15:00", "exit_spot": "1243.4", "exit_reason": "EOD EXIT", "pnl_pts": -1.87, "pnl_1lot": -935.0, "pnl_2lots": -1870.0, "status": "TRADE", "score": 68.7}, {"month": "2026-09", "date": "2026-09-21", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 67.1}, {"month": "2026-09", "date": "2026-09-22", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 69.1}, {"month": "2026-09", "date": "2026-09-23", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 74.3}, {"month": "2026-09", "date": "2026-09-24", "action": "BUY 1240 PE", "entry_time": "09:35:00", "entry_spot": "1239.5", "peak_spot": "1225.1", "peak_time": "13:40:00", "peak_pts": 7.49, "peak_amount_rs": 7488.0, "least_spot": "1239.9", "least_amount_rs": -208.0, "exit_time": "13:40:00", "exit_spot": "1226.04", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 70.2}, {"month": "2026-09", "date": "2026-09-25", "action": "BUY 1220 PE", "entry_time": "09:20:00", "entry_spot": "1219.6", "peak_spot": "1215.0", "peak_time": "13:20:00", "peak_pts": 2.39, "peak_amount_rs": 2392.0, "least_spot": "1227.3", "least_amount_rs": -4004.0, "exit_time": "15:15:00", "exit_spot": "1224.7", "exit_reason": "EOD EXIT", "pnl_pts": -2.65, "pnl_1lot": -1325.0, "pnl_2lots": -2650.0, "status": "TRADE", "score": 70.8}, {"month": "2026-09", "date": "2026-09-28", "action": "BUY 1210 PE", "entry_time": "09:25:00", "entry_spot": "1213.7", "peak_spot": "1200.0", "peak_time": "14:15:00", "peak_pts": 7.12, "peak_amount_rs": 7124.0, "least_spot": "1215.7", "least_amount_rs": -1040.0, "exit_time": "14:15:00", "exit_spot": "1200.24", "exit_reason": "TARGET HIT (+7.0)", "pnl_pts": 7.0, "pnl_1lot": 3500.0, "pnl_2lots": 7000.0, "status": "TRADE", "score": 68.0}, {"month": "2026-09", "date": "2026-09-29", "action": "BUY 1190 PE", "entry_time": "09:15:00", "entry_spot": "1194.5", "peak_spot": "1182.0", "peak_time": "09:35:00", "peak_pts": 6.5, "peak_amount_rs": 6500.0, "least_spot": "1196.4", "least_amount_rs": -988.0, "exit_time": "15:15:00", "exit_spot": "1188.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.38, "pnl_1lot": 1690.0, "pnl_2lots": 3380.0, "status": "TRADE", "score": 68.5}, {"month": "2026-09", "date": "2026-09-30", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 60.0}];
+    const dataAdani = [{"month": "2026-01", "date": "2026-01-01", "action": "BUY 2250 CE", "entry_time": "09:20:00", "entry_spot": "2244.3", "peak_spot": "2287.3", "peak_time": "09:50:00", "peak_pts": 22.36, "peak_amount_rs": 13818.48, "least_spot": "2241.0", "least_amount_rs": -1060.49, "exit_time": "15:15:00", "exit_spot": "2260.6", "exit_reason": "EOD EXIT", "pnl_pts": 8.48, "pnl_1lot": 2620.32, "pnl_2lots": 5240.64, "status": "TRADE", "score": 68.2}, {"month": "2026-01", "date": "2026-01-02", "action": "BUY 2250 CE", "entry_time": "10:10:00", "entry_spot": "2272.6", "peak_spot": "2283.7", "peak_time": "14:15:00", "peak_pts": 5.77, "peak_amount_rs": 3567.1, "least_spot": "2265.4", "least_amount_rs": -2313.79, "exit_time": "15:15:00", "exit_spot": "2280.8", "exit_reason": "EOD EXIT", "pnl_pts": 4.26, "pnl_1lot": 1316.34, "pnl_2lots": 2632.68, "status": "TRADE", "score": 68.2}, {"month": "2026-01", "date": "2026-01-05", "action": "BUY 2300 CE", "entry_time": "09:30:00", "entry_spot": "2288.9", "peak_spot": "2303.6", "peak_time": "12:55:00", "peak_pts": 7.64, "peak_amount_rs": 4723.99, "least_spot": "2274.3", "least_amount_rs": -4691.86, "exit_time": "15:15:00", "exit_spot": "2278.1", "exit_reason": "EOD EXIT", "pnl_pts": -5.62, "pnl_1lot": -1736.58, "pnl_2lots": -3473.16, "status": "TRADE", "score": 71.1}, {"month": "2026-01", "date": "2026-01-06", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.2}, {"month": "2026-01", "date": "2026-01-07", "action": "BUY 2250 PE", "entry_time": "09:40:00", "entry_spot": "2243.9", "peak_spot": "2243.0", "peak_time": "09:50:00", "peak_pts": 0.47, "peak_amount_rs": 289.22, "least_spot": "2273.0", "least_amount_rs": -9351.58, "exit_time": "10:35:00", "exit_spot": "2272.75", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.7}, {"month": "2026-01", "date": "2026-01-08", "action": "BUY 2250 PE", "entry_time": "09:30:00", "entry_spot": "2253.3", "peak_spot": "2208.2", "peak_time": "12:05:00", "peak_pts": 23.45, "peak_amount_rs": 14493.34, "least_spot": "2267.4", "least_amount_rs": -4531.18, "exit_time": "15:15:00", "exit_spot": "2213.1", "exit_reason": "EOD EXIT", "pnl_pts": 20.9, "pnl_1lot": 6458.1, "pnl_2lots": 12916.2, "status": "TRADE", "score": 68.2}, {"month": "2026-01", "date": "2026-01-09", "action": "BUY 2200 PE", "entry_time": "09:20:00", "entry_spot": "2190.2", "peak_spot": "2145.0", "peak_time": "14:40:00", "peak_pts": 23.5, "peak_amount_rs": 14525.47, "least_spot": "2194.6", "least_amount_rs": -1413.98, "exit_time": "15:15:00", "exit_spot": "2151.0", "exit_reason": "EOD EXIT", "pnl_pts": 20.38, "pnl_1lot": 6297.42, "pnl_2lots": 12594.84, "status": "TRADE", "score": 74.2}, {"month": "2026-01", "date": "2026-01-12", "action": "BUY 2150 PE", "entry_time": "09:20:00", "entry_spot": "2131.0", "peak_spot": "2119.3", "peak_time": "11:30:00", "peak_pts": 6.08, "peak_amount_rs": 3759.91, "least_spot": "2165.9", "least_amount_rs": -11215.46, "exit_time": "12:30:00", "exit_spot": "2159.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.2}, {"month": "2026-01", "date": "2026-01-13", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 64.8}, {"month": "2026-01", "date": "2026-01-14", "action": "BUY 2150 CE", "entry_time": "10:55:00", "entry_spot": "2168.0", "peak_spot": "2169.0", "peak_time": "11:00:00", "peak_pts": 0.52, "peak_amount_rs": 321.36, "least_spot": "2142.1", "least_amount_rs": -8323.22, "exit_time": "15:15:00", "exit_spot": "2152.7", "exit_reason": "EOD EXIT", "pnl_pts": -7.96, "pnl_1lot": -2459.64, "pnl_2lots": -4919.28, "status": "TRADE", "score": 79.6}, {"month": "2026-01", "date": "2026-01-16", "action": "BUY 2200 CE", "entry_time": "09:50:00", "entry_spot": "2175.0", "peak_spot": "2193.9", "peak_time": "11:55:00", "peak_pts": 9.83, "peak_amount_rs": 6073.7, "least_spot": "2152.7", "least_amount_rs": -7166.33, "exit_time": "15:15:00", "exit_spot": "2153.7", "exit_reason": "EOD EXIT", "pnl_pts": -11.08, "pnl_1lot": -3423.72, "pnl_2lots": -6847.44, "status": "TRADE", "score": 72.8}, {"month": "2026-01", "date": "2026-01-19", "action": "BUY 2150 PE", "entry_time": "09:20:00", "entry_spot": "2147.0", "peak_spot": "2124.0", "peak_time": "12:35:00", "peak_pts": 11.96, "peak_amount_rs": 7391.28, "least_spot": "2151.5", "least_amount_rs": -1446.12, "exit_time": "15:15:00", "exit_spot": "2132.0", "exit_reason": "EOD EXIT", "pnl_pts": 7.8, "pnl_1lot": 2410.2, "pnl_2lots": 4820.4, "status": "TRADE", "score": 71.6}, {"month": "2026-01", "date": "2026-01-20", "action": "BUY 2100 PE", "entry_time": "09:20:00", "entry_spot": "2122.0", "peak_spot": "2050.1", "peak_time": "15:15:00", "peak_pts": 37.39, "peak_amount_rs": 23105.78, "least_spot": "2124.8", "least_amount_rs": -899.81, "exit_time": "15:15:00", "exit_spot": "2054.69", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 70.8}, {"month": "2026-01", "date": "2026-01-21", "action": "BUY 2050 PE", "entry_time": "09:20:00", "entry_spot": "2057.7", "peak_spot": "2005.0", "peak_time": "10:55:00", "peak_pts": 27.4, "peak_amount_rs": 16935.67, "least_spot": "2067.6", "least_amount_rs": -3181.46, "exit_time": "15:15:00", "exit_spot": "2030.9", "exit_reason": "EOD EXIT", "pnl_pts": 13.94, "pnl_1lot": 4307.46, "pnl_2lots": 8614.92, "status": "TRADE", "score": 74.7}, {"month": "2026-01", "date": "2026-01-22", "action": "BUY 2100 CE", "entry_time": "09:35:00", "entry_spot": "2083.6", "peak_spot": "2102.8", "peak_time": "09:45:00", "peak_pts": 9.98, "peak_amount_rs": 6170.11, "least_spot": "2065.3", "least_amount_rs": -5880.89, "exit_time": "15:15:00", "exit_spot": "2090.6", "exit_reason": "EOD EXIT", "pnl_pts": 3.64, "pnl_1lot": 1124.76, "pnl_2lots": 2249.52, "status": "TRADE", "score": 71.6}, {"month": "2026-01", "date": "2026-01-23", "action": "BUY 2000 PE", "entry_time": "12:30:00", "entry_spot": "2003.8", "peak_spot": "1897.4", "peak_time": "13:15:00", "peak_pts": 55.33, "peak_amount_rs": 34192.7, "least_spot": "2006.6", "least_amount_rs": -899.81, "exit_time": "13:15:00", "exit_spot": "1936.49", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 78.7}, {"month": "2026-01", "date": "2026-01-27", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 73.6}, {"month": "2026-01", "date": "2026-01-28", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 70.8}, {"month": "2026-01", "date": "2026-01-29", "action": "BUY 2000 PE", "entry_time": "10:15:00", "entry_spot": "1977.8", "peak_spot": "1972.0", "peak_time": "12:15:00", "peak_pts": 3.02, "peak_amount_rs": 1863.89, "least_spot": "2016.7", "least_amount_rs": -12500.9, "exit_time": "13:25:00", "exit_spot": "2006.65", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.5}, {"month": "2026-01", "date": "2026-01-30", "action": "BUY 2050 CE", "entry_time": "09:40:00", "entry_spot": "2029.5", "peak_spot": "2038.6", "peak_time": "10:45:00", "peak_pts": 4.73, "peak_amount_rs": 2924.38, "least_spot": "2011.0", "least_amount_rs": -5945.16, "exit_time": "15:15:00", "exit_spot": "2021.0", "exit_reason": "EOD EXIT", "pnl_pts": -4.42, "pnl_1lot": -1365.78, "pnl_2lots": -2731.56, "status": "TRADE", "score": 69.7}, {"month": "2026-02", "date": "2026-02-01", "action": "BUY 2050 CE", "entry_time": "11:20:00", "entry_spot": "2035.4", "peak_spot": "2038.0", "peak_time": "11:25:00", "peak_pts": 1.35, "peak_amount_rs": 835.54, "least_spot": "2006.1", "least_amount_rs": -9415.85, "exit_time": "12:00:00", "exit_spot": "2006.55", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 81.2}, {"month": "2026-02", "date": "2026-02-02", "action": "BUY 1950 PE", "entry_time": "09:15:00", "entry_spot": "1943.9", "peak_spot": "1943.9", "peak_time": "09:20:00", "peak_pts": 0.0, "peak_amount_rs": 0.0, "least_spot": "1977.0", "least_amount_rs": -10637.02, "exit_time": "09:25:00", "exit_spot": "1972.75", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.9}, {"month": "2026-02", "date": "2026-02-03", "action": "BUY 2150 CE", "entry_time": "09:15:00", "entry_spot": "2161.7", "peak_spot": "2232.1", "peak_time": "09:40:00", "peak_pts": 36.61, "peak_amount_rs": 22623.74, "least_spot": "2157.8", "least_amount_rs": -1253.3, "exit_time": "09:40:00", "exit_spot": "2229.01", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 76.0}, {"month": "2026-02", "date": "2026-02-04", "action": "BUY 2250 CE", "entry_time": "12:10:00", "entry_spot": "2239.1", "peak_spot": "2242.0", "peak_time": "12:15:00", "peak_pts": 1.51, "peak_amount_rs": 931.94, "least_spot": "2222.3", "least_amount_rs": -5398.85, "exit_time": "15:15:00", "exit_spot": "2228.5", "exit_reason": "EOD EXIT", "pnl_pts": -5.51, "pnl_1lot": -1702.59, "pnl_2lots": -3405.18, "status": "TRADE", "score": 82.1}, {"month": "2026-02", "date": "2026-02-05", "action": "BUY 2200 PE", "entry_time": "09:40:00", "entry_spot": "2212.0", "peak_spot": "2210.0", "peak_time": "09:45:00", "peak_pts": 1.04, "peak_amount_rs": 642.72, "least_spot": "2241.1", "least_amount_rs": -9351.58, "exit_time": "13:10:00", "exit_spot": "2240.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 72.0}, {"month": "2026-02", "date": "2026-02-06", "action": "BUY 2200 PE", "entry_time": "10:10:00", "entry_spot": "2213.7", "peak_spot": "2200.9", "peak_time": "13:30:00", "peak_pts": 6.66, "peak_amount_rs": 4113.41, "least_spot": "2237.9", "least_amount_rs": -7776.91, "exit_time": "15:15:00", "exit_spot": "2228.5", "exit_reason": "EOD EXIT", "pnl_pts": -7.7, "pnl_1lot": -2379.3, "pnl_2lots": -4758.6, "status": "TRADE", "score": 73.2}, {"month": "2026-02", "date": "2026-02-09", "action": "BUY 2250 CE", "entry_time": "09:35:00", "entry_spot": "2259.7", "peak_spot": "2288.0", "peak_time": "10:45:00", "peak_pts": 14.72, "peak_amount_rs": 9094.49, "least_spot": "2247.0", "least_amount_rs": -4081.27, "exit_time": "15:15:00", "exit_spot": "2248.4", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 73.9}, {"month": "2026-02", "date": "2026-02-10", "action": "BUY 2250 PE", "entry_time": "09:40:00", "entry_spot": "2242.9", "peak_spot": "2172.7", "peak_time": "10:40:00", "peak_pts": 36.5, "peak_amount_rs": 22559.47, "least_spot": "2267.5", "least_amount_rs": -7905.46, "exit_time": "10:40:00", "exit_spot": "2175.59", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 69.5}, {"month": "2026-02", "date": "2026-02-11", "action": "BUY 2200 PE", "entry_time": "10:00:00", "entry_spot": "2216.7", "peak_spot": "2215.1", "peak_time": "10:10:00", "peak_pts": 0.83, "peak_amount_rs": 514.18, "least_spot": "2237.5", "least_amount_rs": -6684.29, "exit_time": "15:15:00", "exit_spot": "2233.6", "exit_reason": "EOD EXIT", "pnl_pts": -8.79, "pnl_1lot": -2716.11, "pnl_2lots": -5432.22, "status": "TRADE", "score": 74.3}, {"month": "2026-02", "date": "2026-02-12", "action": "BUY 2200 PE", "entry_time": "09:30:00", "entry_spot": "2218.1", "peak_spot": "2201.0", "peak_time": "14:45:00", "peak_pts": 8.89, "peak_amount_rs": 5495.26, "least_spot": "2220.5", "least_amount_rs": -771.26, "exit_time": "15:15:00", "exit_spot": "2211.3", "exit_reason": "EOD EXIT", "pnl_pts": 3.54, "pnl_1lot": 1093.86, "pnl_2lots": 2187.72, "status": "TRADE", "score": 72.8}, {"month": "2026-02", "date": "2026-02-13", "action": "BUY 2150 PE", "entry_time": "09:35:00", "entry_spot": "2161.8", "peak_spot": "2134.2", "peak_time": "15:15:00", "peak_pts": 14.35, "peak_amount_rs": 8869.54, "least_spot": "2166.9", "least_amount_rs": -1638.94, "exit_time": "15:15:00", "exit_spot": "2139.1", "exit_reason": "EOD EXIT", "pnl_pts": 11.8, "pnl_1lot": 3646.2, "pnl_2lots": 7292.4, "status": "TRADE", "score": 69.3}, {"month": "2026-02", "date": "2026-02-16", "action": "BUY 2100 PE", "entry_time": "09:15:00", "entry_spot": "2114.4", "peak_spot": "2103.5", "peak_time": "09:50:00", "peak_pts": 5.67, "peak_amount_rs": 3502.82, "least_spot": "2145.8", "least_amount_rs": -10090.7, "exit_time": "10:45:00", "exit_spot": "2143.25", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 77.1}, {"month": "2026-02", "date": "2026-02-17", "action": "BUY 2200 CE", "entry_time": "10:10:00", "entry_spot": "2195.2", "peak_spot": "2252.0", "peak_time": "12:35:00", "peak_pts": 29.54, "peak_amount_rs": 18253.25, "least_spot": "2175.0", "least_amount_rs": -6491.47, "exit_time": "15:15:00", "exit_spot": "2244.7", "exit_reason": "EOD EXIT", "pnl_pts": 25.74, "pnl_1lot": 7953.66, "pnl_2lots": 15907.32, "status": "TRADE", "score": 75.1}, {"month": "2026-02", "date": "2026-02-18", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 67.2}, {"month": "2026-02", "date": "2026-02-19", "action": "BUY 2200 PE", "entry_time": "10:15:00", "entry_spot": "2189.9", "peak_spot": "2151.0", "peak_time": "15:15:00", "peak_pts": 20.23, "peak_amount_rs": 12500.9, "least_spot": "2194.1", "least_amount_rs": -1349.71, "exit_time": "15:15:00", "exit_spot": "2151.0", "exit_reason": "EOD EXIT", "pnl_pts": 20.23, "pnl_1lot": 6251.07, "pnl_2lots": 12502.14, "status": "TRADE", "score": 71.8}, {"month": "2026-02", "date": "2026-02-20", "action": "BUY 2150 PE", "entry_time": "10:20:00", "entry_spot": "2158.5", "peak_spot": "2152.1", "peak_time": "15:10:00", "peak_pts": 3.33, "peak_amount_rs": 2056.7, "least_spot": "2174.4", "least_amount_rs": -5109.62, "exit_time": "15:15:00", "exit_spot": "2158.9", "exit_reason": "EOD EXIT", "pnl_pts": -0.21, "pnl_1lot": -64.89, "pnl_2lots": -129.78, "status": "TRADE", "score": 68.7}, {"month": "2026-02", "date": "2026-02-23", "action": "BUY 2200 CE", "entry_time": "09:25:00", "entry_spot": "2181.3", "peak_spot": "2202.9", "peak_time": "09:55:00", "peak_pts": 11.23, "peak_amount_rs": 6941.38, "least_spot": "2165.7", "least_amount_rs": -5013.22, "exit_time": "15:15:00", "exit_spot": "2188.5", "exit_reason": "EOD EXIT", "pnl_pts": 3.74, "pnl_1lot": 1155.66, "pnl_2lots": 2311.32, "status": "TRADE", "score": 68.0}, {"month": "2026-02", "date": "2026-02-24", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 71.6}, {"month": "2026-02", "date": "2026-02-25", "action": "BUY 2200 CE", "entry_time": "09:15:00", "entry_spot": "2202.9", "peak_spot": "2235.7", "peak_time": "15:15:00", "peak_pts": 17.06, "peak_amount_rs": 10540.61, "least_spot": "2180.1", "least_amount_rs": -7327.01, "exit_time": "15:15:00", "exit_spot": "2235.5", "exit_reason": "EOD EXIT", "pnl_pts": 16.95, "pnl_1lot": 5237.55, "pnl_2lots": 10475.1, "status": "TRADE", "score": 71.6}, {"month": "2026-02", "date": "2026-02-26", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 61.4}, {"month": "2026-02", "date": "2026-02-27", "action": "BUY 2200 PE", "entry_time": "09:45:00", "entry_spot": "2194.3", "peak_spot": "2155.2", "peak_time": "15:15:00", "peak_pts": 20.33, "peak_amount_rs": 12565.18, "least_spot": "2201.7", "least_amount_rs": -2378.06, "exit_time": "15:15:00", "exit_spot": "2156.1", "exit_reason": "EOD EXIT", "pnl_pts": 19.86, "pnl_1lot": 6136.74, "pnl_2lots": 12273.48, "status": "TRADE", "score": 69.5}, {"month": "2026-03", "date": "2026-03-02", "action": "BUY 2150 PE", "entry_time": "09:15:00", "entry_spot": "2126.9", "peak_spot": "2073.7", "peak_time": "13:55:00", "peak_pts": 27.66, "peak_amount_rs": 17096.35, "least_spot": "2134.2", "least_amount_rs": -2345.93, "exit_time": "15:15:00", "exit_spot": "2125.2", "exit_reason": "EOD EXIT", "pnl_pts": 0.88, "pnl_1lot": 271.92, "pnl_2lots": 543.84, "status": "TRADE", "score": 69.7}, {"month": "2026-03", "date": "2026-03-04", "action": "BUY 2050 PE", "entry_time": "09:15:00", "entry_spot": "2060.3", "peak_spot": "2038.0", "peak_time": "09:35:00", "peak_pts": 11.6, "peak_amount_rs": 7166.33, "least_spot": "2088.0", "least_amount_rs": -8901.67, "exit_time": "15:15:00", "exit_spot": "2077.2", "exit_reason": "EOD EXIT", "pnl_pts": -8.79, "pnl_1lot": -2716.11, "pnl_2lots": -5432.22, "status": "TRADE", "score": 68.1}, {"month": "2026-03", "date": "2026-03-05", "action": "BUY 2050 PE", "entry_time": "09:40:00", "entry_spot": "2061.4", "peak_spot": "2040.0", "peak_time": "14:00:00", "peak_pts": 11.13, "peak_amount_rs": 6877.1, "least_spot": "2099.4", "least_amount_rs": -12211.68, "exit_time": "14:55:00", "exit_spot": "2090.25", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 72.0}, {"month": "2026-03", "date": "2026-03-06", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 72.8}, {"month": "2026-03", "date": "2026-03-09", "action": "BUY 1950 PE", "entry_time": "09:25:00", "entry_spot": "1947.6", "peak_spot": "1942.7", "peak_time": "09:35:00", "peak_pts": 2.55, "peak_amount_rs": 1574.66, "least_spot": "1979.0", "least_amount_rs": -10090.7, "exit_time": "10:10:00", "exit_spot": "1976.45", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.2}, {"month": "2026-03", "date": "2026-03-10", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.9}, {"month": "2026-03", "date": "2026-03-11", "action": "BUY 2000 CE", "entry_time": "09:15:00", "entry_spot": "2013.8", "peak_spot": "2027.3", "peak_time": "09:30:00", "peak_pts": 7.02, "peak_amount_rs": 4338.36, "least_spot": "1984.0", "least_amount_rs": -9576.53, "exit_time": "11:55:00", "exit_spot": "1984.95", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 74.0}, {"month": "2026-03", "date": "2026-03-12", "action": "BUY 1950 PE", "entry_time": "09:15:00", "entry_spot": "1954.5", "peak_spot": "1948.4", "peak_time": "09:20:00", "peak_pts": 3.17, "peak_amount_rs": 1960.3, "least_spot": "1986.3", "least_amount_rs": -10219.25, "exit_time": "10:30:00", "exit_spot": "1983.35", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.3}, {"month": "2026-03", "date": "2026-03-13", "action": "BUY 2000 PE", "entry_time": "09:15:00", "entry_spot": "1998.9", "peak_spot": "1945.0", "peak_time": "13:55:00", "peak_pts": 28.03, "peak_amount_rs": 17321.3, "least_spot": "2008.6", "least_amount_rs": -3117.19, "exit_time": "15:15:00", "exit_spot": "1961.1", "exit_reason": "EOD EXIT", "pnl_pts": 19.66, "pnl_1lot": 6074.94, "pnl_2lots": 12149.88, "status": "TRADE", "score": 69.6}, {"month": "2026-03", "date": "2026-03-16", "action": "BUY 1950 PE", "entry_time": "10:20:00", "entry_spot": "1956.2", "peak_spot": "1946.6", "peak_time": "10:55:00", "peak_pts": 4.99, "peak_amount_rs": 3085.06, "least_spot": "1987.8", "least_amount_rs": -10154.98, "exit_time": "14:30:00", "exit_spot": "1985.05", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.1}, {"month": "2026-03", "date": "2026-03-17", "action": "BUY 1950 PE", "entry_time": "11:25:00", "entry_spot": "1953.0", "peak_spot": "1945.0", "peak_time": "12:40:00", "peak_pts": 4.16, "peak_amount_rs": 2570.88, "least_spot": "1981.9", "least_amount_rs": -9287.3, "exit_time": "14:10:00", "exit_spot": "1981.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 79.3}, {"month": "2026-03", "date": "2026-03-18", "action": "BUY 2000 CE", "entry_time": "09:40:00", "entry_spot": "2018.6", "peak_spot": "2024.3", "peak_time": "13:55:00", "peak_pts": 2.96, "peak_amount_rs": 1831.75, "least_spot": "2001.9", "least_amount_rs": -5366.71, "exit_time": "15:15:00", "exit_spot": "2008.8", "exit_reason": "EOD EXIT", "pnl_pts": -5.1, "pnl_1lot": -1575.9, "pnl_2lots": -3151.8, "status": "TRADE", "score": 76.9}, {"month": "2026-03", "date": "2026-03-19", "action": "BUY 1950 PE", "entry_time": "09:25:00", "entry_spot": "1965.6", "peak_spot": "1930.0", "peak_time": "14:55:00", "peak_pts": 18.51, "peak_amount_rs": 11440.42, "least_spot": "1970.2", "least_amount_rs": -1478.26, "exit_time": "15:15:00", "exit_spot": "1938.1", "exit_reason": "EOD EXIT", "pnl_pts": 14.3, "pnl_1lot": 4418.7, "pnl_2lots": 8837.4, "status": "TRADE", "score": 72.4}, {"month": "2026-03", "date": "2026-03-20", "action": "BUY 1950 PE", "entry_time": "12:05:00", "entry_spot": "1940.6", "peak_spot": "1921.0", "peak_time": "15:15:00", "peak_pts": 10.19, "peak_amount_rs": 6298.66, "least_spot": "1950.0", "least_amount_rs": -3020.78, "exit_time": "15:15:00", "exit_spot": "1922.9", "exit_reason": "EOD EXIT", "pnl_pts": 9.2, "pnl_1lot": 2842.8, "pnl_2lots": 5685.6, "status": "TRADE", "score": 80.0}, {"month": "2026-03", "date": "2026-03-23", "action": "BUY 1900 PE", "entry_time": "09:40:00", "entry_spot": "1884.6", "peak_spot": "1820.6", "peak_time": "14:40:00", "peak_pts": 33.28, "peak_amount_rs": 20567.04, "least_spot": "1884.8", "least_amount_rs": -64.27, "exit_time": "15:15:00", "exit_spot": "1835.8", "exit_reason": "EOD EXIT", "pnl_pts": 25.38, "pnl_1lot": 7842.42, "pnl_2lots": 15684.84, "status": "TRADE", "score": 72.3}, {"month": "2026-03", "date": "2026-03-24", "action": "BUY 1850 PE", "entry_time": "10:30:00", "entry_spot": "1839.3", "peak_spot": "1814.0", "peak_time": "15:00:00", "peak_pts": 13.16, "peak_amount_rs": 8130.41, "least_spot": "1863.8", "least_amount_rs": -7873.32, "exit_time": "15:15:00", "exit_spot": "1819.2", "exit_reason": "EOD EXIT", "pnl_pts": 10.45, "pnl_1lot": 3229.05, "pnl_2lots": 6458.1, "status": "TRADE", "score": 73.9}, {"month": "2026-03", "date": "2026-03-25", "action": "BUY 1900 CE", "entry_time": "09:25:00", "entry_spot": "1876.5", "peak_spot": "1911.0", "peak_time": "12:15:00", "peak_pts": 17.94, "peak_amount_rs": 11086.92, "least_spot": "1871.0", "least_amount_rs": -1767.48, "exit_time": "15:15:00", "exit_spot": "1883.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.38, "pnl_1lot": 1044.42, "pnl_2lots": 2088.84, "status": "TRADE", "score": 69.1}, {"month": "2026-03", "date": "2026-03-27", "action": "BUY 1850 PE", "entry_time": "09:30:00", "entry_spot": "1858.9", "peak_spot": "1816.5", "peak_time": "15:00:00", "peak_pts": 22.05, "peak_amount_rs": 13625.66, "least_spot": "1866.2", "least_amount_rs": -2345.93, "exit_time": "15:15:00", "exit_spot": "1825.6", "exit_reason": "EOD EXIT", "pnl_pts": 17.32, "pnl_1lot": 5351.88, "pnl_2lots": 10703.76, "status": "TRADE", "score": 72.0}, {"month": "2026-03", "date": "2026-03-30", "action": "BUY 1800 PE", "entry_time": "09:15:00", "entry_spot": "1806.1", "peak_spot": "1804.8", "peak_time": "09:20:00", "peak_pts": 0.68, "peak_amount_rs": 417.77, "least_spot": "1837.8", "least_amount_rs": -10187.11, "exit_time": "09:35:00", "exit_spot": "1834.95", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.6}, {"month": "2026-04", "date": "2026-04-01", "action": "BUY 1850 CE", "entry_time": "09:25:00", "entry_spot": "1840.0", "peak_spot": "1870.0", "peak_time": "13:15:00", "peak_pts": 15.6, "peak_amount_rs": 9640.8, "least_spot": "1830.8", "least_amount_rs": -2956.51, "exit_time": "15:15:00", "exit_spot": "1842.0", "exit_reason": "EOD EXIT", "pnl_pts": 1.04, "pnl_1lot": 321.36, "pnl_2lots": 642.72, "status": "TRADE", "score": 68.7}, {"month": "2026-04", "date": "2026-04-02", "action": "BUY 1800 PE", "entry_time": "09:15:00", "entry_spot": "1784.0", "peak_spot": "1770.1", "peak_time": "09:30:00", "peak_pts": 7.23, "peak_amount_rs": 4466.9, "least_spot": "1812.9", "least_amount_rs": -9287.3, "exit_time": "14:05:00", "exit_spot": "1812.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.6}, {"month": "2026-04", "date": "2026-04-06", "action": "BUY 1850 CE", "entry_time": "10:10:00", "entry_spot": "1839.1", "peak_spot": "1908.0", "peak_time": "15:10:00", "peak_pts": 35.83, "peak_amount_rs": 22141.7, "least_spot": "1825.3", "least_amount_rs": -4434.77, "exit_time": "15:10:00", "exit_spot": "1906.41", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 74.3}, {"month": "2026-04", "date": "2026-04-07", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 63.9}, {"month": "2026-04", "date": "2026-04-08", "action": "BUY 2000 CE", "entry_time": "09:20:00", "entry_spot": "1982.2", "peak_spot": "2070.3", "peak_time": "10:30:00", "peak_pts": 45.81, "peak_amount_rs": 28311.82, "least_spot": "1977.7", "least_amount_rs": -1446.12, "exit_time": "10:30:00", "exit_spot": "2049.51", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 73.3}, {"month": "2026-04", "date": "2026-04-09", "action": "BUY 2050 CE", "entry_time": "11:05:00", "entry_spot": "2046.9", "peak_spot": "2064.8", "peak_time": "13:00:00", "peak_pts": 9.31, "peak_amount_rs": 5752.34, "least_spot": "2034.0", "least_amount_rs": -4145.54, "exit_time": "15:15:00", "exit_spot": "2039.0", "exit_reason": "EOD EXIT", "pnl_pts": -4.11, "pnl_1lot": -1269.99, "pnl_2lots": -2539.98, "status": "TRADE", "score": 78.0}, {"month": "2026-04", "date": "2026-04-10", "action": "BUY 2050 CE", "entry_time": "09:35:00", "entry_spot": "2066.9", "peak_spot": "2094.6", "peak_time": "13:25:00", "peak_pts": 14.4, "peak_amount_rs": 8901.67, "least_spot": "2042.2", "least_amount_rs": -7937.59, "exit_time": "15:15:00", "exit_spot": "2085.5", "exit_reason": "EOD EXIT", "pnl_pts": 9.67, "pnl_1lot": 2988.03, "pnl_2lots": 5976.06, "status": "TRADE", "score": 70.3}, {"month": "2026-04", "date": "2026-04-13", "action": "BUY 2100 CE", "entry_time": "09:55:00", "entry_spot": "2109.7", "peak_spot": "2157.6", "peak_time": "11:45:00", "peak_pts": 24.91, "peak_amount_rs": 15393.14, "least_spot": "2109.4", "least_amount_rs": -96.41, "exit_time": "15:15:00", "exit_spot": "2131.4", "exit_reason": "EOD EXIT", "pnl_pts": 11.28, "pnl_1lot": 3485.52, "pnl_2lots": 6971.04, "status": "TRADE", "score": 76.5}, {"month": "2026-04", "date": "2026-04-15", "action": "BUY 2200 CE", "entry_time": "09:55:00", "entry_spot": "2178.0", "peak_spot": "2188.0", "peak_time": "10:15:00", "peak_pts": 5.2, "peak_amount_rs": 3213.6, "least_spot": "2148.0", "least_amount_rs": -9640.8, "exit_time": "14:30:00", "exit_spot": "2149.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.2}, {"month": "2026-04", "date": "2026-04-16", "action": "BUY 2200 CE", "entry_time": "09:45:00", "entry_spot": "2183.9", "peak_spot": "2208.6", "peak_time": "14:55:00", "peak_pts": 12.84, "peak_amount_rs": 7937.59, "least_spot": "2163.3", "least_amount_rs": -6620.02, "exit_time": "15:15:00", "exit_spot": "2206.7", "exit_reason": "EOD EXIT", "pnl_pts": 11.86, "pnl_1lot": 3664.74, "pnl_2lots": 7329.48, "status": "TRADE", "score": 75.8}, {"month": "2026-04", "date": "2026-04-17", "action": "BUY 2200 CE", "entry_time": "10:25:00", "entry_spot": "2213.0", "peak_spot": "2224.6", "peak_time": "14:20:00", "peak_pts": 6.03, "peak_amount_rs": 3727.78, "least_spot": "2186.1", "least_amount_rs": -8644.58, "exit_time": "15:15:00", "exit_spot": "2217.7", "exit_reason": "EOD EXIT", "pnl_pts": 2.44, "pnl_1lot": 753.96, "pnl_2lots": 1507.92, "status": "TRADE", "score": 70.8}, {"month": "2026-04", "date": "2026-04-20", "action": "BUY 2250 CE", "entry_time": "09:15:00", "entry_spot": "2232.1", "peak_spot": "2280.0", "peak_time": "13:15:00", "peak_pts": 24.91, "peak_amount_rs": 15393.14, "least_spot": "2211.6", "least_amount_rs": -6587.88, "exit_time": "15:15:00", "exit_spot": "2222.4", "exit_reason": "PROFIT LOCK (+10.0)", "pnl_pts": 10.0, "pnl_1lot": 3090.0, "pnl_2lots": 6180.0, "status": "TRADE", "score": 70.1}, {"month": "2026-04", "date": "2026-04-21", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 62.4}, {"month": "2026-04", "date": "2026-04-22", "action": "BUY 2250 CE", "entry_time": "09:30:00", "entry_spot": "2240.0", "peak_spot": "2277.7", "peak_time": "13:40:00", "peak_pts": 19.6, "peak_amount_rs": 12115.27, "least_spot": "2226.5", "least_amount_rs": -4338.36, "exit_time": "15:15:00", "exit_spot": "2261.6", "exit_reason": "EOD EXIT", "pnl_pts": 11.23, "pnl_1lot": 3470.07, "pnl_2lots": 6940.14, "status": "TRADE", "score": 72.8}, {"month": "2026-04", "date": "2026-04-23", "action": "BUY 2250 CE", "entry_time": "10:25:00", "entry_spot": "2261.9", "peak_spot": "2330.8", "peak_time": "12:00:00", "peak_pts": 35.83, "peak_amount_rs": 22141.7, "least_spot": "2252.7", "least_amount_rs": -2956.51, "exit_time": "12:00:00", "exit_spot": "2329.21", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 70.8}, {"month": "2026-04", "date": "2026-04-24", "action": "BUY 2250 PE", "entry_time": "09:45:00", "entry_spot": "2263.4", "peak_spot": "2227.0", "peak_time": "12:40:00", "peak_pts": 18.93, "peak_amount_rs": 11697.5, "least_spot": "2293.6", "least_amount_rs": -9705.07, "exit_time": "14:25:00", "exit_spot": "2292.25", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 68.7}, {"month": "2026-04", "date": "2026-04-27", "action": "BUY 2300 CE", "entry_time": "09:15:00", "entry_spot": "2317.0", "peak_spot": "2322.7", "peak_time": "09:20:00", "peak_pts": 2.96, "peak_amount_rs": 1831.75, "least_spot": "2286.0", "least_amount_rs": -9962.16, "exit_time": "09:25:00", "exit_spot": "2288.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.5}, {"month": "2026-04", "date": "2026-04-28", "action": "BUY 2350 CE", "entry_time": "09:25:00", "entry_spot": "2353.7", "peak_spot": "2420.0", "peak_time": "14:35:00", "peak_pts": 34.48, "peak_amount_rs": 21306.17, "least_spot": "2346.3", "least_amount_rs": -2378.06, "exit_time": "15:15:00", "exit_spot": "2416.0", "exit_reason": "EOD EXIT", "pnl_pts": 32.4, "pnl_1lot": 10011.6, "pnl_2lots": 20023.2, "status": "TRADE", "score": 68.7}, {"month": "2026-04", "date": "2026-04-29", "action": "BUY 2400 CE", "entry_time": "09:15:00", "entry_spot": "2413.7", "peak_spot": "2443.8", "peak_time": "09:30:00", "peak_pts": 15.65, "peak_amount_rs": 9672.94, "least_spot": "2388.0", "least_amount_rs": -8258.95, "exit_time": "15:15:00", "exit_spot": "2427.6", "exit_reason": "EOD EXIT", "pnl_pts": 7.23, "pnl_1lot": 2234.07, "pnl_2lots": 4468.14, "status": "TRADE", "score": 73.8}, {"month": "2026-04", "date": "2026-04-30", "action": "BUY 2400 PE", "entry_time": "09:25:00", "entry_spot": "2396.6", "peak_spot": "2328.8", "peak_time": "10:15:00", "peak_pts": 35.26, "peak_amount_rs": 21788.21, "least_spot": "2398.9", "least_amount_rs": -739.13, "exit_time": "10:15:00", "exit_spot": "2329.29", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 73.2}, {"month": "2026-05", "date": "2026-05-04", "action": "BUY 2450 CE", "entry_time": "09:15:00", "entry_spot": "2438.1", "peak_spot": "2441.1", "peak_time": "09:20:00", "peak_pts": 1.56, "peak_amount_rs": 964.08, "least_spot": "2397.5", "least_amount_rs": -13047.22, "exit_time": "09:20:00", "exit_spot": "2409.25", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.7}, {"month": "2026-05", "date": "2026-05-05", "action": "BUY 2500 CE", "entry_time": "09:35:00", "entry_spot": "2502.9", "peak_spot": "2511.9", "peak_time": "09:40:00", "peak_pts": 4.68, "peak_amount_rs": 2892.24, "least_spot": "2468.0", "least_amount_rs": -11215.46, "exit_time": "10:35:00", "exit_spot": "2474.05", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.8}, {"month": "2026-05", "date": "2026-05-06", "action": "BUY 2500 CE", "entry_time": "09:20:00", "entry_spot": "2498.5", "peak_spot": "2546.5", "peak_time": "14:25:00", "peak_pts": 24.96, "peak_amount_rs": 15425.28, "least_spot": "2472.9", "least_amount_rs": -8226.82, "exit_time": "15:15:00", "exit_spot": "2542.5", "exit_reason": "EOD EXIT", "pnl_pts": 22.88, "pnl_1lot": 7069.92, "pnl_2lots": 14139.84, "status": "TRADE", "score": 74.0}, {"month": "2026-05", "date": "2026-05-07", "action": "BUY 2550 CE", "entry_time": "10:35:00", "entry_spot": "2539.8", "peak_spot": "2540.0", "peak_time": "10:40:00", "peak_pts": 0.1, "peak_amount_rs": 64.27, "least_spot": "2507.1", "least_amount_rs": -10508.47, "exit_time": "15:05:00", "exit_spot": "2510.95", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 73.2}, {"month": "2026-05", "date": "2026-05-08", "action": "BUY 2550 CE", "entry_time": "09:35:00", "entry_spot": "2532.7", "peak_spot": "2545.9", "peak_time": "10:45:00", "peak_pts": 6.86, "peak_amount_rs": 4241.95, "least_spot": "2503.1", "least_amount_rs": -9512.26, "exit_time": "14:00:00", "exit_spot": "2503.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 76.9}, {"month": "2026-05", "date": "2026-05-11", "action": "BUY 2500 PE", "entry_time": "09:15:00", "entry_spot": "2490.0", "peak_spot": "2460.0", "peak_time": "09:35:00", "peak_pts": 15.6, "peak_amount_rs": 9640.8, "least_spot": "2513.9", "least_amount_rs": -7680.5, "exit_time": "15:15:00", "exit_spot": "2500.0", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 76.9}, {"month": "2026-05", "date": "2026-05-12", "action": "BUY 2500 PE", "entry_time": "09:20:00", "entry_spot": "2478.7", "peak_spot": "2411.1", "peak_time": "13:55:00", "peak_pts": 35.15, "peak_amount_rs": 21723.94, "least_spot": "2479.3", "least_amount_rs": -192.82, "exit_time": "13:55:00", "exit_spot": "2411.39", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 72.0}, {"month": "2026-05", "date": "2026-05-13", "action": "BUY 2450 CE", "entry_time": "10:00:00", "entry_spot": "2457.3", "peak_spot": "2527.3", "peak_time": "13:30:00", "peak_pts": 36.4, "peak_amount_rs": 22495.2, "least_spot": "2450.3", "least_amount_rs": -2249.52, "exit_time": "13:30:00", "exit_spot": "2524.61", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 73.6}, {"month": "2026-05", "date": "2026-05-14", "action": "BUY 2600 CE", "entry_time": "09:15:00", "entry_spot": "2585.6", "peak_spot": "2663.9", "peak_time": "10:15:00", "peak_pts": 40.72, "peak_amount_rs": 25162.49, "least_spot": "2585.0", "least_amount_rs": -192.82, "exit_time": "10:15:00", "exit_spot": "2652.91", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 74.8}, {"month": "2026-05", "date": "2026-05-15", "action": "BUY 2750 CE", "entry_time": "09:45:00", "entry_spot": "2735.8", "peak_spot": "2799.0", "peak_time": "10:30:00", "peak_pts": 32.86, "peak_amount_rs": 20309.95, "least_spot": "2708.2", "least_amount_rs": -8869.54, "exit_time": "15:15:00", "exit_spot": "2711.4", "exit_reason": "PROFIT LOCK (+10.0)", "pnl_pts": 10.0, "pnl_1lot": 3090.0, "pnl_2lots": 6180.0, "status": "TRADE", "score": 77.0}, {"month": "2026-05", "date": "2026-05-18", "action": "BUY 2700 PE", "entry_time": "09:25:00", "entry_spot": "2685.8", "peak_spot": "2648.6", "peak_time": "12:50:00", "peak_pts": 19.34, "peak_amount_rs": 11954.59, "least_spot": "2704.8", "least_amount_rs": -6105.84, "exit_time": "15:15:00", "exit_spot": "2687.8", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 69.5}, {"month": "2026-05", "date": "2026-05-19", "action": "BUY 2750 CE", "entry_time": "09:25:00", "entry_spot": "2747.2", "peak_spot": "2765.0", "peak_time": "09:45:00", "peak_pts": 9.26, "peak_amount_rs": 5720.21, "least_spot": "2704.4", "least_amount_rs": -13754.21, "exit_time": "11:10:00", "exit_spot": "2718.35", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 74.4}, {"month": "2026-05", "date": "2026-05-20", "action": "BUY 2700 PE", "entry_time": "09:20:00", "entry_spot": "2697.7", "peak_spot": "2685.7", "peak_time": "10:00:00", "peak_pts": 6.24, "peak_amount_rs": 3856.32, "least_spot": "2715.5", "least_amount_rs": -5720.21, "exit_time": "15:15:00", "exit_spot": "2705.7", "exit_reason": "EOD EXIT", "pnl_pts": -4.16, "pnl_1lot": -1285.44, "pnl_2lots": -2570.88, "status": "TRADE", "score": 71.6}, {"month": "2026-05", "date": "2026-05-21", "action": "BUY 2750 CE", "entry_time": "09:20:00", "entry_spot": "2734.8", "peak_spot": "2769.6", "peak_time": "09:50:00", "peak_pts": 18.1, "peak_amount_rs": 11183.33, "least_spot": "2703.5", "least_amount_rs": -10058.57, "exit_time": "12:25:00", "exit_spot": "2705.95", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 71.2}, {"month": "2026-05", "date": "2026-05-22", "action": "BUY 2750 CE", "entry_time": "10:40:00", "entry_spot": "2730.3", "peak_spot": "2745.0", "peak_time": "10:55:00", "peak_pts": 7.64, "peak_amount_rs": 4723.99, "least_spot": "2710.5", "least_amount_rs": -6362.93, "exit_time": "15:15:00", "exit_spot": "2718.9", "exit_reason": "EOD EXIT", "pnl_pts": -5.93, "pnl_1lot": -1832.37, "pnl_2lots": -3664.74, "status": "TRADE", "score": 69.5}, {"month": "2026-05", "date": "2026-05-25", "action": "BUY 2750 CE", "entry_time": "09:20:00", "entry_spot": "2766.1", "peak_spot": "2852.3", "peak_time": "13:10:00", "peak_pts": 44.82, "peak_amount_rs": 27701.23, "least_spot": "2745.0", "least_amount_rs": -6780.7, "exit_time": "13:10:00", "exit_spot": "2833.41", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 72.1}, {"month": "2026-05", "date": "2026-05-26", "action": "BUY 2850 CE", "entry_time": "09:50:00", "entry_spot": "2866.5", "peak_spot": "2939.2", "peak_time": "12:30:00", "peak_pts": 37.8, "peak_amount_rs": 23362.87, "least_spot": "2865.1", "least_amount_rs": -449.9, "exit_time": "12:30:00", "exit_spot": "2933.81", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 73.2}, {"month": "2026-05", "date": "2026-05-27", "action": "BUY 3000 CE", "entry_time": "09:15:00", "entry_spot": "2981.0", "peak_spot": "3027.5", "peak_time": "10:35:00", "peak_pts": 24.18, "peak_amount_rs": 14943.24, "least_spot": "2950.0", "least_amount_rs": -9962.16, "exit_time": "13:25:00", "exit_spot": "2952.15", "exit_reason": "PROFIT LOCK (+10.0)", "pnl_pts": 10.0, "pnl_1lot": 3090.0, "pnl_2lots": 6180.0, "status": "TRADE", "score": 72.8}, {"month": "2026-05", "date": "2026-05-29", "action": "BUY 2950 PE", "entry_time": "10:00:00", "entry_spot": "2941.8", "peak_spot": "2928.0", "peak_time": "15:00:00", "peak_pts": 7.18, "peak_amount_rs": 4434.77, "least_spot": "2967.2", "least_amount_rs": -8162.54, "exit_time": "15:15:00", "exit_spot": "2938.1", "exit_reason": "EOD EXIT", "pnl_pts": 1.92, "pnl_1lot": 593.28, "pnl_2lots": 1186.56, "status": "TRADE", "score": 71.6}, {"month": "2026-06", "date": "2026-06-01", "action": "BUY 2900 PE", "entry_time": "09:50:00", "entry_spot": "2913.2", "peak_spot": "2891.1", "peak_time": "10:30:00", "peak_pts": 11.49, "peak_amount_rs": 7102.06, "least_spot": "2930.9", "least_amount_rs": -5688.07, "exit_time": "15:15:00", "exit_spot": "2907.0", "exit_reason": "EOD EXIT", "pnl_pts": 3.22, "pnl_1lot": 994.98, "pnl_2lots": 1989.96, "status": "TRADE", "score": 71.6}, {"month": "2026-06", "date": "2026-06-02", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 75.8}, {"month": "2026-06", "date": "2026-06-03", "action": "BUY 2900 PE", "entry_time": "10:25:00", "entry_spot": "2900.2", "peak_spot": "2892.3", "peak_time": "10:35:00", "peak_pts": 4.11, "peak_amount_rs": 2538.74, "least_spot": "2936.1", "least_amount_rs": -11536.82, "exit_time": "12:35:00", "exit_spot": "2929.05", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 74.0}, {"month": "2026-06", "date": "2026-06-04", "action": "BUY 2950 CE", "entry_time": "09:15:00", "entry_spot": "2958.9", "peak_spot": "2977.0", "peak_time": "09:35:00", "peak_pts": 9.41, "peak_amount_rs": 5816.62, "least_spot": "2939.4", "least_amount_rs": -6266.52, "exit_time": "15:15:00", "exit_spot": "2974.0", "exit_reason": "EOD EXIT", "pnl_pts": 7.85, "pnl_1lot": 2425.65, "pnl_2lots": 4851.3, "status": "TRADE", "score": 70.2}, {"month": "2026-06", "date": "2026-06-05", "action": "BUY 3000 CE", "entry_time": "09:20:00", "entry_spot": "2982.7", "peak_spot": "3059.8", "peak_time": "14:45:00", "peak_pts": 40.09, "peak_amount_rs": 24776.86, "least_spot": "2979.0", "least_amount_rs": -1189.03, "exit_time": "14:45:00", "exit_spot": "3050.01", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 80.2}, {"month": "2026-06", "date": "2026-06-08", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.9}, {"month": "2026-06", "date": "2026-06-09", "action": "BUY 2950 PE", "entry_time": "10:20:00", "entry_spot": "2951.6", "peak_spot": "2951.3", "peak_time": "10:25:00", "peak_pts": 0.16, "peak_amount_rs": 96.41, "least_spot": "2998.7", "least_amount_rs": -15136.06, "exit_time": "11:45:00", "exit_spot": "2980.45", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.2}, {"month": "2026-06", "date": "2026-06-10", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 74.7}, {"month": "2026-06", "date": "2026-06-11", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 66.0}, {"month": "2026-06", "date": "2026-06-12", "action": "BUY 2900 PE", "entry_time": "10:10:00", "entry_spot": "2919.2", "peak_spot": "2886.2", "peak_time": "12:45:00", "peak_pts": 17.16, "peak_amount_rs": 10604.88, "least_spot": "2931.0", "least_amount_rs": -3792.05, "exit_time": "15:15:00", "exit_spot": "2925.0", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 69.9}, {"month": "2026-06", "date": "2026-06-15", "action": "BUY 2950 CE", "entry_time": "09:15:00", "entry_spot": "2971.4", "peak_spot": "2977.0", "peak_time": "09:40:00", "peak_pts": 2.91, "peak_amount_rs": 1799.62, "least_spot": "2937.5", "least_amount_rs": -10894.1, "exit_time": "13:50:00", "exit_spot": "2942.55", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 72.0}, {"month": "2026-06", "date": "2026-06-16", "action": "BUY 2950 CE", "entry_time": "09:25:00", "entry_spot": "2970.0", "peak_spot": "2996.9", "peak_time": "09:55:00", "peak_pts": 13.99, "peak_amount_rs": 8644.58, "least_spot": "2940.4", "least_amount_rs": -9512.26, "exit_time": "12:00:00", "exit_spot": "2941.15", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 68.8}, {"month": "2026-06", "date": "2026-06-17", "action": "BUY 2950 CE", "entry_time": "10:20:00", "entry_spot": "2971.6", "peak_spot": "2974.0", "peak_time": "10:25:00", "peak_pts": 1.25, "peak_amount_rs": 771.26, "least_spot": "2942.5", "least_amount_rs": -9351.58, "exit_time": "13:50:00", "exit_spot": "2942.75", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.3}, {"month": "2026-06", "date": "2026-06-18", "action": "BUY 2950 CE", "entry_time": "09:25:00", "entry_spot": "2965.3", "peak_spot": "3029.8", "peak_time": "15:15:00", "peak_pts": 33.54, "peak_amount_rs": 20727.72, "least_spot": "2938.0", "least_amount_rs": -8773.13, "exit_time": "15:15:00", "exit_spot": "3029.8", "exit_reason": "EOD EXIT", "pnl_pts": 33.54, "pnl_1lot": 10363.86, "pnl_2lots": 20727.72, "status": "TRADE", "score": 73.8}, {"month": "2026-06", "date": "2026-06-19", "action": "BUY 3050 CE", "entry_time": "09:15:00", "entry_spot": "3038.0", "peak_spot": "3050.4", "peak_time": "09:20:00", "peak_pts": 6.45, "peak_amount_rs": 3984.86, "least_spot": "3011.2", "least_amount_rs": -8612.45, "exit_time": "15:15:00", "exit_spot": "3038.1", "exit_reason": "EOD EXIT", "pnl_pts": 0.05, "pnl_1lot": 15.45, "pnl_2lots": 30.9, "status": "TRADE", "score": 71.4}, {"month": "2026-06", "date": "2026-06-22", "action": "BUY 3050 CE", "entry_time": "11:10:00", "entry_spot": "3032.9", "peak_spot": "3065.0", "peak_time": "15:00:00", "peak_pts": 16.69, "peak_amount_rs": 10315.66, "least_spot": "3026.7", "least_amount_rs": -1992.43, "exit_time": "15:15:00", "exit_spot": "3056.5", "exit_reason": "EOD EXIT", "pnl_pts": 12.27, "pnl_1lot": 3791.43, "pnl_2lots": 7582.86, "status": "TRADE", "score": 84.8}, {"month": "2026-06", "date": "2026-06-23", "action": "BUY 3100 CE", "entry_time": "09:15:00", "entry_spot": "3082.0", "peak_spot": "3089.8", "peak_time": "09:20:00", "peak_pts": 4.06, "peak_amount_rs": 2506.61, "least_spot": "3046.8", "least_amount_rs": -11311.87, "exit_time": "10:15:00", "exit_spot": "3053.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 72.6}, {"month": "2026-06", "date": "2026-06-24", "action": "BUY 3000 CE", "entry_time": "10:35:00", "entry_spot": "3019.0", "peak_spot": "3077.0", "peak_time": "14:40:00", "peak_pts": 30.16, "peak_amount_rs": 18638.88, "least_spot": "3003.9", "least_amount_rs": -4852.54, "exit_time": "15:15:00", "exit_spot": "3066.0", "exit_reason": "EOD EXIT", "pnl_pts": 24.44, "pnl_1lot": 7551.96, "pnl_2lots": 15103.92, "status": "TRADE", "score": 75.8}, {"month": "2026-06", "date": "2026-06-25", "action": "BUY 3100 CE", "entry_time": "09:35:00", "entry_spot": "3098.4", "peak_spot": "3105.0", "peak_time": "11:15:00", "peak_pts": 3.43, "peak_amount_rs": 2120.98, "least_spot": "3066.4", "least_amount_rs": -10283.52, "exit_time": "12:20:00", "exit_spot": "3069.55", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.5}, {"month": "2026-06", "date": "2026-06-29", "action": "BUY 2950 PE", "entry_time": "10:15:00", "entry_spot": "2959.0", "peak_spot": "2955.5", "peak_time": "10:40:00", "peak_pts": 1.82, "peak_amount_rs": 1124.76, "least_spot": "2989.8", "least_amount_rs": -9897.89, "exit_time": "13:10:00", "exit_spot": "2987.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.4}, {"month": "2026-06", "date": "2026-06-30", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 72.0}, {"month": "2026-07", "date": "2026-07-01", "action": "BUY 3050 CE", "entry_time": "10:00:00", "entry_spot": "3047.6", "peak_spot": "3115.0", "peak_time": "12:05:00", "peak_pts": 35.05, "peak_amount_rs": 21659.66, "least_spot": "3042.1", "least_amount_rs": -1767.48, "exit_time": "12:05:00", "exit_spot": "3114.91", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 68.2}, {"month": "2026-07", "date": "2026-07-02", "action": "BUY 3150 CE", "entry_time": "09:15:00", "entry_spot": "3174.9", "peak_spot": "3206.4", "peak_time": "10:55:00", "peak_pts": 16.38, "peak_amount_rs": 10122.84, "least_spot": "3147.2", "least_amount_rs": -8901.67, "exit_time": "15:15:00", "exit_spot": "3174.2", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 69.2}, {"month": "2026-07", "date": "2026-07-03", "action": "BUY 3200 CE", "entry_time": "12:45:00", "entry_spot": "3215.0", "peak_spot": "3219.9", "peak_time": "12:50:00", "peak_pts": 2.55, "peak_amount_rs": 1574.66, "least_spot": "3183.6", "least_amount_rs": -10090.7, "exit_time": "13:35:00", "exit_spot": "3186.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 82.4}, {"month": "2026-07", "date": "2026-07-06", "action": "BUY 3250 CE", "entry_time": "09:15:00", "entry_spot": "3231.0", "peak_spot": "3231.8", "peak_time": "09:20:00", "peak_pts": 0.42, "peak_amount_rs": 257.09, "least_spot": "3199.6", "least_amount_rs": -10090.7, "exit_time": "09:20:00", "exit_spot": "3202.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.8}, {"month": "2026-07", "date": "2026-07-07", "action": "BUY 3200 PE", "entry_time": "09:25:00", "entry_spot": "3186.0", "peak_spot": "3111.0", "peak_time": "14:45:00", "peak_pts": 39.0, "peak_amount_rs": 24102.0, "least_spot": "3191.0", "least_amount_rs": -1606.8, "exit_time": "14:45:00", "exit_spot": "3118.69", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 69.0}, {"month": "2026-07", "date": "2026-07-08", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 76.2}, {"month": "2026-07", "date": "2026-07-09", "action": "BUY 3050 PE", "entry_time": "09:40:00", "entry_spot": "3040.6", "peak_spot": "3034.8", "peak_time": "09:55:00", "peak_pts": 3.02, "peak_amount_rs": 1863.89, "least_spot": "3069.9", "least_amount_rs": -9415.85, "exit_time": "10:15:00", "exit_spot": "3069.45", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.2}, {"month": "2026-07", "date": "2026-07-10", "action": "BUY 3150 CE", "entry_time": "09:55:00", "entry_spot": "3170.0", "peak_spot": "3182.9", "peak_time": "12:55:00", "peak_pts": 6.71, "peak_amount_rs": 4145.54, "least_spot": "3141.3", "least_amount_rs": -9223.03, "exit_time": "15:15:00", "exit_spot": "3144.8", "exit_reason": "EOD EXIT", "pnl_pts": -13.1, "pnl_1lot": -4047.9, "pnl_2lots": -8095.8, "status": "TRADE", "score": 71.0}, {"month": "2026-07", "date": "2026-07-13", "action": "BUY 3150 CE", "entry_time": "10:05:00", "entry_spot": "3169.4", "peak_spot": "3195.0", "peak_time": "12:45:00", "peak_pts": 13.31, "peak_amount_rs": 8226.82, "least_spot": "3163.0", "least_amount_rs": -2056.7, "exit_time": "15:15:00", "exit_spot": "3177.7", "exit_reason": "EOD EXIT", "pnl_pts": 4.32, "pnl_1lot": 1334.88, "pnl_2lots": 2669.76, "status": "TRADE", "score": 72.0}, {"month": "2026-07", "date": "2026-07-14", "action": "BUY 3150 PE", "entry_time": "09:25:00", "entry_spot": "3157.1", "peak_spot": "3152.7", "peak_time": "10:05:00", "peak_pts": 2.29, "peak_amount_rs": 1413.98, "least_spot": "3186.6", "least_amount_rs": -9480.12, "exit_time": "10:15:00", "exit_spot": "3185.95", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.7}, {"month": "2026-07", "date": "2026-07-15", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 75.8}, {"month": "2026-07", "date": "2026-07-16", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 72.8}, {"month": "2026-07", "date": "2026-07-17", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 75.8}, {"month": "2026-07", "date": "2026-07-20", "action": "BUY 3150 PE", "entry_time": "09:40:00", "entry_spot": "3134.6", "peak_spot": "3133.0", "peak_time": "09:45:00", "peak_pts": 0.83, "peak_amount_rs": 514.18, "least_spot": "3167.6", "least_amount_rs": -10604.88, "exit_time": "10:15:00", "exit_spot": "3163.45", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.3}, {"month": "2026-07", "date": "2026-07-21", "action": "BUY 3200 CE", "entry_time": "09:15:00", "entry_spot": "3199.1", "peak_spot": "3209.0", "peak_time": "14:05:00", "peak_pts": 5.15, "peak_amount_rs": 3181.46, "least_spot": "3180.8", "least_amount_rs": -5880.89, "exit_time": "15:15:00", "exit_spot": "3182.3", "exit_reason": "EOD EXIT", "pnl_pts": -8.74, "pnl_1lot": -2700.66, "pnl_2lots": -5401.32, "status": "TRADE", "score": 72.0}, {"month": "2026-07", "date": "2026-07-22", "action": "BUY 3150 PE", "entry_time": "09:15:00", "entry_spot": "3173.0", "peak_spot": "3153.1", "peak_time": "09:45:00", "peak_pts": 10.35, "peak_amount_rs": 6395.06, "least_spot": "3201.9", "least_amount_rs": -9287.3, "exit_time": "10:50:00", "exit_spot": "3201.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.2}, {"month": "2026-07", "date": "2026-07-23", "action": "BUY 3150 PE", "entry_time": "09:25:00", "entry_spot": "3127.1", "peak_spot": "3051.1", "peak_time": "12:30:00", "peak_pts": 39.52, "peak_amount_rs": 24423.36, "least_spot": "3128.9", "least_amount_rs": -578.45, "exit_time": "12:30:00", "exit_spot": "3059.79", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 68.2}, {"month": "2026-07", "date": "2026-07-24", "action": "BUY 3000 PE", "entry_time": "10:20:00", "entry_spot": "3002.4", "peak_spot": "2998.0", "peak_time": "11:05:00", "peak_pts": 2.29, "peak_amount_rs": 1413.98, "least_spot": "3040.0", "least_amount_rs": -12083.14, "exit_time": "12:25:00", "exit_spot": "3031.25", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.2}, {"month": "2026-07", "date": "2026-07-27", "action": "BUY 3050 CE", "entry_time": "09:35:00", "entry_spot": "3042.4", "peak_spot": "3045.5", "peak_time": "09:45:00", "peak_pts": 1.61, "peak_amount_rs": 996.22, "least_spot": "3010.0", "least_amount_rs": -10412.06, "exit_time": "11:05:00", "exit_spot": "3013.55", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 75.1}, {"month": "2026-07", "date": "2026-07-28", "action": "BUY 3000 PE", "entry_time": "09:50:00", "entry_spot": "3003.5", "peak_spot": "2996.3", "peak_time": "10:00:00", "peak_pts": 3.74, "peak_amount_rs": 2313.79, "least_spot": "3026.7", "least_amount_rs": -7455.55, "exit_time": "15:15:00", "exit_spot": "3001.2", "exit_reason": "EOD EXIT", "pnl_pts": 1.2, "pnl_1lot": 370.8, "pnl_2lots": 741.6, "status": "TRADE", "score": 70.8}, {"month": "2026-07", "date": "2026-07-29", "action": "BUY 3050 CE", "entry_time": "09:25:00", "entry_spot": "3027.5", "peak_spot": "3034.8", "peak_time": "09:55:00", "peak_pts": 3.8, "peak_amount_rs": 2345.93, "least_spot": "2997.3", "least_amount_rs": -9705.07, "exit_time": "11:05:00", "exit_spot": "2998.65", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.2}, {"month": "2026-07", "date": "2026-07-30", "action": "BUY 3050 CE", "entry_time": "09:35:00", "entry_spot": "3053.3", "peak_spot": "3057.0", "peak_time": "09:55:00", "peak_pts": 1.92, "peak_amount_rs": 1189.03, "least_spot": "3020.0", "least_amount_rs": -10701.29, "exit_time": "10:15:00", "exit_spot": "3024.45", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 73.8}, {"month": "2026-07", "date": "2026-07-31", "action": "BUY 3050 PE", "entry_time": "10:15:00", "entry_spot": "3025.6", "peak_spot": "3007.3", "peak_time": "11:45:00", "peak_pts": 9.52, "peak_amount_rs": 5880.89, "least_spot": "3040.0", "least_amount_rs": -4627.58, "exit_time": "15:05:00", "exit_spot": "3015.3", "exit_reason": "EOD EXIT", "pnl_pts": 5.36, "pnl_1lot": 1656.24, "pnl_2lots": 3312.48, "status": "TRADE", "score": 74.3}, {"month": "2026-08", "date": "2026-08-03", "action": "BUY 3050 CE", "entry_time": "09:15:00", "entry_spot": "3043.5", "peak_spot": "3076.2", "peak_time": "12:45:00", "peak_pts": 17.0, "peak_amount_rs": 10508.47, "least_spot": "3041.2", "least_amount_rs": -739.13, "exit_time": "15:15:00", "exit_spot": "3061.1", "exit_reason": "EOD EXIT", "pnl_pts": 9.15, "pnl_1lot": 2827.35, "pnl_2lots": 5654.7, "status": "TRADE", "score": 69.3}, {"month": "2026-08", "date": "2026-08-04", "action": "BUY 3100 CE", "entry_time": "09:15:00", "entry_spot": "3075.6", "peak_spot": "3090.5", "peak_time": "09:50:00", "peak_pts": 7.75, "peak_amount_rs": 4788.26, "least_spot": "3041.8", "least_amount_rs": -10861.97, "exit_time": "11:45:00", "exit_spot": "3046.75", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.3}, {"month": "2026-08", "date": "2026-08-05", "action": "BUY 3050 CE", "entry_time": "09:15:00", "entry_spot": "3068.0", "peak_spot": "3085.0", "peak_time": "09:20:00", "peak_pts": 8.84, "peak_amount_rs": 5463.12, "least_spot": "3038.0", "least_amount_rs": -9640.8, "exit_time": "13:50:00", "exit_spot": "3039.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.4}, {"month": "2026-08", "date": "2026-08-06", "action": "BUY 3050 CE", "entry_time": "09:45:00", "entry_spot": "3057.3", "peak_spot": "3072.0", "peak_time": "11:15:00", "peak_pts": 7.64, "peak_amount_rs": 4723.99, "least_spot": "3028.0", "least_amount_rs": -9415.85, "exit_time": "15:00:00", "exit_spot": "3028.45", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.6}, {"month": "2026-08", "date": "2026-08-07", "action": "BUY 3000 PE", "entry_time": "09:35:00", "entry_spot": "3020.4", "peak_spot": "3004.5", "peak_time": "15:10:00", "peak_pts": 8.27, "peak_amount_rs": 5109.62, "least_spot": "3039.5", "least_amount_rs": -6137.98, "exit_time": "15:15:00", "exit_spot": "3004.9", "exit_reason": "EOD EXIT", "pnl_pts": 8.06, "pnl_1lot": 2490.54, "pnl_2lots": 4981.08, "status": "TRADE", "score": 69.3}, {"month": "2026-08", "date": "2026-08-10", "action": "BUY 3000 PE", "entry_time": "09:55:00", "entry_spot": "2990.5", "peak_spot": "2970.9", "peak_time": "10:05:00", "peak_pts": 10.19, "peak_amount_rs": 6298.66, "least_spot": "3015.1", "least_amount_rs": -7905.46, "exit_time": "15:15:00", "exit_spot": "3004.4", "exit_reason": "EOD EXIT", "pnl_pts": -7.23, "pnl_1lot": -2234.07, "pnl_2lots": -4468.14, "status": "TRADE", "score": 71.2}, {"month": "2026-08", "date": "2026-08-11", "action": "BUY 3000 CE", "entry_time": "10:40:00", "entry_spot": "3022.0", "peak_spot": "3022.0", "peak_time": "10:45:00", "peak_pts": 0.0, "peak_amount_rs": 0.0, "least_spot": "2993.0", "least_amount_rs": -9319.44, "exit_time": "11:40:00", "exit_spot": "2993.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.0}, {"month": "2026-08", "date": "2026-08-12", "action": "BUY 2950 PE", "entry_time": "10:00:00", "entry_spot": "2968.0", "peak_spot": "2943.0", "peak_time": "11:50:00", "peak_pts": 13.0, "peak_amount_rs": 8034.0, "least_spot": "2986.1", "least_amount_rs": -5816.62, "exit_time": "15:15:00", "exit_spot": "2980.0", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 68.2}, {"month": "2026-08", "date": "2026-08-13", "action": "BUY 2950 PE", "entry_time": "10:20:00", "entry_spot": "2937.2", "peak_spot": "2932.8", "peak_time": "10:25:00", "peak_pts": 2.29, "peak_amount_rs": 1413.98, "least_spot": "2969.0", "least_amount_rs": -10219.25, "exit_time": "13:55:00", "exit_spot": "2966.05", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.5}, {"month": "2026-08", "date": "2026-08-14", "action": "BUY 3000 CE", "entry_time": "10:10:00", "entry_spot": "3006.3", "peak_spot": "3047.0", "peak_time": "15:10:00", "peak_pts": 21.16, "peak_amount_rs": 13079.35, "least_spot": "2993.0", "least_amount_rs": -4274.09, "exit_time": "15:15:00", "exit_spot": "3040.0", "exit_reason": "EOD EXIT", "pnl_pts": 17.52, "pnl_1lot": 5413.68, "pnl_2lots": 10827.36, "status": "TRADE", "score": 68.7}, {"month": "2026-08", "date": "2026-08-17", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 72.4}, {"month": "2026-08", "date": "2026-08-18", "action": "BUY 3000 CE", "entry_time": "09:55:00", "entry_spot": "3024.6", "peak_spot": "3036.0", "peak_time": "10:35:00", "peak_pts": 5.93, "peak_amount_rs": 3663.5, "least_spot": "3013.6", "least_amount_rs": -3534.96, "exit_time": "15:15:00", "exit_spot": "3013.6", "exit_reason": "EOD EXIT", "pnl_pts": -5.72, "pnl_1lot": -1767.48, "pnl_2lots": -3534.96, "status": "TRADE", "score": 68.7}, {"month": "2026-08", "date": "2026-08-19", "action": "BUY 3000 PE", "entry_time": "09:30:00", "entry_spot": "2988.9", "peak_spot": "2986.8", "peak_time": "09:40:00", "peak_pts": 1.09, "peak_amount_rs": 674.86, "least_spot": "3018.9", "least_amount_rs": -9640.8, "exit_time": "10:00:00", "exit_spot": "3017.75", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.9}, {"month": "2026-08", "date": "2026-08-20", "action": "BUY 3000 CE", "entry_time": "09:50:00", "entry_spot": "3005.7", "peak_spot": "3011.0", "peak_time": "11:30:00", "peak_pts": 2.76, "peak_amount_rs": 1703.21, "least_spot": "2990.0", "least_amount_rs": -5045.35, "exit_time": "15:15:00", "exit_spot": "2990.0", "exit_reason": "EOD EXIT", "pnl_pts": -8.16, "pnl_1lot": -2521.44, "pnl_2lots": -5042.88, "status": "TRADE", "score": 75.3}, {"month": "2026-08", "date": "2026-08-21", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 68.6}, {"month": "2026-08", "date": "2026-08-24", "action": "BUY 3000 CE", "entry_time": "09:25:00", "entry_spot": "3012.3", "peak_spot": "3019.0", "peak_time": "09:50:00", "peak_pts": 3.48, "peak_amount_rs": 2153.11, "least_spot": "2975.1", "least_amount_rs": -11954.59, "exit_time": "11:20:00", "exit_spot": "2983.45", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.3}, {"month": "2026-08", "date": "2026-08-25", "action": "BUY 2950 PE", "entry_time": "10:00:00", "entry_spot": "2966.5", "peak_spot": "2962.5", "peak_time": "10:10:00", "peak_pts": 2.08, "peak_amount_rs": 1285.44, "least_spot": "3001.6", "least_amount_rs": -11279.74, "exit_time": "10:35:00", "exit_spot": "2995.35", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.2}, {"month": "2026-08", "date": "2026-08-26", "action": "BUY 3100 CE", "entry_time": "09:15:00", "entry_spot": "3097.9", "peak_spot": "3165.0", "peak_time": "09:50:00", "peak_pts": 34.89, "peak_amount_rs": 21563.26, "least_spot": "3092.8", "least_amount_rs": -1638.94, "exit_time": "15:15:00", "exit_spot": "3129.0", "exit_reason": "EOD EXIT", "pnl_pts": 16.17, "pnl_1lot": 4996.53, "pnl_2lots": 9993.06, "status": "TRADE", "score": 68.3}, {"month": "2026-08", "date": "2026-08-27", "action": "BUY 3150 CE", "entry_time": "09:50:00", "entry_spot": "3150.2", "peak_spot": "3168.0", "peak_time": "13:30:00", "peak_pts": 9.26, "peak_amount_rs": 5720.21, "least_spot": "3132.9", "least_amount_rs": -5559.53, "exit_time": "15:15:00", "exit_spot": "3159.3", "exit_reason": "EOD EXIT", "pnl_pts": 4.73, "pnl_1lot": 1461.57, "pnl_2lots": 2923.14, "status": "TRADE", "score": 69.3}, {"month": "2026-08", "date": "2026-08-28", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 73.2}, {"month": "2026-08", "date": "2026-08-31", "action": "BUY 3100 PE", "entry_time": "09:25:00", "entry_spot": "3091.1", "peak_spot": "2971.3", "peak_time": "12:55:00", "peak_pts": 62.3, "peak_amount_rs": 38498.93, "least_spot": "3100.0", "least_amount_rs": -2860.1, "exit_time": "12:55:00", "exit_spot": "3023.79", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 70.9}, {"month": "2026-09", "date": "2026-09-01", "action": "BUY 2900 PE", "entry_time": "09:15:00", "entry_spot": "2914.3", "peak_spot": "2846.9", "peak_time": "14:00:00", "peak_pts": 35.05, "peak_amount_rs": 21659.66, "least_spot": "2942.4", "least_amount_rs": -9030.22, "exit_time": "14:00:00", "exit_spot": "2846.99", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 74.0}, {"month": "2026-09", "date": "2026-09-02", "action": "BUY 2850 PE", "entry_time": "09:25:00", "entry_spot": "2836.8", "peak_spot": "2836.3", "peak_time": "09:30:00", "peak_pts": 0.26, "peak_amount_rs": 160.68, "least_spot": "2867.0", "least_amount_rs": -9705.07, "exit_time": "09:50:00", "exit_spot": "2865.65", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.8}, {"month": "2026-09", "date": "2026-09-03", "action": "BUY 2900 CE", "entry_time": "09:20:00", "entry_spot": "2915.7", "peak_spot": "2919.6", "peak_time": "09:25:00", "peak_pts": 2.03, "peak_amount_rs": 1253.3, "least_spot": "2885.2", "least_amount_rs": -9801.48, "exit_time": "13:25:00", "exit_spot": "2886.85", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 74.0}, {"month": "2026-09", "date": "2026-09-04", "action": "BUY 2900 CE", "entry_time": "09:35:00", "entry_spot": "2913.0", "peak_spot": "2965.0", "peak_time": "11:55:00", "peak_pts": 27.04, "peak_amount_rs": 16710.72, "least_spot": "2908.5", "least_amount_rs": -1446.12, "exit_time": "15:15:00", "exit_spot": "2942.6", "exit_reason": "EOD EXIT", "pnl_pts": 15.39, "pnl_1lot": 4755.51, "pnl_2lots": 9511.02, "status": "TRADE", "score": 71.6}, {"month": "2026-09", "date": "2026-09-07", "action": "BUY 2950 CE", "entry_time": "09:55:00", "entry_spot": "2959.9", "peak_spot": "2962.8", "peak_time": "10:00:00", "peak_pts": 1.51, "peak_amount_rs": 931.94, "least_spot": "2923.8", "least_amount_rs": -11601.1, "exit_time": "10:25:00", "exit_spot": "2931.05", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 69.8}, {"month": "2026-09", "date": "2026-09-08", "action": "BUY 2950 CE", "entry_time": "10:10:00", "entry_spot": "2943.5", "peak_spot": "2968.0", "peak_time": "12:30:00", "peak_pts": 12.74, "peak_amount_rs": 7873.32, "least_spot": "2936.2", "least_amount_rs": -2345.93, "exit_time": "15:15:00", "exit_spot": "2953.1", "exit_reason": "EOD EXIT", "pnl_pts": 4.99, "pnl_1lot": 1541.91, "pnl_2lots": 3083.82, "status": "TRADE", "score": 69.6}, {"month": "2026-09", "date": "2026-09-09", "action": "BUY 3000 CE", "entry_time": "09:15:00", "entry_spot": "2984.0", "peak_spot": "3077.1", "peak_time": "09:40:00", "peak_pts": 48.41, "peak_amount_rs": 29918.62, "least_spot": "2976.3", "least_amount_rs": -2474.47, "exit_time": "09:40:00", "exit_spot": "3051.31", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 74.9}, {"month": "2026-09", "date": "2026-09-10", "action": "BUY 3100 CE", "entry_time": "10:45:00", "entry_spot": "3088.0", "peak_spot": "3099.8", "peak_time": "12:20:00", "peak_pts": 6.14, "peak_amount_rs": 3792.05, "least_spot": "3059.0", "least_amount_rs": -9319.44, "exit_time": "14:40:00", "exit_spot": "3059.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.2}, {"month": "2026-09", "date": "2026-09-11", "action": "BUY 3000 PE", "entry_time": "09:25:00", "entry_spot": "3016.3", "peak_spot": "3000.0", "peak_time": "10:25:00", "peak_pts": 8.48, "peak_amount_rs": 5238.17, "least_spot": "3057.6", "least_amount_rs": -13272.17, "exit_time": "14:00:00", "exit_spot": "3045.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 68.3}, {"month": "2026-09", "date": "2026-09-15", "action": "BUY 3050 PE", "entry_time": "09:20:00", "entry_spot": "3031.0", "peak_spot": "2950.0", "peak_time": "14:10:00", "peak_pts": 42.12, "peak_amount_rs": 26030.16, "least_spot": "3033.4", "least_amount_rs": -771.26, "exit_time": "14:10:00", "exit_spot": "2963.69", "exit_reason": "TARGET HIT (+35.0)", "pnl_pts": 35.0, "pnl_1lot": 10815.0, "pnl_2lots": 21630.0, "status": "TRADE", "score": 72.4}, {"month": "2026-09", "date": "2026-09-16", "action": "BUY 2900 PE", "entry_time": "10:05:00", "entry_spot": "2921.9", "peak_spot": "2920.4", "peak_time": "10:10:00", "peak_pts": 0.78, "peak_amount_rs": 482.04, "least_spot": "2956.3", "least_amount_rs": -11054.78, "exit_time": "10:45:00", "exit_spot": "2950.75", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.3}, {"month": "2026-09", "date": "2026-09-17", "action": "BUY 2900 PE", "entry_time": "10:45:00", "entry_spot": "2920.4", "peak_spot": "2907.8", "peak_time": "11:10:00", "peak_pts": 6.55, "peak_amount_rs": 4049.14, "least_spot": "2944.8", "least_amount_rs": -7841.18, "exit_time": "15:15:00", "exit_spot": "2929.2", "exit_reason": "EOD EXIT", "pnl_pts": -4.58, "pnl_1lot": -1415.22, "pnl_2lots": -2830.44, "status": "TRADE", "score": 77.3}, {"month": "2026-09", "date": "2026-09-18", "action": "BUY 2950 CE", "entry_time": "09:15:00", "entry_spot": "2955.3", "peak_spot": "3005.0", "peak_time": "13:25:00", "peak_pts": 25.84, "peak_amount_rs": 15971.59, "least_spot": "2931.1", "least_amount_rs": -7776.91, "exit_time": "15:15:00", "exit_spot": "2980.0", "exit_reason": "EOD EXIT", "pnl_pts": 12.84, "pnl_1lot": 3967.56, "pnl_2lots": 7935.12, "status": "TRADE", "score": 70.8}, {"month": "2026-09", "date": "2026-09-21", "action": "BUY 3000 CE", "entry_time": "09:20:00", "entry_spot": "3011.0", "peak_spot": "3014.0", "peak_time": "09:30:00", "peak_pts": 1.56, "peak_amount_rs": 964.08, "least_spot": "2978.6", "least_amount_rs": -10412.06, "exit_time": "12:00:00", "exit_spot": "2982.15", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 74.0}, {"month": "2026-09", "date": "2026-09-22", "action": "BUY 3000 CE", "entry_time": "09:20:00", "entry_spot": "3018.1", "peak_spot": "3019.9", "peak_time": "09:25:00", "peak_pts": 0.94, "peak_amount_rs": 578.45, "least_spot": "2985.5", "least_amount_rs": -10476.34, "exit_time": "10:55:00", "exit_spot": "2989.25", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.2}, {"month": "2026-09", "date": "2026-09-23", "action": "BUY 3000 CE", "entry_time": "09:50:00", "entry_spot": "3019.4", "peak_spot": "3018.9", "peak_time": "09:55:00", "peak_pts": -0.26, "peak_amount_rs": -160.68, "least_spot": "2988.9", "least_amount_rs": -9801.48, "exit_time": "10:05:00", "exit_spot": "2990.55", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 71.6}, {"month": "2026-09", "date": "2026-09-24", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 73.2}, {"month": "2026-09", "date": "2026-09-25", "action": "STAND DOWN", "entry_time": "-", "entry_spot": "-", "peak_spot": "-", "peak_time": "-", "peak_pts": "", "peak_amount_rs": 0.0, "least_spot": "-", "least_amount_rs": 0.0, "exit_time": "-", "exit_spot": "-", "exit_reason": "STAND DOWN (<68%)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "STAND DOWN", "score": 67.3}, {"month": "2026-09", "date": "2026-09-28", "action": "BUY 2850 PE", "entry_time": "09:30:00", "entry_spot": "2873.8", "peak_spot": "2811.6", "peak_time": "15:10:00", "peak_pts": 32.34, "peak_amount_rs": 19988.59, "least_spot": "2878.4", "least_amount_rs": -1478.26, "exit_time": "15:15:00", "exit_spot": "2820.0", "exit_reason": "EOD EXIT", "pnl_pts": 27.98, "pnl_1lot": 8645.82, "pnl_2lots": 17291.64, "status": "TRADE", "score": 71.6}, {"month": "2026-09", "date": "2026-09-29", "action": "BUY 2800 PE", "entry_time": "10:00:00", "entry_spot": "2802.4", "peak_spot": "2793.7", "peak_time": "10:10:00", "peak_pts": 4.52, "peak_amount_rs": 2795.83, "least_spot": "2833.8", "least_amount_rs": -10090.7, "exit_time": "11:00:00", "exit_spot": "2831.25", "exit_reason": "SL HIT (-15.0)", "pnl_pts": -15.0, "pnl_1lot": -4635.0, "pnl_2lots": -9270.0, "status": "TRADE", "score": 70.2}, {"month": "2026-09", "date": "2026-09-30", "action": "BUY 2950 CE", "entry_time": "09:15:00", "entry_spot": "2931.2", "peak_spot": "2957.6", "peak_time": "09:20:00", "peak_pts": 13.73, "peak_amount_rs": 8483.9, "least_spot": "2900.0", "least_amount_rs": -10026.43, "exit_time": "11:10:00", "exit_spot": "2902.35", "exit_reason": "BREAKEVEN EXIT (0.0)", "pnl_pts": 0.0, "pnl_1lot": 0.0, "pnl_2lots": 0.0, "status": "TRADE", "score": 69.4}];
+    
+    let currentTicker = 'RELIANCE';
+    let currentLots = 2; // Default 2 lots
+
+    // Populate dropdown with 1 to 100 lots
+    function initLotsDropdown() {
+        const select = document.getElementById('lots-dropdown');
+        select.innerHTML = '';
+        for (let i = 1; i <= 100; i++) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = `${i} ${i === 1 ? 'Lot' : 'Lots'}`;
+            if (i === currentLots) opt.selected = true;
+            select.appendChild(opt);
+        }
+    }
+
+    function setLots(num) {
+        currentLots = Math.max(1, parseInt(num) || 1);
+        document.getElementById('lots-dropdown').value = Math.min(100, currentLots);
+        document.getElementById('custom-lot-input').value = currentLots;
+
+        // Update preset active classes
+        document.querySelectorAll('.lot-preset-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.textContent.trim() === `${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'}`);
+        });
+
+        updateSizingSummary();
+        renderTable();
+    }
+
+    function onDropdownChange(val) {
+        setLots(val);
+    }
+
+    function onCustomLotChange(val) {
+        setLots(val);
+    }
+
+    function updateSizingSummary() {
+        const lotSize = currentTicker === 'RELIANCE' ? 500 : 309;
+        const totalQty = lotSize * currentLots;
+        const formattedQty = totalQty.toLocaleString('en-IN');
+        
+        document.getElementById('sizing-summary-text').textContent = `${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'} (${formattedQty} Qty)`;
+        document.getElementById('kpi-pnl-label').textContent = `Cumulative Realized P&L (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
+        document.getElementById('th-peak-gain').textContent = `Peak Gain (${currentLots}L)`;
+        document.getElementById('th-final-pnl').textContent = `Final P&L (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
+    }
+
+    function switchTicker(ticker) {
+        currentTicker = ticker;
+        document.getElementById('tab-rel').classList.toggle('active', ticker === 'RELIANCE');
+        document.getElementById('tab-ada').classList.toggle('active', ticker === 'ADANIENT');
+        updateSizingSummary();
+        renderTable();
+    }
+
+    function formatCurrency(val) {
+        const num = parseFloat(val) || 0;
+        const isNeg = num < 0;
+        const absVal = Math.abs(num);
+        const formatted = absVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return (isNeg ? '-₹' : '+₹') + formatted;
+    }
+
+    function formatSpot(val) {
+        if (val === null || val === undefined || val === '' || val === '-' || val === '—') return '—';
+        const num = parseFloat(val);
+        if (isNaN(num)) return '—';
+        return '₹' + num.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function renderTable() {
+        try {
+            const rawData = currentTicker === 'RELIANCE' ? dataReliance : dataAdani;
+            const monthFilter = document.getElementById('month-filter').value;
+            const outcomeFilter = document.getElementById('outcome-filter').value;
+            const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
+
+            const lotSize = currentTicker === 'RELIANCE' ? 500 : 309;
+            const totalQty = lotSize * currentLots;
+
+            const filtered = rawData.filter(row => {
+                if (monthFilter !== 'ALL' && row.month !== monthFilter) return false;
+                
+                const pts = parseFloat(row.pnl_pts) || 0;
+                const pnl = pts * totalQty;
+                const reason = (row.exit_reason || '').toUpperCase();
+                const isStandDown = row.status === 'STAND_DOWN' || (row.action || '').toUpperCase().includes('STAND DOWN');
+
+                if (outcomeFilter === 'WIN' && pnl <= 0) return false;
+                if (outcomeFilter === 'LOSS' && pnl >= 0) return false;
+                if (outcomeFilter === 'TARGET' && !reason.includes('TARGET')) return false;
+                if (outcomeFilter === 'SL' && !reason.includes('SL')) return false;
+                if (outcomeFilter === 'EOD' && !reason.includes('EOD')) return false;
+                if (outcomeFilter === 'STAND_DOWN' && !isStandDown) return false;
+
+                if (searchVal) {
+                    const str = `${row.date} ${row.action} ${row.entry_spot} ${row.exit_spot} ${row.exit_reason}`.toLowerCase();
+                    if (!str.includes(searchVal)) return false;
+                }
+                return true;
+            });
+
+            // Update KPIs
+            let totalPnl = 0;
+            let totalPts = 0;
+            let wins = 0;
+            let losses = 0;
+            let winSum = 0;
+            let lossSum = 0;
+            let activeTrades = 0;
+            let standDowns = 0;
+            let scoreSum = 0;
+
+            filtered.forEach(r => {
+                const pts = parseFloat(r.pnl_pts) || 0;
+                const isStandDown = r.status === 'STAND_DOWN' || (r.action || '').toUpperCase().includes('STAND DOWN');
+                const pnl = isStandDown ? 0 : (pts * totalQty);
+                const score = parseFloat(r.score) || 0;
+
+                totalPnl += pnl;
+                totalPts += pts;
+                scoreSum += score;
+
+                if (isStandDown) {
+                    standDowns++;
+                } else {
+                    activeTrades++;
+                    if (pnl > 0) {
+                        wins++;
+                        winSum += pnl;
+                    } else if (pnl < 0) {
+                        losses++;
+                        lossSum += Math.abs(pnl);
+                    }
+                }
+            });
+
+            const winRate = activeTrades > 0 ? ((wins / activeTrades) * 100).toFixed(1) : '0.0';
+            const profitFactor = lossSum > 0 ? (winSum / lossSum).toFixed(2) : (winSum > 0 ? 'INF' : '0.00');
+            const avgScore = filtered.length > 0 ? (scoreSum / filtered.length).toFixed(1) : '0.0';
+
+            const pnlEl = document.getElementById('kpi-total-pnl');
+            pnlEl.textContent = formatCurrency(totalPnl);
+            pnlEl.className = 'kpi-val mono ' + (totalPnl >= 0 ? 'val-profit' : 'val-loss');
+
+            document.getElementById('kpi-pts-sub').textContent = `${totalPts >= 0 ? '+' : ''}${totalPts.toFixed(2)} pts total capture`;
+            document.getElementById('kpi-win-rate').textContent = `${winRate}%`;
+            document.getElementById('kpi-win-count').textContent = `${wins} Wins / ${losses} Losses (${activeTrades} Executed)`;
+            document.getElementById('kpi-trades-count').textContent = `${activeTrades} Trades`;
+            document.getElementById('kpi-standdowns').textContent = `${standDowns} Stand Downs (&lt;68% score)`;
+            document.getElementById('kpi-profit-factor').textContent = profitFactor;
+            
+            const avgWin = wins > 0 ? (winSum / wins).toFixed(0) : 0;
+            const avgLoss = losses > 0 ? (lossSum / losses).toFixed(0) : 0;
+            document.getElementById('kpi-avg-win').textContent = `Avg Win: ₹${Number(avgWin).toLocaleString('en-IN')} | Avg Loss: ₹${Number(avgLoss).toLocaleString('en-IN')}`;
+            document.getElementById('kpi-avg-score').textContent = `${avgScore}%`;
+
+            // Render Table Body
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            filtered.forEach(row => {
+                const tr = document.createElement('tr');
+                const action = String(row.action || '');
+                const score = parseFloat(row.score) || 0;
+                const pts = parseFloat(row.pnl_pts) || 0;
+                const isStandDown = row.status === 'STAND_DOWN' || action.toUpperCase().includes('STAND DOWN');
+                
+                // Dynamic sizing calculation
+                const pnl = isStandDown ? 0 : (pts * totalQty);
+                const peakPts = parseFloat(row.peak_pts) || 0;
+                const peakAmt = peakPts > 0 ? (peakPts * totalQty) : 0;
+
+                const reason = String(row.exit_reason || '');
+
+                // Action Pill
+                let actionPill = '';
+                if (action.includes('CE')) {
+                    actionPill = `<span class="pill pill-ce">${action}</span>`;
+                } else if (action.includes('PE')) {
+                    actionPill = `<span class="pill pill-pe">${action}</span>`;
+                } else {
+                    actionPill = `<span class="pill pill-standdown">STAND DOWN</span>`;
+                }
+
+                // Score Chip
+                let scoreChip = '';
+                if (score >= 72) {
+                    scoreChip = `<span class="score-chip high mono">${score.toFixed(1)}%</span>`;
+                } else if (score >= 68) {
+                    scoreChip = `<span class="score-chip mono">${score.toFixed(1)}%</span>`;
+                } else {
+                    scoreChip = `<span class="score-chip mid mono">${score.toFixed(1)}%</span>`;
+                }
+
+                // Reason Tag
+                let reasonTag = '';
+                if (reason.includes('TARGET')) {
+                    reasonTag = `<span class="reason-tag reason-target">${reason}</span>`;
+                } else if (reason.includes('SL')) {
+                    reasonTag = `<span class="reason-tag reason-sl">${reason}</span>`;
+                } else if (reason.includes('EOD')) {
+                    reasonTag = `<span class="reason-tag reason-eod">${reason}</span>`;
+                } else {
+                    reasonTag = `<span class="reason-tag" style="background:rgba(255,255,255,0.05);color:var(--text-muted);">${reason || '—'}</span>`;
+                }
+
+                // Final P&L
+                let pnlClass = 'pnl-zero';
+                let pnlText = '₹0.00';
+                if (pnl > 0) {
+                    pnlClass = 'pnl-pos';
+                    pnlText = formatCurrency(pnl);
+                } else if (pnl < 0) {
+                    pnlClass = 'pnl-neg';
+                    pnlText = formatCurrency(pnl);
+                }
+
+                const peakGainText = peakAmt > 0 ? `+₹${Math.round(peakAmt).toLocaleString('en-IN')}` : '₹0';
+                const ptsText = (pts >= 0 ? '+' : '') + pts.toFixed(2);
+
+                const entryTime = (!row.entry_time || row.entry_time === '-') ? '—' : row.entry_time;
+                const peakTime = (!row.peak_time || row.peak_time === '-') ? '—' : row.peak_time;
+                const exitTime = (!row.exit_time || row.exit_time === '-') ? '—' : row.exit_time;
+
+                tr.innerHTML = `
+                    <td class="col-sticky-left mono"><strong>${row.date}</strong></td>
+                    <td>${actionPill}</td>
+                    <td>${scoreChip}</td>
+                    <td class="mono">${entryTime}</td>
+                    <td class="mono">${formatSpot(row.entry_spot)}</td>
+                    <td class="mono">${formatSpot(row.peak_spot)}</td>
+                    <td class="mono">${peakTime}</td>
+                    <td class="mono val-profit">${isStandDown ? '—' : peakGainText}</td>
+                    <td class="mono">${exitTime}</td>
+                    <td class="mono">${formatSpot(row.exit_spot)}</td>
+                    <td>${reasonTag}</td>
+                    <td class="mono ${pts >= 0 ? 'pnl-pos' : 'pnl-neg'}">${isStandDown ? '0.00' : ptsText}</td>
+                    <td class="col-sticky-right mono pnl-cell ${pnlClass}">${pnlText}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('footer-count').textContent = `Showing ${filtered.length} of ${rawData.length} trading sessions (${currentLots} Lots)`;
+            document.getElementById('footer-sum').textContent = `Filtered P&L: ${formatCurrency(totalPnl)}`;
+        } catch (err) {
+            console.error("Render Table Error:", err);
+            document.getElementById('table-body').innerHTML = `<tr><td colspan="13" style="color:red;padding:20px;">Error rendering data: ${err.message}</td></tr>`;
+        }
+    }
+
+    // Initialize
+    initLotsDropdown();
+    updateSizingSummary();
+    renderTable();
+</script>
+</body>
+</html>

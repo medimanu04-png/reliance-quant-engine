@@ -49,6 +49,7 @@ class AssetSpec:
     escalator_t2_thresh: float = 5.0 # Tier 2 Profit Lock trigger threshold
     escalator_t1_lock: float = 0.10  # Tier 1 Stop Loss lock amount
     escalator_t2_lock: float = 2.50  # Tier 2 Stop Loss lock amount
+    min_confluence_gate: float = 68.0 # Institutional Directional Confluence Gate Threshold (%)
 
 ASSET_SPECS: Dict[str, AssetSpec] = {
     "RELIANCE": AssetSpec(
@@ -58,11 +59,12 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         yf_symbol="RELIANCE.NS",
         lot_size=500,
         default_lots=2,
-        target_pts=10.0,
-        sl_pts=4.5,
+        target_pts=7.0,
+        sl_pts=5.0,
         be_pts=3.5,
-        profit_lock_trigger=5.5,
-        profit_lock_locked=3.0,
+        profit_lock_trigger=5.0,
+        profit_lock_locked=2.5,
+        min_confluence_gate=69.0,
         strike_step=10,
         default_spot=1167.70,
         default_strike=1170,
@@ -105,6 +107,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         be_pts=12.0,
         profit_lock_trigger=20.0,
         profit_lock_locked=12.0,
+        min_confluence_gate=72.0,
         strike_step=50,
         default_spot=2816.80,
         default_strike=2850,

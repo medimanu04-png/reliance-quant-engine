@@ -1749,25 +1749,23 @@ class SequentialTradeEngine:
         profit_pts = round(current_ltp - actual_entry, 2)
         peak_profit_pts = round(float(active.get("highest_price", actual_entry)) - actual_entry, 2)
 
-        # Milestone 1: At +3.5 pts peak gain -> Move SL to Cost/Breakeven (entry + 0.10 pt buffer)
-        if peak_profit_pts >= 3.5:
+        # Milestone 1: At Breakeven threshold (3.5 pts for Reliance, 12.0 pts for Adani) -> Move SL to Cost
+        be_thresh = float(getattr(spec_act, 'be_pts', 3.5))
+        lock_thresh = float(getattr(spec_act, 'profit_lock_trigger', 5.0))
+        lock_val = float(getattr(spec_act, 'profit_lock_locked', 2.5))
+
+        if peak_profit_pts >= be_thresh:
             be_sl = round(actual_entry + 0.10, 2)
             if be_sl > active.get("trailing_sl", sl):
                 active["trailing_sl"] = be_sl
                 active["breakeven_activated"] = True
 
-        # Milestone 2: At +5.5 pts peak gain -> Lock in +3.0 pts guaranteed profit
-        if peak_profit_pts >= 5.5:
-            lock_sl = round(actual_entry + 3.0, 2)
+        # Milestone 2: At Profit Lock threshold (5.0 pts for Reliance, 22.0 pts for Adani) -> Lock Profit
+        if peak_profit_pts >= lock_thresh:
+            lock_sl = round(actual_entry + lock_val, 2)
             if lock_sl > active.get("trailing_sl", sl):
                 active["trailing_sl"] = lock_sl
                 active["profit_lock_activated"] = True
-
-        # Milestone 3: Dynamic trailing for explosive expansion (> +6.5 pts peak gain)
-        if peak_profit_pts >= 6.5:
-            exp_sl = round(actual_entry + (peak_profit_pts * 0.65), 2)
-            if exp_sl > active.get("trailing_sl", sl):
-                active["trailing_sl"] = exp_sl
 
         effective_sl = max(sl, active.get("trailing_sl", sl))
         unrealized_pnl = round((current_ltp - actual_entry) * qty, 2)

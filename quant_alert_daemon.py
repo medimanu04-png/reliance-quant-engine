@@ -422,7 +422,9 @@ class RelianceQuantAlertDaemon:
         spread_stand_down = bool(confluence_eval.get("spread_stand_down", False))
         opening_cooldown_active = False  # Enabled from 09:15 AM market open
         is_midday_lull = bool(confluence_eval.get("is_midday_lull", False))
-        min_confluence_gate = 78.0 if is_midday_lull else 68.0
+        spec = get_asset_spec(sym)
+        base_gate = float(getattr(spec, "min_confluence_gate", 68.0))
+        min_confluence_gate = max(base_gate + 8.0, 78.0) if is_midday_lull else base_gate
 
         # Check Daily Loss Circuit Breaker (One-and-Done Capital Preservation Protocol)
         has_daily_loss, loss_reason = SequentialTradeEngine.has_daily_loss_occurred_today(symbol=sym)
@@ -566,6 +568,30 @@ class RelianceQuantAlertDaemon:
                 f"[{time_str}] 🟢 IN-TRADE #{trade_num} ({inst_sym}) | LTP: ₹{cur_trade_ltp:.2f} | "
                 f"TGT: ₹{target_p:.2f} | SL: ₹{effective_sl:.2f} | PnL: {'+' if unreal_pnl>=0 else ''}₹{unreal_pnl:,.2f}"
             )
+
+            # Persist real-time active trade state for Live Dashboard
+            try:
+                active_state_data = {
+                    "is_active": True,
+                    "symbol": sym,
+                    "contract": inst_sym,
+                    "action": f"BUY {inst_sym}",
+                    "current_spot": spot,
+                    "entry_spot": act_entry,
+                    "entry_time": active_trade.get("actual_entry_time", active_trade.get("trade_given_time", "—")),
+                    "peak_spot": float(active_trade.get("peak_spot", spot)),
+                    "peak_profit_rs": float(active_trade.get("peak_profit", max(0.0, unreal_pnl))),
+                    "unrealized_pnl_2lots": unreal_pnl,
+                    "target_pts": spec.target_pts,
+                    "sl_pts": spec.sl_pts,
+                    "confluence_score": float(active_trade.get("confluence_score", 70.0)),
+                    "market_status": "🟢 LIVE IN-TRADE",
+                    "last_update": datetime.now(IST).strftime("%I:%M:%S %p IST")
+                }
+                with open(os.path.join(BASE_DIR, "active_trade_state.json"), "w", encoding="utf-8") as f_st:
+                    json.dump(active_state_data, f_st, indent=2)
+            except Exception as e:
+                logger.debug(f"Error persisting active state: {e}")
 
             # Update engine
             trade_update = SequentialTradeEngine.update_active_trade(
@@ -877,7 +903,31 @@ class RelianceQuantAlertDaemon:
                     f"Confluence below A+ threshold • 0 Orders Placed"
                 )
 
-        pass
+        # Auto-update live HTML dashboard at each tick
+        try:
+            # If no active trade across symbols, mark is_active as False
+            has_active = any(
+                SequentialTradeEngine.get_state(symbol=s).get("current_state") == SequentialTradeEngine.STATE_IN_TRADE
+                for s in self.symbols
+            )
+            if not has_active:
+                st_file = os.path.join(BASE_DIR, "active_trade_state.json")
+                if os.path.exists(st_file):
+                    try:
+                        with open(st_file, "r", encoding="utf-8") as f_st:
+                            curr_st = json.load(f_st)
+                        curr_st["is_active"] = False
+                        curr_st["market_status"] = "MONITORING (09:15 - 15:30 IST)"
+                        curr_st["last_update"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                        with open(st_file, "w", encoding="utf-8") as f_st:
+                            json.dump(curr_st, f_st, indent=2)
+                    except Exception:
+                        pass
+
+            from live_dashboard_generator import generate_live_dashboard
+            generate_live_dashboard()
+        except Exception as e:
+            logger.debug(f"Live dashboard generation notice: {e}")
 
     def start(self):
         """Continuous production execution loop."""

@@ -19,6 +19,37 @@ from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
 from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR, SequentialTradeEngine, ShadowMonitoringEngine
 
+# ==============================================================================
+# MULTI-PAGE NAVIGATION ROUTER (Clean URLs: / | /Reliance | /Adani)
+# ==============================================================================
+st.set_page_config(
+    page_title="Manoj Quant Engine | Institutional F&O Desk",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+p_home = st.Page(lambda: None, title="Market Overview", icon="🏠", url_path="", default=True)
+p_reliance = st.Page(lambda: None, title="Reliance Quant Desk", icon="⚡", url_path="Reliance")
+p_adani = st.Page(lambda: None, title="Adani Quant Desk", icon="🔥", url_path="Adani")
+
+pg = st.navigation({
+    "Overview": [p_home],
+    "Quant Desks": [p_reliance, p_adani]
+})
+
+pg.run()
+active_route = getattr(pg, "url_path", "")
+
+# Synchronize query parameters (?stock=Adani or ?stock=Reliance)
+q_stock = st.query_params.get("stock") or st.query_params.get("scrip")
+if q_stock:
+    q_str = str(q_stock).upper()
+    if "ADANI" in q_str and active_route != "Adani":
+        st.switch_page(p_adani)
+    elif "RELIANCE" in q_str and active_route != "Reliance":
+        st.switch_page(p_reliance)
+
 class IndianFOTransactionCostEngine:
     """
     Institutional Transaction Cost & Statutory Tax Engine for Indian F&O.
@@ -1139,26 +1170,56 @@ def render_auto_rescan_controller():
         st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
-    cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
-    cur_sel_adani = (cur_sel_scrip == "ADANI ENTERPRISES")
-    spec_active = get_asset_spec(symbol="ADANIENT" if cur_sel_adani else "RELIANCE")
-    cur_sel_sym = spec_active.yf_symbol
-    cur_sel_lot = spec_active.lot_size
-    cur_sel_tgt = spec_active.target_pts
-    cur_sel_sl = spec_active.sl_pts
-    st.html(f"""
+    spec_rel = get_asset_spec("RELIANCE")
+    spec_ada = get_asset_spec("ADANIENT")
+
+    if active_route == "":
+        # Homepage Mode: display BOTH stocks cleanly under the instant rescan controller
+        st.html(f"""
         <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
             <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
             <span>Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
             <span>⚡ <b style="color: #34D399;">~4ms</b></span>
         </div>
-        <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-            <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot)</span>
-            <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
-            <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
-            <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                <span>⚡ <b style="color: #38BDF8;">{spec_rel.yf_symbol}</b> ({spec_rel.lot_size} Qty/Lot)</span>
+                <span>🎯 Target: <b style="color: #34D399;">+{spec_rel.target_pts:.1f} pts</b></span>
+                <span>🛑 SL: <b style="color: #F87171;">-{spec_rel.sl_pts:.1f} pts</b></span>
+                <span>🚦 Gate: <b style="color: #FCD34D;">≥{spec_rel.min_confluence_gate:.0f}%</b></span>
+                <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
+            </div>
+            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                <span>🔥 <b style="color: #FBBF24;">{spec_ada.yf_symbol}</b> ({spec_ada.lot_size} Qty/Lot)</span>
+                <span>🎯 Target: <b style="color: #34D399;">+{spec_ada.target_pts:.1f} pts</b></span>
+                <span>🛑 SL: <b style="color: #F87171;">-{spec_ada.sl_pts:.1f} pts</b></span>
+                <span>🚦 Gate: <b style="color: #FCD34D;">≥{spec_ada.min_confluence_gate:.0f}%</b></span>
+                <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
+            </div>
         </div>
-    """)
+        """)
+    else:
+        # Desk Mode: display active single-stock pill
+        cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
+        cur_sel_adani = ("ADANI" in str(cur_sel_scrip).upper())
+        spec_active = spec_ada if cur_sel_adani else spec_rel
+        cur_sel_sym = spec_active.yf_symbol
+        cur_sel_lot = spec_active.lot_size
+        cur_sel_tgt = spec_active.target_pts
+        cur_sel_sl = spec_active.sl_pts
+        st.html(f"""
+            <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
+                <span>Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+                <span>⚡ <b style="color: #34D399;">~4ms</b></span>
+            </div>
+            <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot)</span>
+                <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
+                <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
+                <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
+            </div>
+        """)
 
 
 
@@ -1300,51 +1361,117 @@ with top_clock_col:
 
 st.markdown("---")
 
+# ==============================================================================
+# HOMEPAGE EXECUTIVE ROUTING GATE (Limited ONLY to General Market Telemetry)
+# ==============================================================================
+if active_route == "":
+    st.html("""
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.25rem;">⚡</span>
+            <span style="font-size: 0.94rem; font-weight: 800; color: #E2E8F0; text-transform: uppercase; letter-spacing: 0.8px;">
+                ACTIVE QUANT TRADING DESKS (INSTANT LAUNCHPAD)
+            </span>
+        </div>
+        <span style="font-size: 0.76rem; color: #94A3B8;">
+            Select a dedicated terminal below or open directly via URL (<b style="color: #38BDF8;">/Reliance</b> or <b style="color: #FBBF24;">/Adani</b>)
+        </span>
+    </div>
+    """)
+    col_d1, col_d2 = st.columns(2)
+    spec_rel_hp = get_asset_spec("RELIANCE")
+    spec_ada_hp = get_asset_spec("ADANIENT")
+    
+    with col_d1:
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF;">⚡ RELIANCE QUANT DESK</span>
+                <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_rel_hp.lot_size} QTY/LOT</span>
+            </div>
+            <div style="font-size: 0.78rem; color: #94A3B8; margin-bottom: 12px; line-height: 1.5;">
+                Dedicated Institutional F&O Engine for <b>RELIANCE.NS</b>. Equipped with 6-Vector Confluence, ATM Dual Corridor & Breakeven Escalator.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; margin-bottom: 4px; text-align: center;">
+                <div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">PROFIT TARGET</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_rel_hp.target_pts:.1f} pts</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">STOP LOSS</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_rel_hp.sl_pts:.1f} pts</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">EXECUTION GATE</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_rel_hp.min_confluence_gate:.0f}%</div>
+                </div>
+            </div>
+        </div>
+        """)
+        if st.button("⚡ OPEN RELIANCE QUANT DESK ↗ (/Reliance)", key="btn_launch_reliance_hp", use_container_width=True):
+            st.switch_page(p_reliance)
+
+    with col_d2:
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF;">🔥 ADANI QUANT DESK</span>
+                <span style="background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 800;">{spec_ada_hp.lot_size} QTY/LOT</span>
+            </div>
+            <div style="font-size: 0.78rem; color: #94A3B8; margin-bottom: 12px; line-height: 1.5;">
+                Dedicated Institutional F&O Engine for <b>ADANIENT.NS</b>. High-Beta Momentum Runner with 2.33:1 Asymmetric R:R.
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 10px; margin-bottom: 4px; text-align: center;">
+                <div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">PROFIT TARGET</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_ada_hp.target_pts:.1f} pts</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">STOP LOSS</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_ada_hp.sl_pts:.1f} pts</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700;">EXECUTION GATE</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_ada_hp.min_confluence_gate:.0f}%</div>
+                </div>
+            </div>
+        </div>
+        """)
+        if st.button("🔥 OPEN ADANI QUANT DESK ↗ (/Adani)", key="btn_launch_adani_hp", use_container_width=True):
+            st.switch_page(p_adani)
+            
+    st.stop()
+
 
 # ==============================================================================
-# 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR
+# 2. SESSION PARAMETERS & MINIMAL INSTITUTIONAL SIDEBAR (DEDICATED DESK MODE)
 # ==============================================================================
-_init_scrip = st.session_state.get("selected_scrip", "RELIANCE")
-_init_spec = get_asset_spec(symbol="ADANIENT" if _init_scrip == "ADANI ENTERPRISES" else "RELIANCE")
-if "lot_size" not in st.session_state:
-    st.session_state["lot_size"] = _init_spec.lot_size
-if "num_lots" not in st.session_state:
-    st.session_state["num_lots"] = 1
-if "target_pts" not in st.session_state:
-    st.session_state["target_pts"] = _init_spec.target_pts
-if "sl_pts" not in st.session_state:
-    st.session_state["sl_pts"] = _init_spec.sl_pts
-if "MIN_HIT_PERCENTAGE" not in st.session_state:
-    st.session_state["MIN_HIT_PERCENTAGE"] = 60.0
-if "max_daily_sl_allowed" not in st.session_state:
-    st.session_state["max_daily_sl_allowed"] = 1
-if "session_sl_count" not in st.session_state:
-    st.session_state["session_sl_count"] = 0
-if "sim_scenario" not in st.session_state:
-    st.session_state["sim_scenario"] = "🟢 Live Market Flow"
-if "strike_selection_pref" not in st.session_state:
-    st.session_state["strike_selection_pref"] = "Auto-Detect Best Strike"
-if "stream_live_1s" not in st.session_state:
-    st.session_state["stream_live_1s"] = True
-if "simulated_time_mode" not in st.session_state:
-    st.session_state["simulated_time_mode"] = False
-if "sim_hour" not in st.session_state:
-    st.session_state["sim_hour"] = 10
-if "sim_min" not in st.session_state:
-    st.session_state["sim_min"] = 15
-if "live_broker_ltp" not in st.session_state:
-    st.session_state["live_broker_ltp"] = 0.0
-if "custom_trigger_override" not in st.session_state:
-    st.session_state["custom_trigger_override"] = 0.0
+# Route-Aware Active Scrip Resolution
+if active_route == "Reliance":
+    forced_choice = "RELIANCE"
+elif active_route == "Adani":
+    forced_choice = "ADANI ENTERPRISES"
+else:
+    forced_choice = st.session_state.get("selected_scrip", "RELIANCE")
 
-# Sleek Institutional Sidebar & Scrip Switcher
+st.session_state["selected_scrip"] = forced_choice
+
+if st.sidebar.button("🏠 ← Return to Market Hub (Homepage)", use_container_width=True, key="sb_btn_return_home"):
+    st.switch_page(p_home)
+
 scrip_choice = st.sidebar.selectbox(
     "🎯 Active Trading Scrip",
     ["RELIANCE", "ADANI ENTERPRISES"],
-    index=0 if st.session_state.get("selected_scrip") != "ADANI ENTERPRISES" else 1,
+    index=0 if forced_choice == "RELIANCE" else 1,
     key="sb_scrip_selector"
 )
-st.session_state["selected_scrip"] = scrip_choice
+
+# Auto-switch page URL when user toggles dropdown
+if scrip_choice == "ADANI ENTERPRISES" and active_route == "Reliance":
+    st.switch_page(p_adani)
+elif scrip_choice == "RELIANCE" and active_route == "Adani":
+    st.switch_page(p_reliance)
+
 is_adani = (scrip_choice == "ADANI ENTERPRISES")
 scrip_symbol = "ADANIENT" if is_adani else "RELIANCE"
 spec = get_asset_spec(symbol=scrip_symbol)
@@ -1421,7 +1548,9 @@ target_pts = float(st.session_state.get(f"target_pts_{scrip_symbol}", scrip_targ
 st.session_state["target_pts"] = target_pts
 sl_pts = float(st.session_state.get(f"sl_pts_{scrip_symbol}", scrip_sl_pts))
 st.session_state["sl_pts"] = sl_pts
-MIN_HIT_PERCENTAGE = float(st.session_state.get("MIN_HIT_PERCENTAGE", 60.0))
+scrip_min_gate = float(getattr(spec, "min_confluence_gate", 69.0))
+MIN_HIT_PERCENTAGE = float(st.session_state.get(f"min_hit_{scrip_symbol}", scrip_min_gate))
+st.session_state["MIN_HIT_PERCENTAGE"] = MIN_HIT_PERCENTAGE
 max_daily_sl_allowed = int(st.session_state.get(f"max_daily_sl_allowed_{scrip_symbol}", 1))
 st.session_state["max_daily_sl_allowed"] = max_daily_sl_allowed
 sim_scenario = st.session_state.get("sim_scenario", "🟢 Live Market Flow")
@@ -8654,10 +8783,11 @@ if df is not None and not df.empty:
                 f"Directional Gate Threshold (%) — {scrip_symbol}",
                 min_value=50.0,
                 max_value=85.0,
-                value=float(st.session_state.get("MIN_HIT_PERCENTAGE", 60.0)),
-                step=1.0,
+                value=float(st.session_state.get(f"min_hit_{scrip_symbol}", scrip_min_gate)),
+                step=0.5,
                 key=f"ui_min_hit_{scrip_symbol}"
             )
+            st.session_state[f"min_hit_{scrip_symbol}"] = c_gate
             st.session_state["MIN_HIT_PERCENTAGE"] = c_gate
 
             c_max_sl = st.number_input(

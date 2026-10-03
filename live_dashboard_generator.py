@@ -1,0 +1,1067 @@
+"""
+Live Forward Quantitative Trading Desk (October 05, 2026 Onwards)
+================================================================
+Pure forward-testing and live trade recording ledger starting Monday, October 05, 2026.
+Contains ZERO backtested historical data. Every single trade entry is 100% authentic live forward data.
+"""
+
+import os
+import json
+import pandas as pd
+from datetime import datetime
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+LIVE_JOURNAL_FILE = os.path.join(BASE_DIR, "daily_trade_journal.json")
+ACTIVE_STATE_FILE = os.path.join(BASE_DIR, "active_trade_state.json")
+OUTPUT_HTML_FILE = os.path.join(BASE_DIR, "live_trade_dashboard.html")
+START_DATE = "2026-10-05"  # Monday, October 05, 2026
+
+
+def load_live_trades():
+    """Loads strictly forward trades recorded on or after Monday, October 05, 2026."""
+    trades_rel = []
+    trades_ada = []
+
+    if os.path.exists(LIVE_JOURNAL_FILE):
+        try:
+            with open(LIVE_JOURNAL_FILE, "r", encoding="utf-8") as f:
+                live_entries = json.load(f)
+                if isinstance(live_entries, list):
+                    for entry in live_entries:
+                        entry_date = entry.get("date", "")
+                        # Filter strictly for October 05, 2026 onwards
+                        if entry_date < START_DATE:
+                            continue
+
+                        sym = "RELIANCE" if "RELIANCE" in entry.get("trading_symbol", "") or "RELIANCE" in entry.get("instrument", "") else "ADANIENT"
+                        month_str = entry_date[:7]
+                        
+                        # Build standard row
+                        row = {
+                            "month": month_str,
+                            "date": entry_date,
+                            "action": entry.get("type", "BUY"),
+                            "entry_time": entry.get("actual_entry_time", entry.get("trade_given_time", "—")),
+                            "entry_spot": entry.get("suggested_entry", entry.get("entry_price", "—")),
+                            "peak_spot": entry.get("peak_spot", entry.get("suggested_exit", "—")),
+                            "peak_time": entry.get("peak_time", "—"),
+                            "peak_pts": float(entry.get("peak_pts", 0.0) or 0.0),
+                            "peak_amount_rs": float(entry.get("peak_amount_rs", entry.get("realised_pnl", 0.0)) or 0.0),
+                            "least_spot": entry.get("least_spot", "—"),
+                            "least_amount_rs": float(entry.get("least_amount_rs", 0.0) or 0.0),
+                            "exit_time": entry.get("actual_exit_time", "—"),
+                            "exit_spot": entry.get("exit_price", "—"),
+                            "exit_reason": entry.get("status", "CLOSED"),
+                            "pnl_pts": float(entry.get("pnl_pts", 0.0) or 0.0),
+                            "pnl_1lot": float(entry.get("realised_pnl", 0.0) or 0.0) / (entry.get("num_lots", 2) or 2),
+                            "pnl_2lots": float(entry.get("realised_pnl", 0.0) or 0.0),
+                            "status": "LIVE_TRADE",
+                            "score": float(entry.get("confluence_score", 70.0) or 70.0),
+                            "is_live": True
+                        }
+
+                        if sym == "RELIANCE":
+                            trades_rel.append(row)
+                        else:
+                            trades_ada.append(row)
+        except Exception as e:
+            print(f"Notice reading live journal: {e}")
+
+    return trades_rel, trades_ada
+
+
+def get_active_state():
+    """Reads current real-time in-flight trade state if one exists."""
+    if os.path.exists(ACTIVE_STATE_FILE):
+        try:
+            with open(ACTIVE_STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "is_active": False,
+        "symbol": "RELIANCE",
+        "contract": "RELIANCE F&O",
+        "action": "AWAITING MARKET OPEN",
+        "current_spot": 1410.5,
+        "entry_spot": 0.0,
+        "entry_time": "—",
+        "peak_spot": 0.0,
+        "peak_profit_rs": 0.0,
+        "unrealized_pnl_2lots": 0.0,
+        "target_pts": 7.0,
+        "sl_pts": 5.0,
+        "confluence_score": 0.0,
+        "market_status": "ARMED FOR MONDAY, OCT 05 (09:15 AM IST)",
+        "last_update": datetime.now(IST).strftime("%I:%M:%S %p IST")
+    }
+
+
+def generate_live_dashboard():
+    """Generates the live HTML dashboard strictly starting Monday, October 05, 2026."""
+    trades_rel, trades_ada = load_live_trades()
+    active_state = get_active_state()
+    now_str = datetime.now(IST).strftime("%d %B %Y, %I:%M:%S %p IST")
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Meta auto-refresh every 5 seconds to ensure zero-delay live updates -->
+    <meta http-equiv="refresh" content="5">
+    <title>Live Quantitative F&O Trading Desk (Oct 05, 2026 Onwards)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --bg-primary: #0a0d14;
+            --bg-secondary: #101622;
+            --bg-card: rgba(22, 30, 46, 0.7);
+            --bg-card-hover: rgba(30, 41, 63, 0.9);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-accent: rgba(56, 189, 248, 0.3);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-green-bg: rgba(16, 185, 129, 0.12);
+            --accent-red: #ef4444;
+            --accent-red-bg: rgba(239, 68, 68, 0.12);
+            --accent-purple: #a855f7;
+            --accent-purple-bg: rgba(168, 85, 247, 0.12);
+            --accent-amber: #f59e0b;
+            --accent-amber-bg: rgba(245, 158, 11, 0.12);
+            --shadow-glow: 0 0 25px rgba(6, 182, 212, 0.15);
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+
+        body {{
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: radial-gradient(circle at 50% 0%, #172033 0%, var(--bg-primary) 65%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px;
+            overflow-x: hidden;
+        }}
+
+        .mono {{
+            font-family: 'JetBrains Mono', monospace;
+        }}
+
+        .container {{
+            max-width: 1600px;
+            margin: 0 auto;
+        }}
+
+        /* Header */
+        header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }}
+
+        .header-title h1 {{
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #fff 30%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+
+        .badge-live {{
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            letter-spacing: 0.8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }}
+
+        .pulse-dot {{
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px var(--accent-green);
+            animation: pulse 1.5s infinite;
+        }}
+
+        @keyframes pulse {{
+            0% {{ opacity: 1; transform: scale(1); }}
+            50% {{ opacity: 0.4; transform: scale(1.2); }}
+            100% {{ opacity: 1; transform: scale(1); }}
+        }}
+
+        .header-subtitle {{
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }}
+
+        .desk-badge-group {{
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }}
+
+        .desk-pill {{
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            text-align: right;
+        }}
+
+        .desk-pill span {{
+            display: block;
+            color: var(--text-muted);
+            font-size: 10px;
+            text-transform: uppercase;
+        }}
+
+        .desk-pill strong {{
+            color: var(--accent-cyan);
+            font-size: 14px;
+        }}
+
+        /* Live In-Flight Trade Card */
+        .active-trade-box {{
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 22px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            display: {'block' if active_state.get('is_active') else 'none'};
+        }}
+
+        .active-trade-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }}
+
+        .active-trade-header h3 {{
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #fff;
+        }}
+
+        .active-trade-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+        }}
+
+        .active-tile {{
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 12px 16px;
+        }}
+
+        .active-tile span {{
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            display: block;
+        }}
+
+        .active-tile strong {{
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 4px;
+            display: block;
+        }}
+
+        /* KPI Grid */
+        .kpi-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }}
+
+        .kpi-card {{
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 18px 20px;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }}
+
+        .kpi-card::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }}
+
+        .kpi-card:hover {{
+            transform: translateY(-2px);
+            border-color: var(--border-accent);
+            box-shadow: var(--shadow-glow);
+        }}
+
+        .kpi-card:hover::before {{
+            opacity: 1;
+        }}
+
+        .kpi-label {{
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }}
+
+        .kpi-val {{
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }}
+
+        .kpi-sub {{
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }}
+
+        .val-profit {{
+            color: var(--accent-green);
+        }}
+
+        .val-loss {{
+            color: var(--accent-red);
+        }}
+
+        /* Controls Section */
+        .controls-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 18px 22px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            align-items: center;
+            justify-content: space-between;
+        }}
+
+        .nav-tabs {{
+            display: flex;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }}
+
+        .nav-btn {{
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+
+        .nav-btn:hover {{
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }}
+
+        .nav-btn.active {{
+            background: var(--accent-blue);
+            color: #fff;
+            box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
+        }}
+
+        .filter-group {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }}
+
+        .filter-select, .search-box {{
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.2s;
+        }}
+
+        .filter-select:focus, .search-box:focus {{
+            border-color: var(--accent-cyan);
+        }}
+
+        .search-box {{
+            min-width: 220px;
+        }}
+
+        /* Table Container - Complete Scrollable Design */
+        .table-card {{
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .table-scroll-container {{
+            max-height: 720px;
+            overflow-x: auto;
+            overflow-y: auto;
+            position: relative;
+        }}
+
+        .table-scroll-container::-webkit-scrollbar {{
+            width: 8px;
+            height: 8px;
+        }}
+        .table-scroll-container::-webkit-scrollbar-track {{
+            background: rgba(0, 0, 0, 0.2);
+        }}
+        .table-scroll-container::-webkit-scrollbar-thumb {{
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }}
+        .table-scroll-container::-webkit-scrollbar-thumb:hover {{
+            background: rgba(255, 255, 255, 0.25);
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 13px;
+            white-space: nowrap;
+        }}
+
+        th {{
+            background: #131b2c;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }}
+
+        /* Sticky Left Column (Date) */
+        th.col-sticky-left, td.col-sticky-left {{
+            position: sticky;
+            left: 0;
+            background: #111726;
+            z-index: 10;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+        }}
+        th.col-sticky-left {{
+            z-index: 25;
+            background: #141d30;
+        }}
+
+        /* Sticky Right Column (Final P&L) */
+        th.col-sticky-right, td.col-sticky-right {{
+            position: sticky;
+            right: 0;
+            background: #111726;
+            z-index: 10;
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+            text-align: right;
+            box-shadow: -6px 0 16px rgba(0,0,0,0.3);
+        }}
+        th.col-sticky-right {{
+            z-index: 25;
+            background: #141d30;
+        }}
+
+        td {{
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            color: var(--text-primary);
+        }}
+
+        tbody tr {{
+            transition: background 0.15s ease;
+        }}
+
+        tbody tr:hover {{
+            background: rgba(255, 255, 255, 0.04);
+        }}
+
+        tbody tr:hover td.col-sticky-left,
+        tbody tr:hover td.col-sticky-right {{
+            background: #182238;
+        }}
+
+        /* Pill Badges */
+        .pill {{
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }}
+
+        .pill-ce {{
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }}
+
+        .pill-pe {{
+            background: var(--accent-purple-bg);
+            color: var(--accent-purple);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+        }}
+
+        .pill-standdown {{
+            background: rgba(148, 163, 184, 0.12);
+            color: var(--text-muted);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }}
+
+        .pill-live-tag {{
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 6px;
+        }}
+
+        .score-chip {{
+            font-size: 12px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            background: rgba(6, 182, 212, 0.12);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+        }}
+
+        .score-chip.high {{
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border-color: rgba(16, 185, 129, 0.3);
+        }}
+
+        .reason-tag {{
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }}
+
+        .reason-target {{
+            background: var(--accent-green-bg);
+            color: var(--accent-green);
+        }}
+
+        .reason-sl {{
+            background: var(--accent-red-bg);
+            color: var(--accent-red);
+        }}
+
+        .reason-eod {{
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--accent-blue);
+        }}
+
+        .pnl-cell {{
+            font-weight: 700;
+            font-size: 13px;
+            text-align: right;
+        }}
+
+        .pnl-pos {{
+            color: var(--accent-green);
+        }}
+
+        .pnl-neg {{
+            color: var(--accent-red);
+        }}
+
+        .pnl-zero {{
+            color: var(--text-muted);
+        }}
+
+        .table-footer {{
+            padding: 14px 20px;
+            background: #111726;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }}
+
+        .info-bar {{
+            background: rgba(6, 182, 212, 0.08);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            border-radius: 12px;
+            padding: 12px 18px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #bae6fd;
+        }}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Header -->
+    <header>
+        <div class="header-title">
+            <h1>Quantitative F&O Live Trading Desk <span class="badge-live"><span class="pulse-dot"></span> MONDAY OCT 05 ONWARDS</span></h1>
+            <div class="header-subtitle">Forward Execution & Recording Ledger | Baseline Start Date: <strong>Monday, October 05, 2026</strong> | Engine Ping: <span class="mono" style="color:#38bdf8;">{now_str}</span></div>
+        </div>
+        <div class="desk-badge-group">
+            <div class="desk-pill">
+                <span>Reliance Desk</span>
+                <strong>1,000 Qty (2L)</strong>
+            </div>
+            <div class="desk-pill">
+                <span>Adani Desk</span>
+                <strong>618 Qty (2L)</strong>
+            </div>
+        </div>
+    </header>
+
+    <!-- Real-time Active Trade Monitor (Appears when in-flight trade is open) -->
+    <div class="active-trade-box" id="active-trade-card">
+        <div class="active-trade-header">
+            <h3>⚡ IN-FLIGHT ACTIVE TRADE: <span class="mono" style="color:var(--accent-cyan);">{active_state.get('contract')}</span></h3>
+            <span class="badge-live"><span class="pulse-dot"></span> LIVE ON-SCREEN MTM</span>
+        </div>
+        <div class="active-trade-grid">
+            <div class="active-tile">
+                <span>Entry Spot / Time</span>
+                <strong class="mono">₹{active_state.get('entry_spot', 0.0):.1f} @ {active_state.get('entry_time', '—')}</strong>
+            </div>
+            <div class="active-tile">
+                <span>Current Live Spot</span>
+                <strong class="mono" style="color:var(--accent-cyan);">₹{active_state.get('current_spot', 0.0):.1f}</strong>
+            </div>
+            <div class="active-tile">
+                <span>Peak MTM Gain (2L)</span>
+                <strong class="mono val-profit">+₹{active_state.get('peak_profit_rs', 0.0):,.0f}</strong>
+            </div>
+            <div class="active-tile">
+                <span>Live Unrealized P&L (2L)</span>
+                <strong class="mono {'val-profit' if active_state.get('unrealized_pnl_2lots', 0.0) >= 0 else 'val-loss'}">
+                    {'₹' if active_state.get('unrealized_pnl_2lots', 0.0) < 0 else '+₹'}{active_state.get('unrealized_pnl_2lots', 0.0):,.2f}
+                </strong>
+            </div>
+            <div class="active-tile">
+                <span>Target / Stop Loss</span>
+                <strong class="mono">+{active_state.get('target_pts', 7.0)} pts / -{active_state.get('sl_pts', 5.0)} pts</strong>
+            </div>
+            <div class="active-tile">
+                <span>Confluence Score</span>
+                <strong class="mono" style="color:var(--accent-green);">{active_state.get('confluence_score', 0.0):.1f}%</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Notice -->
+    <div class="info-bar">
+        <div>💡 <strong>Clean Forward-Testing Ledger:</strong> This dashboard records <strong>strictly live forward trades starting October 05, 2026</strong>. Zero backtested data included. Every trade is auto-appended in real-time.</div>
+        <div>Auto-Refresh: <strong>Every 5s</strong></div>
+    </div>
+
+    <!-- Dynamic KPI Cards -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label">Cumulative Realized P&L (2L)</div>
+            <div class="kpi-val mono val-profit" id="kpi-total-pnl">₹0.00</div>
+            <div class="kpi-sub" id="kpi-pts-sub">0.00 pts total capture</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Desk Win Rate</div>
+            <div class="kpi-val mono" id="kpi-win-rate">0.0%</div>
+            <div class="kpi-sub" id="kpi-win-count">0 Wins / 0 Losses</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Live Executed Trades</div>
+            <div class="kpi-val mono" id="kpi-trades-count">0 Trades</div>
+            <div class="kpi-sub" id="kpi-standdowns">0 Stand Downs (Score &lt; 68%)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Profit Factor / Risk-Reward</div>
+            <div class="kpi-val mono" id="kpi-profit-factor">0.00</div>
+            <div class="kpi-sub" id="kpi-avg-win">Avg Win: ₹0 | Avg Loss: ₹0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Avg Confluence Score</div>
+            <div class="kpi-val mono" id="kpi-avg-score">0.0%</div>
+            <div class="kpi-sub">Gate: ≥68.0% Confluence</div>
+        </div>
+    </div>
+
+    <!-- Controls & Filters -->
+    <div class="controls-card">
+        <div class="nav-tabs">
+            <button class="nav-btn active" id="tab-rel" onclick="switchTicker('RELIANCE')">Reliance Industries</button>
+            <button class="nav-btn" id="tab-ada" onclick="switchTicker('ADANIENT')">Adani Enterprises</button>
+        </div>
+
+        <div class="filter-group">
+            <select class="filter-select" id="month-filter" onchange="renderTable()">
+                <option value="ALL">All Forward Trades (From Oct 05, 2026)</option>
+                <option value="2026-10">October 2026</option>
+            </select>
+
+            <select class="filter-select" id="outcome-filter" onchange="renderTable()">
+                <option value="ALL">All Outcomes</option>
+                <option value="WIN">Winners Only (+P&L)</option>
+                <option value="LOSS">Losses Only (-P&L)</option>
+                <option value="TARGET">Target Hit Only</option>
+                <option value="SL">Stop Loss Hit Only</option>
+                <option value="EOD">EOD Exit Only</option>
+                <option value="STAND_DOWN">Stand Down Sessions</option>
+            </select>
+
+            <input type="text" class="search-box" id="search-input" placeholder="Search date, strike, spot..." oninput="renderTable()">
+        </div>
+    </div>
+
+    <!-- Table Container -->
+    <div class="table-card">
+        <div class="table-scroll-container">
+            <table id="trades-table">
+                <thead>
+                    <tr>
+                        <th class="col-sticky-left">Date</th>
+                        <th>Action / Strike</th>
+                        <th>Confluence</th>
+                        <th>Entry Time</th>
+                        <th>Entry Spot (₹)</th>
+                        <th>Peak Spot (₹)</th>
+                        <th>Peak Time</th>
+                        <th>Peak Gain (2L)</th>
+                        <th>Exit Time</th>
+                        <th>Exit Spot (₹)</th>
+                        <th>Exit Reason</th>
+                        <th>Points</th>
+                        <th class="col-sticky-right">Final P&L (2 Lots)</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Rows rendered dynamically -->
+                </tbody>
+            </table>
+        </div>
+        <div class="table-footer">
+            <div id="footer-count">Showing 0 live sessions</div>
+            <div id="footer-sum" class="mono">Filtered P&L: ₹0.00</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const dataReliance = {json.dumps(trades_rel)};
+    const dataAdani = {json.dumps(trades_ada)};
+    
+    let currentTicker = 'RELIANCE';
+
+    function switchTicker(ticker) {{
+        currentTicker = ticker;
+        document.getElementById('tab-rel').classList.toggle('active', ticker === 'RELIANCE');
+        document.getElementById('tab-ada').classList.toggle('active', ticker === 'ADANIENT');
+        renderTable();
+    }}
+
+    function formatCurrency(val) {{
+        const num = parseFloat(val) || 0;
+        const isNeg = num < 0;
+        const absVal = Math.abs(num);
+        const formatted = absVal.toLocaleString('en-IN', {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
+        return (isNeg ? '-₹' : '+₹') + formatted;
+    }}
+
+    function formatSpot(val) {{
+        if (val === null || val === undefined || val === '' || val === '-' || val === '—') return '—';
+        const num = parseFloat(val);
+        if (isNaN(num)) return '—';
+        return '₹' + num.toLocaleString('en-IN', {{ minimumFractionDigits: 1, maximumFractionDigits: 1 }});
+    }}
+
+    function renderTable() {{
+        try {{
+            const rawData = currentTicker === 'RELIANCE' ? dataReliance : dataAdani;
+            const monthFilter = document.getElementById('month-filter').value;
+            const outcomeFilter = document.getElementById('outcome-filter').value;
+            const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
+
+            const filtered = rawData.filter(row => {{
+                if (monthFilter !== 'ALL' && row.month !== monthFilter) return false;
+                
+                const pnl = parseFloat(row.pnl_2lots) || 0;
+                const reason = (row.exit_reason || '').toUpperCase();
+                const isStandDown = row.status === 'STAND_DOWN' || (row.action || '').toUpperCase().includes('STAND DOWN');
+
+                if (outcomeFilter === 'WIN' && pnl <= 0) return false;
+                if (outcomeFilter === 'LOSS' && pnl >= 0) return false;
+                if (outcomeFilter === 'TARGET' && !reason.includes('TARGET')) return false;
+                if (outcomeFilter === 'SL' && !reason.includes('SL')) return false;
+                if (outcomeFilter === 'EOD' && !reason.includes('EOD')) return false;
+                if (outcomeFilter === 'STAND_DOWN' && !isStandDown) return false;
+
+                if (searchVal) {{
+                    const str = `${{row.date}} ${{row.action}} ${{row.entry_spot}} ${{row.exit_spot}} ${{row.exit_reason}}`.toLowerCase();
+                    if (!str.includes(searchVal)) return false;
+                }}
+                return true;
+            }});
+
+            // Reverse order so the newest live trades appear at the very top!
+            const displayRows = [...filtered].reverse();
+
+            // Update KPIs
+            let totalPnl = 0;
+            let totalPts = 0;
+            let wins = 0;
+            let losses = 0;
+            let winSum = 0;
+            let lossSum = 0;
+            let activeTrades = 0;
+            let standDowns = 0;
+            let scoreSum = 0;
+
+            filtered.forEach(r => {{
+                const pnl = parseFloat(r.pnl_2lots) || 0;
+                const pts = parseFloat(r.pnl_pts) || 0;
+                const score = parseFloat(r.score) || 0;
+                const isStandDown = r.status === 'STAND_DOWN' || (r.action || '').toUpperCase().includes('STAND DOWN');
+
+                totalPnl += pnl;
+                totalPts += pts;
+                scoreSum += score;
+
+                if (isStandDown) {{
+                    standDowns++;
+                }} else {{
+                    activeTrades++;
+                    if (pnl > 0) {{
+                        wins++;
+                        winSum += pnl;
+                    }} else if (pnl < 0) {{
+                        losses++;
+                        lossSum += Math.abs(pnl);
+                    }}
+                }}
+            }});
+
+            const winRate = activeTrades > 0 ? ((wins / activeTrades) * 100).toFixed(1) : '0.0';
+            const profitFactor = lossSum > 0 ? (winSum / lossSum).toFixed(2) : (winSum > 0 ? 'INF' : '0.00');
+            const avgScore = filtered.length > 0 ? (scoreSum / filtered.length).toFixed(1) : '0.0';
+
+            const pnlEl = document.getElementById('kpi-total-pnl');
+            pnlEl.textContent = formatCurrency(totalPnl);
+            pnlEl.className = 'kpi-val mono ' + (totalPnl >= 0 ? 'val-profit' : 'val-loss');
+
+            document.getElementById('kpi-pts-sub').textContent = `${{totalPts >= 0 ? '+' : ''}}${{totalPts.toFixed(2)}} pts total capture`;
+            document.getElementById('kpi-win-rate').textContent = `${{winRate}}%`;
+            document.getElementById('kpi-win-count').textContent = `${{wins}} Wins / ${{losses}} Losses (${{activeTrades}} Executed)`;
+            document.getElementById('kpi-trades-count').textContent = `${{activeTrades}} Trades`;
+            document.getElementById('kpi-standdowns').textContent = `${{standDowns}} Stand Downs (&lt;68% score)`;
+            document.getElementById('kpi-profit-factor').textContent = profitFactor;
+            
+            const avgWin = wins > 0 ? (winSum / wins).toFixed(0) : 0;
+            const avgLoss = losses > 0 ? (lossSum / losses).toFixed(0) : 0;
+            document.getElementById('kpi-avg-win').textContent = `Avg Win: ₹${{avgWin}} | Avg Loss: ₹${{avgLoss}}`;
+            document.getElementById('kpi-avg-score').textContent = `${{avgScore}}%`;
+
+            // Render Table Body
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            if (displayRows.length === 0) {{
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="13" style="text-align:center;padding:50px 20px;color:var(--text-secondary);">
+                            <div style="font-size:22px;margin-bottom:8px;">⚡</div>
+                            <div style="font-size:15px;font-weight:700;color:#f1f5f9;">Live Desk Armed for Monday, October 05, 2026</div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+                                Ready to record Trade #1. Continuous 5-minute candle confluence signals starting at 09:15 AM IST will automatically appear and append here.
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }} else {{
+                displayRows.forEach(row => {{
+                    const tr = document.createElement('tr');
+                    const action = String(row.action || '');
+                    const score = parseFloat(row.score) || 0;
+                    const pnl = parseFloat(row.pnl_2lots) || 0;
+                    const pts = parseFloat(row.pnl_pts) || 0;
+                    const peakAmt = parseFloat(row.peak_amount_rs) || 0;
+                    const reason = String(row.exit_reason || '');
+                    const isStandDown = row.status === 'STAND_DOWN' || action.toUpperCase().includes('STAND DOWN');
+
+                    // Action Pill
+                    let actionPill = '';
+                    if (action.includes('CE')) {{
+                        actionPill = `<span class="pill pill-ce">${{action}}</span>`;
+                    }} else if (action.includes('PE')) {{
+                        actionPill = `<span class="pill pill-pe">${{action}}</span>`;
+                    }} else {{
+                        actionPill = `<span class="pill pill-standdown">STAND DOWN</span>`;
+                    }}
+
+                    // Score Chip
+                    let scoreChip = '';
+                    if (score >= 72) {{
+                        scoreChip = `<span class="score-chip high mono">${{score.toFixed(1)}}%</span>`;
+                    }} else if (score >= 68) {{
+                        scoreChip = `<span class="score-chip mono">${{score.toFixed(1)}}%</span>`;
+                    }} else {{
+                        scoreChip = `<span class="score-chip mid mono">${{score.toFixed(1)}}%</span>`;
+                    }}
+
+                    // Reason Tag
+                    let reasonTag = '';
+                    if (reason.includes('TARGET') || reason.includes('HIT')) {{
+                        reasonTag = `<span class="reason-tag reason-target">${{reason}}</span>`;
+                    }} else if (reason.includes('SL')) {{
+                        reasonTag = `<span class="reason-tag reason-sl">${{reason}}</span>`;
+                    }} else if (reason.includes('EOD')) {{
+                        reasonTag = `<span class="reason-tag reason-eod">${{reason}}</span>`;
+                    }} else {{
+                        reasonTag = `<span class="reason-tag" style="background:rgba(255,255,255,0.05);color:var(--text-muted);">${{reason || '—'}}</span>`;
+                    }}
+
+                    // Final P&L
+                    let pnlClass = 'pnl-zero';
+                    let pnlText = '₹0.00';
+                    if (pnl > 0) {{
+                        pnlClass = 'pnl-pos';
+                        pnlText = formatCurrency(pnl);
+                    }} else if (pnl < 0) {{
+                        pnlClass = 'pnl-neg';
+                        pnlText = formatCurrency(pnl);
+                    }}
+
+                    const peakGainText = peakAmt > 0 ? `+₹${{Math.round(peakAmt).toLocaleString('en-IN')}}` : '₹0';
+                    const ptsText = (pts >= 0 ? '+' : '') + pts.toFixed(2);
+
+                    const entryTime = (!row.entry_time || row.entry_time === '-') ? '—' : row.entry_time;
+                    const peakTime = (!row.peak_time || row.peak_time === '-') ? '—' : row.peak_time;
+                    const exitTime = (!row.exit_time || row.exit_time === '-') ? '—' : row.exit_time;
+
+                    tr.innerHTML = `
+                        <td class="col-sticky-left mono"><span class="pill-live-tag">LIVE</span><strong>${{row.date}}</strong></td>
+                        <td>${{actionPill}}</td>
+                        <td>${{scoreChip}}</td>
+                        <td class="mono">${{entryTime}}</td>
+                        <td class="mono">${{formatSpot(row.entry_spot)}}</td>
+                        <td class="mono">${{formatSpot(row.peak_spot)}}</td>
+                        <td class="mono">${{peakTime}}</td>
+                        <td class="mono val-profit">${{isStandDown ? '—' : peakGainText}}</td>
+                        <td class="mono">${{exitTime}}</td>
+                        <td class="mono">${{formatSpot(row.exit_spot)}}</td>
+                        <td>${{reasonTag}}</td>
+                        <td class="mono ${{pts >= 0 ? 'pnl-pos' : 'pnl-neg'}}">${{isStandDown ? '0.00' : ptsText}}</td>
+                        <td class="col-sticky-right mono pnl-cell ${{pnlClass}}">${{pnlText}}</td>
+                    `;
+                    tbody.appendChild(tr);
+                }});
+            }}
+
+            document.getElementById('footer-count').textContent = `Showing ${{displayRows.length}} live forward sessions (October 05, 2026 onwards)`;
+            document.getElementById('footer-sum').textContent = `Filtered P&L: ${{formatCurrency(totalPnl)}}`;
+        }} catch (err) {{
+            console.error("Render Table Error:", err);
+            document.getElementById('table-body').innerHTML = `<tr><td colspan="13" style="color:red;padding:20px;">Error rendering data: ${{err.message}}</td></tr>`;
+        }}
+    }}
+
+    // Initial render
+    renderTable();
+</script>
+</body>
+</html>
+"""
+
+    with open(OUTPUT_HTML_FILE, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    print(f"Generated clean Live Forward Dashboard ({OUTPUT_HTML_FILE}) starting Oct 05, 2026.")
+    return OUTPUT_HTML_FILE
+
+
+if __name__ == "__main__":
+    generate_live_dashboard()
