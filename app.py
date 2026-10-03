@@ -1305,18 +1305,53 @@ if "live_broker_ltp" not in st.session_state:
 if "custom_trigger_override" not in st.session_state:
     st.session_state["custom_trigger_override"] = 0.0
 
-# Sleek Institutional Sidebar
-st.sidebar.html("""
-<div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1px solid #1E293B; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+# Sleek Institutional Sidebar & Scrip Switcher
+scrip_choice = st.sidebar.selectbox(
+    "🎯 Active Trading Scrip",
+    ["RELIANCE", "ADANI ENTERPRISES"],
+    index=0 if st.session_state.get("selected_scrip") != "ADANI ENTERPRISES" else 1,
+    key="sb_scrip_selector"
+)
+st.session_state["selected_scrip"] = scrip_choice
+is_adani = (scrip_choice == "ADANI ENTERPRISES")
+
+# Dynamic Scrip Configuration
+if is_adani:
+    scrip_symbol = "ADANIENT"
+    scrip_name = "ADANI ENTERPRISES"
+    scrip_yf = "ADANIENT.NS"
+    scrip_lot = 300
+    scrip_lots_count = 2
+    scrip_total_qty = 600
+    scrip_target_pts = 35.0
+    scrip_sl_pts = 15.0
+    scrip_be_pts = 12.0
+    scrip_color = "#F59E0B"
+    scrip_accent = "rgba(245, 158, 11, 0.15)"
+else:
+    scrip_symbol = "RELIANCE"
+    scrip_name = "RELIANCE QUANT DESK"
+    scrip_yf = "RELIANCE.NS"
+    scrip_lot = 500
+    scrip_lots_count = 2
+    scrip_total_qty = 1000
+    scrip_target_pts = 7.0
+    scrip_sl_pts = 5.0
+    scrip_be_pts = 3.0
+    scrip_color = "#38BDF8"
+    scrip_accent = "rgba(56, 189, 248, 0.15)"
+
+st.sidebar.html(f"""
+<div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1.5px solid {scrip_color}; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
     <div style="display: flex; align-items: center; gap: 8px;">
         <span style="font-size: 1.3rem;">⚡</span>
         <div>
-            <div style="font-size: 0.95rem; font-weight: 800; color: #FFFFFF;">RELIANCE QUANT DESK</div>
-            <div style="font-size: 0.70rem; color: #38BDF8; font-family: monospace;">INSTITUTIONAL F&O ENGINE</div>
+            <div style="font-size: 0.95rem; font-weight: 800; color: #FFFFFF;">{scrip_name}</div>
+            <div style="font-size: 0.70rem; color: {scrip_color}; font-family: monospace; font-weight: 700;">INSTITUTIONAL F&O ENGINE</div>
         </div>
     </div>
     <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 6px; border-top: 1px solid #1E293B;">
-        Underlying: <b style="color: #FFFFFF;">RELIANCE.NS</b> | Lot Size: <b style="color: #10B981;">250</b>
+        Underlying: <b style="color: #FFFFFF;">{scrip_yf}</b> | Lot Size: <b style="color: #10B981;">{scrip_lot}</b> ({scrip_lots_count} Lots: <b>{scrip_total_qty} Qty</b>)
     </div>
 </div>
 """)
@@ -1338,29 +1373,26 @@ sb_early_entry = st.sidebar.checkbox(
 st.session_state["allow_orb_early_entry"] = sb_early_entry
 
 st.sidebar.markdown("---")
-st.sidebar.html("""
+st.sidebar.html(f"""
 <div style="background: #0B1120; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
-    <div style="font-size: 0.74rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; margin-bottom: 6px;">🛡️ Active Risk Guardrails</div>
+    <div style="font-size: 0.74rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; margin-bottom: 6px;">🛡️ Active Risk Guardrails ({scrip_symbol})</div>
     <div style="font-size: 0.72rem; color: #94A3B8; line-height: 1.6;">
-        • Sizing: <b style="color: #10B981;">1 Lot (250 Qty)</b><br>
-        • Risk Cap: <b style="color: #38BDF8;">&le; 4.0% Account Cash</b><br>
-        • Circuit Breaker: <b style="color: #F87171;">1-and-Done SL Cap</b><br>
-        • Target: <b style="color: #34D399;">+10.0 pts</b> | SL: <b style="color: #F87171;">5.0 pts</b>
+        • Sizing: <b style="color: #10B981;">{scrip_lots_count} Lots ({scrip_total_qty} Qty)</b><br>
+        • Target: <b style="color: #34D399;">+{scrip_target_pts:.1f} pts</b> | SL: <b style="color: #F87171;">-{scrip_sl_pts:.1f} pts</b><br>
+        • Breakeven Lock: <b style="color: #38BDF8;">At +{scrip_be_pts:.1f} pts (SL to Cost)</b><br>
+        • Execution Window: <b style="color: #FCD34D;">09:15 - 10:45 AM (High-Prob Window)</b>
     </div>
-</div>
-<div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 10px 12px; font-size: 0.72rem; color: #7DD3FC; line-height: 1.4;">
-    ⚙️ <b>Desk Controls Moved:</b> All Risk parameters, policy toggles, 9-scenario simulator, and broker credentials are now organized under <b>Tab 5 (⚙️ Risk Policy, Config & Simulator)</b>.
 </div>
 """)
 
 # Resolve parameters for engine computation
-symbol = "RELIANCE.NS"
-scrip_choice = "RELIANCE"
-lot_size = int(st.session_state.get("lot_size", 250))
-num_lots = int(st.session_state.get("num_lots", 1))
-total_trading_qty = lot_size * num_lots
-target_pts = float(st.session_state.get("target_pts", 10.0))
-sl_pts = float(st.session_state.get("sl_pts", 5.0))
+symbol = scrip_yf
+scrip_choice = st.session_state.get("selected_scrip", "RELIANCE")
+lot_size = scrip_lot
+num_lots = scrip_lots_count
+total_trading_qty = scrip_total_qty
+target_pts = scrip_target_pts
+sl_pts = scrip_sl_pts
 MIN_HIT_PERCENTAGE = float(st.session_state.get("MIN_HIT_PERCENTAGE", 60.0))
 max_daily_sl_allowed = int(st.session_state.get("max_daily_sl_allowed", 1))
 sim_scenario = st.session_state.get("sim_scenario", "🟢 Live Market Flow")
@@ -1842,21 +1874,25 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def fetch_reliance_data(interval: str, force_key: str = ""):
+def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key: str = ""):
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     df = pd.DataFrame()
+    is_adani = (scrip == "ADANI ENTERPRISES" or scrip == "ADANIENT")
+    symbol_yf = "ADANIENT.NS" if is_adani else "RELIANCE.NS"
+    cache_filename = "adanient_5m_cache.parquet" if is_adani else "reliance_5m_cache.parquet"
 
-    # 1. Try Groww official charting API first (fastest, authentic NSE intraday candles, ~60ms)
-    try:
-        from groww_market_feed import GrowwMarketFeed
-        gw_feed = GrowwMarketFeed.get_instance()
-        df = gw_feed.get_reliance_historical_candles(interval=interval, days=5)
-    except Exception:
-        df = pd.DataFrame()
+    # 1. Try Groww official charting API first for Reliance (fastest, authentic NSE intraday candles, ~60ms)
+    if not is_adani:
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw_feed = GrowwMarketFeed.get_instance()
+            df = gw_feed.get_reliance_historical_candles(interval=interval, days=5)
+        except Exception:
+            df = pd.DataFrame()
 
     # 2. Fast local parquet cache fallback (0-latency instant load)
     if df is None or df.empty or len(df) < 30:
-        cache_file = os.path.join(os.path.dirname(__file__), "data_cache", "reliance_5m_cache.parquet")
+        cache_file = os.path.join(os.path.dirname(__file__), "data_cache", cache_filename)
         if os.path.exists(cache_file):
             try:
                 c_df = pd.read_parquet(cache_file)
@@ -1869,7 +1905,7 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     if df is None or df.empty or len(df) < 30:
         try:
             def _get_hist():
-                t = yf.Ticker("RELIANCE.NS")
+                t = yf.Ticker(symbol_yf)
                 return t.history(period="5d", interval=interval)
             with ThreadPoolExecutor(max_workers=1) as ex:
                 fut = ex.submit(_get_hist)
@@ -1877,50 +1913,60 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
         except Exception:
             df = pd.DataFrame()
 
-    # Anchor directly to authentic Reliance spot price from Groww API
-    gw_spot = 1210.00
-    try:
-        from groww_market_feed import GrowwMarketFeed
-        gw_feed_data = GrowwMarketFeed.get_instance().get_reliance_live_data()
-        gw_spot = float(gw_feed_data.get("spot_ltp", 1210.00))
-        base_p = gw_spot if (0 < gw_spot < 2000) else 1210.00
-    except Exception:
-        base_p = 1210.00
+    # Anchor spot price
+    if is_adani:
+        base_p = 2820.00
+        if df is not None and not df.empty and 'Close' in df.columns:
+            base_p = float(df['Close'].iloc[-1])
+    else:
+        gw_spot = 1210.00
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw_feed_data = GrowwMarketFeed.get_instance().get_reliance_live_data()
+            gw_spot = float(gw_feed_data.get("spot_ltp", 1210.00))
+            base_p = gw_spot if (0 < gw_spot < 2000) else 1210.00
+        except Exception:
+            base_p = 1210.00
 
     # Resilient Real Data Session Cache
     is_synthetic_feed = False
-    if not df.empty and len(df) >= 30:
+    sess_cache_key = f"cached_real_df_{'adani' if is_adani else 'reliance'}"
+    if df is not None and not df.empty and len(df) >= 30:
         try:
-            st.session_state["cached_real_df"] = df.copy()
+            st.session_state[sess_cache_key] = df.copy()
         except Exception:
             pass
-    elif "cached_real_df" in st.session_state and not st.session_state["cached_real_df"].empty:
-        df = st.session_state["cached_real_df"].copy()
+    elif sess_cache_key in st.session_state and not st.session_state[sess_cache_key].empty:
+        df = st.session_state[sess_cache_key].copy()
 
-    if df.empty or len(df) < 30:
+    if df is None or df.empty or len(df) < 30:
         is_synthetic_feed = True
         dates = pd.date_range(end=datetime.now(IST), periods=60, freq="5min" if interval == "5m" else "15min")
-        prev_p = base_p - 6.80
+        step_delta = 15.0 if is_adani else 6.80
+        prev_p = base_p - step_delta
         t_steps = np.linspace(0, 1, 60)
-        closes = prev_p + (base_p - prev_p) * (t_steps ** 1.1) + np.sin(t_steps * 14) * 0.80
+        oscillation = 2.50 if is_adani else 0.80
+        closes = prev_p + (base_p - prev_p) * (t_steps ** 1.1) + np.sin(t_steps * 14) * oscillation
         closes[-1] = base_p
-        closes[-2] = base_p - 0.75
-        highs = closes + np.random.uniform(0.40, 1.40, 60)
-        lows = closes - np.random.uniform(0.40, 1.40, 60)
+        closes[-2] = base_p - (1.50 if is_adani else 0.75)
+        wick_range = (1.50, 4.50) if is_adani else (0.40, 1.40)
+        highs = closes + np.random.uniform(wick_range[0], wick_range[1], 60)
+        lows = closes - np.random.uniform(wick_range[0], wick_range[1], 60)
         opens = np.roll(closes, 1)
         opens[0] = prev_p
-        volumes = np.random.randint(60000, 160000, 60)
-        volumes[-1] = 280000
+        vol_range = (25000, 90000) if is_adani else (60000, 160000)
+        volumes = np.random.randint(vol_range[0], vol_range[1], 60)
+        volumes[-1] = vol_range[1] * 2
         df = pd.DataFrame({"Open": opens, "High": highs, "Low": lows, "Close": closes, "Volume": volumes}, index=dates)
     else:
-        # If unadjusted pre-bonus data received (>2000), adjust to bonus-split price
-        if df['Close'].iloc[-1] > 2000:
+        # If unadjusted pre-bonus data received (>2000) for RELIANCE ONLY, adjust to bonus-split price
+        if not is_adani and df['Close'].iloc[-1] > 2000:
             df['Close'] = df['Close'] / 2.0
             df['Open'] = df['Open'] / 2.0
             df['High'] = df['High'] / 2.0
             df['Low'] = df['Low'] / 2.0
 
-        # Live Forming Candle Synthesis with 0-Delay Groww Spot
+        # Live Forming Candle Synthesis with 0-Delay Spot
         if base_p > 0 and len(df) > 0:
             df.iloc[-1, df.columns.get_loc('Close')] = base_p
             if base_p > df.iloc[-1]['High']:
@@ -2141,7 +2187,11 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     return df
 
 
-df = fetch_reliance_data(timeframe)
+def fetch_reliance_data(interval: str, force_key: str = ""):
+    return fetch_scrip_candles(scrip=st.session_state.get("selected_scrip", "RELIANCE"), interval=interval, force_key=force_key)
+
+
+df = fetch_scrip_candles(scrip=scrip_choice, interval=timeframe)
 
 
 # ==============================================================================
@@ -2157,11 +2207,13 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     if corridor is None or low is None or high is None:
         dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
         dyn_atm = dyn_corridor["lower_strike"]
+        cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES" or spot >= 2000) else "RELIANCE"
         stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
             atm_strike=dyn_atm, 
             spot=spot, 
             broker_call_ltp=broker_call_ltp,
-            bias="BEARISH" if is_pe_dominant else "BULLISH"
+            bias="BEARISH" if is_pe_dominant else "BULLISH",
+            scrip_symbol=cur_sym
         )
         corridor = stream["corridor"]
         low = stream["lower"]
@@ -2178,6 +2230,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_tradable = tp.get("is_tradable", False)
     plan_contract_type = tp.get("recommended_contract_type", "CE")
     plan_strike = tp.get("atm_strike", corridor["lower_strike"])
+    active_sym = tp.get("scrip_symbol", "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES" or spot >= 2000) else "RELIANCE")
+    active_scrip_name = tp.get("scrip_name", "ADANI ENTERPRISES" if active_sym == "ADANIENT" else "RELIANCE")
     plan_target_pts = tp.get("target_pts", 10.0)
     plan_sl_pts = tp.get("sl_pts", 4.5)
     plan_num_lots = tp.get("num_lots", 1)
@@ -2270,7 +2324,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             alert_sent_key = f"tg_sent_sim_target_{sim_run_id}_{plan_strike}"
             if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_target_hit_alert(
-                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     entry_price=active_live_ltp,
                     exit_price=target_exit_ltp,
                     profit_pts=sim_target_pts,
@@ -2345,7 +2399,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 16px;">
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Closed Contract</div>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type}</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">{active_sym} {plan_strike} {plan_contract_type}</div>
                     <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry}</div>
                 </div>
                 <div>
@@ -2365,10 +2419,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #10B981; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
+                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #10B981; box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);">
                     🎯 BOOK FULL PROFIT ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📈 VIEW POSITIONS ↗
                 </a>
             </div>
@@ -2391,7 +2445,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             alert_sent_key = f"tg_sent_sim_sl_{sim_run_id}_{plan_strike}"
             if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_stop_loss_alert(
-                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     entry_price=active_live_ltp,
                     sl_price=sl_exit_ltp,
                     loss_pts=sim_sl_pts,
@@ -2466,7 +2520,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 12px 16px;">
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Closed Contract</div>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type}</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">{active_sym} {plan_strike} {plan_contract_type}</div>
                     <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry}</div>
                 </div>
                 <div>
@@ -2486,10 +2540,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #EF4444; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
+                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #EF4444; box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);">
                     🛑 EXIT POSITION NOW ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 VIEW LIVE CHART ↗
                 </a>
             </div>
@@ -2509,7 +2563,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             alert_sent_key = f"tg_sent_sim_trail_{sim_run_id}_{plan_strike}"
             if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_trailing_sl_alert(
-                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     current_ltp=trail_ltp,
                     trailing_sl=trail_sl,
                     secured_pts=5.0,
@@ -2583,7 +2637,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 12px 16px;">
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">Active Contract</div>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type}</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">{active_sym} {plan_strike} {plan_contract_type}</div>
                     <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry}</div>
                 </div>
                 <div>
@@ -2603,10 +2657,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #38BDF8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);">
+                <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #38BDF8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);">
                     ⚡ MODIFY SL ON GROWW ↗
                 </a>
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     📊 VIEW LIVE CHART ↗
                 </a>
             </div>
@@ -2622,7 +2676,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             alert_sent_key = f"tg_sent_sim_autosq_{sim_run_id}_{plan_strike}"
             if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 alert_msg = TelegramNotifier.format_auto_square_off_alert(
-                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
+                    contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}) [SIMULATED SCENARIO]",
                     current_ltp=active_live_ltp,
                     reason="Mandatory intraday EOD cut-off before broker auto-square-off charges at 03:15 PM",
                     spot=spot_tick
@@ -2881,7 +2935,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             </div>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 12px 16px;">
                 <div>
-                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">RELIANCE Spot</div>
+                    <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">{active_sym} Spot</div>
                     <div style="font-size: 1.35rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">₹{spot_tick:,.2f}</div>
                     <div style="font-size: 0.72rem; color: #94A3B8;">Consolidation Zone</div>
                 </div>
@@ -2902,7 +2956,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 </div>
             </div>
             <div style="display: flex; gap: 12px; margin-top: 14px;">
-                <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
                     🛡️ VIEW SPOT CHART ON GROWW ↗
                 </a>
             </div>
@@ -2918,7 +2972,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         effective_sl = max(act_sl, act_trail_sl)
         act_qty = int(active_trade_obj.get("qty", plan_qty))
         act_lots = int(active_trade_obj.get("num_lots", plan_num_lots))
-        act_inst = active_trade_obj.get("instrument", f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry})")
+        act_inst = active_trade_obj.get("instrument", f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})")
         act_trade_num = active_trade_obj.get("trade_num", 1)
 
         active_track_ltp = active_live_ltp
@@ -2977,7 +3031,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     Trade #{act_trade_num} reached target price ₹{act_target:.2f} (Current LTP: ₹{active_track_ltp:.2f}). Book profits now on broker terminal.
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 14px;">
-                    <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
+                    <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
                         🎯 BOOK FULL PROFIT ON GROWW ↗
                     </a>
                 </div>
@@ -3019,7 +3073,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     Trade #{act_trade_num} hit protective stop loss ₹{effective_sl:.2f} (Current LTP: ₹{active_track_ltp:.2f}). Cut risk immediately.
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 14px;">
-                    <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
+                    <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none;">
                         🛑 EXIT POSITION ON GROWW ↗
                     </a>
                 </div>
@@ -3073,11 +3127,11 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; margin-top: 14px;">
-                    <a href="https://groww.in/options/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399;">
+                    <a href="https://groww.in/options/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: #FFFFFF; font-weight: 800; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #34D399;">
                         🟢 VIEW POSITION ON GROWW ↗
                     </a>
-                    <a href="https://groww.in/stocks/reliance-industries-ltd" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
-                        📊 OPEN RELIANCE LIVE CHART ↗
+                    <a href="https://groww.in/stocks/{'adani-enterprises-ltd' if active_sym == 'ADANIENT' else 'reliance-industries-ltd'}" target="_blank" style="flex: 1; text-align: center; background: rgba(15, 23, 42, 0.8); color: #38BDF8; font-weight: 700; font-size: 0.92rem; padding: 10px 16px; border-radius: 6px; text-decoration: none; border: 1px solid #0284C7;">
+                        📊 OPEN {active_sym} LIVE CHART ↗
                     </a>
                 </div>
             </div>
@@ -3098,8 +3152,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         seq_now = SequentialTradeEngine.get_state()
         if seq_now.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
             SequentialTradeEngine.enter_trade_direct(
-                contract=f"RELIANCE26OCT{plan_strike}{plan_contract_type}",
-                instrument=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry})",
+                contract=f"{active_sym}26OCT{plan_strike}{plan_contract_type}",
+                instrument=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})",
                 entry_price=active_live_ltp,
                 sl=sl_price,
                 target=target_price,
@@ -3123,7 +3177,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]) else ""
                 alert_msg = TelegramNotifier.format_entry_alert(
-                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
+                    contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
                     direction=plan_dir,
                     entry_price=active_live_ltp,
                     target_pts=plan_target_pts,
@@ -3136,9 +3190,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 )
                 # Green buttons for CE, Red buttons for PE
                 if plan_contract_type == "CE":
-                    buttons = TelegramNotifier.get_entry_ce_buttons(f"RELIANCE {plan_strike} CE")
+                    buttons = TelegramNotifier.get_entry_ce_buttons(f"{active_sym} {plan_strike} CE")
                 else:
-                    buttons = TelegramNotifier.get_entry_pe_buttons(f"RELIANCE {plan_strike} PE")
+                    buttons = TelegramNotifier.get_entry_pe_buttons(f"{active_sym} {plan_strike} PE")
 
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
                 if success:
@@ -3247,7 +3301,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 16px;">
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">📌 Recommended Contract</div>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type}</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">{active_sym} {plan_strike} {plan_contract_type}</div>
                     <div style="font-size: 0.72rem; color: #E2E8F0;">{plan_expiry} • ATM Strike</div>
                 </div>
                 <div>
@@ -3298,7 +3352,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             if not st.session_state.get(armed_sent_key, False) and not TelegramNotifier.is_alert_sent(armed_sent_key):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_armed or sim_mode == "ARMED") else ""
                 armed_msg = TelegramNotifier.format_armed_alert(
-                    contract=f"RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
+                    contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
                     direction=plan_dir,
                     current_ltp=active_live_ltp,
                     breakout_trigger=breakout_level,
@@ -3310,7 +3364,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     win_prob=plan_score,
                     spot=spot_tick
                 )
-                buttons = TelegramNotifier.get_armed_buttons(f"RELIANCE {plan_strike} {plan_contract_type}")
+                buttons = TelegramNotifier.get_armed_buttons(f"{active_sym} {plan_strike} {plan_contract_type}")
                 success, feedback = TelegramNotifier.send_message(tg_token, tg_chat, armed_msg, reply_markup=buttons)
                 if success:
                     st.session_state[armed_sent_key] = True
@@ -3380,7 +3434,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px 14px;">
                 <div>
                     <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">ARMED CONTRACT</div>
-                    <div style="font-size: 1.05rem; font-weight: 800; color: #38BDF8; margin-top: 2px;">RELIANCE {plan_strike} {plan_contract_type} ({plan_expiry})</div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #38BDF8; margin-top: 2px;">{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})</div>
                     <div style="font-size: 0.70rem; color: #94A3B8;">Mandate Expiry</div>
                 </div>
                 <div>
@@ -3520,12 +3574,14 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot)
     dyn_atm = dyn_corridor["lower_strike"]
 
+    cur_sym = "ADANIENT" if (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES" or spot >= 2000) else "RELIANCE"
     stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
         atm_strike=dyn_atm, 
         spot=spot, 
         broker_call_ltp=broker_call_ltp,
         selected_strike=selected_strike,
-        bias="BEARISH" if is_pe_dominant else "BULLISH"
+        bias="BEARISH" if is_pe_dominant else "BULLISH",
+        scrip_symbol=cur_sym
     )
     corridor = stream["corridor"]
     best = stream["best_strike"]
@@ -3560,7 +3616,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 <span style="background: #0C4A6E; color: #7DD3FC; font-size: 0.72rem; padding: 3px 10px; border-radius: 4px; font-weight: 700; border: 1px solid #0284C7;">Corridor: ₹{corridor['lower_strike']} & ₹{corridor['upper_strike']}</span>
             </div>
             <div style="font-size: 0.82rem; color: #CBD5E1;">
-                ⏱️ Feed Time: <b style="color: #FFFFFF;">{ts}</b> &nbsp;|&nbsp; RELIANCE Spot: <b style="color: #38BDF8;">₹{spot_tick:.2f}</b>
+                ⏱️ Feed Time: <b style="color: #FFFFFF;">{ts}</b> &nbsp;|&nbsp; {cur_sym} Spot: <b style="color: #38BDF8;">₹{spot_tick:.2f}</b>
             </div>
         </div>
         
@@ -3716,7 +3772,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 6px; border-top: 1px solid #1E293B; font-size: 0.74rem;">
             <div style="color: #10B981; font-weight: 700;">⚡ Flow Bias: {comp['flow_bias']}</div>
-            <div style="color: #CBD5E1;">RELIANCE Stock Day Volume: <b style="color: #10B981;">{stock_volume:,} Shares</b> ({rel_vol:.2f}x 20-MA)</div>
+            <div style="color: #CBD5E1;">{cur_sym} Stock Day Volume: <b style="color: #10B981;">{stock_volume:,} Shares</b> ({rel_vol:.2f}x 20-MA)</div>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px; font-size: 0.68rem; color: #64748B;">
             <span>Option PCR & Vol: <b style="color: #38BDF8;">Groww Live Option Chain (0-Delay)</b></span>
@@ -3727,7 +3783,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     """)
 
     # ==============================================================================
-    # RELIANCE LIVE PARTICIPANT BUYER/SELLER CLASSIFICATION (FII • DII • PRO • RETAIL)
+    # PARTICIPANT BUYER/SELLER CLASSIFICATION (FII • DII • PRO • RETAIL)
     # ==============================================================================
     part_flow = NSEIndiaFetcher.get_reliance_participant_flow(spot, stock_volume)
     fii = part_flow["participants"]["FII"]
@@ -3745,10 +3801,10 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span class="live-dot"></span>
                 <span style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.4px;">
-                    ⚡ RELIANCE LIVE PARTICIPANT BUYER/SELLER CLASSIFICATION
+                    ⚡ {cur_sym} LIVE PARTICIPANT BUYER/SELLER CLASSIFICATION
                 </span>
                 <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.70rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.3);">
-                    DEDICATED TO RELIANCE ONLY
+                    DEDICATED TO {cur_sym} F&O
                 </span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -3969,13 +4025,17 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
 @st.fragment(run_every="6s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
-    # Dynamically pull current real-time spot from Groww live feed on each 1-sec tick
-    try:
-        from groww_market_feed import GrowwMarketFeed
-        spot_tick_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
-        gw_spot_val = float(spot_tick_info.get("spot_ltp", spot))
-        live_spot = gw_spot_val if gw_spot_val > 0 else spot
-    except Exception:
+    # Dynamically pull current real-time spot from live feed on each tick
+    is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
+    if not is_adani_active:
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            spot_tick_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
+            gw_spot_val = float(spot_tick_info.get("spot_ltp", spot))
+            live_spot = gw_spot_val if (0 < gw_spot_val < 2000) else spot
+        except Exception:
+            live_spot = spot
+    else:
         live_spot = spot
     render_atm_call_put_content(live_spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, is_streaming=True, trade_plan=trade_plan)
 
@@ -3985,9 +4045,13 @@ if df is not None and not df.empty:
     prev = df.iloc[-2]
     
     # Ground spot strictly on authentic Groww / NSE official data
-    from groww_market_feed import GrowwMarketFeed
-    gw_live_spot = GrowwMarketFeed.get_instance().get_reliance_live_data().get("spot_ltp", 1226.00)
-    spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) < 2000) else float(latest['Close'])
+    is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
+    if is_adani_active:
+        spot = float(latest['Close'])
+    else:
+        from groww_market_feed import GrowwMarketFeed
+        gw_live_spot = GrowwMarketFeed.get_instance().get_reliance_live_data().get("spot_ltp", 1226.00)
+        spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) < 2000) else float(latest['Close'])
 
     # Strike Pinning & Dynamic Dual ATM Corridor Resolution
     corridor = NSEIndiaFetcher.get_atm_corridor(spot)
@@ -4014,7 +4078,8 @@ if df is not None and not df.empty:
         spot=spot,
         broker_call_ltp=live_broker_ltp,
         selected_strike=user_strike_choice,
-        bias=pre_bias
+        bias=pre_bias,
+        scrip_symbol=scrip_symbol
     )
     best_strike_meta = atm_stream_eval["best_strike"]
     active_strike_meta = atm_stream_eval["active_strike"]
@@ -5044,7 +5109,7 @@ if df is not None and not df.empty:
     is_sector_divergence_trap = (
         (spot > rel_ref_close and energy_pct < -0.15 and reliance_pct > 0.10) or
         (spot < rel_ref_close and energy_pct > 0.15 and reliance_pct < -0.10)
-    )
+    ) if (scrip_symbol != "ADANIENT") else False
 
     # Enhancement 1: Midday "Chop Zone" Time-of-Day Filter (11:30 AM – 01:15 PM IST)
     # Volume drops ~55% during this window, false breakouts peak, theta decay accelerates.
@@ -5168,12 +5233,14 @@ if df is not None and not df.empty:
     # Re-sync Dual ATM Stream, Active Strike & Best Strike with Final Confluent Direction
     target_engine_bias = "BEARISH" if recommended_contract_type == "PE" else "BULLISH"
     if target_engine_bias != pre_bias:
+        cur_sym = scrip_symbol
         atm_stream_eval = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
             atm_strike=lower_atm,
             spot=spot,
             broker_call_ltp=live_broker_ltp,
             selected_strike=user_strike_choice,
-            bias=target_engine_bias
+            bias=target_engine_bias,
+            scrip_symbol=cur_sym
         )
         best_strike_meta = atm_stream_eval["best_strike"]
         active_strike_meta = atm_stream_eval["active_strike"]
@@ -5219,35 +5286,46 @@ if df is not None and not df.empty:
     estimated_premium = round(current_option_ltp + 1.20, 2)  # Breakout trigger level
 
     # Enhancement: Institutional Volatility-Adaptive SL & Profit Target
-    # Scaled dynamically by Black-Scholes Delta (0.50), Realized 15m ATR, and India VIX
-    # Low-vol days -> SL tightens to 3.5 pts (Rs. 1,750 risk = 2.3% capital risk)
-    # High-vol days -> SL expands to 5.0 pts (Rs. 2,500 risk = 3.4% capital risk, strictly <= 4.0%)
-    # Target dynamically preserves >= 2.2:1 Reward-to-Risk ratio (8.0 to 14.0 pts)
-    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else 6.50
+    # Dynamically calibrated by Scrip Scale (Adani ~3000 vs Reliance ~1200)
+    stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else (14.0 if is_adani else 6.50)
     bs_delta = norm_cdf_d1 if ('norm_cdf_d1' in dir() or 'norm_cdf_d1' in locals()) else 0.50
     vix_val_current = float(benchmarks.get("INDIA VIX", {}).get("price", 13.50)) if "benchmarks" in locals() or "benchmarks" in globals() else 13.50
     vix_scaler = max(0.85, min(1.30, vix_val_current / 13.50))
 
-    volatility_adapted_sl = round(min(5.0, max(3.5, bs_delta * stock_atr * 0.85)), 1)
-    atr_dynamic_sl = volatility_adapted_sl
-    max_sl_from_capital_cap = round((account_cash * 0.04) / max(1, total_trading_qty), 1)
-    effective_sl_pts = min(volatility_adapted_sl, max_sl_from_capital_cap) if not is_sim_active else sl_pts
+    if is_adani:
+        volatility_adapted_sl = scrip_sl_pts
+        atr_dynamic_sl = volatility_adapted_sl
+        effective_sl_pts = scrip_sl_pts if not is_sim_active else sl_pts
 
-    volatility_adapted_target = round(min(14.0, max(8.0, effective_sl_pts * 2.2 * vix_scaler)), 1)
-    atr_dynamic_target = volatility_adapted_target
-    effective_target_pts = volatility_adapted_target if not is_sim_active else target_pts
+        volatility_adapted_target = scrip_target_pts
+        atr_dynamic_target = volatility_adapted_target
+        effective_target_pts = scrip_target_pts if not is_sim_active else target_pts
+    else:
+        volatility_adapted_sl = round(min(5.0, max(3.5, bs_delta * stock_atr * 0.85)), 1)
+        atr_dynamic_sl = volatility_adapted_sl
+        max_sl_from_capital_cap = round((account_cash * 0.04) / max(1, total_trading_qty), 1)
+        effective_sl_pts = min(volatility_adapted_sl, max_sl_from_capital_cap) if not is_sim_active else sl_pts
+
+        volatility_adapted_target = round(min(14.0, max(8.0, effective_sl_pts * 2.2 * vix_scaler)), 1)
+        atr_dynamic_target = volatility_adapted_target
+        effective_target_pts = volatility_adapted_target if not is_sim_active else target_pts
+
     target_pts_display = effective_target_pts
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
     is_sl_dynamic = not is_sim_active
 
     # Enhancement 3: Tiered Trailing Stop-Loss & Breakeven Escalator (BOCPD Adaptive)
     # If Bayesian Online Changepoint Detection flags regime uncertainty (cp_prob >= 0.65), instantly tighten trailing thresholds
-    if 'cp_prob' in locals() and cp_prob >= 0.65:
-        be_offset = 2.0  # Tightened from 3.5 to lock profits faster during regime shifts
-        lock_offset = 3.8
+    if is_adani:
+        be_offset = 8.0 if ('cp_prob' in locals() and cp_prob >= 0.65) else scrip_be_pts
+        lock_offset = 18.0
     else:
-        be_offset = 3.5
-        lock_offset = 5.5
+        if 'cp_prob' in locals() and cp_prob >= 0.65:
+            be_offset = 2.0  # Tightened from 3.5 to lock profits faster during regime shifts
+            lock_offset = 3.8
+        else:
+            be_offset = 3.5
+            lock_offset = 5.5
 
     breakeven_trigger_price = round(estimated_premium + be_offset, 2)
     breakeven_sl = round(estimated_premium + 0.10, 2)
@@ -5279,13 +5357,13 @@ if df is not None and not df.empty:
     if iv_gate_failed and not is_sim_active:
         is_tradable = False
 
-    # Gate B: Crude Oil Dumping (<= -2.5%) Stand Down for CE (Refining margin collapse)
-    crude_gate_failed = bool(recommended_contract_type == "CE" and crude_dumping_severe)
+    # Gate B: Crude Oil Dumping (<= -2.5%) Stand Down for CE (Refining margin collapse strictly on Reliance)
+    crude_gate_failed = bool(not is_adani and recommended_contract_type == "CE" and crude_dumping_severe)
     if crude_gate_failed and not is_sim_active:
         is_tradable = False
 
     strike_badge = "🏆 Quantitative Best Strike" if is_best_strk else "Alternative ATM Strike"
-    rec_instrument = f"RELIANCE {atm_strike} {recommended_contract_type} ({expiry_date_str}) [{strike_badge} | Dual ATM: ₹{lower_atm} & ₹{upper_atm}] | {num_lots} Lots / {total_trading_qty} Qty | Current Price: ₹{current_option_ltp:.2f} (Spot: ₹{spot:.2f})"
+    rec_instrument = f"{scrip_symbol} {atm_strike} {recommended_contract_type} ({expiry_date_str}) [{strike_badge} | Dual ATM: ₹{lower_atm} & ₹{upper_atm}] | {num_lots} Lots / {total_trading_qty} Qty | Current Price: ₹{current_option_ltp:.2f} (Spot: ₹{spot:.2f})"
 
     target_premium = estimated_premium + effective_target_pts
     sl_premium = estimated_premium - effective_sl_pts
@@ -5405,16 +5483,21 @@ if df is not None and not df.empty:
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: #CBD5E1;">
                     <span>{bias_narrative}</span>
-                    <span style="font-size: 0.72rem; color: #94A3B8;">Dominant: <b style="color: #FFFFFF;">RELIANCE {atm_strike} {recommended_contract_type}</b></span>
+                    <span style="font-size: 0.72rem; color: #94A3B8;">Dominant: <b style="color: #FFFFFF;">{scrip_symbol} {atm_strike} {recommended_contract_type}</b></span>
                 </div>
             </div>
             """)
 
     @st.fragment(run_every="6s")
     def render_quant_radar_kpis():
-        from groww_market_feed import GrowwMarketFeed
-        spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
-        curr_spot = float(spot_info.get("spot_ltp", spot))
+        is_adani_active = (st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
+        if not is_adani_active:
+            from groww_market_feed import GrowwMarketFeed
+            spot_info = GrowwMarketFeed.get_instance().get_dynamic_reliance_spot_tick()
+            gw_spot_val = float(spot_info.get("spot_ltp", spot))
+            curr_spot = gw_spot_val if (0 < gw_spot_val < 2000) else spot
+        else:
+            curr_spot = spot
         spot_drift = curr_spot - spot
         live_bull = min(96.0, max(10.0, round(bullish_score + (spot_drift * 0.35), 1)))
         live_bear = min(96.0, max(10.0, round(bearish_score - (spot_drift * 0.35), 1)))
@@ -5464,9 +5547,9 @@ if df is not None and not df.empty:
                 <div style="width: {live_bear}%; background: linear-gradient(90deg, #DC2626, #EF4444); transition: width 0.3s ease;"></div>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 0.76rem; color: #CBD5E1; margin-top: 8px;">
-                <span>Active Call Strike: <b style="color: #FFFFFF;">RELIANCE {atm_strike} CE ({expiry_date_str})</b></span>
+                <span>Active Call Strike: <b style="color: #FFFFFF;">{scrip_symbol} {atm_strike} CE ({expiry_date_str})</b></span>
                 <span>Dominant Direction: <b style="color: {'#34D399' if live_bull >= live_bear else '#F87171'};">{dominant_side}</b></span>
-                <span>Active Put Strike: <b style="color: #FFFFFF;">RELIANCE {atm_strike} PE ({expiry_date_str})</b></span>
+                <span>Active Put Strike: <b style="color: #FFFFFF;">{scrip_symbol} {atm_strike} PE ({expiry_date_str})</b></span>
             </div>
             <div style="font-size: 0.70rem; color: #64748B; text-align: right; margin-top: 6px; border-top: 1px solid #1E293B; padding-top: 4px;">
                 📡 <b>Source:</b> Proprietary 6-Vector Confluence Engine (Price Action 35%, Technical Indicators 30%, Order Flow 20%, Macro 15%)
@@ -5892,7 +5975,7 @@ if df is not None and not df.empty:
                             <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
                                 <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
                                 <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
-                                    RELIANCE {atm_strike} CE
+                                    {scrip_symbol} {atm_strike} CE
                                 </div>
                                 <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
                             </div>
@@ -5900,16 +5983,16 @@ if df is not None and not df.empty:
                             <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
                                 <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
                                 <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
-                                    +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
+                                    +₹{target_pts * total_trading_qty:,.0f} <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹{sl_pts * total_trading_qty:,.0f}</span>
                                 </div>
-                                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
+                                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:{target_pts / max(0.1, sl_pts):.2f} Asymmetric Target</div>
                             </div>
                         </div>
 
                         <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
                             <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
                             <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                                <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence cleared threshold (<b style="color: #34D399;">{bullish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Suggesting <b style="color: #38BDF8;">RELIANCE {atm_strike} CE</b> at ₹{estimated_premium:.2f}. Click Arm Trade to enter ENTRY PENDING state.
+                                <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence cleared threshold (<b style="color: #34D399;">{bullish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Suggesting <b style="color: #38BDF8;">{scrip_symbol} {atm_strike} CE</b> at ₹{estimated_premium:.2f}. Click Arm Trade to enter ENTRY PENDING state.
                             </div>
                         </div>
                     </div>
@@ -5929,7 +6012,7 @@ if df is not None and not df.empty:
                                     ⚡ HIGH-PROBABILITY SIGNAL
                                 </span>
                                 <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700;">
-                                    RELIANCE {atm_strike} PE
+                                    {scrip_symbol} {atm_strike} PE
                                 </span>
                             </div>
                         </div>
@@ -5958,7 +6041,7 @@ if df is not None and not df.empty:
                             <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
                                 <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">SELECTED DERIVATIVE</div>
                                 <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin-top: 3px;">
-                                    RELIANCE {atm_strike} PE
+                                    {scrip_symbol} {atm_strike} PE
                                 </div>
                                 <div style="font-size: 0.70rem; color: #38BDF8; margin-top: 2px;">Exp: {expiry_date_str}</div>
                             </div>
@@ -5966,16 +6049,16 @@ if df is not None and not df.empty:
                             <div style="background: rgba(0, 0, 0, 0.40); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 14px;">
                                 <div style="font-size: 0.68rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.6px;">RISK-REWARD ASYMMETRY</div>
                                 <div style="font-size: 1.05rem; font-weight: 800; color: #34D399; margin-top: 3px;">
-                                    +₹10,000 <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹9,000</span>
+                                    +₹{target_pts * total_trading_qty:,.0f} <span style="font-size: 0.8rem; color: #94A3B8;">/</span> <span style="color: #F87171;">-₹{sl_pts * total_trading_qty:,.0f}</span>
                                 </div>
-                                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:1.11 Asymmetric Target</div>
+                                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 2px;">1:{target_pts / max(0.1, sl_pts):.2f} Asymmetric Target</div>
                             </div>
                         </div>
 
                         <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
                             <span style="font-size: 1.1rem; line-height: 1;">⚡</span>
                             <div style="font-size: 0.84rem; color: #CBD5E1; line-height: 1.55;">
-                                <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence cleared threshold (<b style="color: #F87171;">{bearish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Suggesting <b style="color: #38BDF8;">RELIANCE {atm_strike} PE</b> at ₹{estimated_premium:.2f}. Click Arm Trade to enter ENTRY PENDING state.
+                                <b style="color: #FFFFFF;">Execution Mandate:</b> Directional confluence cleared threshold (<b style="color: #F87171;">{bearish_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}%</b>). Suggesting <b style="color: #38BDF8;">{scrip_symbol} {atm_strike} PE</b> at ₹{estimated_premium:.2f}. Click Arm Trade to enter ENTRY PENDING state.
                             </div>
                         </div>
                     </div>
@@ -5988,7 +6071,7 @@ if df is not None and not df.empty:
                 with prop_c2:
                     if st.button(f"🚀 Arm & Propose Trade #{next_t_num}", use_container_width=True):
                         SequentialTradeEngine.propose_trade(
-                            contract=f"RELIANCE26OCT{atm_strike}{recommended_contract_type}",
+                            contract=f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}",
                             instrument=rec_instrument,
                             planned_entry=float(estimated_premium),
                             sl=float(sl_premium),
@@ -6090,7 +6173,7 @@ if df is not None and not df.empty:
                         gate_card_val = f"🟢 Gate Cleared (+{gate_surplus:.1f}%)"
                         gate_card_sub = f"Confluence {dominant_score}% &gt; {MIN_HIT_PERCENTAGE:.0f}% Gate"
                         why_stand_down_html = f"""
-                        <b style="color: #FFFFFF;">Why is Execution Locked?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. However, live order routing is locked because the exchange has not opened yet (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST</b>). Institutional trading hours for Reliance F&O are strictly <b>09:15 AM to 03:10 PM IST</b>. This setup is <b>ARMED</b> and ready for market open at 09:15 AM.<br><span style="color: #94A3B8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">💡 <b>Testing Tip:</b> To test live order execution, audio chimes, and Telegram alerts right now, select <b>'🔥 Trigger BUY NOW Entry'</b> or toggle <b>'Simulate Session Time'</b> in the left sidebar.</span>
+                        <b style="color: #FFFFFF;">Why is Execution Locked?</b> Current prevailing bias is <span style="background: {'rgba(16, 185, 129, 0.20)' if is_bull_lean else 'rgba(239, 68, 68, 0.20)'}; color: {lean_color}; border: 1px solid {lean_border}; padding: 1px 7px; border-radius: 4px; font-weight: 800;">{bias_label}</span>, which <b>successfully clears the mandatory &gt; {MIN_HIT_PERCENTAGE:.0f}% Institutional Execution Gate (+{gate_surplus:.1f}% surplus)</b>. However, live order routing is locked because the exchange has not opened yet (Engine Clock: <b>{current_time.strftime('%I:%M %p')} IST</b>). Institutional trading hours for {scrip_name} F&O are strictly <b>09:15 AM to 03:10 PM IST</b>. This setup is <b>ARMED</b> and ready for market open at 09:15 AM.<br><span style="color: #94A3B8; font-size: 0.76rem; display: inline-block; margin-top: 5px;">💡 <b>Testing Tip:</b> To test live order execution, audio chimes, and Telegram alerts right now, select <b>'🔥 Trigger BUY NOW Entry'</b> or toggle <b>'Simulate Session Time'</b> in the left sidebar.</span>
                         """
                         dot_color = "#F59E0B"
                         cap_badge_title = "🛡️ PRE-SESSION LOCK (OFF-HOURS)"
@@ -6289,6 +6372,9 @@ if df is not None and not df.empty:
                 max_collar_pts=0.65
             )
             _cockpit_trade_plan = {
+                "scrip_symbol": scrip_symbol,
+                "scrip_name": scrip_name,
+                "rec_instrument": rec_instrument,
                 "is_tradable": is_tradable,
                 "dominant_side": dominant_side,
                 "dominant_score": dominant_score,
@@ -6505,7 +6591,7 @@ if df is not None and not df.empty:
                 <div>
                     <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; height: 18px; display: flex; align-items: center;">📌 Selected Contract ({recommended_contract_type})</div>
                     <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; height: 26px; margin: 4px 0 6px 0; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        RELIANCE {atm_strike} {recommended_contract_type}&nbsp;<span style="font-size: 0.76rem; color: #94A3B8; font-weight: 600;">({expiry_date_str})</span>
+                        {scrip_symbol} {atm_strike} {recommended_contract_type}&nbsp;<span style="font-size: 0.76rem; color: #94A3B8; font-weight: 600;">({expiry_date_str})</span>
                     </div>
                     <div style="height: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
                         <span>Current: <b style="font-size: 1.08rem; font-weight: 800; color: #38BDF8;">₹{current_option_ltp:.2f}</b> <span style="font-size: 0.68rem; color: #94A3B8;">(LTP)</span></span>
@@ -6645,7 +6731,7 @@ if df is not None and not df.empty:
         v4_beh = (
             f"Daily ATR of ₹{latest['ATR']:.2f} (5m ATR ₹{stock_atr:.2f} -> Dynamic 1.5x SL: {effective_sl_pts:.1f} pts, ≤4% Account Risk). "
             f"Choppiness Index (CHOP-14) at {chop_val:.1f} signals {'a strong directional expansion regime' if is_trending_regime else ('an extreme sideways consolidation trap (Stand Down enforced)' if is_choppy_regime else 'moderate fluctuation')}. "
-            f"Reliance ATM Implied Volatility sits at {rel_iv*100.0:.1f}% (IV Percentile: {iv_percentile:.1f}%, {'🟢 Clean Buying Window (<50%)' if iv_cheap_window else ('🔴 Peak Volatility Crush Hazard (>70%)' if iv_elevated_crush_risk else '🟡 Fair Volatility')}). "
+            f"{scrip_name} ATM Implied Volatility sits at {rel_iv*100.0:.1f}% (IV Percentile: {iv_percentile:.1f}%, {'🟢 Clean Buying Window (<50%)' if iv_cheap_window else ('🔴 Peak Volatility Crush Hazard (>70%)' if iv_elevated_crush_risk else '🟡 Fair Volatility')}). "
             f"India VIX sits at {vix_val:.2f} ({vix_pct_chg:+.2f}%). "
             f"Bollinger bands show {'active breakout expansion' if bb_expanding else 'steady oscillation'}."
         )
@@ -6715,7 +6801,7 @@ if df is not None and not df.empty:
                 "max": 15.0,
                 "source": "Wilder's ATR (14) + CHOP + Chaikin Vol + Mass Index + ATM Straddle",
                 "metrics": [
-                    ("Reliance IV Percentile (IVP)", f"{iv_percentile:.1f}% (IV {rel_iv*100.0:.1f}%)", "🟢 Clean Buying Window (+2)" if iv_cheap_window else ("🔴 IV Crush Lock (-4)" if iv_elevated_crush_risk else "🟡 Fair Value")),
+                    (f"{scrip_name} IV Percentile (IVP)", f"{iv_percentile:.1f}% (IV {rel_iv*100.0:.1f}%)", "🟢 Clean Buying Window (+2)" if iv_cheap_window else ("🔴 IV Crush Lock (-4)" if iv_elevated_crush_risk else "🟡 Fair Value")),
                     ("Choppiness Index & Hurst (H)", f"CHOP: {chop_val:.1f} | H={hurst_val:.2f}", "🟢 Trending Persistence (+4)" if (is_trending_regime and hurst_regime == 'TRENDING_PERSISTENCE') else ("🛑 Choppy Stand Down (0)" if is_choppy_regime else "🟡 Moderate Range")),
                     ("Chaikin Vol & Mass Index", f"CV: {float(latest.get('Chaikin_Vol', 0.0)):+.1f}% | Mass: {float(latest.get('Mass_Index', 25.0)):.2f}", f"{'🟢 Volatility Explosion (+1.5)' if float(latest.get('Chaikin_Vol', 0.0)) > 15.0 else '🟡 Standard Volatility'}"),
                     ("ATM Straddle Expected Move", f"±₹{exp_move_pts:.1f} (₹{exp_lower:.1f} - ₹{exp_upper:.1f})", f"{'🟢 Squeeze Expansion (+2)' if 'SQUEEZE' in straddle_regime else '🟡 Rangebound Inside Move'}"),
@@ -7035,11 +7121,11 @@ if df is not None and not df.empty:
             rec_rec_border = "#EF4444"
             rec_rec_title_color = "#F87171"
             rec_rec_sub_color = "#FECACA"
-            rec_inst_name = f"RELIANCE {upper_atm} PE"
+            rec_inst_name = f"{scrip_symbol} {upper_atm} PE"
 
             # Card 1: Upper ATM PE (Near-ATM / ITM Put, Delta ~0.55) -> RANK #1 BEST STRIKE
             k1_num = upper_atm
-            k1_label = f"🛡️ RELIANCE {upper_atm} PE ({expiry_date_str})"
+            k1_label = f"🛡️ {scrip_symbol} {upper_atm} PE ({expiry_date_str})"
             k1_rank_title = "RANK #1 BEST STRIKE (Score: 96/100)"
             k1_rank_bg = "#DC2626"
             k1_rank_border = "#EF4444"
@@ -7057,7 +7143,7 @@ if df is not None and not df.empty:
 
             # Card 2: Lower ATM PE (OTM Put, Delta ~0.42) -> RANK #2 ALTERNATIVE
             k2_num = lower_atm
-            k2_label = f"🛡️ RELIANCE {lower_atm} PE ({expiry_date_str})"
+            k2_label = f"🛡️ {scrip_symbol} {lower_atm} PE ({expiry_date_str})"
             k2_rank_title = "RANK #2 ALTERNATIVE (Score: 78/100)"
             k2_rank_bg = "#1E293B"
             k2_rank_border = "#334155"
@@ -7074,7 +7160,7 @@ if df is not None and not df.empty:
             c2_live_ltp = float(low_data['put_ltp'])
             try:
                 gw_chain_fresh = GrowwMarketFeed.get_instance().get_reliance_live_option_chain()
-                if gw_chain_fresh:
+                if gw_chain_fresh and scrip_symbol != "ADANIENT":
                     for row in gw_chain_fresh:
                         if abs(row.get("strike", 0) - upper_atm) < 0.5 and row.get("put_ltp"):
                             c1_live_ltp = float(row["put_ltp"])
@@ -7092,11 +7178,11 @@ if df is not None and not df.empty:
             rec_rec_border = "#10B981"
             rec_rec_title_color = "#34D399"
             rec_rec_sub_color = "#A7F3D0"
-            rec_inst_name = f"RELIANCE {lower_atm} CE"
+            rec_inst_name = f"{scrip_symbol} {lower_atm} CE"
 
             # Card 1: Lower ATM CE (Near-ATM / ITM Call, Delta ~0.58) -> RANK #1 BEST STRIKE
             k1_num = lower_atm
-            k1_label = f"📞 RELIANCE {lower_atm} CE ({expiry_date_str})"
+            k1_label = f"📞 {scrip_symbol} {lower_atm} CE ({expiry_date_str})"
             k1_rank_title = "RANK #1 BEST STRIKE (Score: 96/100)"
             k1_rank_bg = "#059669"
             k1_rank_border = "#10B981"
@@ -7114,7 +7200,7 @@ if df is not None and not df.empty:
 
             # Card 2: Upper ATM CE (OTM Call, Delta ~0.54) -> RANK #2 ALTERNATIVE
             k2_num = upper_atm
-            k2_label = f"📞 RELIANCE {upper_atm} CE ({expiry_date_str})"
+            k2_label = f"📞 {scrip_symbol} {upper_atm} CE ({expiry_date_str})"
             k2_rank_title = "RANK #2 ALTERNATIVE (Score: 78/100)"
             k2_rank_bg = "#1E293B"
             k2_rank_border = "#334155"
@@ -7131,7 +7217,7 @@ if df is not None and not df.empty:
             c2_live_ltp = float(high_data['call_ltp'])
             try:
                 gw_chain_fresh = GrowwMarketFeed.get_instance().get_reliance_live_option_chain()
-                if gw_chain_fresh:
+                if gw_chain_fresh and scrip_symbol != "ADANIENT":
                     for row in gw_chain_fresh:
                         if abs(row.get("strike", 0) - lower_atm) < 0.5 and row.get("call_ltp"):
                             c1_live_ltp = float(row["call_ltp"])
@@ -7140,16 +7226,17 @@ if df is not None and not df.empty:
             except Exception:
                 pass
 
+        corridor_step = 50 if scrip_symbol == "ADANIENT" else 10
         with st.expander(matrix_title, expanded=(current_seq_state == SequentialTradeEngine.STATE_IDLE)):
             st.html(f"""
             <div style="background: #0B1120 !important; border: 1px solid #1E293B !important; border-left: 4px solid {rec_box_border_left} !important; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);">
                 <div style="display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px;">
                     <div style="min-width: 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                            <span style="font-size: 0.72rem; color: {rec_box_badge_color}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; background: {rec_box_badge_bg}; padding: 2px 8px; border-radius: 4px; border: 1px solid {rec_box_badge_border};">⚡ DUAL ATM CORRIDOR DEFINITION (10-PT INCREMENT)</span>
+                            <span style="font-size: 0.72rem; color: {rec_box_badge_color}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; background: {rec_box_badge_bg}; padding: 2px 8px; border-radius: 4px; border: 1px solid {rec_box_badge_border};">⚡ DUAL ATM CORRIDOR DEFINITION ({corridor_step}-PT INCREMENT)</span>
                         </div>
                         <div style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.5;">
-                            RELIANCE Spot is at <b style="color: #38BDF8; font-weight: 800;">₹{spot:.2f}</b>, bracketed by Lower ATM <b style="color: #FFFFFF; font-weight: 700;">₹{lower_atm}</b> (<span style="color: #F87171; font-weight: 700;">-{spot - lower_atm:.2f} pts</span>) and Upper ATM <b style="color: #FFFFFF; font-weight: 700;">₹{upper_atm}</b> (<span style="color: #34D399; font-weight: 700;">+{upper_atm - spot:.2f} pts</span>). Both strikes qualify as At-The-Money under live market mechanics.
+                            {scrip_name} Spot is at <b style="color: #38BDF8; font-weight: 800;">₹{spot:.2f}</b>, bracketed by Lower ATM <b style="color: #FFFFFF; font-weight: 700;">₹{lower_atm}</b> (<span style="color: #F87171; font-weight: 700;">-{spot - lower_atm:.2f} pts</span>) and Upper ATM <b style="color: #FFFFFF; font-weight: 700;">₹{upper_atm}</b> (<span style="color: #34D399; font-weight: 700;">+{upper_atm - spot:.2f} pts</span>). Both strikes qualify as At-The-Money under live market mechanics.
                         </div>
                     </div>
                     <div style="flex-shrink: 0;">
@@ -7242,6 +7329,9 @@ if df is not None and not df.empty:
         )
 
         trade_plan = {
+            "scrip_symbol": scrip_symbol,
+            "scrip_name": scrip_name,
+            "rec_instrument": rec_instrument,
             "is_tradable": is_tradable,
             "dominant_side": dominant_side,
             "dominant_score": dominant_score,
@@ -7377,7 +7467,7 @@ if df is not None and not df.empty:
                     "date": datetime.now(IST).strftime("%Y-%m-%d"),
                     "trade_given_time": datetime.now(IST).strftime("%I:%M:%S %p IST"),
                     "full_contract": rec_instrument,
-                    "symbol": f"RELIANCE26OCT{atm_strike}{recommended_contract_type}",
+                    "symbol": f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}",
                     "contract_type": recommended_contract_type,
                     "action": f"BUY {recommended_contract_type}",
                     "strike": atm_strike,
@@ -7548,10 +7638,10 @@ if df is not None and not df.empty:
         today_2lot_capital = round(num_lots * lot_size * today_strike_price, 2)
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
-        # 1. Automatic Groww Execution Cross-Verification (Strictly RELIANCE)
+        # 1. Automatic Groww Execution Cross-Verification (Strictly Selected Scrip)
         if groww_feed.is_connected:
             try:
-                gw_executed = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
+                gw_executed = groww_feed.get_executed_trades_today(symbol_filter=scrip_symbol)
                 if gw_executed:
                     TradeJournalManager.sync_groww_trades(
                         groww_executed_trades=gw_executed,
@@ -7575,7 +7665,7 @@ if df is not None and not df.empty:
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                     <div>
                         <h2 style="margin: 0; font-size: 1.35rem; color: #FFFFFF; font-weight: 800; display: flex; align-items: center; gap: 10px;">
-                            📒 RELIANCE Daily Trade Ledger, Shadow Monitoring & Calendar History
+                            📒 {scrip_name} Daily Trade Ledger, Shadow Monitoring & Calendar History
                         </h2>
                         <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.82rem;">
                             Cross-Verifying <b>Trade Given (Model Recommendation)</b> ⇄ <b>Trade Taken in Groww</b> • Automated Shadow Monitoring to 3:30 PM EOD
@@ -7588,19 +7678,19 @@ if df is not None and not df.empty:
             st.write("") # spacing
             sb_c1, sb_c2 = st.columns(2)
             with sb_c1:
-                if st.button("🤖 Sync Groww", use_container_width=True, help="Cross-verifies today's RELIANCE orders & positions from Groww API against model recommendations"):
-                    with st.spinner("Connecting to Groww broker API & extracting RELIANCE fills..."):
-                        gw_trades = groww_feed.get_executed_trades_today(symbol_filter="RELIANCE", force_refresh=True)
+                if st.button("🤖 Sync Groww", use_container_width=True, help=f"Cross-verifies today's {scrip_symbol} orders & positions from Groww API against model recommendations"):
+                    with st.spinner(f"Connecting to Groww broker API & extracting {scrip_symbol} fills..."):
+                        gw_trades = groww_feed.get_executed_trades_today(symbol_filter=scrip_symbol, force_refresh=True)
                         if gw_trades:
                             synced = TradeJournalManager.sync_groww_trades(
                                 groww_executed_trades=gw_trades,
                                 active_signal=SignalTracker.get_signal(),
                                 starting_cash=account_cash
                             )
-                            st.success(f"✅ Verified {len(synced)} RELIANCE executed trades!")
+                            st.success(f"✅ Verified {len(synced)} {scrip_symbol} executed trades!")
                             st.rerun()
                         else:
-                            st.info("ℹ️ No executed RELIANCE trades found today in Groww account.")
+                            st.info(f"ℹ️ No executed {scrip_symbol} trades found today in Groww account.")
             with sb_c2:
                 if st.button("🔄 Poll Shadow", use_container_width=True, help="Queries live Groww option contract ticks and updates price extremes & outcomes"):
                     with st.spinner("Updating shadow ticks from Groww API..."):
@@ -7665,7 +7755,7 @@ if df is not None and not df.empty:
             st_download_button_stretch(
                 label="📥 Export CSV",
                 data=csv_bytes,
-                file_name=f"reliance_trade_signals_{datetime.now(IST).strftime('%Y%m%d')}.csv",
+                file_name=f"{scrip_symbol.lower()}_trade_signals_{datetime.now(IST).strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
 
@@ -7774,17 +7864,17 @@ if df is not None and not df.empty:
                 with st.form(key="manual_seq_trade_entry_form"):
                     col_m1, col_m2, col_m3 = st.columns(3)
                     with col_m1:
-                        m_instrument = st.text_input("Instrument / Contract", value="RELIANCE 1280 PE", help="E.g., RELIANCE 1280 PE or RELIANCE 1300 CE")
-                        m_action = st.selectbox("Action / Type", ["BUY PE", "BUY CE", "BUY FUT", "SELL FUT"], index=0)
+                        m_instrument = st.text_input("Instrument / Contract", value=f"{scrip_symbol} {atm_strike} {recommended_contract_type}", help=f"E.g., {scrip_symbol} {atm_strike} PE or {scrip_symbol} {atm_strike} CE")
+                        m_action = st.selectbox("Action / Type", ["BUY PE", "BUY CE", "BUY FUT", "SELL FUT"], index=0 if recommended_contract_type == "PE" else 1)
                         m_date = st.text_input("Trade Date", value=datetime.now(IST).strftime("%Y-%m-%d"))
                     with col_m2:
-                        m_planned_entry = st.number_input("Planned Entry (₹)", value=14.50, step=0.25, format="%.2f")
-                        m_actual_entry = st.number_input("Actual Groww Entry (₹)", value=14.50, step=0.25, format="%.2f")
-                        m_exit_price = st.number_input("Exit Price (₹) (0 if Open)", value=24.50, step=0.25, format="%.2f")
+                        m_planned_entry = st.number_input("Planned Entry (₹)", value=float(estimated_premium), step=0.25, format="%.2f")
+                        m_actual_entry = st.number_input("Actual Groww Entry (₹)", value=float(estimated_premium), step=0.25, format="%.2f")
+                        m_exit_price = st.number_input("Exit Price (₹) (0 if Open)", value=float(target_premium), step=0.25, format="%.2f")
                     with col_m3:
-                        m_sl = st.number_input("Stop Loss (₹)", value=10.00, step=0.25, format="%.2f")
-                        m_target = st.number_input("Target Price (₹)", value=24.50, step=0.25, format="%.2f")
-                        m_lots = st.number_input("Number of Lots (250 qty/lot)", value=1, min_value=1, max_value=20, step=1)
+                        m_sl = st.number_input("Stop Loss (₹)", value=float(sl_premium), step=0.25, format="%.2f")
+                        m_target = st.number_input("Target Price (₹)", value=float(target_premium), step=0.25, format="%.2f")
+                        m_lots = st.number_input(f"Number of Lots ({lot_size} qty/lot)", value=1, min_value=1, max_value=20, step=1)
 
                     col_m4, col_m5 = st.columns(2)
                     with col_m4:
@@ -8306,13 +8396,13 @@ if df is not None and not df.empty:
                 with st.form("manual_trade_form", clear_on_submit=False):
                     mf_c1, mf_c2, mf_c3 = st.columns(3)
                     m_date = mf_c1.date_input("Trade Date", value=datetime.strptime(today_str, "%Y-%m-%d"))
-                    m_sym = mf_c2.text_input("Trading Symbol", value=rec_instrument if is_tradable else "RELIANCE26OCT1200PE")
+                    m_sym = mf_c2.text_input("Trading Symbol", value=rec_instrument if is_tradable else f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}")
                     m_status = mf_c3.selectbox("Trade Status", ["HIT", "FAIL", "OPEN", "STAND DOWN"], index=0)
 
                     mf_c4, mf_c5, mf_c6, mf_c7 = st.columns(4)
                     m_entry = mf_c4.number_input("Actual Entry Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price))
                     m_exit = mf_c5.number_input("Actual Exit Price (₹)", min_value=0.0, step=0.1, value=float(today_strike_price + 10.0 if m_status == "HIT" else max(0.05, today_strike_price - 4.5)))
-                    m_qty = mf_c6.number_input("Traded Quantity", min_value=1, step=50, value=int(st.session_state.get("lot_size", 250) * st.session_state.get("num_lots", 1)))
+                    m_qty = mf_c6.number_input("Traded Quantity", min_value=1, step=50, value=int(total_trading_qty))
                     m_pnl = mf_c7.number_input("Total Profit / P&L (₹)", step=250.0, value=round((m_exit - m_entry) * m_qty, 2) if m_status in ["HIT", "FAIL"] else 0.0)
 
                     m_notes = st.text_input("Audit Notes", value="Manual Trade Adjustment")
@@ -8556,7 +8646,7 @@ if df is not None and not df.empty:
         gate_decision_desc = f"ARMED / PRE-MARKET READY (Confluence {dominant_score}% cleared {MIN_HIT_PERCENTAGE:.0f}% gate; awaiting 09:15 AM market open)"
 
     json_data = {
-        "1. SCRIP NAME": "RELIANCE (NSE: RELIANCE)",
+        "1. SCRIP NAME": f"{scrip_name} (NSE: {scrip_symbol})",
         "2. TRADE STATUS": f"TRADABLE DAY / A+ {dominant_side} SETUP (>{MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY)" if is_tradable else (
             gate_status_desc
             if (score_cleared and not time_gate_allowed)
@@ -8583,7 +8673,7 @@ if df is not None and not df.empty:
             "ORB-15 Anchored VWAP": f"Anchor: ₹{avwap_orb:.2f} (Distance: {avwap_diff:+.2f} pts). Status: {'Grade A+ Retest Support Holding' if avwap_retest_support else ('Expanding Above Anchor' if avwap_expanding_above else ('Failed Breakout Trap' if avwap_trap_failed else 'Pre-Breakout Anchor'))}.",
             "SuperTrend & EMA alignment": f"Triple EMA Stack (9: {latest['EMA_9']:.1f} > 20: {latest['EMA_20']:.1f} > 50: {latest['EMA_50']:.1f}); SuperTrend (10, 3) printed Green support at ₹{latest['SuperTrend']:.2f}. ADX={latest['ADX']:.1f} confirms strong directional momentum (+DI > -DI).",
             "Momentum (RSI/MACD)": f"RSI(14) at {latest['RSI']:.1f} in prime acceleration band; MACD line above signal with accelerating positive histogram; Fast Stochastic %K confirms zero bearish divergence.",
-            "Volume & OI Confirmation": f"Dual ATM Corridor active (₹{lower_atm} & ₹{upper_atm}): RELIANCE {atm_strike} CE quantitatively ranked #1 Best Strike (Score: 96/100, Delta: {low_data['delta_ce']}, required spot move: +{low_data['spot_move_needed_ce']} pts within 15m ATR ₹{latest['ATR']:.2f}). Bollinger Bands (20, 2) expanding with bandwidth={latest['BB_Width']:.2f}%. Overall RELIANCE stock volume is {nse_data['volume']:,} shares ({rel_vol:.2f}x 20-MA). For ATM {atm_strike} CE: volume is {opt_telemetry['call_volume']:,} contracts (₹{(opt_telemetry['call_volume'] * 500 * current_option_ltp)/1e7:,.2f} Cr) with {opt_telemetry['call_oi']:,} shares in OI ({opt_telemetry['call_oi_change_pct']:+.1f}% short covering). For ATM {atm_strike} PE: volume is {opt_telemetry['put_volume']:,} contracts with {opt_telemetry['put_oi']:,} shares in OI ({opt_telemetry['put_oi_change_pct']:+.1f}% institutional floor writing). Strike PCR is {opt_telemetry['pcr_oi']:.2f} (OI) / {opt_telemetry['pcr_volume']:.2f} (Vol). Strictly Next Monthly Expiry ({expiry_date_str}) verified with Groww / NSE calendar. Global news and crude macro sentiment (+{news_sentiment_score:.1f}/10) validates institutional tailwind."
+            "Volume & OI Confirmation": f"Dual ATM Corridor active (₹{lower_atm} & ₹{upper_atm}): {scrip_symbol} {atm_strike} {recommended_contract_type} quantitatively ranked #1 Best Strike (Score: 96/100, Delta: {low_data['delta_ce']}, required spot move: +{low_data['spot_move_needed_ce']} pts within 15m ATR ₹{latest['ATR']:.2f}). Bollinger Bands (20, 2) expanding with bandwidth={latest['BB_Width']:.2f}%. Overall {scrip_name} stock volume is {nse_data['volume']:,} shares ({rel_vol:.2f}x 20-MA). For ATM {atm_strike} CE: volume is {opt_telemetry['call_volume']:,} contracts (₹{(opt_telemetry['call_volume'] * lot_size * current_option_ltp)/1e7:,.2f} Cr) with {opt_telemetry['call_oi']:,} shares in OI ({opt_telemetry['call_oi_change_pct']:+.1f}% short covering). For ATM {atm_strike} PE: volume is {opt_telemetry['put_volume']:,} contracts with {opt_telemetry['put_oi']:,} shares in OI ({opt_telemetry['put_oi_change_pct']:+.1f}% institutional floor writing). Strike PCR is {opt_telemetry['pcr_oi']:.2f} (OI) / {opt_telemetry['pcr_volume']:.2f} (Vol). Strictly Next Monthly Expiry ({expiry_date_str}) verified with Groww / NSE calendar. Global news and macro sentiment (+{news_sentiment_score:.1f}/10) validates institutional tailwind."
         },
         "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else f"NONE — Stand down (Conditions do not satisfy {MIN_HIT_PERCENTAGE:.0f}% hit threshold or time gate)",
         "8.5. EXPIRY SELECTION & THETA DECAY PROTOCOL": {

@@ -629,14 +629,14 @@ class NSEIndiaFetcher:
         }
 
     @classmethod
-    def get_atm_corridor(cls, spot: float) -> Dict[str, Any]:
+    def get_atm_corridor(cls, spot: float, strike_step: Optional[int] = None) -> Dict[str, Any]:
         """
         Dynamically calculates the Dual ATM Strike Bracket/Corridor based on live spot price.
-        For Reliance (10-pt strike intervals), spot e.g. ₹1,226.00 sits between:
-        - Lower ATM Strike: ₹1,220 (In-The-Money Call / Out-The-Money Put, Distance: 6 pts)
-        - Upper ATM Strike: ₹1,230 (Out-The-Money Call / In-The-Money Put, Distance: 4 pts)
+        - For stocks < Rs. 2,000 (e.g. Reliance): 10-pt strike intervals (Rs. 1190 / 1200)
+        - For stocks >= Rs. 2,000 (e.g. Adani Enterprises): 50-pt strike intervals (Rs. 2950 / 3000)
         """
-        strike_step = 10
+        if strike_step is None:
+            strike_step = 50 if spot >= 2000 else 10
         lower = int(math.floor(spot / strike_step) * strike_step)
         upper = lower + strike_step
         dist_lower = round(spot - lower, 2)
@@ -659,7 +659,8 @@ class NSEIndiaFetcher:
         spot: float = 1226.0, 
         broker_call_ltp: float = 0.0,
         selected_strike: int = None,
-        bias: str = "BULLISH"
+        bias: str = "BULLISH",
+        scrip_symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generates second-by-second live order book telemetry for BOTH strikes in the Dual ATM Corridor (e.g. 1220 & 1230):
@@ -668,12 +669,16 @@ class NSEIndiaFetcher:
         - Call LTP & Put LTP (with sub-second tick precision matching broker feeds)
         - Traded Volumes (Contracts & Turnover ₹ Cr)
         - Open Interest (OI lots & shares, % shift, unwinding vs writing)
-        - Delta, IV, intrinsic cushion, and spot move required to hit +8.0 pts target
+        - Delta, IV, intrinsic cushion, and spot move required to hit target
         """
         import random, time
         now_ts = time.time()
         sec_seed = int(now_ts * 10)
         rng = random.Random(sec_seed)
+
+        sym = scrip_symbol.upper() if scrip_symbol else ("ADANIENT" if spot >= 2000 else "RELIANCE")
+        lot_size = 300 if sym == "ADANIENT" else 500
+        target_pts = 35.0 if sym == "ADANIENT" else 8.0
 
         # Dynamic Dual ATM Corridor calculation
         corridor = cls.get_atm_corridor(spot)
@@ -713,9 +718,9 @@ class NSEIndiaFetcher:
             else:
                 p_ltp = max(0.05, round(model_p, 2))
 
-            # Authentic OI shares (500 shares per lot mandate)
-            c_oi_shares = int(base_c_oi_lots * 500)
-            p_oi_shares = int(base_p_oi_lots * 500)
+            # Authentic OI shares
+            c_oi_shares = int(base_c_oi_lots * lot_size)
+            p_oi_shares = int(base_p_oi_lots * lot_size)
 
             # Realistic contract volume calibrated to live OI activity
             c_vol = max(100, int(base_c_oi_lots * 0.78))
@@ -727,9 +732,9 @@ class NSEIndiaFetcher:
             delta_c = round(delta_c_override, 2) if delta_c_override is not None else round(norm_d1, 2)
             delta_p = round(delta_p_override, 2) if delta_p_override is not None else round(norm_d1 - 1.0, 2)
 
-            # Spot Move Required to Hit Target (+10.0 pts)
-            spot_move_c = round(10.0 / max(0.10, delta_c), 1)
-            spot_move_p = round(10.0 / max(0.10, abs(delta_p)), 1)
+            # Spot Move Required to Hit Target
+            spot_move_c = round(target_pts / max(0.10, delta_c), 1)
+            spot_move_p = round(target_pts / max(0.10, abs(delta_p)), 1)
 
             intrinsic_c = max(0.0, round(spot_tick - k, 2))
             extrinsic_c = max(0.0, round(c_ltp - intrinsic_c, 2))
@@ -737,16 +742,16 @@ class NSEIndiaFetcher:
             return {
                 "strike": k,
                 "expiry": selected_expiry_str,
-                "instrument_ce": f"RELIANCE {k} CE ({selected_expiry_str})",
-                "instrument_pe": f"RELIANCE {k} PE ({selected_expiry_str})",
+                "instrument_ce": f"{sym} {k} CE ({selected_expiry_str})",
+                "instrument_pe": f"{sym} {k} PE ({selected_expiry_str})",
                 "label_ce": f"{k} CE ({selected_expiry_str})",
                 "label_pe": f"{k} PE ({selected_expiry_str})",
                 "call_ltp": c_ltp,
                 "put_ltp": p_ltp,
                 "call_volume_contracts": c_vol,
                 "put_volume_contracts": p_vol,
-                "call_volume_cr": round((c_vol * 500 * c_ltp) / 1e7, 2),
-                "put_volume_cr": round((p_vol * 500 * p_ltp) / 1e7, 2),
+                "call_volume_cr": round((c_vol * lot_size * c_ltp) / 1e7, 2),
+                "put_volume_cr": round((p_vol * lot_size * p_ltp) / 1e7, 2),
                 "call_oi_lots": base_c_oi_lots,
                 "put_oi_lots": base_p_oi_lots,
                 "call_oi_shares": c_oi_shares,
@@ -858,37 +863,37 @@ class NSEIndiaFetcher:
             # Fits neatly within Reliance 15m ATR (14.8 pts), giving >90% statistical hit rate!
             best_k = s_low
             best_type = "CE"
-            best_instrument = f"RELIANCE {s_low} CE ({selected_expiry_str})"
+            best_instrument = f"{sym} {s_low} CE ({selected_expiry_str})"
             best_score = 96
             best_rationale = (
-                f"RELIANCE {s_low} CE ({selected_expiry_str}) is quantitatively ranked #1 BEST STRIKE (Score: 96/100):\n"
+                f"{sym} {s_low} CE ({selected_expiry_str}) is quantitatively ranked #1 BEST STRIKE (Score: 96/100):\n"
                 f"• Delta Efficiency: High Delta ({low_data['delta_ce']}) requires only +{low_data['spot_move_needed_ce']} pts spot move "
-                f"to achieve the +10.0 pts target (comfortably within daily ATR 17.8 pts; vs +{high_data['spot_move_needed_ce']} pts for {s_high} CE).\n"
+                f"to achieve the +{target_pts} pts target (vs +{high_data['spot_move_needed_ce']} pts for {s_high} CE).\n"
                 f"• Intrinsic Cushion: Rs. {low_data['intrinsic_ce']:.2f} intrinsic value insulates against pure theta decay.\n"
                 f"• Squeeze Catalyst: +{low_data['call_oi_change_pct']:.1f}% call OI shift creates explosive momentum."
             )
             alt_k = s_high
             alt_score = 78
             alt_rationale = (
-                f"RELIANCE {s_high} CE ({selected_expiry_str}) is Rank #2 Alternative (Score: 78/100): Lower premium (Rs. {high_data['call_ltp']:.2f} vs Rs. {low_data['call_ltp']:.2f}) "
+                f"{sym} {s_high} CE ({selected_expiry_str}) is Rank #2 Alternative (Score: 78/100): Lower premium (Rs. {high_data['call_ltp']:.2f} vs Rs. {low_data['call_ltp']:.2f}) "
                 f"offers higher percentage ROI, but Delta {high_data['delta_ce']} requires a larger +{high_data['spot_move_needed_ce']} pts spot expansion."
             )
         else:
             best_k = s_high
             best_type = "PE"
-            best_instrument = f"RELIANCE {s_high} PE ({selected_expiry_str})"
+            best_instrument = f"{sym} {s_high} PE ({selected_expiry_str})"
             best_score = 96
             best_rationale = (
-                f"RELIANCE {s_high} PE ({selected_expiry_str}) is quantitatively ranked #1 BEST STRIKE (Score: 96/100):\n"
+                f"{sym} {s_high} PE ({selected_expiry_str}) is quantitatively ranked #1 BEST STRIKE (Score: 96/100):\n"
                 f"• Delta Efficiency: High Delta ({abs(high_data['delta_pe']):.2f}) requires only -{high_data['spot_move_needed_pe']:.1f} pts spot drop "
-                f"to achieve the target (within daily ATR; vs -{low_data['spot_move_needed_pe']:.1f} pts for {s_low} PE).\n"
+                f"to achieve the target (vs -{low_data['spot_move_needed_pe']:.1f} pts for {s_low} PE).\n"
                 f"• Intrinsic Cushion: Rs. {max(0.0, s_high - spot_tick):.2f} in-the-money cushion protects against pure theta time decay.\n"
                 f"• Downside Momentum: {high_data['put_oi_change_pct']:+.1f}% put OI shift provides institutional downside acceleration."
             )
             alt_k = s_low
             alt_score = 78
             alt_rationale = (
-                f"RELIANCE {s_low} PE ({selected_expiry_str}) is Rank #2 Alternative (Score: 78/100): Cheaper premium (Rs. {low_data['put_ltp']:.2f} vs Rs. {high_data['put_ltp']:.2f}) "
+                f"{sym} {s_low} PE ({selected_expiry_str}) is Rank #2 Alternative (Score: 78/100): Cheaper premium (Rs. {low_data['put_ltp']:.2f} vs Rs. {high_data['put_ltp']:.2f}) "
                 f"offers higher percentage ROI, but Delta {abs(low_data['delta_pe']):.2f} requires larger -{low_data['spot_move_needed_pe']:.1f} pts spot drop."
             )
 
@@ -903,20 +908,20 @@ class NSEIndiaFetcher:
             strike_comparison = [
                 {
                     "Rank": "1 (Best Strike)",
-                    "Strike": f"RELIANCE {best_k} PE ({selected_expiry_str})",
+                    "Strike": f"{sym} {best_k} PE ({selected_expiry_str})",
                     "LTP": f"Rs. {best_d['put_ltp']:.2f}",
                     "Delta": f"{abs(best_d['delta_pe']):.2f}",
-                    "Spot Move for +8 pts": f"-{best_d['spot_move_needed_pe']:.1f} pts (Within ATR)",
+                    "Spot Move for Target": f"-{best_d['spot_move_needed_pe']:.1f} pts (Within ATR)",
                     "Intrinsic Buffer": f"Rs. {max(0.0, best_k - spot_tick):.2f}",
                     "OI Surge": f"{best_d['put_oi_change_pct']:+.1f}%",
                     "Score": f"{best_score}/100"
                 },
                 {
                     "Rank": "2 (Alternative)",
-                    "Strike": f"RELIANCE {alt_k} PE ({selected_expiry_str})",
+                    "Strike": f"{sym} {alt_k} PE ({selected_expiry_str})",
                     "LTP": f"Rs. {alt_d['put_ltp']:.2f}",
                     "Delta": f"{abs(alt_d['delta_pe']):.2f}",
-                    "Spot Move for +8 pts": f"-{alt_d['spot_move_needed_pe']:.1f} pts (Needs Expansion)",
+                    "Spot Move for Target": f"-{alt_d['spot_move_needed_pe']:.1f} pts (Needs Expansion)",
                     "Intrinsic Buffer": f"Rs. {max(0.0, alt_k - spot_tick):.2f}",
                     "OI Surge": f"{alt_d['put_oi_change_pct']:+.1f}%",
                     "Score": f"{alt_score}/100"
@@ -928,20 +933,20 @@ class NSEIndiaFetcher:
             strike_comparison = [
                 {
                     "Rank": "1 (Best Strike)",
-                    "Strike": f"RELIANCE {best_k} CE ({selected_expiry_str})",
+                    "Strike": f"{sym} {best_k} CE ({selected_expiry_str})",
                     "LTP": f"Rs. {best_d['call_ltp']:.2f}",
                     "Delta": f"{best_d['delta_ce']:.2f}",
-                    "Spot Move for +8 pts": f"+{best_d['spot_move_needed_ce']:.1f} pts (Within ATR)",
+                    "Spot Move for Target": f"+{best_d['spot_move_needed_ce']:.1f} pts (Within ATR)",
                     "Intrinsic Buffer": f"Rs. {best_d['intrinsic_ce']:.2f}",
                     "OI Surge": f"{best_d['call_oi_change_pct']:+.1f}%",
                     "Score": f"{best_score}/100"
                 },
                 {
                     "Rank": "2 (Alternative)",
-                    "Strike": f"RELIANCE {alt_k} CE ({selected_expiry_str})",
+                    "Strike": f"{sym} {alt_k} CE ({selected_expiry_str})",
                     "LTP": f"Rs. {alt_d['call_ltp']:.2f}",
                     "Delta": f"{alt_d['delta_ce']:.2f}",
-                    "Spot Move for +8 pts": f"+{alt_d['spot_move_needed_ce']:.1f} pts (Needs Expansion)",
+                    "Spot Move for Target": f"+{alt_d['spot_move_needed_ce']:.1f} pts (Needs Expansion)",
                     "Intrinsic Buffer": f"Rs. {alt_d['intrinsic_ce']:.2f}",
                     "OI Surge": f"{alt_d['call_oi_change_pct']:+.1f}%",
                     "Score": f"{alt_score}/100"
@@ -964,7 +969,7 @@ class NSEIndiaFetcher:
             "is_best_strike": (active_k == best_k),
             # Active selected strike telemetry for the 2 primary cards
             "call": {
-                "instrument": f"RELIANCE {active_k} CE ({selected_expiry_str})",
+                "instrument": f"{sym} {active_k} CE ({selected_expiry_str})",
                 "strike": active_k,
                 "ltp": active_data["call_ltp"],
                 "volume_contracts": active_data["call_volume_contracts"],
@@ -979,7 +984,7 @@ class NSEIndiaFetcher:
                 "intrinsic": active_data["intrinsic_ce"]
             },
             "put": {
-                "instrument": f"RELIANCE {active_k} PE ({selected_expiry_str})",
+                "instrument": f"{sym} {active_k} PE ({selected_expiry_str})",
                 "strike": active_k,
                 "ltp": active_data["put_ltp"],
                 "volume_contracts": active_data["put_volume_contracts"],
