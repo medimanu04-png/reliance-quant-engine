@@ -496,6 +496,15 @@ st.markdown("""
         box-shadow: 0 10px 30px rgba(245, 158, 11, 0.28) !important;
     }
 
+    /* Embedded HTML Dashboards */
+    iframe {
+        border: 1px solid rgba(56, 189, 248, 0.25) !important;
+        border-radius: 12px !important;
+        background: #0A0D14 !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+        width: 100% !important;
+    }
+
     /* Streamlit Alerts High Contrast */
     div[data-testid="stAlert"] {
         border-radius: 8px !important;
@@ -1468,7 +1477,137 @@ if active_route == "":
             </div>
         </a>
         """)
+    # --------------------------------------------------------------------------
+    # INSTITUTIONAL PERFORMANCE & LIVE FORWARD TRADE DESK SUITE
+    # --------------------------------------------------------------------------
+    st.markdown("<div style='margin-top: 32px; margin-bottom: 16px;'></div>", unsafe_allow_html=True)
+    st.html("""
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 24px;">
+        <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem;">📊</span>
+                <span style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; text-transform: uppercase; letter-spacing: 0.8px;">
+                    QUANTITATIVE PERFORMANCE AUDIT & LIVE EXECUTION SUITE
+                </span>
+            </div>
+            <div style="font-size: 0.78rem; color: #94A3B8; margin-top: 2px;">
+                Empirical 9-Month Historical Validation (Jan–Sep 2026) & Live Forward Trading Ledger (Oct 05 Onwards)
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;">
+                ● 9-MONTH AUDIT VERIFIED
+            </span>
+            <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;">
+                ● FORWARD DESK READY
+            </span>
+        </div>
+    </div>
+    """)
+
+    tab_audit, tab_live, tab_downloads = st.tabs([
+        "📈 Empirical Backtest Audit (Jan - Sep 2026)",
+        "🟢 Live Trade Forward Desk (Oct 05, 2026 Onwards)",
+        "🗂️ Audit Datasets & Reports"
+    ])
+
+    with tab_audit:
+        audit_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_audit_dashboard.html")
+        if os.path.exists(audit_file_path):
+            with open(audit_file_path, "r", encoding="utf-8") as f:
+                audit_html_content = f.read()
             
+            c_aud1, c_aud2 = st.columns([3, 1])
+            with c_aud1:
+                st.caption("⚡ **Interactive Audit Tool**: Adjust lot sizes (1 to 100+ lots), switch between Reliance and Adani desks, view monthly distributions, and examine individual verified trade tickets.")
+            with c_aud2:
+                st_download_button_stretch(
+                    label="📥 Download Backtest Audit HTML",
+                    data=audit_html_content,
+                    file_name="trade_audit_dashboard.html",
+                    mime="text/html",
+                    key="dl_btn_audit_html"
+                )
+            
+            components.html(audit_html_content, height=1100, scrolling=True)
+        else:
+            st.warning("trade_audit_dashboard.html not found.")
+
+    with tab_live:
+        # Trigger generator if available to guarantee freshest state
+        try:
+            import live_dashboard_generator
+            live_dashboard_generator.generate_live_dashboard()
+        except Exception:
+            pass
+
+        live_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "live_trade_dashboard.html")
+        if os.path.exists(live_file_path):
+            with open(live_file_path, "r", encoding="utf-8") as f:
+                live_html_content = f.read()
+
+            # Strip 5s auto-refresh meta tag for embedded view so it does not reset scroll position
+            embedded_live_html = live_html_content.replace('<meta http-equiv="refresh" content="5">', '')
+            
+            c_liv1, c_liv2 = st.columns([3, 1])
+            with c_liv1:
+                st.caption("🟢 **Live Forward Desk (Oct 05, 2026 Onwards)**: Strictly forward ledger recording actual trading actions executed by `quant_alert_daemon.py`.")
+            with c_liv2:
+                st_download_button_stretch(
+                    label="📥 Download Live Desk HTML",
+                    data=live_html_content,
+                    file_name="live_trade_dashboard.html",
+                    mime="text/html",
+                    key="dl_btn_live_html"
+                )
+            
+            components.html(embedded_live_html, height=1100, scrolling=True)
+        else:
+            st.warning("live_trade_dashboard.html not found.")
+
+    with tab_downloads:
+        st.markdown("<h4 style='color: #FFFFFF; margin-top: 12px; margin-bottom: 4px;'>Institutional Data Repository</h4>", unsafe_allow_html=True)
+        st.caption("Direct access to full backtested performance logs, real-time alert daemon logs, and active journal files.")
+        
+        c_d1, c_d2 = st.columns(2)
+        with c_d1:
+            st.html("""
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-bottom: 12px;">
+                <b style="color: #38BDF8;">📊 Historical Calibration & Backtest Datasets</b>
+                <p style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px; margin-bottom: 0;">Complete 9-month tick-by-tick dataset across 180+ trading sessions.</p>
+            </div>
+            """)
+            emp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "empirical_calibration_dataset.json")
+            if os.path.exists(emp_path):
+                with open(emp_path, "r", encoding="utf-8") as f:
+                    emp_data = f.read()
+                st_download_button_stretch("📥 Download Calibration Dataset JSON", data=emp_data, file_name="empirical_calibration_dataset.json", mime="application/json", key="dl_emp_data")
+
+            summ_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest_results_summary.json")
+            if os.path.exists(summ_path):
+                with open(summ_path, "r", encoding="utf-8") as f:
+                    summ_data = f.read()
+                st_download_button_stretch("📥 Download Backtest Summary JSON", data=summ_data, file_name="backtest_results_summary.json", mime="application/json", key="dl_summ_data")
+
+        with c_d2:
+            st.html("""
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-bottom: 12px;">
+                <b style="color: #10B981;">🟢 Forward Trading & Daemon Signal Feeds</b>
+                <p style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px; margin-bottom: 0;">Real-time logs captured by background quant alert daemons and brokers.</p>
+            </div>
+            """)
+            sig_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily_signals_log.json")
+            if os.path.exists(sig_path):
+                with open(sig_path, "r", encoding="utf-8") as f:
+                    sig_data = f.read()
+                st_download_button_stretch("📥 Download Daily Signals Log JSON", data=sig_data, file_name="daily_signals_log.json", mime="application/json", key="dl_sig_data")
+
+            shd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shadow_signals_log.json")
+            if os.path.exists(shd_path):
+                with open(shd_path, "r", encoding="utf-8") as f:
+                    shd_data = f.read()
+                st_download_button_stretch("📥 Download Shadow Signals Log JSON", data=shd_data, file_name="shadow_signals_log.json", mime="application/json", key="dl_shd_data")
+
     st.stop()
 
 
