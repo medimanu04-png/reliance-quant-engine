@@ -495,6 +495,31 @@
             background: #182238;
         }
 
+        /* Sticky Table Footer Summary Row */
+        tfoot tr {
+            background: #141c2e;
+            font-weight: 700;
+            border-top: 2px solid rgba(56, 189, 248, 0.4);
+            position: sticky;
+            bottom: 0;
+            z-index: 22;
+        }
+        tfoot td {
+            padding: 14px 16px;
+            color: #fff;
+            background: #141c2e;
+            border-bottom: none;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+        }
+        tfoot td.col-sticky-left {
+            z-index: 26;
+            background: #162035;
+        }
+        tfoot td.col-sticky-right {
+            z-index: 26;
+            background: #162035;
+        }
+
         /* Pill Badges */
         .pill {
             display: inline-block;
@@ -690,6 +715,11 @@
             <div class="kpi-sub" id="kpi-pts-sub">0.00 total points captured</div>
         </div>
         <div class="kpi-card">
+            <div class="kpi-label"><span id="kpi-peak-label">Total Peak Gain (2 Lots)</span></div>
+            <div class="kpi-val mono val-profit" id="kpi-total-peak">+₹0.00</div>
+            <div class="kpi-sub" id="kpi-peak-pts-sub">+0.00 total peak points</div>
+        </div>
+        <div class="kpi-card">
             <div class="kpi-label">Desk Win Rate</div>
             <div class="kpi-val mono" id="kpi-win-rate">0.0%</div>
             <div class="kpi-sub" id="kpi-win-count">0 Wins / 0 Losses</div>
@@ -772,6 +802,16 @@
                 <tbody id="table-body">
                     <!-- Rows rendered dynamically -->
                 </tbody>
+                <tfoot id="table-foot">
+                    <tr>
+                        <td class="col-sticky-left mono" style="font-weight:800;color:var(--accent-cyan);letter-spacing:0.5px;">TOTAL</td>
+                        <td colspan="6" style="color:var(--text-muted);font-size:12px;" id="foot-summary-label">Cumulative Desk Performance (All Trades)</td>
+                        <td class="mono val-profit" id="foot-total-peak" style="font-size:14px;font-weight:800;">+₹0.00</td>
+                        <td colspan="3"></td>
+                        <td class="mono" id="foot-total-pts" style="font-size:13px;font-weight:700;">+0.00 pts</td>
+                        <td class="col-sticky-right mono pnl-cell" id="foot-total-pnl" style="font-size:14px;font-weight:800;">₹0.00</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
         <div class="table-footer">
@@ -840,6 +880,7 @@
         
         document.getElementById('sizing-summary-text').textContent = `${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'} (${formattedQty} Qty)`;
         document.getElementById('kpi-pnl-label').textContent = `Cumulative Realized P&L (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
+        document.getElementById('kpi-peak-label').textContent = `Total Peak Gain (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
         document.getElementById('th-peak-gain').textContent = `Peak Gain (${currentLots}L)`;
         document.getElementById('th-final-pnl').textContent = `Final P&L (${currentLots} ${currentLots === 1 ? 'Lot' : 'Lots'})`;
     }
@@ -908,6 +949,8 @@
             // Update KPIs
             let totalPnl = 0;
             let totalPts = 0;
+            let totalPeakPts = 0;
+            let totalPeakAmt = 0;
             let wins = 0;
             let losses = 0;
             let winSum = 0;
@@ -918,12 +961,16 @@
 
             filtered.forEach(r => {
                 const pts = parseFloat(r.pnl_pts) || 0;
+                const peakPts = parseFloat(r.peak_pts) || 0;
                 const isStandDown = r.status === 'STAND_DOWN' || (r.action || '').toUpperCase().includes('STAND DOWN');
                 const pnl = isStandDown ? 0 : (pts * totalQty);
+                const peakAmt = isStandDown ? 0 : (peakPts * totalQty);
                 const score = parseFloat(r.score) || 0;
 
                 totalPnl += pnl;
                 totalPts += pts;
+                totalPeakPts += peakPts;
+                totalPeakAmt += peakAmt;
                 scoreSum += score;
 
                 if (isStandDown) {
@@ -949,6 +996,8 @@
             pnlEl.className = 'kpi-val mono ' + (totalPnl >= 0 ? 'val-profit' : 'val-loss');
 
             document.getElementById('kpi-pts-sub').textContent = `${totalPts >= 0 ? '+' : ''}${totalPts.toFixed(2)} pts total capture`;
+            document.getElementById('kpi-total-peak').textContent = `+₹${Math.round(totalPeakAmt).toLocaleString('en-IN')}`;
+            document.getElementById('kpi-peak-pts-sub').textContent = `+${totalPeakPts.toFixed(2)} pts total peak excursion`;
             document.getElementById('kpi-win-rate').textContent = `${winRate}%`;
             document.getElementById('kpi-win-count').textContent = `${wins} Wins / ${losses} Losses (${activeTrades} Executed)`;
             document.getElementById('kpi-trades-count').textContent = `${activeTrades} Trades`;
@@ -1046,8 +1095,14 @@
                 tbody.appendChild(tr);
             });
 
+            document.getElementById('foot-total-peak').textContent = `+₹${Math.round(totalPeakAmt).toLocaleString('en-IN')}`;
+            document.getElementById('foot-total-pts').textContent = `${totalPts >= 0 ? '+' : ''}${totalPts.toFixed(2)} pts`;
+            document.getElementById('foot-total-pnl').textContent = formatCurrency(totalPnl);
+            document.getElementById('foot-total-pnl').className = 'col-sticky-right mono pnl-cell ' + (totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg');
+            document.getElementById('foot-summary-label').textContent = `Cumulative Desk Performance (${activeTrades} Active Trades, ${standDowns} Stand Downs)`;
+
             document.getElementById('footer-count').textContent = `Showing ${filtered.length} of ${rawData.length} trading sessions (${currentLots} Lots)`;
-            document.getElementById('footer-sum').textContent = `Filtered P&L: ${formatCurrency(totalPnl)}`;
+            document.getElementById('footer-sum').innerHTML = `Total Peak Potential Gain: <strong style="color:var(--accent-green);font-size:14px;">+₹${Math.round(totalPeakAmt).toLocaleString('en-IN')}</strong> &nbsp;|&nbsp; Realized P&L: <strong style="color:${totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'};font-size:14px;">${formatCurrency(totalPnl)}</strong>`;
         } catch (err) {
             console.error("Render Table Error:", err);
             document.getElementById('table-body').innerHTML = `<tr><td colspan="13" style="color:red;padding:20px;">Error rendering data: ${err.message}</td></tr>`;
