@@ -215,25 +215,33 @@ class GrowwMarketFeed:
 
     def _start_background_stream(self):
         """Starts asynchronous background workers that continuously stream Groww live feed with zero delay."""
-        if self._bg_active:
+        existing_names = {t.name for t in threading.enumerate() if t.is_alive()}
+        if "GrowwSpotPoller" in existing_names or self._bg_active:
+            self._bg_active = True
             return
         self._bg_active = True
+
+        def _launch_worker(target, name):
+            t = threading.Thread(target=target, daemon=True, name=name)
+            try:
+                from streamlit.runtime.scriptrunner import add_script_run_ctx
+                add_script_run_ctx(t)
+            except Exception:
+                pass
+            t.start()
+            return t
         
-        # 1. Dedicated ultra-fast spot poller (200ms) - Absolute Zero Latency on Reliance spot
-        self._spot_thread = threading.Thread(target=self._spot_poller_loop, daemon=True, name="GrowwSpotPoller")
-        self._spot_thread.start()
+        # 1. Dedicated ultra-fast spot poller (1.0s) - Absolute Zero Latency on Reliance & Adani spot
+        self._spot_thread = _launch_worker(self._spot_poller_loop, "GrowwSpotPoller")
 
-        # 2. Dedicated option chain poller (500ms) - Absolute Zero Latency on CE/PE prices
-        self._chain_thread = threading.Thread(target=self._option_chain_poller_loop, daemon=True, name="GrowwChainPoller")
-        self._chain_thread.start()
+        # 2. Dedicated option chain poller (2.0s) - Absolute Zero Latency on CE/PE prices
+        self._chain_thread = _launch_worker(self._option_chain_poller_loop, "GrowwChainPoller")
 
-        # 3. Dedicated benchmark poller (1.0s) - Real-time NIFTY, BANK NIFTY, VIX, CRUDE
-        self._bench_thread = threading.Thread(target=self._benchmark_poller_loop, daemon=True, name="GrowwBenchmarkPoller")
-        self._bench_thread.start()
+        # 3. Dedicated benchmark poller (3.0s) - Real-time NIFTY, BANK NIFTY, VIX, CRUDE
+        self._bench_thread = _launch_worker(self._benchmark_poller_loop, "GrowwBenchmarkPoller")
 
-        # 4. Dedicated broker wallet, positions & trade sync poller (every 1.0s) - Absolute Zero Latency on balance/fills
-        self._wallet_thread = threading.Thread(target=self._wallet_poller_loop, daemon=True, name="GrowwWalletPoller")
-        self._wallet_thread.start()
+        # 4. Dedicated broker wallet, positions & trade sync poller (5.0s) - Real-time balance/fills
+        self._wallet_thread = _launch_worker(self._wallet_poller_loop, "GrowwWalletPoller")
 
     def _wallet_poller_loop(self):
         """Dedicated background poller for broker wallet balance, positions, and trades (every 5.0s)."""

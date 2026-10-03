@@ -1149,7 +1149,9 @@ st.markdown("---")
 # ==============================================================================
 is_rescan = st.session_state.get("just_rescanned", False)
 manual_rescan = st.session_state.get("manual_rescan_clicked", False)
-nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=cur_sel_scrip)
+cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
+active_feed_sym = "ADANIENT" if ("ADANI" in str(cur_sel_scrip).upper()) else "RELIANCE"
+nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=active_feed_sym)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
 if manual_rescan:
