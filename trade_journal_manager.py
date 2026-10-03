@@ -1239,7 +1239,7 @@ class SequentialTradeEngine:
     Rule 3: Active Monitoring (Track active trade until Target or Stop-Loss is hit).
     Rule 4: Running Trade Log Table (Strict column layout).
     Rule 5: Wait for Closure (Only plan next trade after current trade hits Target/SL and is logged).
-    Rule 6: Strictly RELIANCE Options Contracts Only.
+    Rule 6: Strictly Whitelisted High-Liquidity Contracts Only (RELIANCE / ADANIENT).
     """
 
     STATE_IDLE = "IDLE / SCANNING"
@@ -1432,6 +1432,8 @@ class SequentialTradeEngine:
         Completely prevents flapping back to ARMED state when price fluctuates.
         """
         active_sym = symbol or ("ADANIENT" if ("ADANI" in contract.upper() or "ADANI" in instrument.upper()) else "RELIANCE")
+        if (qty == 250 or qty <= 0) and "ADANI" in active_sym:
+            qty = 309
         state = cls.get_state(symbol=active_sym)
         curr_state = state.get("current_state", cls.STATE_IDLE)
 
@@ -1528,6 +1530,8 @@ class SequentialTradeEngine:
         Transitions state to ENTRY PENDING.
         """
         active_sym = symbol or ("ADANIENT" if ("ADANI" in contract.upper() or "ADANI" in instrument.upper()) else "RELIANCE")
+        if (qty == 250 or qty <= 0) and "ADANI" in active_sym:
+            qty = 309
         state = cls.get_state(symbol=active_sym)
         curr_state = state.get("current_state", cls.STATE_IDLE)
 

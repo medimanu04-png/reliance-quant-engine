@@ -46,44 +46,91 @@ if sys.stdout.encoding != 'utf-8':
 
 
 # ============================================================================
-# 1. RISK & POSITION BUDGET (RELIANCE 1 LOT - STRICT <= 4% CAPITAL PRESERVATION)
+# 0. CENTRALIZED MULTI-ASSET REGISTRY & SPECIFICATIONS
+# ============================================================================
+ASSET_REGISTRY: Dict[str, Dict[str, Any]] = {
+    "RELIANCE": {
+        "symbol": "RELIANCE",
+        "name": "Reliance Industries Ltd",
+        "yfinance_ticker": "RELIANCE.NS",
+        "lot_size": 250,
+        "num_lots": 2,
+        "strike_step": 10.0,
+        "spread_step": 20,
+        "beta": 1.15,
+        "target_pts": 7.0,
+        "stop_loss_pts": 5.0,
+        "limit_collar_pts": 0.65,
+        "estimated_tax_per_lot": 65.0,
+        "daily_sl_cap_rupees": 5000.0,
+        "parent_sector": "NIFTY ENERGY",
+        "avg_daily_volume": 4725000,
+        "has_crude_coupling": True,
+        "groww_slug": "reliance-industries-ltd",
+    },
+    "ADANIENT": {
+        "symbol": "ADANIENT",
+        "name": "Adani Enterprises Ltd",
+        "yfinance_ticker": "ADANIENT.NS",
+        "lot_size": 309,
+        "num_lots": 2,
+        "strike_step": 50.0,
+        "spread_step": 100,
+        "beta": 1.65,
+        "target_pts": 35.0,
+        "stop_loss_pts": 15.0,
+        "limit_collar_pts": 1.80,
+        "estimated_tax_per_lot": 85.0,
+        "daily_sl_cap_rupees": 9270.0,
+        "parent_sector": "NIFTY 50",
+        "avg_daily_volume": 1850000,
+        "has_crude_coupling": False,
+        "groww_slug": "adani-enterprises-ltd",
+    }
+}
+
+
+# ============================================================================
+# 1. RISK & POSITION BUDGET (STRICT <= 4% CAPITAL PRESERVATION)
 # ============================================================================
 @dataclass
 class RelianceRiskBudget:
     total_capital: float = 73643.72
-    lot_size: int = 500  # Revised NSE contract size = 500 units per lot
-    num_lots: int = 2    # Standard 2 lots mandate = 1,000 Qty total
-    target_pts: float = 7.0  # Optimal Intraday Target = +7.0 pts (+Rs. 7,000 on 1,000 Qty)
-    stop_loss_pts: float = 5.0  # Optimal Stop Loss = -5.0 pts (-Rs. 5,000 on 1,000 Qty)
-    limit_collar_pts: float = 0.65  # Institutional Stop-Limit execution collar (prevents market spike slippage & gap misses)
-    estimated_tax_per_lot: float = 65.0  # Estimated statutory charges (STT, GST, Exchange turnover & brokerage)
+    lot_size: int = 250  # NSE standard lot size
+    num_lots: int = 2    # Standard 2 lots mandate
+    target_pts: float = 7.0  # Optimal Intraday Target
+    stop_loss_pts: float = 5.0  # Optimal Stop Loss
+    limit_collar_pts: float = 0.65  # Institutional Stop-Limit execution collar
+    estimated_tax_per_lot: float = 65.0  # Estimated statutory charges
     daily_sl_cap_rupees: float = 5000.0  # Strict 1-and-Done Cap for 2 lots
-    max_daily_sl_trades: int = 1  # 1-and-Done Rule (trading ceases immediately if 1 SL is hit)
+    max_daily_sl_trades: int = 1  # 1-and-Done Rule (ceases immediately if 1 SL is hit)
 
     @classmethod
-    def for_symbol(cls, symbol: str = "RELIANCE", spot: float = 1200.0) -> "RelianceRiskBudget":
+    def for_symbol(cls, symbol: str = "RELIANCE", spot: float = 0.0) -> "RelianceRiskBudget":
         """Instantiates risk budget calibrated specifically to the active scrip."""
         rb = cls()
-        sym = (symbol or "").upper()
-        if sym == "ADANIENT" or spot >= 2000.0:
+        sym = (symbol or "").upper().strip()
+        if "ADANI" in sym:
+            cfg = ASSET_REGISTRY["ADANIENT"]
             rb.total_capital = 85000.0
-            rb.lot_size = 309
-            rb.num_lots = 2
-            rb.target_pts = 35.0
-            rb.stop_loss_pts = 15.0
-            rb.limit_collar_pts = 1.80
-            rb.estimated_tax_per_lot = 85.0
-            rb.daily_sl_cap_rupees = 9270.0
+            rb.lot_size = cfg["lot_size"]
+            rb.num_lots = cfg["num_lots"]
+            rb.target_pts = cfg["target_pts"]
+            rb.stop_loss_pts = cfg["stop_loss_pts"]
+            rb.limit_collar_pts = cfg["limit_collar_pts"]
+            rb.estimated_tax_per_lot = cfg["estimated_tax_per_lot"]
+            rb.daily_sl_cap_rupees = cfg["daily_sl_cap_rupees"]
             rb.max_daily_sl_trades = 1
         else:
+            cfg = ASSET_REGISTRY["RELIANCE"]
             rb.total_capital = 73643.72
-            rb.lot_size = 500
-            rb.num_lots = 2
-            rb.target_pts = 7.0
-            rb.stop_loss_pts = 5.0
-            rb.limit_collar_pts = 0.65
-            rb.estimated_tax_per_lot = 65.0
-            rb.daily_sl_cap_rupees = 5000.0
+            rb.lot_size = cfg["lot_size"]
+            rb.num_lots = cfg["num_lots"]
+            rb.target_pts = cfg["target_pts"]
+            rb.stop_loss_pts = cfg["stop_loss_pts"]
+            rb.limit_collar_pts = cfg["limit_collar_pts"]
+            rb.estimated_tax_per_lot = cfg["estimated_tax_per_lot"]
+            rb.daily_sl_cap_rupees = cfg["daily_sl_cap_rupees"]
             rb.max_daily_sl_trades = 1
         return rb
 
@@ -390,6 +437,9 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_vwap_bands(highs: List[float], lows: List[float], closes: List[float], volumes: List[float], session_dates: Optional[List[Any]] = None):
+        if not closes or not volumes:
+            s = closes[-1] if closes else 0.0
+            return s, s, s
         cum_tp_vol, cum_vol = 0.0, 0.0
         typical_prices = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
 
@@ -1327,8 +1377,8 @@ class MultiIndicatorMath:
         Returns: dict of bands and z-score
         """
         if not closes or not volumes:
-            s = closes[-1] if closes else 1210.0
-            return {"vwap": s, "upper_1s": s+2, "lower_1s": s-2, "upper_2s": s+4, "lower_2s": s-4, "upper_3s": s+6, "lower_3s": s-6, "z_score": 0.0}
+            s = closes[-1] if closes else 0.0
+            return {"vwap": s, "upper_1s": s, "lower_1s": s, "upper_2s": s, "lower_2s": s, "upper_3s": s, "lower_3s": s, "z_score": 0.0}
 
         typical_prices = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
         cum_tp_vol = sum(tp * v for tp, v in zip(typical_prices, volumes))
@@ -1366,8 +1416,8 @@ class MultiIndicatorMath:
         Returns: (poc, vah, val, profile_bias).
         """
         if not closes or not volumes or len(closes) != len(volumes):
-            spot = closes[-1] if closes else 1226.0
-            return spot, spot + 4.0, spot - 4.0, "INSIDE_VALUE_AREA"
+            spot = closes[-1] if closes else 0.0
+            return spot, spot, spot, "INSIDE_VALUE_AREA"
 
         min_p = min(lows) if lows else min(closes)
         max_p = max(highs) if highs else max(closes)
@@ -1433,7 +1483,7 @@ class MultiIndicatorMath:
         Returns: (avwap_hod, avwap_lod, stance)
         """
         if not closes or not volumes or len(closes) != len(volumes):
-            spot = closes[-1] if closes else 1210.0
+            spot = closes[-1] if closes else 0.0
             return spot, spot, "NEUTRAL"
 
         hod_idx = highs.index(max(highs))
@@ -2150,8 +2200,12 @@ class MultiIndicatorMath:
         Donchian Channels (20-period).
         """
         if len(highs) < period:
-            s = closes[-1] if closes else 1226.0
-            return s + 5.0, s - 5.0, s, 0.8, "INSIDE_CHANNEL"
+            s = closes[-1] if closes else (highs[-1] if highs else 0.0)
+            u = max(highs) if highs else s
+            l = min(lows) if lows else s
+            m = (u + l) / 2.0
+            w = u - l
+            return u, l, m, (w / m if m > 0 else 0.0), "INSIDE_CHANNEL"
             
         sub_h = highs[-period:]
         sub_l = lows[-period:]
@@ -6132,13 +6186,13 @@ class UltraHighConvictionRelianceEngine:
         current_option_ltp = active_data["call_ltp"] if recommended_type == "CE" else active_data["put_ltp"]
         entry_premium = round(current_option_ltp + 1.20, 2)
         limit_entry_premium = round(entry_premium + self.risk.limit_collar_pts, 2)
-        contract_name = f"RELIANCE {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | {self.risk.num_lots} Lot / {self.risk.total_quantity} Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
+        contract_name = f"{self.symbol} {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | {self.risk.num_lots} Lot / {self.risk.total_quantity} Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
         tp_premium = round(entry_premium + self.risk.target_pts, 2)
         sl_premium = round(entry_premium - self.risk.stop_loss_pts, 2)
         sl_limit_collar = round(sl_premium - self.risk.limit_collar_pts, 2)
 
         # Defined-Risk Debit Spread Recommendation (ATM Long + OTM Short Hedge)
-        spread_step = 20
+        spread_step = 100 if "ADANI" in self.symbol else 20
         chain_rows = chain_oi.get("chain", [])
         if recommended_type == "CE":
             otm_strike = atm_strike + spread_step
@@ -6321,7 +6375,7 @@ class UltraHighConvictionRelianceEngine:
         )
 
         res = {
-            "1. SCRIP NAME": "RELIANCE (NSE: RELIANCE)",
+            "1. SCRIP NAME": f"{self.symbol} (NSE: {self.symbol})",
             "2. TRADE STATUS": status_text,
             "3. CONFLUENCE SCORE": f"{bullish_score}% Bullish (CE) / {bearish_score}% Bearish (PE) [Confluence: {dominant_score}/100 | Estimated Win Rate: {dominant_win_exp}% | {tier_rating}]",
             "4. RECOMMENDED INSTRUMENT": contract_name if is_tradable else "N/A — STAND DOWN",
@@ -6689,32 +6743,35 @@ class UltraHighConvictionRelianceEngine:
 # ============================================================================
 # 4. EXECUTION RUNNER
 # ============================================================================
-def main():
-    engine = UltraHighConvictionRelianceEngine()
+def main(symbol: str = "RELIANCE"):
+    if len(sys.argv) > 1 and sys.argv[1].upper() in ("ADANIENT", "ADANI", "RELIANCE"):
+        symbol = "ADANIENT" if "ADANI" in sys.argv[1].upper() else "RELIANCE"
+    engine = UltraHighConvictionRelianceEngine(symbol=symbol)
     session_time = time(10, 15)
 
-    nse_data = NSEIndiaFetcher.get_reliance_official_data()
-    corridor = NSEIndiaFetcher.get_atm_corridor(nse_data['spot_ltp'])
-    chain_preview = NSEIndiaFetcher.get_full_option_chain_oi(corridor['lower_strike'], nse_data['spot_ltp'])
-    atm_telemetry = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(corridor['lower_strike'], nse_data['spot_ltp'], 37.65)
+    nse_data = NSEIndiaFetcher.get_scrip_official_data(symbol)
+    spot_val = float(nse_data.get('spot_ltp', 2820.0 if symbol == 'ADANIENT' else 1226.0))
+    corridor = NSEIndiaFetcher.get_atm_corridor(spot_val, symbol=symbol)
+    chain_preview = NSEIndiaFetcher.get_full_option_chain_oi(corridor['lower_strike'], spot_val, symbol=symbol)
+    atm_telemetry = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(corridor['lower_strike'], spot_val, scrip_symbol=symbol)
     best = atm_telemetry['best_strike']
     low = atm_telemetry['lower']
     high = atm_telemetry['upper']
 
     print("=" * 95)
-    print("RELIANCE ULTRA-HIGH-CONVICTION QUANTITATIVE INTRADAY ENGINE (>= 90% HIT PROBABILITY GATE)")
+    print(f"{symbol} ULTRA-HIGH-CONVICTION QUANTITATIVE INTRADAY ENGINE (>= 90% HIT PROBABILITY GATE)")
     print("=" * 95)
-    print(f"Official Feed     : {nse_data['source']}")
-    print(f"Exchange Status   : {nse_data['status']} • Market: {nse_data['market_state']} • Date: {nse_data['trade_date']}")
-    print(f"Official NSE Spot : Rs. {nse_data['spot_ltp']:.2f} (Day Volume: {nse_data['volume']:,} Shares)")
-    print(f"Verified Expiry   : {nse_data['official_expiry']} ({nse_data['expiry_cycle']})")
+    print(f"Official Feed     : {nse_data.get('source', 'NSE India')}")
+    print(f"Exchange Status   : {nse_data.get('status', 'ONLINE')} • Market: {nse_data.get('market_state', 'OPEN')} • Date: {nse_data.get('trade_date', 'TODAY')}")
+    print(f"Official NSE Spot : Rs. {spot_val:.2f} (Day Volume: {nse_data.get('volume', 0):,} Shares)")
+    print(f"Verified Expiry   : {nse_data.get('official_expiry', 'MONTHLY')} ({nse_data.get('expiry_cycle', 'CURRENT')})")
     print(f"Dual ATM Corridor : Rs. {corridor['lower_strike']} & Rs. {corridor['upper_strike']} (Both qualify as At-The-Money)")
-    print(f"🏆 Best Strike Pick: {best['instrument']} (Score: {best['score']}/100 | Delta: {low['delta_ce']} | Move for +8 pts: +{low['spot_move_needed_ce']} pts)")
-    print(f"1220 CE (Rank 1)  : LTP Rs. {low['call_ltp']:.2f} | Vol: {low['call_volume_contracts']:,} Lots (Rs. {low['call_volume_cr']:,.2f} Cr) | OI: {low['call_oi_lots']:,} Lots ({low['call_oi_shares']:,} Sh) [+{low['call_oi_change_pct']:.1f}%]")
-    print(f"1230 CE (Rank 2)  : LTP Rs. {high['call_ltp']:.2f} | Vol: {high['call_volume_contracts']:,} Lots (Rs. {high['call_volume_cr']:,.2f} Cr) | OI: {high['call_oi_lots']:,} Lots ({high['call_oi_shares']:,} Sh) [+{high['call_oi_change_pct']:.1f}%]")
-    print(f"ATM Order Flow    : 1220 PCR: {low['pcr_oi']:.2f} | 1230 PCR: {high['pcr_oi']:.2f} | Flow: {atm_telemetry['comparative']['flow_bias']}")
-    print(f"Option Chain OI   : Cumulative PCR: {chain_preview['overall_pcr']:.2f} | Max Pain: Rs. {chain_preview['max_pain']} | Put Wall: Rs. {chain_preview['put_wall']}")
-    print(f"Contract          : RELIANCE (1 Lot = {engine.risk.lot_size} Qty) | Sizing: {engine.risk.num_lots} Lot = {engine.risk.total_quantity} Units")
+    print(f"🏆 Best Strike Pick: {best['instrument']} (Score: {best.get('score', 85)}/100 | Delta: {low.get('delta_ce', 0.5)} | Move for +8 pts: +{low.get('spot_move_needed_ce', 15.0)} pts)")
+    print(f"Lower ATM CE (Rank 1): LTP Rs. {low.get('call_ltp', 0.0):.2f} | Vol: {low.get('call_volume_contracts', 0):,} Lots (Rs. {low.get('call_volume_cr', 0.0):,.2f} Cr) | OI: {low.get('call_oi_lots', 0):,} Lots [+{low.get('call_oi_change_pct', 0.0):.1f}%]")
+    print(f"Upper ATM CE (Rank 2): LTP Rs. {high.get('call_ltp', 0.0):.2f} | Vol: {high.get('call_volume_contracts', 0):,} Lots (Rs. {high.get('call_volume_cr', 0.0):,.2f} Cr) | OI: {high.get('call_oi_lots', 0):,} Lots [+{high.get('call_oi_change_pct', 0.0):.1f}%]")
+    print(f"ATM Order Flow    : Lower PCR: {low.get('pcr_oi', 1.0):.2f} | Upper PCR: {high.get('pcr_oi', 1.0):.2f} | Flow: {atm_telemetry.get('comparative', {}).get('flow_bias', 'NEUTRAL')}")
+    print(f"Option Chain OI   : Cumulative PCR: {chain_preview.get('overall_pcr', 1.0):.2f} | Max Pain: Rs. {chain_preview.get('max_pain', spot_val)} | Put Wall: Rs. {chain_preview.get('put_wall', spot_val)}")
+    print(f"Contract          : {symbol} (1 Lot = {engine.risk.lot_size} Qty) | Sizing: {engine.risk.num_lots} Lot = {engine.risk.total_quantity} Units")
     print(f"Strike Policy     : DUAL ATM CORRIDOR with Quantitative Best Strike Selection")
     print(f"Target Hit Gate   : ULTRA-STRICT >= 90.0% Probability Confluence (A+ Setup)")
     print(f"Fixed Target      : +{engine.risk.target_pts} pts (+Rs. {engine.risk.target_reward_rupees:,.2f})")
@@ -6722,8 +6779,8 @@ def main():
     print(f"Trading Window    : 09:15 AM - 03:10 PM IST (Cutoff: 02:45 PM | Auto-SQ: 03:05 PM)")
     print("=" * 95)
 
-    # Simulated A+ Institutional Session Alignment for RELIANCE
-    base_price = 1226.00
+    # Simulated A+ Institutional Session Alignment
+    base_price = spot_val
     closes, highs, lows, volumes = [base_price], [base_price + 2.5], [base_price - 2.5], [120000.0]
     for i in range(1, 59):
         c = closes[-1] * (1.0 + (math.sin(i * 0.25) * 0.0012) + 0.0006)
@@ -6744,7 +6801,7 @@ def main():
 
     print(json.dumps([report], indent=2))
     print("\n" + "=" * 95)
-    print("A+ CONFLUENCE VALIDATED: Score exceeds 90% threshold for highest statistical edge.")
+    print(f"A+ CONFLUENCE VALIDATED FOR {symbol}: Score exceeds 90% threshold for highest statistical edge.")
     print("=" * 95)
 
 

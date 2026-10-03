@@ -2254,8 +2254,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_target_pts = tp.get("target_pts", 10.0)
     plan_sl_pts = tp.get("sl_pts", 4.5)
     plan_num_lots = tp.get("num_lots", 1)
-    plan_lot_size = tp.get("lot_size", 250)
-    plan_qty = tp.get("total_trading_qty", 250)
+    plan_lot_size = tp.get("lot_size", 309 if active_sym == "ADANIENT" else 250)
+    plan_qty = tp.get("total_trading_qty", plan_lot_size * plan_num_lots)
     plan_expiry = tp.get("expiry_date_str", "27-OCT-2026")
     plan_score = tp.get("dominant_score", 75.0)
     plan_gate = tp.get("min_hit_percentage", 75.0)
@@ -7600,7 +7600,8 @@ if df is not None and not df.empty:
                 pass
 
 
-        active_day_vol = int(df['Volume'].iloc[-1]) if (df is not None and not df.empty and 'Volume' in df.columns and int(df['Volume'].iloc[-1]) > 0) else int(nse_data.get('volume', 4725000) if (nse_data and nse_data.get('volume')) else 4725000)
+        def_vol = 1850000 if is_adani else 4725000
+        active_day_vol = int(df['Volume'].iloc[-1]) if (df is not None and not df.empty and 'Volume' in df.columns and int(df['Volume'].iloc[-1]) > 0) else int(nse_data.get('volume', def_vol) if (nse_data and nse_data.get('volume')) else def_vol)
         if stream_live_1s:
             render_dynamic_1s_atm_feed(spot, live_broker_ltp, active_day_vol, rel_vol, user_strike_choice, trade_plan=trade_plan)
         else:

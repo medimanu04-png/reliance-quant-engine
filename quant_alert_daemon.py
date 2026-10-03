@@ -118,56 +118,59 @@ class StandaloneBreakoutManager:
 # ==============================================================================
 # STANDALONE RELIANCE CANDLE FETCHER
 # ==============================================================================
+# MULTI-ASSET CANDLE FETCHER (GROWW CHARTING API & YFINANCE FALLBACK)
 # ==============================================================================
-class RelianceCandleFetcher:
-    """Fetches and caches Reliance 5m/15m authentic candles directly from Groww API."""
-    _cache_5m: Optional[pd.DataFrame] = None
-    _last_fetch_5m: float = 0.0
-    _cache_15m: Optional[pd.DataFrame] = None
-    _last_fetch_15m: float = 0.0
+class MultiAssetCandleFetcher:
+    """Fetches and caches 5m/15m authentic candles directly from Groww API per symbol."""
+    _cache_5m: Dict[str, pd.DataFrame] = {}
+    _last_fetch_5m: Dict[str, float] = {}
+    _cache_15m: Dict[str, pd.DataFrame] = {}
+    _last_fetch_15m: Dict[str, float] = {}
 
     @classmethod
-    def get_5m_candles(cls, spot: float, max_age_secs: float = 60.0) -> Dict[str, Any]:
+    def get_5m_candles(cls, spot: float, symbol: str = "RELIANCE", max_age_secs: float = 60.0) -> Dict[str, Any]:
+        sym = (symbol or "RELIANCE").upper().strip()
         now = time.time()
         df = None
         is_delayed_yfinance = False
 
-        if cls._cache_5m is not None and (now - cls._last_fetch_5m) < max_age_secs:
-            df = cls._cache_5m
+        if sym in cls._cache_5m and (now - cls._last_fetch_5m.get(sym, 0.0)) < max_age_secs:
+            df = cls._cache_5m[sym]
         else:
             # 1. Primary: Direct official NSE candles via Groww Charting Service (0-Delay Live)
             try:
                 gw_feed = GrowwMarketFeed.get_instance()
-                df = gw_feed.get_reliance_historical_candles(interval="5m", days=5)
+                df = gw_feed.get_historical_candles(symbol=sym, interval="5m", days=5)
                 if df is not None and not df.empty and len(df) >= 30:
-                    cls._cache_5m = df
-                    cls._last_fetch_5m = now
+                    cls._cache_5m[sym] = df
+                    cls._last_fetch_5m[sym] = now
                     is_delayed_yfinance = False
             except Exception as e:
-                logger.debug(f"Groww charting candle fetch error: {e}")
+                logger.debug(f"Groww charting candle fetch error ({sym}): {e}")
 
             # 2. Secondary fallback: Yahoo Finance (Warning: 15-minute delayed data on NSE)
             if df is None or df.empty or len(df) < 30:
                 try:
-                    t = yf.Ticker("RELIANCE.NS")
+                    ticker_str = f"{sym}.NS"
+                    t = yf.Ticker(ticker_str)
                     df_yf = t.history(period="5d", interval="5m")
                     if df_yf is not None and not df_yf.empty and len(df_yf) >= 30:
                         last_c = float(df_yf['Close'].iloc[-1])
-                        if last_c > 2000 and spot > 0 and (last_c / spot) > 1.7:
+                        if sym == "RELIANCE" and last_c > 2000 and spot > 0 and (last_c / spot) > 1.7:
                             df_yf['Close'] = df_yf['Close'] / 2.0
                             df_yf['Open'] = df_yf['Open'] / 2.0
                             df_yf['High'] = df_yf['High'] / 2.0
                             df_yf['Low'] = df_yf['Low'] / 2.0
                         df = df_yf
-                        cls._cache_5m = df
-                        cls._last_fetch_5m = now
+                        cls._cache_5m[sym] = df
+                        cls._last_fetch_5m[sym] = now
                         is_delayed_yfinance = True
-                        logger.warning("⚠️ Live Groww candles unavailable. Yahoo Finance 15-minute delayed data loaded. Gating real-money execution.")
+                        logger.warning(f"⚠️ Live Groww candles unavailable for {sym}. Yahoo Finance 15-minute delayed data loaded.")
                 except Exception as e:
-                    logger.debug(f"yfinance fetch error: {e}")
+                    logger.debug(f"yfinance fetch error ({sym}): {e}")
 
         if df is None or df.empty or len(df) < 30:
-            logger.warning("Live market candles unavailable from both Groww & Yahoo. Gating execution to preserve capital.")
+            logger.warning(f"Live market candles unavailable for {sym} from both Groww & Yahoo.")
             return {
                 "high": [],
                 "low": [],
@@ -189,38 +192,40 @@ class RelianceCandleFetcher:
         }
 
     @classmethod
-    def get_15m_candles(cls, spot: float, max_age_secs: float = 120.0) -> Dict[str, Any]:
+    def get_15m_candles(cls, spot: float, symbol: str = "RELIANCE", max_age_secs: float = 120.0) -> Dict[str, Any]:
+        sym = (symbol or "RELIANCE").upper().strip()
         now = time.time()
         df = None
         is_delayed_yfinance = False
 
-        if cls._cache_15m is not None and (now - cls._last_fetch_15m) < max_age_secs:
-            df = cls._cache_15m
+        if sym in cls._cache_15m and (now - cls._last_fetch_15m.get(sym, 0.0)) < max_age_secs:
+            df = cls._cache_15m[sym]
         else:
             try:
                 gw_feed = GrowwMarketFeed.get_instance()
-                df = gw_feed.get_reliance_historical_candles(interval="15m", days=10)
+                df = gw_feed.get_historical_candles(symbol=sym, interval="15m", days=10)
                 if df is not None and not df.empty and len(df) >= 20:
-                    cls._cache_15m = df
-                    cls._last_fetch_15m = now
+                    cls._cache_15m[sym] = df
+                    cls._last_fetch_15m[sym] = now
                     is_delayed_yfinance = False
             except Exception as e:
-                logger.debug(f"Groww 15m candle fetch error: {e}")
+                logger.debug(f"Groww 15m candle fetch error ({sym}): {e}")
 
             if df is None or df.empty or len(df) < 20:
                 try:
-                    t = yf.Ticker("RELIANCE.NS")
+                    ticker_str = f"{sym}.NS"
+                    t = yf.Ticker(ticker_str)
                     df_yf = t.history(period="10d", interval="15m")
                     if df_yf is not None and not df_yf.empty and len(df_yf) >= 20:
                         df = df_yf
-                        cls._cache_15m = df
-                        cls._last_fetch_15m = now
+                        cls._cache_15m[sym] = df
+                        cls._last_fetch_15m[sym] = now
                         is_delayed_yfinance = True
                 except Exception:
                     pass
 
         if df is None or df.empty or len(df) < 20:
-            return cls.get_5m_candles(spot, max_age_secs=max_age_secs)
+            return cls.get_5m_candles(spot, symbol=sym, max_age_secs=max_age_secs)
 
         return {
             "high": df["High"].tolist(),
@@ -233,22 +238,27 @@ class RelianceCandleFetcher:
         }
 
 
+RelianceCandleFetcher = MultiAssetCandleFetcher
+
+
 # ==============================================================================
 # MAIN QUANTITATIVE ALERT DAEMON ENGINE
 # ==============================================================================
 class RelianceQuantAlertDaemon:
     """Autonomous market monitor & Telegram alert dispatcher."""
 
-    def __init__(self, interval_seconds: float = 5.0, force_run: bool = False, require_candle_close: bool = False):
+    def __init__(self, interval_seconds: float = 5.0, force_run: bool = False, require_candle_close: bool = False, symbols: Optional[List[str]] = None):
         self.interval = max(2.0, interval_seconds)
         self.force_run = force_run
         self.require_candle_close = require_candle_close
-        self.quant_engine = UltraHighConvictionRelianceEngine()
+        self.symbols = [s.upper() for s in symbols] if symbols else ["RELIANCE", "ADANIENT"]
+        self.quant_engines = {s: UltraHighConvictionRelianceEngine(symbol=s) for s in self.symbols}
+        self.quant_engine = self.quant_engines.get("RELIANCE", next(iter(self.quant_engines.values())))
         self.groww_feed = GrowwMarketFeed.get_instance()
         self.running = True
-        self.last_spot = 0.0
-        self.last_seen_state = None
-        self.last_chop_alert_sent = False
+        self.last_spot: Dict[str, float] = {s: 0.0 for s in self.symbols}
+        self.last_seen_state: Dict[str, Any] = {s: None for s in self.symbols}
+        self.last_chop_alert_sent: Dict[str, bool] = {s: False for s in self.symbols}
         self.last_git_sync_ts = time.time()
         self.breakout_tick_counts: Dict[str, int] = {}
         # Pre-Market Warmup & Kalman Seeding (Suggestion 4)
@@ -260,17 +270,18 @@ class RelianceQuantAlertDaemon:
         Pre-loads 5-minute candles from local Parquet cache or Groww/YFinance at startup
         to eliminate 09:15 AM cold-start latency and pre-seed the Kalman state-space filter.
         """
-        try:
-            cache_file = os.path.join(BASE_DIR, "data_cache", "reliance_5m_cache.parquet")
-            if os.path.exists(cache_file):
-                cached_df = pd.read_parquet(cache_file)
-                if not cached_df.empty:
-                    closes = cached_df["Close"].dropna().tolist()
-                    if len(closes) >= 15:
-                        kal_price, kal_slope, kal_gain, kal_reg = MultiIndicatorMath.calculate_kalman_trend(closes[-30:])
-                        logger.info(f"⚡ Pre-Market Kalman Filter seeded: Filtered Rs. {kal_price:.2f} | Slope: {kal_slope:+.3f} [{kal_reg}]")
-        except Exception as e:
-            logger.debug(f"Premarket preloader notice: {e}")
+        for s in self.symbols:
+            try:
+                cache_file = os.path.join(BASE_DIR, "data_cache", f"{s.lower()}_5m_cache.parquet")
+                if os.path.exists(cache_file):
+                    cached_df = pd.read_parquet(cache_file)
+                    if not cached_df.empty:
+                        closes = cached_df["Close"].dropna().tolist()
+                        if len(closes) >= 15:
+                            kal_price, kal_slope, kal_gain, kal_reg = MultiIndicatorMath.calculate_kalman_trend(closes[-30:])
+                            logger.info(f"⚡ Pre-Market Kalman Filter seeded ({s}): Filtered Rs. {kal_price:.2f} | Slope: {kal_slope:+.3f} [{kal_reg}]")
+            except Exception as e:
+                logger.debug(f"Premarket preloader notice ({s}): {e}")
 
     def is_market_hours(self) -> Tuple[bool, str]:
         """Checks if current time is within Indian NSE trading hours."""
@@ -294,36 +305,71 @@ class RelianceQuantAlertDaemon:
         return True, "MARKET_OPEN"
 
     def run_single_tick(self):
-        """Executes a single market scan, signal check, and alert evaluation."""
+        """Executes multi-asset market scan and alert evaluation across all monitored assets."""
+        for sym in self.symbols:
+            try:
+                self.run_single_symbol_tick(symbol=sym)
+            except Exception as e:
+                logger.error(f"Error evaluating alerts for {sym}: {e}", exc_info=True)
+
+        # 7. Update Shadow Monitoring & Sync Verified Groww Executions
+        try:
+            ShadowMonitoringEngine.update_shadow_monitoring(self.groww_feed)
+            if self.groww_feed and getattr(self.groww_feed, "_is_connected", False):
+                for sym in self.symbols:
+                    gw_trades = self.groww_feed.get_executed_trades_today(symbol_filter=sym)
+                    if gw_trades:
+                        TradeJournalManager.sync_groww_trades(gw_trades)
+        except Exception:
+            pass
+
+        # 8. Periodic 15-minute background git sync (Local Master Copy)
+        now_ts = time.time()
+        if now_ts - self.last_git_sync_ts > 900:
+            self.last_git_sync_ts = now_ts
+            try:
+                from git_sync_manager import GitSyncManager
+                time_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                threading.Thread(
+                    target=GitSyncManager.sync_local_to_git,
+                    kwargs={"auto": True, "commit_message": f"chore(sync): periodic auto-sync local master [{time_str}]"},
+                    daemon=True
+                ).start()
+            except Exception as e:
+                logger.debug(f"Periodic git sync error: {e}")
+
+    def run_single_symbol_tick(self, symbol: str = "RELIANCE"):
+        """Executes a single market scan, signal check, and alert evaluation for the specified symbol."""
+        sym = (symbol or "RELIANCE").upper().strip()
         now_dt = datetime.now(IST)
         today_date = now_dt.strftime("%Y-%m-%d")
         time_str = now_dt.strftime("%I:%M:%S %p IST")
 
-        # 1. Fetch live Reliance spot & option telemetry
+        # 1. Fetch live spot & option telemetry
         try:
-            gw_live = self.groww_feed.get_reliance_live_data()
+            gw_live = self.groww_feed.get_dynamic_spot_tick(symbol=sym)
             spot = float(gw_live.get("spot_ltp", 0.0))
         except Exception:
             spot = 0.0
 
-        if spot <= 0 or spot > 2000:
-            nse_data = NSEIndiaFetcher.get_reliance_official_data()
-            spot = float(nse_data.get("spot_ltp", 1226.00))
+        if spot <= 0:
+            nse_data = NSEIndiaFetcher.get_scrip_official_data(sym)
+            spot = float(nse_data.get("spot_ltp", 2820.00 if sym == "ADANIENT" else 1226.00))
 
-        self.last_spot = spot
+        self.last_spot[sym] = spot
 
         # 2. Dual ATM Corridor
-        corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+        corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=sym)
         atm_strike = corridor["lower_strike"]
-        telemetry = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(atm_strike, spot)
+        telemetry = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(atm_strike, spot, scrip_symbol=sym)
 
         best_pick = telemetry["best_strike"]
         low_data = telemetry["lower"]
         high_data = telemetry["upper"]
 
         # 3. Candles & Confluence Evaluation (Multi-Timeframe 5m & 15m)
-        candles_5m = RelianceCandleFetcher.get_5m_candles(spot)
-        candles_15m = RelianceCandleFetcher.get_15m_candles(spot)
+        candles_5m = MultiAssetCandleFetcher.get_5m_candles(spot, symbol=sym)
+        candles_15m = MultiAssetCandleFetcher.get_15m_candles(spot, symbol=sym)
         curr_time = now_dt.time()
 
         benchmark_c5m = None
@@ -342,7 +388,8 @@ class RelianceQuantAlertDaemon:
         except Exception:
             benchmark_c5m = None
 
-        confluence_eval = self.quant_engine.evaluate_90plus_confluence(
+        q_engine = self.quant_engines.get(sym, self.quant_engine)
+        confluence_eval = q_engine.evaluate_90plus_confluence(
             curr_time, candles_5m, candles_15m, benchmark_c5m=benchmark_c5m
         )
 
@@ -370,7 +417,7 @@ class RelianceQuantAlertDaemon:
         min_confluence_gate = 78.0 if is_midday_lull else 68.0
 
         # Check Daily Loss Circuit Breaker (One-and-Done Capital Preservation Protocol)
-        has_daily_loss, loss_reason = SequentialTradeEngine.has_daily_loss_occurred_today()
+        has_daily_loss, loss_reason = SequentialTradeEngine.has_daily_loss_occurred_today(symbol=sym)
 
         # Strict Institutional Gate: Confluence Score must be >= min_confluence_gate and NO stand down flags
         is_tradable = (
@@ -387,7 +434,7 @@ class RelianceQuantAlertDaemon:
 
         if has_daily_loss:
             logger.info(f"[{time_str}] 🚨 DAILY CIRCUIT BREAKER ACTIVE: {loss_reason or '1 loss recorded today'}. All new trade entries locked.")
-            cb_alert_key = f"tg_sent_cb_{today_date}"
+            cb_alert_key = f"tg_sent_cb_{today_date}_{sym}"
             tg_config = TelegramNotifier.load_config()
             tg_enabled = tg_config.get("enabled", True)
             bot_token = tg_config.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
@@ -431,7 +478,7 @@ class RelianceQuantAlertDaemon:
         is_bar_mature = (sec_into_bar >= 45)  # Filters noise spikes during the first 45s of candle formation
         wick_guard_passed = confluence_eval.get("wick_guard_passed", is_bar_mature)
 
-        breakout_key = f"{today_date}_{recommended_strike}_{contract_type}"
+        breakout_key = f"{today_date}_{sym}_{recommended_strike}_{contract_type}"
         if active_option_ltp >= breakout_level:
             self.breakout_tick_counts[breakout_key] = self.breakout_tick_counts.get(breakout_key, 0) + 1
         else:
@@ -463,7 +510,7 @@ class RelianceQuantAlertDaemon:
         chat_id = tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
 
         # 6. Sequential Trade State Engine
-        seq_state = SequentialTradeEngine.get_state()
+        seq_state = SequentialTradeEngine.get_state(symbol=sym)
         current_state = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
         active_trade = seq_state.get("active_trade")
 
@@ -493,9 +540,9 @@ class RelianceQuantAlertDaemon:
                 except Exception:
                     pass
 
-            trade_qty = int(active_trade.get("qty", 250))
+            trade_qty = int(active_trade.get("qty", 309 if sym == "ADANIENT" else 250))
             trade_num_lots = int(active_trade.get("num_lots", 1))
-            trade_lot_size = int(active_trade.get("lot_size", 250))
+            trade_lot_size = int(active_trade.get("lot_size", 309 if sym == "ADANIENT" else 250))
 
             unreal_pts = round(cur_trade_ltp - act_entry, 2)
             unreal_pnl = round(unreal_pts * trade_qty, 2)
@@ -509,7 +556,8 @@ class RelianceQuantAlertDaemon:
             trade_update = SequentialTradeEngine.update_active_trade(
                 current_ltp=cur_trade_ltp,
                 groww_feed=self.groww_feed,
-                starting_cash=STARTING_CAPITAL
+                starting_cash=STARTING_CAPITAL,
+                symbol=sym
             )
             if trade_update.get("closed_trade"):
                 try:
@@ -668,11 +716,11 @@ class RelianceQuantAlertDaemon:
         # STATE B: IDLE / ENTRY PENDING (Looking for Fresh Breakout Entry)
         # ----------------------------------------------------------------------
         else:
-            contract_label = f"RELIANCE {recommended_strike} {contract_type} ({expiry_date})"
+            contract_label = f"{sym} {recommended_strike} {contract_type} ({expiry_date})"
 
             # B1. Confirmed Breakout Entry
             if entry_confirmed:
-                entry_alert_key = f"tg_sent_entry_{today_date}_{recommended_strike}_{contract_type}"
+                entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{recommended_strike}_{contract_type}"
                 limit_cap = round(active_option_ltp + self.quant_engine.risk.limit_collar_pts, 2)
                 win_exp = float(confluence_eval.get("win_expectancy_pct", 62.0))
                 tier_str = str(confluence_eval.get("tier_rating", "TIER 1 (A+ INSTITUTIONAL SETUP)"))
@@ -707,7 +755,7 @@ class RelianceQuantAlertDaemon:
                             f"• Stop Loss Protection: Set SL-LMT order Trigger ₹{max(0.05, active_option_ltp - dynamic_sl_pts):.2f} / Limit ₹{max(0.05, active_option_ltp - dynamic_sl_pts - self.quant_engine.risk.limit_collar_pts):.2f}. (Emergency: Exit at Market if limit breached!){spread_text}"
                         )
                     )
-                    buttons = TelegramNotifier.get_entry_ce_buttons(f"RELIANCE {recommended_strike} CE") if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"RELIANCE {recommended_strike} PE")
+                    buttons = TelegramNotifier.get_entry_ce_buttons(f"{sym} {recommended_strike} CE", symbol=sym) if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"{sym} {recommended_strike} PE", symbol=sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(entry_alert_key)
@@ -757,7 +805,7 @@ class RelianceQuantAlertDaemon:
 
             # B2. Setup Armed Pre-Alert
             elif is_tradable and gap_pts > 0:
-                armed_alert_key = f"tg_sent_armed_{today_date}_{recommended_strike}_{contract_type}"
+                armed_alert_key = f"tg_sent_armed_{today_date}_{sym}_{recommended_strike}_{contract_type}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(armed_alert_key):
                     armed_msg = TelegramNotifier.format_armed_alert(
                         contract=contract_label,
@@ -772,7 +820,7 @@ class RelianceQuantAlertDaemon:
                         win_prob=win_exp if 'win_exp' in locals() else 65.0,
                         spot=spot
                     )
-                    buttons = TelegramNotifier.get_armed_buttons(f"RELIANCE {recommended_strike} {contract_type}")
+                    buttons = TelegramNotifier.get_armed_buttons(f"{sym} {recommended_strike} {contract_type}", symbol=sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, armed_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(armed_alert_key)
@@ -786,7 +834,7 @@ class RelianceQuantAlertDaemon:
             # B3. Consolidation Chop Stand Down
             elif is_chop:
                 if not self.last_chop_alert_sent:
-                    chop_alert_key = f"tg_sent_chop_{today_date}"
+                    chop_alert_key = f"tg_sent_chop_{today_date}_{sym}"
                     if tg_enabled and not TelegramNotifier.is_alert_sent(chop_alert_key):
                         chop_msg = TelegramNotifier.format_chop_standdown_alert(
                             spot=spot,
@@ -805,38 +853,17 @@ class RelianceQuantAlertDaemon:
             # B4. Non-tradable / Low Confluence
             else:
                 logger.info(
-                    f"[{time_str}] ⏸️ STAND DOWN: Reliance Spot ₹{spot:.2f} | Corridor ₹{corridor['lower_strike']}/₹{corridor['upper_strike']} | "
+                    f"[{time_str}] ⏸️ STAND DOWN ({sym}): Spot ₹{spot:.2f} | Corridor ₹{corridor['lower_strike']}/₹{corridor['upper_strike']} | "
                     f"Confluence below A+ threshold • 0 Orders Placed"
                 )
 
-        # 7. Update Shadow Monitoring & Sync Verified Groww Executions
-        try:
-            ShadowMonitoringEngine.update_shadow_monitoring(self.groww_feed)
-            if self.groww_feed and getattr(self.groww_feed, "_is_connected", False):
-                gw_trades = self.groww_feed.get_executed_trades_today(symbol_filter="RELIANCE")
-                if gw_trades:
-                    TradeJournalManager.sync_groww_trades(gw_trades)
-        except Exception:
-            pass
-
-        # 8. Periodic 15-minute background git sync (Local Master Copy)
-        now_ts = time.time()
-        if now_ts - self.last_git_sync_ts > 900:
-            self.last_git_sync_ts = now_ts
-            try:
-                from git_sync_manager import GitSyncManager
-                threading.Thread(
-                    target=GitSyncManager.sync_local_to_git,
-                    kwargs={"auto": True, "commit_message": f"chore(sync): periodic auto-sync local master [{time_str}]"},
-                    daemon=True
-                ).start()
-            except Exception as e:
-                logger.debug(f"Periodic git sync error: {e}")
+        pass
 
     def start(self):
         """Continuous production execution loop."""
         print("=" * 75)
-        print("⚡ RELIANCE QUANTITATIVE INTRADAY ENGINE — STANDALONE ALERT DAEMON")
+        print("⚡ MULTI-ASSET QUANTITATIVE INTRADAY ENGINE — STANDALONE ALERT DAEMON")
+        print(f"Monitored Assets: {', '.join(self.symbols)}")
         print("=" * 75)
         print("Mode           : Autonomous Background Worker (Zero-Browser Dependency)")
         print("Trading Hours  : 09:15 AM - 03:30 PM IST (Mon-Fri)")
@@ -876,6 +903,7 @@ class RelianceQuantAlertDaemon:
 # ==============================================================================
 def main():
     parser = argparse.ArgumentParser(description="Reliance Quantitative Engine Alert Daemon")
+    parser.add_argument("--symbol", type=str, default=None, help="Specific symbol to monitor (default: all whitelisted symbols)")
     parser.add_argument("--now", action="store_true", help="Force scan immediately regardless of market hours / weekends")
     parser.add_argument("--interval", type=float, default=5.0, help="Polling interval in seconds (default: 5.0)")
     parser.add_argument("--test-tg", action="store_true", help="Send a test notification to Telegram and exit")
@@ -897,7 +925,8 @@ def main():
     daemon = RelianceQuantAlertDaemon(
         interval_seconds=args.interval,
         force_run=args.now,
-        require_candle_close=args.require_candle_close
+        require_candle_close=args.require_candle_close,
+        symbols=[args.symbol] if args.symbol else None
     )
     daemon.start()
 

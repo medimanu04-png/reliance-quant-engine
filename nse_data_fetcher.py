@@ -38,17 +38,36 @@ class NSEIndiaFetcher:
     CACHE_TTL_SECONDS = 1.0  # Real-time Groww live feed with 0-delay instant caching
 
     @classmethod
-    def get_official_data(cls, force_refresh: bool = False, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def get_official_data(cls, symbol_or_force: Any = None, force_refresh: bool = False, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Class alias for official data across all supported assets."""
-        return cls.get_reliance_official_data(force_refresh=force_refresh, symbol=symbol)
+        if isinstance(symbol_or_force, str):
+            sym = symbol_or_force
+            f_ref = force_refresh
+        elif isinstance(symbol_or_force, bool):
+            f_ref = symbol_or_force
+            sym = symbol
+        else:
+            f_ref = force_refresh
+            sym = symbol
+        return cls.get_reliance_official_data(force_refresh_or_symbol=f_ref, symbol=sym)
 
     @classmethod
-    def get_reliance_official_data(cls, force_refresh: bool = False, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def get_reliance_official_data(cls, force_refresh_or_symbol: Any = False, symbol: Optional[str] = None, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Fetches official spot quote, market status, and F&O holiday calendar
         directly from Groww live feed.
         """
-        sym = (symbol or "").upper().strip()
+        if isinstance(force_refresh_or_symbol, str):
+            sym = force_refresh_or_symbol
+            f_ref = force_refresh
+        elif isinstance(force_refresh_or_symbol, bool):
+            f_ref = force_refresh_or_symbol
+            sym = symbol
+        else:
+            f_ref = force_refresh
+            sym = symbol
+
+        sym = (sym or "").upper().strip()
         if not sym:
             try:
                 import streamlit as st
@@ -171,7 +190,6 @@ class NSEIndiaFetcher:
             cur += timedelta(days=1)
         return cnt, days
 
-    @classmethod
     @classmethod
     def resolve_dynamic_expiry_mandate(cls, today_dt: datetime = None, fo_holidays: List[str] = None, symbol: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -711,15 +729,15 @@ class NSEIndiaFetcher:
     @classmethod
     def get_atm_call_and_put_live_telemetry(
         cls, 
-        atm_strike: int = 1220, 
-        spot: float = 1226.0, 
+        atm_strike: Optional[int] = None, 
+        spot: Optional[float] = None, 
         broker_call_ltp: float = 0.0,
         selected_strike: int = None,
         bias: str = "BULLISH",
         scrip_symbol: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Generates second-by-second live order book telemetry for BOTH strikes in the Dual ATM Corridor (e.g. 1220 & 1230):
+        Generates second-by-second live order book telemetry for BOTH strikes in the Dual ATM Corridor:
         - Evaluates both lower and upper strikes dynamically based on live spot
         - Determines and suggests the quantitatively BEST strike to trade (>90% hit rate calibrated)
         - Call LTP & Put LTP (with sub-second tick precision matching broker feeds)
@@ -732,14 +750,19 @@ class NSEIndiaFetcher:
         sec_seed = int(now_ts * 10)
         rng = random.Random(sec_seed)
 
-        sym = scrip_symbol.upper() if scrip_symbol else ("ADANIENT" if spot >= 2000 else "RELIANCE")
-        lot_size = 309 if sym == "ADANIENT" else 500
-        target_pts = 35.0 if sym == "ADANIENT" else 8.0
+        sym = scrip_symbol.upper() if scrip_symbol else ("ADANIENT" if (spot is not None and spot >= 2000) else "RELIANCE")
+        if spot is None or spot <= 0:
+            off_data = cls.get_official_data(sym)
+            spot = float(off_data.get("spot_ltp", 2820.0 if sym == "ADANIENT" else 1226.0))
+        lot_size = 309 if sym == "ADANIENT" else 250
+        target_pts = 35.0 if sym == "ADANIENT" else 7.0
 
         # Dynamic Dual ATM Corridor calculation
-        corridor = cls.get_atm_corridor(spot)
-        s_low = corridor["lower_strike"]   # e.g. 1220
-        s_high = corridor["upper_strike"]  # e.g. 1230
+        corridor = cls.get_atm_corridor(spot, symbol=sym)
+        if atm_strike is None or atm_strike <= 0:
+            atm_strike = corridor["lower_strike"]
+        s_low = corridor["lower_strike"]
+        s_high = corridor["upper_strike"]
 
         # Micro-fluctuation on spot (+/- 0.30 pts)
         spot_tick = round(spot + rng.uniform(-0.25, 0.35), 2)
@@ -1106,8 +1129,8 @@ class NSEIndiaFetcher:
     @classmethod
     def get_participant_flow(
         cls, 
-        spot: float = 1226.0, 
-        volume: int = 13138735, 
+        spot: Optional[float] = None, 
+        volume: Optional[int] = None, 
         force_refresh: bool = False,
         symbol: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -1117,8 +1140,8 @@ class NSEIndiaFetcher:
     @classmethod
     def get_reliance_participant_flow(
         cls, 
-        spot: float = 1226.0, 
-        volume: int = 13138735, 
+        spot: Optional[float] = None, 
+        volume: Optional[int] = None, 
         force_refresh: bool = False,
         symbol: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -1141,7 +1164,13 @@ class NSEIndiaFetcher:
         """
         sym = (symbol or "").upper().strip()
         if not sym:
-            sym = "ADANIENT" if spot >= 2000 else "RELIANCE"
+            sym = "ADANIENT" if (spot is not None and spot >= 2000) else "RELIANCE"
+        if spot is None or spot <= 0:
+            off_data = cls.get_official_data(sym)
+            spot = float(off_data.get("spot_ltp", 2820.0 if sym == "ADANIENT" else 1226.0))
+        if volume is None or volume <= 0:
+            off_data = cls.get_official_data(sym)
+            volume = int(off_data.get("volume", 1850000 if sym == "ADANIENT" else 4725000))
 
         import time, random
         now_ts = time.time()
@@ -1325,6 +1354,8 @@ class NSEIndiaFetcher:
             "flow_score": score,
             "smart_money_buy_share": flow.get("smart_money_buy_share", 61.2)
         }
+
+    get_scrip_official_data = get_official_data
 
 
 if __name__ == "__main__":
