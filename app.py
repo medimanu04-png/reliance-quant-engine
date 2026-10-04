@@ -2840,7 +2840,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_lot_size = tp.get("lot_size", spec_plan.lot_size)
     plan_qty = tp.get("total_trading_qty", plan_lot_size * plan_num_lots)
     gw_slug = spec_plan.groww_company_slug
-    plan_expiry = tp.get("expiry_date_str") or NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=plan_sym)["selected_expiry"]
+    plan_expiry = tp.get("expiry_date_str") or NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=active_sym)["selected_expiry"]
     plan_score = tp.get("dominant_score", 75.0)
     plan_gate = tp.get("min_hit_percentage", 75.0)
     plan_dir = tp.get("dominant_side", "BULLISH (CALL / CE)")
@@ -3604,7 +3604,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         today_date = datetime.now(IST).strftime("%Y-%m-%d")
 
         if active_track_ltp >= act_target or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") == "Target Hit"):
-            target_alert_key = f"tg_sent_target_{today_date}_{act_trade_num}_{plan_strike}"
+            target_alert_key = f"tg_sent_target_{today_date}_{active_sym}_{act_trade_num}_{plan_strike}"
             if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(target_alert_key):
                 profit_rs = round(unreal_pnl)
                 alert_msg = TelegramNotifier.format_target_hit_alert(
@@ -3667,7 +3667,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             """)
 
         elif active_track_ltp <= effective_sl or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") in ["SL Hit", "Hard Catastrophic SL Hit"]):
-            sl_alert_key = f"tg_sent_sl_{today_date}_{act_trade_num}_{plan_strike}"
+            sl_alert_key = f"tg_sent_sl_{today_date}_{active_sym}_{act_trade_num}_{plan_strike}"
             if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(sl_alert_key):
                 loss_rs = abs(round(unreal_pnl))
                 alert_msg = TelegramNotifier.format_stop_loss_alert(
@@ -3780,8 +3780,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         # Immediate Zero-Delay Sequential State Transition
         seq_now = SequentialTradeEngine.get_state(symbol=active_sym)
         if seq_now.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
+            exp_tag = plan_expiry.replace("-", "").upper()
             SequentialTradeEngine.enter_trade_direct(
-                contract=f"{active_sym}26OCT{plan_strike}{plan_contract_type}",
+                contract=f"{active_sym}{exp_tag}{plan_strike}{plan_contract_type}",
                 instrument=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})",
                 entry_price=active_live_ltp,
                 sl=sl_price,
@@ -3800,9 +3801,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         if tg_on and tg_token and tg_chat:
             today_date = datetime.now(IST).strftime("%Y-%m-%d")
             if sim_entry or (sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
-                alert_sent_key = f"tg_sent_sim_entry_{sim_run_id}_{plan_strike}_{plan_contract_type}"
+                alert_sent_key = f"tg_sent_sim_entry_{sim_run_id}_{active_sym}_{plan_strike}_{plan_contract_type}"
             else:
-                alert_sent_key = f"tg_sent_entry_{today_date}_{plan_strike}_{plan_contract_type}"
+                alert_sent_key = f"tg_sent_entry_{today_date}_{active_sym}_{plan_strike}_{plan_contract_type}"
 
             if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]) else ""
@@ -3977,9 +3978,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         if tg_on and tg_token and tg_chat:
             today_date = datetime.now(IST).strftime("%Y-%m-%d")
             if sim_armed or (sim_mode == "ARMED"):
-                armed_sent_key = f"tg_sent_sim_armed_{sim_run_id}_{plan_strike}_{plan_contract_type}"
+                armed_sent_key = f"tg_sent_sim_armed_{sim_run_id}_{active_sym}_{plan_strike}_{plan_contract_type}"
             else:
-                armed_sent_key = f"tg_sent_armed_{today_date}_{plan_strike}_{plan_contract_type}"
+                armed_sent_key = f"tg_sent_armed_{today_date}_{active_sym}_{plan_strike}_{plan_contract_type}"
 
             if not st.session_state.get(armed_sent_key, False) and not TelegramNotifier.is_alert_sent(armed_sent_key):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_armed or sim_mode == "ARMED") else ""

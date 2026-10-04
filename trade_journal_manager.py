@@ -296,7 +296,9 @@ class TradeJournalManager:
             sym_clean = "ADANI" if sym_canon == "ADANIENT" else sym_canon
             matching = [
                 e for e in raw_entries
-                if sym_clean in str(e.get("trading_symbol", "")).upper() or sym_clean in str(e.get("instrument", "")).upper()
+                if sym_clean in str(e.get("trading_symbol", "")).upper()
+                or sym_clean in str(e.get("instrument", "")).upper()
+                or str(e.get("symbol", "")).upper() == sym_canon
             ]
             if len(matching) > 0:
                 return recalculate_journal(matching, starting_cash)
@@ -2042,6 +2044,7 @@ class SequentialTradeEngine:
             "id": f"TRD-{today_str.replace('-', '')}-{t_num:02d}-{sym}",
             "date": today_str,
             "day": datetime.now(IST).strftime("%A"),
+            "symbol": active_sym,
             "trading_symbol": sym,
             "instrument": inst,
             "type": active.get("direction", "BUY PE"),

@@ -320,9 +320,9 @@ class TelegramNotifier:
     @staticmethod
     def _resolve_symbol(symbol: str = "", contract: str = "") -> str:
         from asset_config import resolve_symbol
-        if symbol and symbol.strip().upper() not in ("RELIANCE", ""):
+        if symbol and symbol.strip():
             return resolve_symbol(symbol, contract)
-        if contract:
+        if contract and contract.strip():
             return resolve_symbol(symbol, contract)
         # Attempt to auto-detect active selection from Streamlit session if in app context
         try:
@@ -342,7 +342,8 @@ class TelegramNotifier:
         sym = cls._resolve_symbol(symbol, contract)
         spec = get_asset_spec(sym)
         opt_url = f"https://groww.in/options/{spec.groww_company_slug}"
-        stock_url = f"https://groww.in/stocks/{spec.groww_company_slug}"
+        base_cat = "indices" if sym in ("NIFTY", "SENSEX") else "stocks"
+        stock_url = f"https://groww.in/{base_cat}/{spec.groww_company_slug}"
         return opt_url, stock_url, spec.symbol
 
     @classmethod

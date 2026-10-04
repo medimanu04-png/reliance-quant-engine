@@ -228,6 +228,15 @@ def get_all_active_states():
             "badge_color": cfg["badge_color"],
             "market_status": "🟢 ARMED FOR MONDAY, OCT 05 (09:15 AM IST)"
         }
+        sym_file = os.path.join(BASE_DIR, f"active_trade_state_{sym}.json") if sym != "RELIANCE" else ACTIVE_STATE_FILE
+        if os.path.exists(sym_file):
+            try:
+                with open(sym_file, "r", encoding="utf-8") as f_st:
+                    live_data = json.load(f_st)
+                    if isinstance(live_data, dict) and live_data.get("is_active"):
+                        states[sym].update(live_data)
+            except Exception:
+                pass
     return states
 
 

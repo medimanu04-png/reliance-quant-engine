@@ -632,6 +632,8 @@ class RelianceQuantAlertDaemon:
                     },
                     "last_update": datetime.now(IST).strftime("%I:%M:%S %p IST")
                 }
+                with open(os.path.join(BASE_DIR, f"active_trade_state_{sym}.json"), "w", encoding="utf-8") as f_st:
+                    json.dump(active_state_data, f_st, indent=2)
                 with open(os.path.join(BASE_DIR, "active_trade_state.json"), "w", encoding="utf-8") as f_st:
                     json.dump(active_state_data, f_st, indent=2)
             except Exception as e:
@@ -679,7 +681,7 @@ class RelianceQuantAlertDaemon:
             # Tiered Breakeven Escalator Telegram Alerts (Dynamically Scaled per AssetSpec)
             # Milestone 1: At Breakeven threshold -> Move SL to Cost
             if unreal_pts >= spec.be_pts:
-                be_alert_key = f"tg_sent_be_{today_date}_{trade_num}"
+                be_alert_key = f"tg_sent_be_{today_date}_{sym}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(be_alert_key):
                     be_msg = TelegramNotifier.format_breakeven_alert(
                         contract=inst_sym,
@@ -697,7 +699,7 @@ class RelianceQuantAlertDaemon:
 
             # Milestone 2: At Profit Lock threshold -> Lock Guaranteed Profit
             if unreal_pts >= spec.profit_lock_trigger:
-                lock_alert_key = f"tg_sent_lock_{today_date}_{trade_num}"
+                lock_alert_key = f"tg_sent_lock_{today_date}_{sym}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(lock_alert_key):
                     lock_msg = TelegramNotifier.format_profit_lock_alert(
                         contract=inst_sym,
@@ -717,7 +719,7 @@ class RelianceQuantAlertDaemon:
             trail_runner_trigger = spec.profit_lock_trigger + spec.trail_runner_offset
             if cur_trade_ltp > active_trade.get("highest_price", act_entry) and unreal_pts >= trail_runner_trigger:
                 new_trail = round(act_entry + (unreal_pts * 0.65), 2)
-                trail_alert_key = f"tg_sent_trail_{today_date}_{trade_num}_{round(new_trail, 1)}"
+                trail_alert_key = f"tg_sent_trail_{today_date}_{sym}_{trade_num}_{round(new_trail, 1)}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(trail_alert_key):
                     trail_msg = TelegramNotifier.format_trailing_sl_alert(
                         contract=inst_sym,
@@ -739,7 +741,7 @@ class RelianceQuantAlertDaemon:
 
             # Target Hit Check
             if cur_trade_ltp >= target_p:
-                target_key = f"tg_sent_target_{today_date}_{trade_num}_{recommended_strike}"
+                target_key = f"tg_sent_target_{today_date}_{sym}_{trade_num}_{recommended_strike}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(target_key):
                     profit_pts = round(cur_trade_ltp - act_entry, 2)
                     tot_pnl = round(profit_pts * trade_qty, 2)
@@ -762,7 +764,7 @@ class RelianceQuantAlertDaemon:
             # Solution 2: Two-Tier Stop Loss Hit Check (Hard Catastrophic vs 5m Candle Close Soft SL)
             hard_sl_level = float(active_trade.get("hard_sl", max(0.05, act_entry - (spec.sl_pts * 1.5))))
             if cur_trade_ltp <= hard_sl_level or (cur_trade_ltp <= effective_sl and is_bar_closed):
-                sl_key = f"tg_sent_sl_{today_date}_{trade_num}_{recommended_strike}"
+                sl_key = f"tg_sent_sl_{today_date}_{sym}_{trade_num}_{recommended_strike}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(sl_key):
                     loss_pts = round(act_entry - cur_trade_ltp, 2)
                     tot_loss = round(loss_pts * trade_qty, 2)
@@ -804,7 +806,7 @@ class RelianceQuantAlertDaemon:
             )
 
             if is_stagnant or ou_exit:
-                stag_key = f"tg_sent_stag_{today_date}_{trade_num}"
+                stag_key = f"tg_sent_stag_{today_date}_{sym}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(stag_key):
                     stag_alert = TelegramNotifier.format_theta_stagnation_alert(
                         contract=inst_sym,
@@ -884,7 +886,8 @@ class RelianceQuantAlertDaemon:
             # B1. Confirmed Breakout Entry
             if entry_confirmed:
                 entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{recommended_strike}_{contract_type}"
-                limit_cap = round(active_option_ltp + self.quant_engine.risk.limit_collar_pts, 2)
+                active_risk = self.quant_engines.get(sym, self.quant_engine).risk
+                limit_cap = round(active_option_ltp + active_risk.limit_collar_pts, 2)
                 win_exp = float(confluence_eval.get("win_expectancy_pct", 62.0))
                 tier_str = str(confluence_eval.get("tier_rating", "TIER 1 (A+ INSTITUTIONAL SETUP)"))
                 debit_spread = confluence_eval.get("debit_spread", {})
@@ -895,7 +898,6 @@ class RelianceQuantAlertDaemon:
 
                 if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key):
                     sym_spec = get_asset_spec(sym)
-                    active_risk = self.quant_engines.get(sym, self.quant_engine).risk
                     entry_msg = TelegramNotifier.format_entry_alert(
                         contract=contract_label,
                         direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
@@ -983,7 +985,7 @@ class RelianceQuantAlertDaemon:
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
                         num_lots=1,
-                        lot_size=self.quant_engine.risk.lot_size,
+                        lot_size=self.quant_engines.get(sym, self.quant_engine).risk.lot_size,
                         win_prob=win_exp if 'win_exp' in locals() else 65.0,
                         spot=spot
                     )
@@ -1000,7 +1002,7 @@ class RelianceQuantAlertDaemon:
 
             # B3. Consolidation Chop Stand Down
             elif is_chop:
-                if not self.last_chop_alert_sent:
+                if not self.last_chop_alert_sent.get(sym, False):
                     chop_alert_key = f"tg_sent_chop_{today_date}_{sym}"
                     if tg_enabled and not TelegramNotifier.is_alert_sent(chop_alert_key):
                         chop_msg = TelegramNotifier.format_chop_standdown_alert(
@@ -1012,7 +1014,7 @@ class RelianceQuantAlertDaemon:
                         ok, fb = TelegramNotifier.send_message(bot_token, chat_id, chop_msg, reply_markup=buttons)
                         if ok:
                             TelegramNotifier.record_alert_sent(chop_alert_key)
-                            self.last_chop_alert_sent = True
+                            self.last_chop_alert_sent[sym] = True
                             logger.info(f"🛡️ Choppiness Stand-Down alert sent to Telegram: {fb}")
 
                 logger.info(f"[{time_str}] 🛡️ STAND DOWN: Consolidation Chop Regime (Capital Preserved)")
