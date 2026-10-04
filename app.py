@@ -60,6 +60,8 @@ else:
         elif "ADANI" in q_str:
             st.switch_page(p_adani)
         elif "RELIANCE" in q_str:
+            st.switch_page(p_reliance)
+
 # ==============================================================================
 # AUTONOMOUS 24/7 MULTI-DESK ALERT DAEMON (ACTIVE ON HOMEPAGE & ALL PAGES)
 # ==============================================================================
