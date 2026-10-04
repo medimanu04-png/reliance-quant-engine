@@ -291,15 +291,14 @@ class TradeJournalManager:
     @classmethod
     def load_journal(cls, starting_cash: float = None, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Loads journal from JSON file. Returns clean list filtered by symbol if provided."""
-        if starting_cash is None:
-            starting_cash = STARTING_CAPITAL
-
         raw_entries = cls._load_raw_entries()
         if not raw_entries:
             return []
 
         if symbol:
             sym_canon = resolve_symbol(symbol)
+            if starting_cash is None or starting_cash <= 0:
+                starting_cash = get_asset_spec(sym_canon).total_capital
             sym_clean = "ADANI" if sym_canon == "ADANIENT" else sym_canon
             matching = [
                 e for e in raw_entries
@@ -311,6 +310,8 @@ class TradeJournalManager:
                 return recalculate_journal(matching, starting_cash)
             return []
         else:
+            if starting_cash is None or starting_cash <= 0:
+                starting_cash = STARTING_CAPITAL
             return recalculate_journal(raw_entries, starting_cash)
 
     @classmethod
@@ -322,8 +323,9 @@ class TradeJournalManager:
     @classmethod
     def add_or_update_entry(cls, new_entry: Dict[str, Any], starting_cash: float = None) -> List[Dict[str, Any]]:
         """Adds a new daily trade record or updates existing trade across all assets."""
-        if starting_cash is None:
-            starting_cash = STARTING_CAPITAL
+        if starting_cash is None or starting_cash <= 0:
+            e_sym = resolve_symbol(new_entry.get("symbol") or new_entry.get("trading_symbol") or new_entry.get("instrument"))
+            starting_cash = get_asset_spec(e_sym).total_capital
         # Load raw records across all symbols so we never delete other assets!
         entries = cls._load_raw_entries()
         entry_id = new_entry.get("id")
@@ -415,14 +417,14 @@ class TradeJournalManager:
         Automates cross-verification between the trade given by the system and actual trades executed on Groww.
         Strict rule: ONLY trades executed in Groww broker account are added / updated in the ledger!
         """
-        if starting_cash is None:
-            starting_cash = STARTING_CAPITAL
+        sym_canon = resolve_symbol(symbol_filter)
+        sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
+        if starting_cash is None or starting_cash <= 0:
+            starting_cash = get_asset_spec(sym_canon).total_capital
 
         current_entries = cls._load_raw_entries()
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         today_day = datetime.now(IST).strftime("%A")
-        sym_canon = resolve_symbol(symbol_filter)
-        sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
 
         # Deduplicate existing entries strictly by unique trade ID
         unique_entries = {}

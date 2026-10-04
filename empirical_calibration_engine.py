@@ -683,7 +683,8 @@ class EmpiricalCalibrationEngine:
     def generate_shadow_observations_from_history(
         cls,
         target_count: int = 500,
-        period: str = "60d"
+        period: str = "60d",
+        symbol: str = "RELIANCE"
     ) -> int:
         """
         Generates 500+ authentic empirical shadow observations from historical 5-minute candles.
@@ -698,10 +699,13 @@ class EmpiricalCalibrationEngine:
         import pandas as pd
         from datetime import time as dt_time
         from fo_quant_engine import UltraHighConvictionRelianceEngine
+        from asset_config import get_asset_spec, resolve_symbol
 
-        engine = UltraHighConvictionRelianceEngine()
+        sym_canon = resolve_symbol(symbol)
+        spec = get_asset_spec(sym_canon)
+        engine = UltraHighConvictionRelianceEngine(symbol=sym_canon)
         cache_dir = os.path.join(BASE_DIR, "data_cache")
-        cache_file = os.path.join(cache_dir, "reliance_5m_cache.parquet")
+        cache_file = os.path.join(cache_dir, f"{sym_canon.lower()}_5m_cache.parquet")
         
         df = pd.DataFrame()
         if os.path.exists(cache_file):
@@ -712,7 +716,7 @@ class EmpiricalCalibrationEngine:
                 
         if df.empty:
             try:
-                df_raw = yf.download("RELIANCE.NS", period=period, interval="5m", progress=False)
+                df_raw = yf.download(spec.yf_symbol, period=period, interval="5m", progress=False)
                 if isinstance(df_raw.columns, pd.MultiIndex):
                     df_raw.columns = df_raw.columns.get_level_values(0)
                 df = df_raw.dropna()
@@ -730,10 +734,11 @@ class EmpiricalCalibrationEngine:
         new_records = []
         
         unique_dates = sorted(list(set(df.index.date)))
-        spot_target_pts = 14.4
-        spot_sl_pts = 6.7
+        delta = spec.delta_estimate if (spec.delta_estimate and spec.delta_estimate > 0) else 0.52
+        spot_target_pts = round(spec.target_pts / delta, 2)
+        spot_sl_pts = round(spec.sl_pts / delta, 2)
         
-        print(f"Scanning {len(unique_dates)} trading sessions for authentic shadow observations...")
+        print(f"Scanning {len(unique_dates)} trading sessions for authentic {sym_canon} shadow observations (Target: {spot_target_pts} pts, SL: {spot_sl_pts} pts)...")
         for d in unique_dates:
             day_mask = df.index.date == d
             day_indices = [i for i, val in enumerate(day_mask) if val]
