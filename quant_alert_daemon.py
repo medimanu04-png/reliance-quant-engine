@@ -609,13 +609,17 @@ class RelianceQuantAlertDaemon:
             except Exception as e:
                 logger.debug(f"Error persisting active state: {e}")
 
-            # Update engine
+            # Update engine with 5m candle close confirmation (Solution 2)
+            is_bar_closed = (sec_into_bar >= 270) or self.force_run
             trade_update = SequentialTradeEngine.update_active_trade(
                 current_ltp=cur_trade_ltp,
                 groww_feed=self.groww_feed,
                 starting_cash=STARTING_CAPITAL,
-                symbol=sym
+                symbol=sym,
+                is_candle_closed=is_bar_closed
             )
+            if trade_update.get("wick_sweep_prevented"):
+                logger.info(f"🛡️ [Solution 2] WICK SWEEP SHIELD: Soft SL touched intra-candle ({sec_into_bar}s/300s) @ ₹{cur_trade_ltp:.2f} <= ₹{effective_sl:.2f}. Premature exit prevented!")
             if trade_update.get("tranche_event") == "T1_BANKED":
                 t1_pnl_val = float(trade_update.get("t1_pnl", 0.0))
                 logger.info(f"🎯 TRANCHE 1 (50%) BANKED! Secured: ₹{t1_pnl_val:,.2f} | Runner SL locked at Cost ₹{act_entry:.2f}")
@@ -727,12 +731,15 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(target_key)
                         logger.info(f"🎉 🎯 TARGET HIT ALERT DISPATCHED TO TELEGRAM: {fb}")
 
-            # Stop Loss Hit Check
-            elif cur_trade_ltp <= effective_sl:
+            # Solution 2: Two-Tier Stop Loss Hit Check (Hard Catastrophic vs 5m Candle Close Soft SL)
+            hard_sl_level = float(active_trade.get("hard_sl", max(0.05, act_entry - (spec.sl_pts * 1.5))))
+            if cur_trade_ltp <= hard_sl_level or (cur_trade_ltp <= effective_sl and is_bar_closed):
                 sl_key = f"tg_sent_sl_{today_date}_{trade_num}_{recommended_strike}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(sl_key):
                     loss_pts = round(act_entry - cur_trade_ltp, 2)
                     tot_loss = round(loss_pts * trade_qty, 2)
+                    is_hard = cur_trade_ltp <= hard_sl_level
+                    sl_type_label = "EMERGENCY HARD STOP" if is_hard else "5M CANDLE CLOSE SOFT STOP"
                     sl_msg = TelegramNotifier.format_stop_loss_alert(
                         contract=inst_sym,
                         entry_price=act_entry,
@@ -747,7 +754,7 @@ class RelianceQuantAlertDaemon:
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, sl_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(sl_key)
-                        logger.info(f"🛑 STOP LOSS ALERT DISPATCHED TO TELEGRAM: {fb}")
+                        logger.info(f"🛑 STOP LOSS ALERT ({sl_type_label}) DISPATCHED TO TELEGRAM: {fb}")
 
             # Theta Stagnation & Ornstein-Uhlenbeck Dynamic Half-Life Time-Stop Check (Suggestion 2)
             entry_time_val = str(active_trade.get("actual_entry_time") or active_trade.get("proposed_at") or "")
@@ -790,6 +797,60 @@ class RelianceQuantAlertDaemon:
         # STATE B: IDLE / ENTRY PENDING (Looking for Fresh Breakout Entry)
         # ----------------------------------------------------------------------
         else:
+            # Solution 3: Check Resumption Re-entry Execution Gate
+            re_arm = seq_state.get("re_entry_armed")
+            if re_arm and re_arm.get("armed"):
+                re_dir = re_arm.get("direction", "BUY PE")
+                orig_entry = float(re_arm.get("planned_entry", re_arm.get("actual_entry", 0.0)))
+                wick_sl = float(re_arm.get("wick_extreme_sl", 0.0))
+                is_resumption_triggered = False
+
+                # Expiry check
+                try:
+                    exp_dt = datetime.strptime(re_arm.get("expires_at", "").replace(" IST", ""), "%Y-%m-%d %I:%M:%S %p")
+                    if datetime.now(IST).replace(tzinfo=None) > exp_dt:
+                        seq_state["re_entry_armed"]["armed"] = False
+                        SequentialTradeEngine.save_state(seq_state, symbol=sym)
+                        re_arm = None
+                except Exception:
+                    pass
+
+                if re_arm and re_arm.get("armed"):
+                    # Check resumption past entry
+                    if "PE" in re_dir and (active_option_ltp >= orig_entry or spot <= orig_entry):
+                        is_resumption_triggered = True
+                    elif "CE" in re_dir and (active_option_ltp >= orig_entry or spot >= orig_entry):
+                        is_resumption_triggered = True
+
+                if is_resumption_triggered:
+                    logger.info(f"🔥 🚀 [Solution 3] RESUMPTION RE-ENTRY TRIGGERED for {re_arm.get('instrument')}! Falseout wick confirmed. Auto re-entering with tighter SL.")
+                    tight_sl = wick_sl if wick_sl > 0 else (active_option_ltp - dynamic_sl_pts)
+                    re_res = SequentialTradeEngine.enter_trade_direct(
+                        contract=re_arm.get("contract", ""),
+                        instrument=re_arm.get("instrument", ""),
+                        entry_price=active_option_ltp,
+                        sl=tight_sl,
+                        target=round(active_option_ltp + dynamic_target_pts, 2),
+                        direction=re_dir,
+                        expiry=expiry_date,
+                        confluence=float(re_arm.get("confluence", 75.0)),
+                        qty=int(re_arm.get("qty", spec.lot_size)),
+                        num_lots=int(re_arm.get("num_lots", 1)),
+                        symbol=sym
+                    )
+                    if tg_enabled:
+                        re_msg = (
+                            f"🔄 🚀 *RESUMPTION RE-ENTRY AUTO-EXECUTED!*\n"
+                            f"• Instrument: {re_arm.get('instrument')}\n"
+                            f"• Signal: {re_dir}\n"
+                            f"• Re-Entry Price: ₹{active_option_ltp:.2f}\n"
+                            f"• Tighter SL (Wick Peak): ₹{tight_sl:.2f} (-{round(abs(active_option_ltp - tight_sl), 2)} pts)\n"
+                            f"• Target: ₹{round(active_option_ltp + dynamic_target_pts, 2):.2f}\n"
+                            f"• Rationale: Wick sweep confirmed! Market resumed directional breakdown in favor of high-conviction ({re_arm.get('confluence')}%) setup."
+                        )
+                        TelegramNotifier.send_message(bot_token, chat_id, re_msg)
+                    return
+
             contract_label = f"{sym} {recommended_strike} {contract_type} ({expiry_date})"
 
             # B1. Confirmed Breakout Entry

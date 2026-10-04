@@ -31,7 +31,7 @@ import os
 import math
 import json
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Dict, Any, List, Tuple, Optional
 from asset_config import get_asset_spec, ASSET_SPECS, resolve_symbol
 import pytz
@@ -218,6 +218,134 @@ FOQuantRiskBudget = RelianceRiskBudget
 
 
 # ============================================================================
+# 1.5 RESUMPTION RE-ENTRY WATCHDOG (SOLUTION 3)
+# ============================================================================
+@dataclass
+class ReEntryCandidate:
+    symbol: str
+    contract: str
+    direction: str
+    confluence: float
+    original_entry_spot: float
+    original_entry_opt: float
+    wick_extreme_spot: float
+    wick_extreme_opt: float
+    sl_pts: float
+    hard_sl_spot: float
+    armed_time: datetime
+    expiry_time: datetime
+    is_active: bool = True
+
+class ResumptionReEntryWatchdog:
+    """
+    Solution 3: Institutional Resumption Re-Entry Watchdog.
+    Prevents missing massive intraday trend extensions after an initial wick stop-out.
+
+    Conditions for Re-Entry Activation:
+      1. Original setup had ultra-high conviction (Confluence >= 65%).
+      2. Trade hit SL within the initial 1 to 3 candles (15 minutes from entry).
+      3. Within the next 3 candles (15 minutes), Spot price drops back below the original
+         entry price (for Put / PE) or rises above original entry price (for Call / CE).
+      4. Directional indicators (SuperTrend / EMA / Trend vector) remain aligned.
+    
+    Execution:
+      - Triggers auto re-entry on the same contract / strike.
+      - Sets the new tighter Stop-Loss at the wick peak / extreme (with structural buffer).
+      - Re-evaluates position sizing based on the tighter wick SL.
+    """
+    _candidates: Dict[str, ReEntryCandidate] = {}
+
+    @classmethod
+    def arm_candidate(
+        cls,
+        symbol: str,
+        contract: str,
+        direction: str,
+        confluence: float,
+        entry_spot: float,
+        entry_opt: float,
+        exit_spot: float,
+        exit_opt: float,
+        wick_extreme_spot: float,
+        trade_duration_mins: float = 5.0,
+        min_confidence: float = 65.0,
+        window_minutes: int = 15
+    ) -> Optional[ReEntryCandidate]:
+        """Arms a trade for re-entry if it was stopped out by a wick within the initial 15 mins."""
+        if confluence < min_confidence or trade_duration_mins > 15.0:
+            return None
+        
+        now = datetime.now(IST)
+        expiry = now + timedelta(minutes=window_minutes)
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        
+        # Calculate tighter stop loss based on wick extreme
+        is_put = "PE" in direction.upper() or "PUT" in direction.upper()
+        if is_put:
+            tight_sl_dist = max(spec.sl_pts * 0.5, round(abs(wick_extreme_spot - entry_spot) + spec.structural_buffer_pts, 2))
+            hard_sl = entry_spot + (tight_sl_dist * 1.5)
+        else:
+            tight_sl_dist = max(spec.sl_pts * 0.5, round(abs(entry_spot - wick_extreme_spot) + spec.structural_buffer_pts, 2))
+            hard_sl = entry_spot - (tight_sl_dist * 1.5)
+
+        candidate = ReEntryCandidate(
+            symbol=spec.symbol,
+            contract=contract,
+            direction=direction,
+            confluence=confluence,
+            original_entry_spot=entry_spot,
+            original_entry_opt=entry_opt,
+            wick_extreme_spot=wick_extreme_spot,
+            wick_extreme_opt=exit_opt,
+            sl_pts=tight_sl_dist,
+            hard_sl_spot=hard_sl,
+            armed_time=now,
+            expiry_time=expiry,
+            is_active=True
+        )
+        cls._candidates[spec.symbol] = candidate
+        return candidate
+
+    @classmethod
+    def evaluate_re_entry(
+        cls,
+        symbol: str,
+        current_spot: float,
+        trend_aligned: bool = True
+    ) -> Tuple[bool, Optional[ReEntryCandidate], str]:
+        """
+        Evaluates whether spot price has broken back past original entry trigger,
+        confirming that the prior stop-out was a false wick sweep.
+        """
+        sym = resolve_symbol(symbol)
+        candidate = cls._candidates.get(sym)
+        if not candidate or not candidate.is_active:
+            return False, None, "NO_ACTIVE_RE_ENTRY_CANDIDATE"
+
+        now = datetime.now(IST)
+        if now > candidate.expiry_time:
+            candidate.is_active = False
+            return False, None, "RE_ENTRY_WINDOW_EXPIRED"
+
+        if not trend_aligned:
+            return False, None, "TREND_NOT_ALIGNED"
+
+        is_put = "PE" in candidate.direction.upper() or "PUT" in candidate.direction.upper()
+        if is_put:
+            # Bearish resumption: Price drops BACK BELOW original entry price
+            if current_spot <= candidate.original_entry_spot:
+                candidate.is_active = False
+                return True, candidate, f"BEARISH_RESUMPTION: Spot ₹{current_spot:.2f} <= Entry ₹{candidate.original_entry_spot:.2f}. Wick Sweep Confirmed!"
+        else:
+            # Bullish resumption: Price rises BACK ABOVE original entry price
+            if current_spot >= candidate.original_entry_spot:
+                candidate.is_active = False
+                return True, candidate, f"BULLISH_RESUMPTION: Spot ₹{current_spot:.2f} >= Entry ₹{candidate.original_entry_spot:.2f}. Wick Sweep Confirmed!"
+
+        return False, candidate, "WAITING_FOR_RESUMPTION_TRIGGER"
+
+
+# ============================================================================
 # 2. ADVANCED MATHEMATICAL INDICATORS
 # ============================================================================
 class MultiIndicatorMath:
@@ -312,6 +440,34 @@ class MultiIndicatorMath:
             supertrend[i] = lower_band[i] if direction[i] == 1 else upper_band[i]
 
         return supertrend, direction
+
+    @staticmethod
+    def calculate_chandelier_exit(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        period: int = 10,
+        multiplier: float = 2.0
+    ) -> Tuple[List[float], List[float]]:
+        """
+        Solution 4: Chandelier Exit Indicator (Chuck LeBeau / Alexander Elder).
+        Used for systematic ATR trend-following and runner preservation:
+          - Bullish (Long / Call): Long Exit = Highest High(period) - (multiplier * ATR)
+          - Bearish (Short / Put): Short Exit = Lowest Low(period) + (multiplier * ATR)
+        """
+        atr_series = MultiIndicatorMath.calculate_atr(highs, lows, closes, period)
+        chandelier_long = []
+        chandelier_short = []
+        for i in range(len(closes)):
+            start_idx = max(0, i - period + 1)
+            highest_hi = max(highs[start_idx: i + 1])
+            lowest_lo = min(lows[start_idx: i + 1])
+            curr_atr = atr_series[i] if i < len(atr_series) else (highest_hi - lowest_lo)
+            ch_long = round(highest_hi - (multiplier * curr_atr), 2)
+            ch_short = round(lowest_lo + (multiplier * curr_atr), 2)
+            chandelier_long.append(ch_long)
+            chandelier_short.append(ch_short)
+        return chandelier_long, chandelier_short
 
     @staticmethod
     def calculate_bollinger_bands(closes: List[float], period: int = 20, num_std: float = 2.0):

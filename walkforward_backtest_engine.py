@@ -145,6 +145,7 @@ class RelianceQuantBacktester:
 
             day_traded = False
             active_trade = None
+            re_entry_armed = None
 
             # Iterate 5m candles of the session
             for i in range(len(day_df)):
@@ -160,18 +161,20 @@ class RelianceQuantBacktester:
                     entry_p = active_trade["entry_price"]
                     sl_p = active_trade["sl"]
                     tgt_p = active_trade["target"]
+                    active_trade["bars_open"] = active_trade.get("bars_open", 0) + 1
+                    atr_dyn = active_trade.get("atr_dyn", 4.0)
 
-                    # Track peak profit for Breakeven Escalator
+                    # Track peak profit for Breakeven & Chandelier Trailing
                     if direction == "BUY CE":
                         cur_gain = round((spot - entry_p) * self.delta_approx, 2)
                         high_gain = round((high - entry_p) * self.delta_approx, 2)
                         
-                        # Milestone 1: +3.5 pts -> Move SL to Breakeven
-                        if high_gain >= 3.5:
+                        # Solution 4: Chandelier / Trailing ATR Exit once 1:1 R:R achieved
+                        if high_gain >= active_trade.get("sl_opt_pts", 3.5):
+                            ch_stop = round(high - (2.0 * atr_dyn), 2)
+                            active_trade["sl"] = max(active_trade["sl"], entry_p + (0.2 / self.delta_approx), ch_stop)
+                        elif high_gain >= 3.5:
                             active_trade["sl"] = max(active_trade["sl"], entry_p + (0.2 / self.delta_approx))
-                        # Milestone 2: +5.5 pts -> Lock +3.0 pts
-                        if high_gain >= 5.5:
-                            active_trade["sl"] = max(active_trade["sl"], entry_p + (3.0 / self.delta_approx))
 
                         # Check Target Hit
                         if high >= tgt_p:
@@ -187,8 +190,33 @@ class RelianceQuantBacktester:
                             active_trade = None
                             break  # 1 trade per day rule
 
-                        # Check SL Hit
-                        elif low <= active_trade["sl"]:
+                        # Solution 2: Two-Tier Stop Loss Check
+                        # Hard Catastrophic Stop Loss (Wick violation)
+                        elif low <= active_trade.get("hard_sl", active_trade["sl"] - 10.0):
+                            sl_pts_opt = round((entry_p - active_trade["hard_sl"]) * self.delta_approx, 2)
+                            pnl = round(-sl_pts_opt * self.total_qty, 2)
+                            active_trade["exit_price"] = active_trade["hard_sl"]
+                            active_trade["exit_time"] = str(current_time)
+                            active_trade["exit_reason"] = "HARD_SL_HIT"
+                            active_trade["pts_captured"] = -sl_pts_opt
+                            active_trade["pnl"] = pnl
+                            running_cash += pnl
+                            trades.append(active_trade)
+                            
+                            # Solution 3: Resumption Re-entry Arming
+                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
+                                re_entry_armed = {
+                                    "direction": "BUY CE",
+                                    "original_entry": entry_p,
+                                    "wick_sl": low - 2.0,
+                                    "expiry_idx": i + 3,
+                                    "target": tgt_p,
+                                    "confluence": active_trade["confluence_score"]
+                                }
+                            active_trade = None
+
+                        # Soft Technical Stop Loss (Candle Close confirmation)
+                        elif spot <= active_trade["sl"]:
                             sl_pts_opt = round((entry_p - active_trade["sl"]) * self.delta_approx, 2)
                             pnl = round(-sl_pts_opt * self.total_qty, 2)
                             active_trade["exit_price"] = active_trade["sl"]
@@ -198,8 +226,18 @@ class RelianceQuantBacktester:
                             active_trade["pnl"] = pnl
                             running_cash += pnl
                             trades.append(active_trade)
+
+                            # Solution 3: Resumption Re-entry Arming
+                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
+                                re_entry_armed = {
+                                    "direction": "BUY CE",
+                                    "original_entry": entry_p,
+                                    "wick_sl": low - 2.0,
+                                    "expiry_idx": i + 3,
+                                    "target": tgt_p,
+                                    "confluence": active_trade["confluence_score"]
+                                }
                             active_trade = None
-                            break
 
                         # Auto Square-Off at 15:05 PM
                         elif current_time >= time(15, 5):
@@ -219,13 +257,14 @@ class RelianceQuantBacktester:
                         cur_gain = round((entry_p - spot) * self.delta_approx, 2)
                         high_gain = round((entry_p - low) * self.delta_approx, 2)
 
-                        # Escalator
-                        if high_gain >= 3.5:
+                        # Solution 4: Chandelier / Trailing ATR Exit once 1:1 R:R achieved
+                        if high_gain >= active_trade.get("sl_opt_pts", 3.5):
+                            ch_stop = round(low + (2.0 * atr_dyn), 2)
+                            active_trade["sl"] = min(active_trade["sl"], entry_p - (0.2 / self.delta_approx), ch_stop)
+                        elif high_gain >= 3.5:
                             active_trade["sl"] = min(active_trade["sl"], entry_p - (0.2 / self.delta_approx))
-                        if high_gain >= 5.5:
-                            active_trade["sl"] = min(active_trade["sl"], entry_p - (3.0 / self.delta_approx))
 
-                        # Target Hit
+                        # Check Target Hit
                         if low <= tgt_p:
                             pts_opt = self.target_option_pts
                             pnl = round(pts_opt * self.total_qty, 2)
@@ -239,8 +278,33 @@ class RelianceQuantBacktester:
                             active_trade = None
                             break
 
-                        # SL Hit
-                        elif high >= active_trade["sl"]:
+                        # Solution 2: Two-Tier Stop Loss Check
+                        # Hard Catastrophic Stop Loss (Wick violation)
+                        elif high >= active_trade.get("hard_sl", active_trade["sl"] + 10.0):
+                            sl_pts_opt = round((active_trade["hard_sl"] - entry_p) * self.delta_approx, 2)
+                            pnl = round(-sl_pts_opt * self.total_qty, 2)
+                            active_trade["exit_price"] = active_trade["hard_sl"]
+                            active_trade["exit_time"] = str(current_time)
+                            active_trade["exit_reason"] = "HARD_SL_HIT"
+                            active_trade["pts_captured"] = -sl_pts_opt
+                            active_trade["pnl"] = pnl
+                            running_cash += pnl
+                            trades.append(active_trade)
+
+                            # Solution 3: Resumption Re-entry Arming
+                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
+                                re_entry_armed = {
+                                    "direction": "BUY PE",
+                                    "original_entry": entry_p,
+                                    "wick_sl": high + 2.0,
+                                    "expiry_idx": i + 3,
+                                    "target": tgt_p,
+                                    "confluence": active_trade["confluence_score"]
+                                }
+                            active_trade = None
+
+                        # Soft Technical Stop Loss (Candle Close confirmation)
+                        elif spot >= active_trade["sl"]:
                             sl_pts_opt = round((active_trade["sl"] - entry_p) * self.delta_approx, 2)
                             pnl = round(-sl_pts_opt * self.total_qty, 2)
                             active_trade["exit_price"] = active_trade["sl"]
@@ -250,8 +314,18 @@ class RelianceQuantBacktester:
                             active_trade["pnl"] = pnl
                             running_cash += pnl
                             trades.append(active_trade)
+
+                            # Solution 3: Resumption Re-entry Arming
+                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
+                                re_entry_armed = {
+                                    "direction": "BUY PE",
+                                    "original_entry": entry_p,
+                                    "wick_sl": high + 2.0,
+                                    "expiry_idx": i + 3,
+                                    "target": tgt_p,
+                                    "confluence": active_trade["confluence_score"]
+                                }
                             active_trade = None
-                            break
 
                         # Auto Square-Off at 15:05 PM
                         elif current_time >= time(15, 5):
@@ -266,6 +340,46 @@ class RelianceQuantBacktester:
                             trades.append(active_trade)
                             active_trade = None
                             break
+
+                # Solution 3: Check Resumption Re-Entry Trigger
+                if not active_trade and re_entry_armed:
+                    if i <= re_entry_armed["expiry_idx"]:
+                        re_dir = re_entry_armed["direction"]
+                        orig_entry = re_entry_armed["original_entry"]
+                        re_triggered = False
+                        if re_dir == "BUY PE" and spot <= orig_entry:
+                            re_triggered = True
+                            re_sl = round(re_entry_armed["wick_sl"], 2)
+                            re_tgt = re_entry_armed["target"]
+                        elif re_dir == "BUY CE" and spot >= orig_entry:
+                            re_triggered = True
+                            re_sl = round(re_entry_armed["wick_sl"], 2)
+                            re_tgt = re_entry_armed["target"]
+
+                        if re_triggered:
+                            re_sl_pts = max(1.0, round(abs(spot - re_sl) * self.delta_approx, 2))
+                            active_trade = {
+                                "date": str(d),
+                                "entry_time": str(current_time),
+                                "direction": re_dir,
+                                "spot_entry": spot,
+                                "entry_price": spot,
+                                "target": re_tgt,
+                                "sl": re_sl,
+                                "hard_sl": round(spot + (re_sl_pts * 1.5 / self.delta_approx), 2) if re_dir == "BUY PE" else round(spot - (re_sl_pts * 1.5 / self.delta_approx), 2),
+                                "atr_dyn": re_sl_pts / 1.5,
+                                "bars_open": 0,
+                                "target_opt_pts": self.target_option_pts,
+                                "sl_opt_pts": re_sl_pts,
+                                "confluence_score": re_entry_armed["confluence"],
+                                "tier": "RE-ENTRY RESUMPTION",
+                                "regime": "WICK_SWEEP_RESUMPTION",
+                                "atr_comp_ratio": 1.0,
+                                "orb_volume_share": 0.0
+                            }
+                            re_entry_armed = None
+                    else:
+                        re_entry_armed = None
 
                 # If no active trade, evaluate entry conditions (09:15 AM to 14:30 PM window)
                 if not day_traded and (time(9, 15) <= current_time <= time(14, 30)):
@@ -357,6 +471,7 @@ class RelianceQuantBacktester:
 
                         target_price = round(spot + spot_tgt_dyn, 2) if is_ce else round(spot - spot_tgt_dyn, 2)
                         sl_price = round(spot - spot_sl_dyn, 2) if is_ce else round(spot + spot_sl_dyn, 2)
+                        hard_sl_price = round(spot - (spot_sl_dyn * 1.5), 2) if is_ce else round(spot + (spot_sl_dyn * 1.5), 2)
 
                         active_trade = {
                             "date": str(d),
@@ -366,6 +481,9 @@ class RelianceQuantBacktester:
                             "entry_price": spot,
                             "target": target_price,
                             "sl": sl_price,
+                            "hard_sl": hard_sl_price,
+                            "atr_dyn": spot_sl_dyn / 1.5,
+                            "bars_open": 0,
                             "target_opt_pts": tgt_opt_pts,
                             "sl_opt_pts": sl_opt_pts,
                             "confluence_score": dom_score,

@@ -15,7 +15,7 @@ Automated Cross-Verification Engine:
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 import pytz
 
@@ -1362,18 +1362,37 @@ class SequentialTradeEngine:
     @classmethod
     def has_daily_loss_occurred_today(cls, symbol: Optional[str] = None) -> Tuple[bool, str]:
         """
-        One-and-Done Institutional Circuit Breaker:
+        One-and-Done Institutional Circuit Breaker (with Solution 3 Re-Entry Exception):
         Returns (True, reason) if any trade executed today hit Stop-Loss or realized a negative PnL.
-        Protects the trader from revenge trading and overtrading.
+        EXCEPT: If a high-confidence setup was stopped out on an early wick and Re-Entry is armed!
         """
+        sym_kw = resolve_symbol(symbol=symbol)
+        
+        # Solution 3: Check if Resumption Re-entry is currently armed for this symbol
+        state = cls.get_state(symbol=sym_kw)
+        re_arm = state.get("re_entry_armed")
+        if re_arm and re_arm.get("armed"):
+            exp_str = re_arm.get("expires_at", "")
+            is_valid = True
+            if exp_str:
+                try:
+                    exp_dt = datetime.strptime(exp_str.replace(" IST", ""), "%Y-%m-%d %I:%M:%S %p")
+                    if datetime.now(IST).replace(tzinfo=None) > exp_dt:
+                        is_valid = False
+                        state["re_entry_armed"]["armed"] = False
+                        cls.save_state(state, symbol=sym_kw)
+                except Exception:
+                    pass
+            if is_valid:
+                return False, f"RESUMPTION_RE_ENTRY_PERMITTED: Wick-sweep re-entry armed for {re_arm.get('instrument', sym_kw)}"
+
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        sym_kw = "ADANI" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
         journal = TradeJournalManager.load_journal(symbol=sym_kw)
         today_losses = [
             t for t in journal
             if t.get("date") == today_str
             and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
-            and (t.get("status") in ["FAIL", "SL Hit"] or float(t.get("realised_pnl", 0.0)) < 0)
+            and (t.get("status") in ["FAIL", "SL Hit", "Hard Catastrophic SL Hit"] or float(t.get("realised_pnl", 0.0)) < 0)
         ]
         if today_losses:
             loss_t = today_losses[-1]
@@ -1472,6 +1491,10 @@ class SequentialTradeEngine:
         target_p = round(float(target), 2)
         sl_p = round(float(sl), 2)
 
+        hard_sl_pts = round((actual_p - sl_p) * 1.5, 2)
+        hard_sl = round(max(0.05, actual_p - hard_sl_pts), 2)
+        is_reentry = bool(state.get("re_entry_armed", {}).get("armed"))
+
         active_trade = {
             "trade_num": next_trade_num,
             "contract": contract,
@@ -1481,6 +1504,10 @@ class SequentialTradeEngine:
             "actual_entry_time": now_time_str,
             "executed": "Yes",
             "sl": sl_p,
+            "soft_sl": sl_p,
+            "hard_sl": hard_sl,
+            "wick_touches": 0,
+            "is_re_entry": is_reentry,
             "target": target_p,
             "target_2": round(actual_p + getattr(get_asset_spec(contract=contract, symbol=active_sym), "target_2_pts", 15.0), 2),
             "direction": direction,
@@ -1494,7 +1521,7 @@ class SequentialTradeEngine:
             "confluence": round(float(confluence), 1),
             "highest_price": actual_p,
             "trailing_sl": sl_p,
-            "status": "Open",
+            "status": "Open (Re-Entry)" if is_reentry else "Open",
             "proposed_at": now_time_str,
             "symbol": active_sym
         }
@@ -1502,6 +1529,8 @@ class SequentialTradeEngine:
         state["current_state"] = cls.STATE_IN_TRADE
         state["symbol"] = active_sym
         state["active_trade"] = active_trade
+        if is_reentry:
+            state["re_entry_armed"] = None
         cls.save_state(state, symbol=active_sym)
 
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
@@ -1583,6 +1612,10 @@ class SequentialTradeEngine:
             parsed_strike = int(digits[-1]) if digits else spec_fallback.default_strike
 
         limit_entry = round(float(planned_entry) + 0.35, 2)
+        sl_val = round(float(sl), 2)
+        hard_sl_pts = round((float(planned_entry) - sl_val) * 1.5, 2)
+        hard_sl = round(max(0.05, float(planned_entry) - hard_sl_pts), 2)
+        is_reentry = bool(state.get("re_entry_armed", {}).get("armed"))
 
         next_trade_num = int(state.get("today_trade_count", 0)) + 1
         active_trade = {
@@ -1594,7 +1627,11 @@ class SequentialTradeEngine:
             "actual_entry": None,
             "actual_entry_time": None,
             "executed": "Pending",
-            "sl": round(float(sl), 2),
+            "sl": sl_val,
+            "soft_sl": sl_val,
+            "hard_sl": hard_sl,
+            "wick_touches": 0,
+            "is_re_entry": is_reentry,
             "target": round(float(target), 2),
             "target_2": round(float(planned_entry) + getattr(spec, "target_2_pts", spec.target_pts * 2.0), 2),
             "direction": direction,
@@ -1607,8 +1644,8 @@ class SequentialTradeEngine:
             "t2_status": "PENDING",
             "confluence": round(float(confluence), 1),
             "highest_price": round(float(planned_entry), 2),
-            "trailing_sl": round(float(sl), 2),
-            "status": "Entry Pending",
+            "trailing_sl": sl_val,
+            "status": "Entry Pending (Re-Entry)" if is_reentry else "Entry Pending",
             "proposed_at": datetime.now(IST).strftime("%I:%M:%S %p IST"),
             "symbol": active_sym
         }
@@ -1720,11 +1757,12 @@ class SequentialTradeEngine:
         current_ltp: float,
         groww_feed: Any = None,
         starting_cash: Optional[float] = None,
-        symbol: Optional[str] = None
+        symbol: Optional[str] = None,
+        is_candle_closed: bool = True
     ) -> Dict[str, Any]:
         """
-        Rule 3: Monitor Active Trade.
-        Checks if Target Hit or SL Hit, updates trailing SL, or detects broker exit.
+        Rule 3: Monitor Active Trade with Two-Tier SL & Chandelier Trailing.
+        Checks Target Hit, Hard Catastrophic SL, Soft Candle Close SL, and Chandelier Trailing.
         """
         state = cls.get_state(symbol=symbol)
         if state.get("current_state") != cls.STATE_IN_TRADE:
@@ -1761,7 +1799,7 @@ class SequentialTradeEngine:
         profit_pts = round(current_ltp - actual_entry, 2)
         peak_profit_pts = round(float(active.get("highest_price", actual_entry)) - actual_entry, 2)
 
-        # Milestone 1: At Breakeven threshold (3.5 pts for Reliance, 12.0 pts for Adani) -> Move SL to Cost
+        # Milestone 1: At Breakeven threshold -> Move SL to Cost
         be_thresh = float(getattr(spec_act, 'be_pts', 3.5))
         lock_thresh = float(getattr(spec_act, 'profit_lock_trigger', 5.0))
         lock_val = float(getattr(spec_act, 'profit_lock_locked', 2.5))
@@ -1772,14 +1810,32 @@ class SequentialTradeEngine:
                 active["trailing_sl"] = be_sl
                 active["breakeven_activated"] = True
 
-        # Milestone 2: At Profit Lock threshold (5.0 pts for Reliance, 22.0 pts for Adani) -> Lock Profit
+        # Milestone 2: At Profit Lock threshold -> Lock Profit
         if peak_profit_pts >= lock_thresh:
             lock_sl = round(actual_entry + lock_val, 2)
             if lock_sl > active.get("trailing_sl", sl):
                 active["trailing_sl"] = lock_sl
                 active["profit_lock_activated"] = True
 
+        # Solution 4: Chandelier / Trailing ATR Exit once trade achieves 1:1 Risk-Reward
+        initial_risk_pts = round(actual_entry - sl, 2) if actual_entry > sl else float(spec_act.sl_pts)
+        if profit_pts >= initial_risk_pts:
+            if not active.get("breakeven_activated"):
+                active["trailing_sl"] = round(actual_entry + 0.10, 2)
+                active["breakeven_activated"] = True
+            
+            # Dynamic Chandelier Trailing behind high water mark
+            ch_mult = float(getattr(spec_act, 'chandelier_mult', 2.0))
+            atr_est = max(1.0, float(getattr(spec_act, 'sl_pts', 10.0)) / max(0.5, float(getattr(spec_act, 'atr_multiplier_sl', 1.5))))
+            ch_atr_dist = round(ch_mult * atr_est, 2)
+            high_water = float(active.get("highest_price", actual_entry))
+            ch_trail_sl = round(max(actual_entry, high_water - ch_atr_dist), 2)
+            if ch_trail_sl > active.get("trailing_sl", actual_entry):
+                active["trailing_sl"] = ch_trail_sl
+                active["trailing_mode"] = "CHANDELIER_ATR"
+
         effective_sl = max(sl, active.get("trailing_sl", sl))
+        hard_sl = float(active.get("hard_sl", max(0.05, actual_entry - (float(spec_act.sl_pts) * 1.5))))
         unrealized_pnl = round((current_ltp - actual_entry) * qty, 2)
         active["current_ltp"] = current_ltp
         active["unrealized_pnl"] = unrealized_pnl
@@ -1797,19 +1853,16 @@ class SequentialTradeEngine:
                     if contract in sym or (str(active.get("strike", "")) in sym and active.get("direction", "")[-2:] in sym):
                         raw_ex_t = str(ex_tr.get("exit_time", ""))
                         raw_en_t = str(ex_tr.get("entry_time", ""))
-                        # Guard: Do not reuse an earlier closed broker trade that is already recorded in the journal!
                         if raw_ex_t and any(raw_ex_t in str(x) or str(x) in raw_ex_t for x in used_exit_times if x):
                             continue
                         if raw_en_t and any(raw_en_t in str(n) or str(n) in raw_en_t for n in used_entry_times if n):
                             continue
 
-                        # Guard 2: If active trade is Trade #2+, do not match older broker trade #1!
                         t_num = int(active.get("trade_num", 1))
                         if t_num > len(executed_today):
                             continue
 
                         if ex_tr.get("is_closed", False):
-                            # Position closed in Groww!
                             exit_p = float(ex_tr.get("exit_price", current_ltp))
                             exit_t = ex_tr.get("exit_time", datetime.now(IST).strftime("%I:%M:%S %p IST"))
                             real_pnl = float(ex_tr.get("realised_pnl", (exit_p - actual_entry) * qty))
@@ -1863,14 +1916,36 @@ class SequentialTradeEngine:
                     "current_ltp": current_ltp,
                     "state": state
                 }
-            elif current_ltp <= effective_sl:
+            # Solution 2: Two-Tier Stop Loss Check
+            # Tier 1: Emergency Hard Catastrophic Stop Loss (Instant Broker Tick Execution)
+            elif current_ltp <= hard_sl:
                 return cls.close_trade(
                     exit_price=current_ltp,
-                    status="SL Hit",
-                    notes=f"Stop-Loss Triggered: ₹{current_ltp:.2f} <= ₹{effective_sl:.2f} (-{round(actual_entry - current_ltp, 2)} pts)",
+                    status="Hard Catastrophic SL Hit",
+                    notes=f"Emergency Hard SL Hit: ₹{current_ltp:.2f} <= ₹{hard_sl:.2f} (-{round(actual_entry - current_ltp, 2)} pts)",
                     starting_cash=starting_cash,
                     symbol=active_sym
                 )
+            # Tier 2: Technical Soft Stop Loss (Filtered against intra-candle wick sweeps)
+            elif current_ltp <= effective_sl:
+                if not is_candle_closed:
+                    active["wick_touches"] = int(active.get("wick_touches", 0)) + 1
+                    active["wick_guard_alert"] = f"Wick touch @ ₹{current_ltp:.2f} <= ₹{effective_sl:.2f}. Soft SL active, waiting for 5m candle close confirmation."
+                    cls.save_state(state, symbol=active_sym)
+                    return {
+                        "active": True,
+                        "wick_sweep_prevented": True,
+                        "current_ltp": current_ltp,
+                        "state": state
+                    }
+                else:
+                    return cls.close_trade(
+                        exit_price=current_ltp,
+                        status="SL Hit",
+                        notes=f"5m Candle Close Soft SL Triggered: ₹{current_ltp:.2f} <= ₹{effective_sl:.2f} (-{round(actual_entry - current_ltp, 2)} pts)",
+                        starting_cash=starting_cash,
+                        symbol=active_sym
+                    )
 
         # Scenario 2: Tranche 1 already banked! Monitoring Tranche 2 Runner
         elif t1_status == "BANKED":
@@ -2036,6 +2111,43 @@ class SequentialTradeEngine:
         state["active_trade"] = None
         state["last_closed_trade"] = closed_summary
         state["today_trade_count"] = max(int(state.get("today_trade_count", 0)), t_num)
+
+        # Solution 3: Resumption Re-Entry Arming Protocol
+        if "SL" in status and float(active.get("confluence", 70.0)) >= getattr(spec_close, "re_entry_min_confidence", 65.0):
+            t_open_mins = 5
+            try:
+                clean_t = str(active.get("actual_entry_time", "")).replace(" IST", "").strip()
+                for fmt in ("%I:%M:%S %p", "%H:%M:%S"):
+                    try:
+                        t_obj = datetime.strptime(clean_t, fmt).time()
+                        t_open_mins = int((datetime.now(IST).replace(tzinfo=None) - datetime.combine(datetime.now(IST).date(), t_obj)).total_seconds() / 60.0)
+                        break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+            if t_open_mins <= 15:
+                state["re_entry_armed"] = {
+                    "armed": True,
+                    "symbol": active_sym,
+                    "contract": sym,
+                    "instrument": inst,
+                    "direction": active.get("direction", "BUY PE"),
+                    "confluence": float(active.get("confluence", 70.0)),
+                    "planned_entry": float(active.get("planned_entry", actual_entry)),
+                    "actual_entry": actual_entry,
+                    "wick_extreme_sl": exit_p,
+                    "stop_loss_pts": round(abs(actual_entry - exit_p), 2),
+                    "target": float(active.get("target", 0.0)),
+                    "target_2": float(active.get("target_2", 0.0)),
+                    "qty": qty,
+                    "num_lots": int(active.get("num_lots", 1)),
+                    "armed_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
+                    "expires_at": (datetime.now(IST) + timedelta(minutes=15)).strftime("%Y-%m-%d %I:%M:%S %p IST"),
+                    "notes": f"High conviction ({active.get('confluence')}%) setup stopped on early wick at {exit_t}. Re-entry armed for 15 mins if price breaks back past entry level ₹{actual_entry:.2f}."
+                }
+
         cls.save_state(state, symbol=active_sym)
 
         return {

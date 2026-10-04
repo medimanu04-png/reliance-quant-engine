@@ -51,6 +51,80 @@ class AssetSpec:
     escalator_t1_lock: float = 0.10  # Tier 1 Stop Loss lock amount
     escalator_t2_lock: float = 2.50  # Tier 2 Stop Loss lock amount
     min_confluence_gate: float = 68.0 # Institutional Directional Confluence Gate Threshold (%)
+    hard_sl_multiplier: float = 2.5   # Catastrophic broker hard SL multiplier (x ATR)
+    atr_multiplier_sl: float = 1.5    # Technical soft SL multiplier (x 5m ATR)
+    structural_buffer_pts: float = 5.0 # Structural swing high/low buffer points
+    chandelier_period: int = 10       # Chandelier Exit ATR period
+    chandelier_mult: float = 2.0      # Chandelier Exit ATR multiplier
+    re_entry_window_mins: int = 15    # Resumption Re-entry observation window (minutes)
+    re_entry_min_confidence: float = 65.0 # Minimum setup confidence for auto-re-entry
+
+    def calculate_dynamic_sl(
+        self,
+        direction: str,
+        entry_spot: float,
+        atr_5m: float,
+        swing_extreme: Optional[float] = None
+    ) -> Dict[str, float]:
+        """
+        Solution 1 & 2: Volatility-Adjusted Structural Dynamic Stop-Loss Calculation.
+        Formula: SL Distance = max(Structural Swing High/Low + 5 pts, 1.5 * ATR_14(5m))
+        Returns dictionary with soft_sl_pts, soft_sl_spot, and hard_sl_spot.
+        """
+        atr_val = max(1.0, float(atr_5m if atr_5m and atr_5m > 0 else (self.sl_pts / self.atr_multiplier_sl)))
+        vol_sl_dist = round(self.atr_multiplier_sl * atr_val, 2)
+        dir_upper = str(direction).upper()
+        is_put = "PE" in dir_upper or "PUT" in dir_upper or "SHORT" in dir_upper
+
+        if is_put:
+            # Bearish PUT: Stop Loss is ABOVE entry (Swing High + 5 pts)
+            if swing_extreme and swing_extreme > entry_spot:
+                struct_sl_dist = round((swing_extreme + self.structural_buffer_pts) - entry_spot, 2)
+            else:
+                struct_sl_dist = vol_sl_dist
+            
+            soft_sl_pts = max(struct_sl_dist, vol_sl_dist, self.sl_pts)
+            soft_sl_spot = round(entry_spot + soft_sl_pts, 2)
+            hard_sl_pts = max(round(soft_sl_pts * 1.5, 2), round(self.hard_sl_multiplier * atr_val, 2))
+            hard_sl_spot = round(entry_spot + hard_sl_pts, 2)
+        else:
+            # Bullish CALL: Stop Loss is BELOW entry (Swing Low - 5 pts)
+            if swing_extreme and swing_extreme < entry_spot:
+                struct_sl_dist = round(entry_spot - (swing_extreme - self.structural_buffer_pts), 2)
+            else:
+                struct_sl_dist = vol_sl_dist
+                
+            soft_sl_pts = max(struct_sl_dist, vol_sl_dist, self.sl_pts)
+            soft_sl_spot = round(entry_spot - soft_sl_pts, 2)
+            hard_sl_pts = max(round(soft_sl_pts * 1.5, 2), round(self.hard_sl_multiplier * atr_val, 2))
+            hard_sl_spot = round(entry_spot - hard_sl_pts, 2)
+
+        return {
+            "soft_sl_pts": round(soft_sl_pts, 2),
+            "soft_sl_spot": soft_sl_spot,
+            "hard_sl_pts": round(hard_sl_pts, 2),
+            "hard_sl_spot": hard_sl_spot,
+            "atr_5m": round(atr_val, 2)
+        }
+
+    def calculate_position_size(
+        self,
+        max_risk_rupees: float,
+        sl_pts: float,
+        delta: float = 0.50
+    ) -> int:
+        """
+        Solution 1: Dynamic Position Sizing Adjustment.
+        Scales down lots for wider ATR stops so that monetary risk (Qty * SL * Delta) <= max_risk_rupees.
+        """
+        if max_risk_rupees <= 0 or sl_pts <= 0 or self.lot_size <= 0:
+            return self.default_lots
+        eff_delta = max(0.20, min(1.0, float(delta if delta else 0.50)))
+        per_lot_risk = sl_pts * self.lot_size * eff_delta
+        if per_lot_risk <= 0:
+            return self.default_lots
+        calculated_lots = int(max_risk_rupees // per_lot_risk)
+        return max(1, calculated_lots)
 
 ASSET_SPECS: Dict[str, AssetSpec] = {
     "RELIANCE": AssetSpec(
@@ -148,12 +222,12 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         yf_symbol="^NSEI",
         lot_size=65,
         default_lots=2,
-        target_pts=35.0,
-        target_2_pts=80.0,
-        sl_pts=18.0,
-        be_pts=18.0,
-        profit_lock_trigger=28.0,
-        profit_lock_locked=15.0,
+        target_pts=50.0,
+        target_2_pts=110.0,
+        sl_pts=36.0,
+        be_pts=25.0,
+        profit_lock_trigger=36.0,
+        profit_lock_locked=20.0,
         min_confluence_gate=72.0,
         strike_step=50,
         default_spot=22450.0,
@@ -162,7 +236,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         default_put_price=125.0,
         groww_company_slug="nifty",
         volume_norm=15000000,
-        daily_sl_cap_rupees=2500.0,
+        daily_sl_cap_rupees=6000.0,
         tape_quantities=(65, 130, 195, 260),
         beta=1.00,
         limit_collar_pts=1.50,
@@ -180,10 +254,13 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         spread_threshold=0.03,
         max_pain_gamma_divisor=50.0,
         jitter_range=(-0.30, 0.40),
-        escalator_t1_thresh=18.0,
-        escalator_t2_thresh=28.0,
-        escalator_t1_lock=0.50,
-        escalator_t2_lock=15.0
+        escalator_t1_thresh=25.0,
+        escalator_t2_thresh=36.0,
+        escalator_t1_lock=1.0,
+        escalator_t2_lock=20.0,
+        hard_sl_multiplier=2.5,
+        atr_multiplier_sl=1.5,
+        structural_buffer_pts=5.0
     ),
     "SENSEX": AssetSpec(
         symbol="SENSEX",

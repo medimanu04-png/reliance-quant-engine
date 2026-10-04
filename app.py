@@ -3580,7 +3580,27 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             </div>
             """)
 
-        elif active_track_ltp <= effective_sl or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") == "SL Hit"):
+        elif trade_update.get("wick_sweep_prevented"):
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(120, 53, 15, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #F59E0B; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(245, 158, 11, 0.35); margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.4rem;">🛡️</span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px;">
+                            SOLUTION 2 WICK SHIELD ACTIVE — AWAITING 5M CANDLE CLOSE
+                        </span>
+                    </div>
+                    <span style="background: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #FBBF24;">
+                        WICK FILTER ENGAGED
+                    </span>
+                </div>
+                <div style="font-size: 0.84rem; color: #FDE68A; font-weight: 600; margin-bottom: 12px;">
+                    Trade #{act_trade_num} grazed soft stop loss ₹{effective_sl:.2f} intra-candle (LTP: ₹{active_track_ltp:.2f}). System is awaiting 5-minute candle close confirmation to prevent premature false wick sweep exits.
+                </div>
+            </div>
+            """)
+
+        elif active_track_ltp <= effective_sl or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") in ["SL Hit", "Hard Catastrophic SL Hit"]):
             sl_alert_key = f"tg_sent_sl_{today_date}_{act_trade_num}_{plan_strike}"
             if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(sl_alert_key):
                 loss_rs = abs(round(unreal_pnl))
