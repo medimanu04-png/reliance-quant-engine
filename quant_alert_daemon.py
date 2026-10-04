@@ -355,7 +355,11 @@ class RelianceQuantAlertDaemon:
                 for sym in self.symbols:
                     gw_trades = self.groww_feed.get_executed_trades_today(symbol_filter=sym)
                     if gw_trades:
-                        TradeJournalManager.sync_groww_trades(gw_trades)
+                        TradeJournalManager.sync_groww_trades(
+                            groww_executed_trades=gw_trades,
+                            active_signal=SignalTracker.get_signal(symbol=sym),
+                            symbol_filter=sym
+                        )
         except Exception:
             pass
 
@@ -634,8 +638,9 @@ class RelianceQuantAlertDaemon:
                 }
                 with open(os.path.join(BASE_DIR, f"active_trade_state_{sym}.json"), "w", encoding="utf-8") as f_st:
                     json.dump(active_state_data, f_st, indent=2)
-                with open(os.path.join(BASE_DIR, "active_trade_state.json"), "w", encoding="utf-8") as f_st:
-                    json.dump(active_state_data, f_st, indent=2)
+                if sym == "RELIANCE":
+                    with open(os.path.join(BASE_DIR, "active_trade_state.json"), "w", encoding="utf-8") as f_st:
+                        json.dump(active_state_data, f_st, indent=2)
             except Exception as e:
                 logger.debug(f"Error persisting active state: {e}")
 
@@ -1028,24 +1033,27 @@ class RelianceQuantAlertDaemon:
 
         # Auto-update live HTML dashboard at each tick
         try:
-            # If no active trade across symbols, mark is_active as False
-            has_active = any(
-                SequentialTradeEngine.get_state(symbol=s).get("current_state") == SequentialTradeEngine.STATE_IN_TRADE
-                for s in self.symbols
-            )
-            if not has_active:
-                st_file = os.path.join(BASE_DIR, "active_trade_state.json")
-                if os.path.exists(st_file):
-                    try:
-                        with open(st_file, "r", encoding="utf-8") as f_st:
-                            curr_st = json.load(f_st)
-                        curr_st["is_active"] = False
-                        curr_st["market_status"] = "MONITORING (09:15 - 15:30 IST)"
-                        curr_st["last_update"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
-                        with open(st_file, "w", encoding="utf-8") as f_st:
-                            json.dump(curr_st, f_st, indent=2)
-                    except Exception:
-                        pass
+            # Sync is_active state across all desks cleanly
+            for s in self.symbols:
+                s_state = SequentialTradeEngine.get_state(symbol=s)
+                s_active = (s_state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE)
+                st_files = [os.path.join(BASE_DIR, f"active_trade_state_{s}.json")]
+                if s == "RELIANCE":
+                    st_files.append(os.path.join(BASE_DIR, "active_trade_state.json"))
+                if not s_active:
+                    for sf in st_files:
+                        if os.path.exists(sf):
+                            try:
+                                with open(sf, "r", encoding="utf-8") as f_st:
+                                    curr_st = json.load(f_st)
+                                if curr_st.get("is_active"):
+                                    curr_st["is_active"] = False
+                                    curr_st["market_status"] = "MONITORING (09:15 - 15:30 IST)"
+                                    curr_st["last_update"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                                    with open(sf, "w", encoding="utf-8") as f_st:
+                                        json.dump(curr_st, f_st, indent=2)
+                            except Exception:
+                                pass
 
             from live_dashboard_generator import generate_live_dashboard
             generate_live_dashboard()

@@ -26,6 +26,14 @@ import pytz
 IST = pytz.timezone("Asia/Kolkata")
 from asset_config import get_asset_spec, resolve_symbol
 
+try:
+    from growwapi.groww.exceptions import GrowwAPIAuthenticationException, GrowwAPIException
+except Exception:
+    class GrowwAPIAuthenticationException(Exception):
+        pass
+    class GrowwAPIException(Exception):
+        pass
+
 logger = logging.getLogger(__name__)
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "groww_config.json")
@@ -325,7 +333,6 @@ class GrowwMarketFeed:
         clean_token = access_token.strip()
         try:
             from growwapi import GrowwAPI
-            from growwapi.groww.exceptions import GrowwAPIAuthenticationException, GrowwAPIException
 
             api = GrowwAPI(token=clean_token)
             profile = api.get_user_profile(timeout=6)
@@ -505,7 +512,6 @@ class GrowwMarketFeed:
 
         api_key = api_key.strip()
         from growwapi import GrowwAPI
-        from growwapi.groww.exceptions import GrowwAPIException
 
         # Auto-detect if totp parameter is actually a secret key (length > 8 or alphanumeric)
         if totp and (len(totp.strip()) > 8 or any(c.isalpha() for c in totp.strip())):

@@ -137,5 +137,40 @@
     "suggested_exit": 146.65,
     "suggested_sl": 96.65,
     "confluence_score": 94.4
+  },
+  "2026-10-05_RELIANCE": {
+    "date": "2026-10-05",
+    "symbol": "RELIANCE",
+    "strike": 2000,
+    "contract_type": "CE",
+    "trade_given_time": "03:11:10 PM IST"
+  },
+  "2026-10-05": {
+    "date": "2026-10-05",
+    "symbol": "RELIANCE",
+    "strike": 2000,
+    "contract_type": "CE",
+    "trade_given_time": "03:11:10 PM IST"
+  },
+  "2026-10-05_ADANIENT": {
+    "date": "2026-10-05",
+    "symbol": "ADANIENT",
+    "strike": 2000,
+    "contract_type": "CE",
+    "trade_given_time": "03:11:10 PM IST"
+  },
+  "2026-10-05_NIFTY": {
+    "date": "2026-10-05",
+    "symbol": "NIFTY",
+    "strike": 2000,
+    "contract_type": "CE",
+    "trade_given_time": "03:11:10 PM IST"
+  },
+  "2026-10-05_SENSEX": {
+    "date": "2026-10-05",
+    "symbol": "SENSEX",
+    "strike": 2000,
+    "contract_type": "CE",
+    "trade_given_time": "03:11:10 PM IST"
   }
 }

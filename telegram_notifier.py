@@ -691,7 +691,7 @@ class TelegramNotifier:
         direction: str = "BULLISH (CALL / CE)",
         total_pnl: Optional[float] = None,
         num_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
@@ -700,7 +700,7 @@ class TelegramNotifier:
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
+        if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
@@ -740,7 +740,7 @@ class TelegramNotifier:
         direction: str = "BULLISH (CALL / CE)",
         total_loss: Optional[float] = None,
         num_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
@@ -749,7 +749,7 @@ class TelegramNotifier:
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
+        if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
@@ -791,7 +791,7 @@ class TelegramNotifier:
         secured_pnl: Optional[float] = None,
         entry_price: Optional[float] = None,
         num_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
@@ -800,7 +800,7 @@ class TelegramNotifier:
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
+        if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
@@ -840,7 +840,7 @@ class TelegramNotifier:
         current_ltp: float,
         entry_price: float,
         num_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
@@ -849,7 +849,7 @@ class TelegramNotifier:
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
+        if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
@@ -887,7 +887,7 @@ class TelegramNotifier:
         current_ltp: float,
         entry_price: float,
         num_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
@@ -896,7 +896,7 @@ class TelegramNotifier:
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol, contract)
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
+        if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
@@ -935,7 +935,7 @@ class TelegramNotifier:
         current_ltp: float = 37.65,
         reason: str = "Mandatory intraday EOD cut-off before broker auto-square-off charges at 03:15 PM",
         num_lots: int = 1,
-        lot_size: int = 250,
+        lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
@@ -944,7 +944,7 @@ class TelegramNotifier:
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
+        if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size

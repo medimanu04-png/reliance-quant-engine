@@ -174,9 +174,11 @@ class BreakoutTriggerManager:
             pass
 
     @classmethod
-    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: float = 1.20, manual_override: float = 0.0, symbol: Optional[str] = None) -> float:
+    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: Optional[float] = None, manual_override: float = 0.0, symbol: Optional[str] = None) -> float:
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         sym = (symbol or "").upper().strip()
+        if buffer_pts is None or buffer_pts <= 0.0:
+            buffer_pts = get_asset_spec(sym).breakout_buffer if sym else 1.20
         key = f"{today_str}_{sym}_{strike}_{contract_type}" if sym else f"{today_str}_{strike}_{contract_type}"
         session_key = f"breakout_level_{sym}_{strike}_{contract_type}" if sym else f"breakout_level_{strike}_{contract_type}"
         legacy_key = f"{today_str}_{strike}_{contract_type}"
@@ -219,9 +221,11 @@ class BreakoutTriggerManager:
         return 0.0
 
     @classmethod
-    def reset_trigger(cls, strike: int = None, contract_type: str = None, current_ltp: float = 0.0, buffer_pts: float = 1.20, symbol: Optional[str] = None) -> float:
+    def reset_trigger(cls, strike: int = None, contract_type: str = None, current_ltp: float = 0.0, buffer_pts: Optional[float] = None, symbol: Optional[str] = None) -> float:
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         sym = (symbol or "").upper().strip()
+        if buffer_pts is None or buffer_pts <= 0.0:
+            buffer_pts = get_asset_spec(sym).breakout_buffer if sym else 1.20
         records = cls._load_records()
         if strike and contract_type:
             key = f"{today_str}_{sym}_{strike}_{contract_type}" if sym else f"{today_str}_{strike}_{contract_type}"
@@ -1221,11 +1225,10 @@ def render_auto_rescan_controller():
         try:
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
-            with ThreadPoolExecutor(max_workers=5) as ex:
-                ex.submit(gw._fetch_reliance_spot_now, "RELIANCE")
-                ex.submit(gw._fetch_reliance_spot_now, "ADANIENT")
-                ex.submit(gw._fetch_reliance_chain_now, None, "RELIANCE")
-                ex.submit(gw._fetch_reliance_chain_now, None, "ADANIENT")
+            with ThreadPoolExecutor(max_workers=9) as ex:
+                for sym_scan in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+                    ex.submit(gw._fetch_reliance_spot_now, sym_scan)
+                    ex.submit(gw._fetch_reliance_chain_now, None, sym_scan)
                 ex.submit(gw._execute_live_benchmark_fetch)
         except Exception:
             pass
@@ -1245,9 +1248,11 @@ def render_auto_rescan_controller():
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     spec_rel = get_asset_spec("RELIANCE")
     spec_ada = get_asset_spec("ADANIENT")
+    spec_nifty = get_asset_spec("NIFTY")
+    spec_sensex = get_asset_spec("SENSEX")
 
     if active_route == "":
-        # Homepage Mode: display BOTH stocks cleanly under the instant rescan controller
+        # Homepage Mode: display ALL 4 desks cleanly under the instant rescan controller
         st.html(f"""
         <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
             <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
@@ -1255,19 +1260,33 @@ def render_auto_rescan_controller():
             <span>⚡ <b style="color: #34D399;">~4ms</b></span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
-            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                <span>⚡ <b style="color: #38BDF8;">{spec_rel.yf_symbol}</b> ({spec_rel.lot_size} Qty/Lot)</span>
-                <span>🎯 Target: <b style="color: #34D399;">+{spec_rel.target_pts:.1f} pts</b></span>
-                <span>🛑 SL: <b style="color: #F87171;">-{spec_rel.sl_pts:.1f} pts</b></span>
-                <span>🚦 Gate: <b style="color: #FCD34D;">≥{spec_rel.min_confluence_gate:.0f}%</b></span>
-                <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                    <span>📈 <b style="color: #10B981;">{spec_nifty.yf_symbol}</b> ({spec_nifty.lot_size}/L)</span>
+                    <span>🎯 <b style="color: #34D399;">+{spec_nifty.target_pts:.0f}</b></span>
+                    <span>🛑 <b style="color: #F87171;">-{spec_nifty.sl_pts:.0f}</b></span>
+                    <span>🚦 <b style="color: #FCD34D;">≥{spec_nifty.min_confluence_gate:.0f}%</b></span>
+                </div>
+                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                    <span>🏛️ <b style="color: #A855F7;">{spec_sensex.yf_symbol}</b> ({spec_sensex.lot_size}/L)</span>
+                    <span>🎯 <b style="color: #34D399;">+{spec_sensex.target_pts:.0f}</b></span>
+                    <span>🛑 <b style="color: #F87171;">-{spec_sensex.sl_pts:.0f}</b></span>
+                    <span>🚦 <b style="color: #FCD34D;">≥{spec_sensex.min_confluence_gate:.0f}%</b></span>
+                </div>
             </div>
-            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                <span>🔥 <b style="color: #FBBF24;">{spec_ada.yf_symbol}</b> ({spec_ada.lot_size} Qty/Lot)</span>
-                <span>🎯 Target: <b style="color: #34D399;">+{spec_ada.target_pts:.1f} pts</b></span>
-                <span>🛑 SL: <b style="color: #F87171;">-{spec_ada.sl_pts:.1f} pts</b></span>
-                <span>🚦 Gate: <b style="color: #FCD34D;">≥{spec_ada.min_confluence_gate:.0f}%</b></span>
-                <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                    <span>⚡ <b style="color: #38BDF8;">{spec_rel.yf_symbol}</b> ({spec_rel.lot_size}/L)</span>
+                    <span>🎯 <b style="color: #34D399;">+{spec_rel.target_pts:.1f}</b></span>
+                    <span>🛑 <b style="color: #F87171;">-{spec_rel.sl_pts:.1f}</b></span>
+                    <span>🚦 <b style="color: #FCD34D;">≥{spec_rel.min_confluence_gate:.0f}%</b></span>
+                </div>
+                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                    <span>🔥 <b style="color: #FBBF24;">{spec_ada.yf_symbol}</b> ({spec_ada.lot_size}/L)</span>
+                    <span>🎯 <b style="color: #34D399;">+{spec_ada.target_pts:.1f}</b></span>
+                    <span>🛑 <b style="color: #F87171;">-{spec_ada.sl_pts:.1f}</b></span>
+                    <span>🚦 <b style="color: #FCD34D;">≥{spec_ada.min_confluence_gate:.0f}%</b></span>
+                </div>
             </div>
         </div>
         """)
@@ -1303,7 +1322,7 @@ st.markdown("---")
 is_rescan = st.session_state.get("just_rescanned", False)
 manual_rescan = st.session_state.get("manual_rescan_clicked", False)
 cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
-active_feed_sym = "ADANIENT" if ("ADANI" in str(cur_sel_scrip).upper()) else "RELIANCE"
+active_feed_sym = resolve_symbol(cur_sel_scrip)
 nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=active_feed_sym)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
@@ -5979,7 +5998,7 @@ if df is not None and not df.empty:
         m1_data['rec_limit_premium_ce'] = round(max(0.50, current_option_ltp - sav), 2)
         m1_data['rec_limit_premium_pe'] = round(max(0.50, current_option_ltp - sav), 2)
 
-    estimated_premium = round(current_option_ltp + 1.20, 2)  # Breakout trigger level
+    estimated_premium = round(current_option_ltp + spec.breakout_buffer, 2)  # Breakout trigger level
 
     # Enhancement: Institutional Volatility-Adaptive SL & Profit Target
     stock_atr = float(latest['ATR']) if latest['ATR'] > 0 else (spec.strike_step * 0.7)
@@ -7081,8 +7100,8 @@ if df is not None and not df.empty:
                 target_lots=kelly_recommended_lots,
                 lot_size=lot_size,
                 urgency="COLLAR_TRIGGER" if (orb_breakout or orb_breakdown) else "PASSIVE",
-                entry_trigger=_active_plan_ltp + 1.20,
-                max_collar_pts=0.65
+                entry_trigger=_active_plan_ltp + spec.breakout_buffer,
+                max_collar_pts=spec.limit_collar_pts
             )
             _cockpit_trade_plan = {
                 "scrip_symbol": scrip_symbol,
@@ -8049,8 +8068,8 @@ if df is not None and not df.empty:
             target_lots=kelly_recommended_lots,
             lot_size=lot_size,
             urgency="COLLAR_TRIGGER" if (orb_breakout or orb_breakdown) else "PASSIVE",
-            entry_trigger=active_plan_ltp + 1.20,
-            max_collar_pts=0.65
+            entry_trigger=active_plan_ltp + spec.breakout_buffer,
+            max_collar_pts=spec.limit_collar_pts
         )
 
         trade_plan = {
@@ -8373,8 +8392,9 @@ if df is not None and not df.empty:
                 if gw_executed:
                     TradeJournalManager.sync_groww_trades(
                         groww_executed_trades=gw_executed,
-                        active_signal=SignalTracker.get_signal(),
-                        starting_cash=account_cash
+                        active_signal=SignalTracker.get_signal(symbol=scrip_symbol),
+                        starting_cash=account_cash,
+                        symbol_filter=scrip_symbol
                     )
             except Exception as e:
                 logger.debug(f"Auto-sync Groww executions error: {e}")
@@ -8412,8 +8432,9 @@ if df is not None and not df.empty:
                         if gw_trades:
                             synced = TradeJournalManager.sync_groww_trades(
                                 groww_executed_trades=gw_trades,
-                                active_signal=SignalTracker.get_signal(),
-                                starting_cash=account_cash
+                                active_signal=SignalTracker.get_signal(symbol=scrip_symbol),
+                                starting_cash=account_cash,
+                                symbol_filter=scrip_symbol
                             )
                             st.success(f"✅ Verified {len(synced)} {scrip_symbol} executed trades!")
                             st.rerun()
@@ -9291,7 +9312,10 @@ if df is not None and not df.empty:
 
             st.markdown(f"### 🔒 Policy Safeguards & Market Timing ({scrip_symbol})")
             st.success(f"✅ **STRIKE**: Dual ATM Corridor ({scrip_symbol} {lower_atm} & {upper_atm})")
-            st.success(f"✅ **EXPIRY**: Strictly Next Monthly Expiry ({expiry_date_str}, {dte} DTE)")
+            if spec.parent_sector == "BENCHMARK INDEX":
+                st.success(f"✅ **EXPIRY**: Current Week Weekly Expiry ({expiry_date_str}, {dte} DTE)")
+            else:
+                st.success(f"✅ **EXPIRY**: Strictly Next Monthly Expiry ({expiry_date_str}, {dte} DTE)")
             
             c_early_entry = st.checkbox(
                 f"⚡ Allow Early Entry (09:15 - 09:30 AM Opening Window) — {scrip_symbol}",

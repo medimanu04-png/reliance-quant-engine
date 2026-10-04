@@ -61,9 +61,15 @@ class SignalTracker:
             date_str = datetime.now(IST).strftime("%Y-%m-%d")
         signals = cls.get_all_signals()
         if symbol:
-            key = f"{date_str}_{symbol}"
+            sym_canon = resolve_symbol(symbol)
+            key = f"{date_str}_{sym_canon}"
             if key in signals:
                 return signals[key]
+            # Search if legacy key matches this specific symbol
+            leg = signals.get(date_str)
+            if leg and isinstance(leg, dict) and resolve_symbol(leg.get("symbol", "")) == sym_canon:
+                return leg
+            return None
         return signals.get(date_str)
 
     @classmethod
@@ -128,7 +134,8 @@ class SignalTracker:
     @classmethod
     def save_signal(cls, signal: Dict[str, Any]):
         date_str = signal.get("date") or datetime.now(IST).strftime("%Y-%m-%d")
-        symbol = signal.get("symbol") or "RELIANCE"
+        symbol = resolve_symbol(signal.get("symbol") or "RELIANCE")
+        signal["symbol"] = symbol
         key = f"{date_str}_{symbol}"
         signals = cls.get_all_signals()
 
@@ -144,7 +151,7 @@ class SignalTracker:
 
         signals[key] = signal
         # Only set as default date signal if date_str is empty or matches contract
-        if date_str not in signals or signals[date_str].get("symbol") == symbol:
+        if date_str not in signals or resolve_symbol(signals[date_str].get("symbol", "")) == symbol:
             signals[date_str] = signal
 
         try:
@@ -245,8 +252,8 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
         e["total_slippage_pts"] = total_slippage_pts
         e["total_slippage_drag_rupees"] = total_slippage_drag
 
-        # Estimate statutory charges (STT, GST, Exchange fees, SEBI, Brokerage ~Rs. 65 per lot)
-        statutory_charges = round(65.0 * num_lots, 2) if ep > 0 else 0.0
+        # Estimate statutory charges (STT, GST, Exchange fees, SEBI, Brokerage configured per AssetSpec)
+        statutory_charges = round(spec_entry.estimated_tax_per_lot * num_lots, 2) if ep > 0 else 0.0
         net_after_charges = round(net - statutory_charges, 2) if e.get("is_closed") else net
         e["estimated_statutory_charges"] = statutory_charges
         e["net_pnl_after_charges"] = net_after_charges
@@ -731,9 +738,10 @@ class ShadowMonitoringEngine:
                     if isinstance(j_data, list):
                         for j in j_data:
                             sym = j.get("trading_symbol", "")
+                            spec_boot = get_asset_spec(contract=sym)
                             sugg_e = float(j.get("suggested_entry", j.get("entry_price", 30.0)))
-                            sugg_t = float(j.get("suggested_exit", sugg_e + 10.0))
-                            sugg_sl = float(j.get("suggested_sl", max(0.05, sugg_e - 4.5)))
+                            sugg_t = float(j.get("suggested_exit", sugg_e + spec_boot.target_pts))
+                            sugg_sl = float(j.get("suggested_sl", max(0.05, sugg_e - spec_boot.sl_pts)))
                             act_e = float(j.get("actual_entry_price", sugg_e))
                             act_x = float(j.get("actual_exit_price", sugg_t))
                             high_p = max(sugg_e, act_e, act_x, sugg_t)
@@ -974,9 +982,10 @@ class ShadowMonitoringEngine:
                     if (ex_mins - rec_mins) > 180.0:
                         continue
 
-                # Price tolerance: within 3.5 points
+                # Dynamic price tolerance scaled to asset volatility/breakout buffer
                 ex_entry_p = float(ex_tr.get("entry_price", 0.0))
-                if ex_entry_p > 0 and abs(ex_entry_p - entry) > 3.5:
+                price_tol = max(3.5, rec_spec.breakout_buffer * 1.5)
+                if ex_entry_p > 0 and abs(ex_entry_p - entry) > price_tol:
                     continue
 
                 matched_ex = ex_tr
@@ -1356,7 +1365,7 @@ class SequentialTradeEngine:
         if not sym and state.get("active_trade"):
             act = state["active_trade"]
             sym_str = str(act.get("contract", "")) + " " + str(act.get("instrument", ""))
-            sym = "ADANIENT" if "ADANI" in sym_str.upper() else "RELIANCE"
+            sym = resolve_symbol(sym_str)
         state_file = cls.get_state_file_path(sym)
         try:
             with open(state_file, "w", encoding="utf-8") as f:
@@ -2054,10 +2063,10 @@ class SequentialTradeEngine:
             "trade_given_time": active.get("proposed_at", "09:15:00 AM IST"),
             "suggested_contract": inst,
             "suggested_entry": active.get("planned_entry", actual_entry),
-            "suggested_exit": active.get("target", actual_entry + 10.0),
-            "suggested_sl": active.get("sl", actual_entry - 4.5),
-            "suggested_target_pts": round(active.get("target", actual_entry + 10.0) - active.get("planned_entry", actual_entry), 2),
-            "suggested_sl_pts": round(active.get("planned_entry", actual_entry) - active.get("sl", actual_entry - 4.5), 2),
+            "suggested_exit": active.get("target", actual_entry + spec_close.target_pts),
+            "suggested_sl": active.get("sl", max(0.05, actual_entry - spec_close.sl_pts)),
+            "suggested_target_pts": round(active.get("target", actual_entry + spec_close.target_pts) - active.get("planned_entry", actual_entry), 2),
+            "suggested_sl_pts": round(active.get("planned_entry", actual_entry) - active.get("sl", max(0.05, actual_entry - spec_close.sl_pts)), 2),
             "actual_entry_time": active.get("actual_entry_time", exit_t),
             "actual_entry_price": actual_entry,
             "entry_price": actual_entry,
@@ -2104,8 +2113,8 @@ class SequentialTradeEngine:
             "planned_entry": active.get("planned_entry", actual_entry),
             "actual_entry": actual_entry,
             "executed": "Yes",
-            "sl": active.get("sl", actual_entry - 4.5),
-            "target": active.get("target", actual_entry + 10.0),
+            "sl": active.get("sl", max(0.05, actual_entry - spec_close.sl_pts)),
+            "target": active.get("target", actual_entry + spec_close.target_pts),
             "status": status,
             "exit_price": exit_p,
             "exit_time": exit_t,

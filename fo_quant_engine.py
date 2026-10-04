@@ -4767,8 +4767,8 @@ class UltraHighConvictionRelianceEngine:
                 pass
 
         # Rolling Sharpe Ratio Feedback of Intraday Equity Curve (Lo 2002)
-        # Reads recent trades from daily_trade_journal.json to dynamically modulate threshold
-        self.rolling_sharpe = self._compute_rolling_trade_sharpe(lookback=10)
+        # Reads recent trades for this symbol from daily_trade_journal.json to dynamically modulate threshold
+        self.rolling_sharpe = self._compute_rolling_trade_sharpe(lookback=10, symbol=self.symbol)
         base_thresh = self.config.trade_regime_threshold
         if self.rolling_sharpe < 0.50:
             # Regime not cooperating: slightly raise selectivity threshold (+2 pts)
@@ -4780,8 +4780,8 @@ class UltraHighConvictionRelianceEngine:
             self.trade_regime_threshold = base_thresh
 
     @staticmethod
-    def _compute_rolling_trade_sharpe(lookback: int = 10) -> float:
-        """Computes rolling Sharpe ratio from recent closed trades in daily_trade_journal.json."""
+    def _compute_rolling_trade_sharpe(lookback: int = 10, symbol: Optional[str] = None) -> float:
+        """Computes rolling Sharpe ratio from recent closed trades for the specified symbol in daily_trade_journal.json."""
         journal_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily_trade_journal.json")
         if not os.path.exists(journal_path):
             return 1.0
@@ -4790,9 +4790,18 @@ class UltraHighConvictionRelianceEngine:
                 trades = json.load(f)
             if not isinstance(trades, list) or not trades:
                 return 1.0
+            from asset_config import resolve_symbol
+            sym_canon = resolve_symbol(symbol) if symbol else None
+            sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
             closed_pnls = [
                 float(t.get("net_pnl", t.get("realised_pnl", 0.0)))
                 for t in trades if t.get("is_closed", False)
+                and (
+                    not sym_kw or 
+                    sym_kw in str(t.get("trading_symbol", "")).upper() or 
+                    sym_kw in str(t.get("instrument", "")).upper() or 
+                    str(t.get("symbol", "")).upper() == sym_canon
+                )
             ]
             if len(closed_pnls) < 2:
                 return 1.2 if (closed_pnls and closed_pnls[0] > 0) else 0.8
