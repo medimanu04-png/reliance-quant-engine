@@ -1358,7 +1358,7 @@ class SequentialTradeEngine:
                     "num_lots": int(active_tr.get("num_lots", 1)),
                     "lot_size": int(active_tr.get("lot_size", def_qty)),
                     "highest_price": float(active_tr.get("actual_entry_price", active_tr.get("entry_price", 0.0))),
-                    "trailing_sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - 4.5))),
+                    "trailing_sl": float(active_tr.get("suggested_sl", max(0.05, active_tr.get("entry_price", 0.0) - spec_tr.sl_pts))),
                     "status": "Open",
                     "confluence": float(active_tr.get("confluence_score", 75.0))
                 },

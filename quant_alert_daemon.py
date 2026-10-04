@@ -449,13 +449,13 @@ class RelianceQuantAlertDaemon:
         if dominant_score <= 0.0:
             dominant_score = 75.0
 
-        dynamic_target_pts = float(confluence_eval.get("target_pts", 7.0))
-        dynamic_sl_pts = float(confluence_eval.get("sl_pts", 5.0))
+        spec = get_asset_spec(sym)
+        dynamic_target_pts = float(confluence_eval.get("target_pts", spec.target_pts))
+        dynamic_sl_pts = float(confluence_eval.get("sl_pts", spec.sl_pts))
         is_synthetic_feed = bool(confluence_eval.get("is_synthetic_feed", False))
         spread_stand_down = bool(confluence_eval.get("spread_stand_down", False))
         opening_cooldown_active = False  # Enabled from 09:15 AM market open
         is_midday_lull = bool(confluence_eval.get("is_midday_lull", False))
-        spec = get_asset_spec(sym)
         base_gate = float(getattr(spec, "min_confluence_gate", 68.0))
         min_confluence_gate = max(base_gate + 8.0, 78.0) if is_midday_lull else base_gate
 
@@ -798,11 +798,11 @@ class RelianceQuantAlertDaemon:
                 current_ltp=cur_trade_ltp,
                 entry_price=act_entry,
                 max_hold_minutes=45,
-                decay_tolerance_pts=1.2
+                decay_tolerance_pts=round(spec.sl_pts * 0.25, 2)
             )
 
-            # OU Half-Life Dynamic Time Barrier check
-            unrealized_pts = round(cur_trade_ltp - act_entry, 2) if "CE" in inst_sym else round(act_entry - cur_trade_ltp, 2)
+            # OU Half-Life Dynamic Time Barrier check (both CE and PE are long option purchases)
+            unrealized_pts = round(cur_trade_ltp - act_entry, 2)
             ou_exit, ou_half_life, ou_msg = MultiIndicatorMath.calculate_ou_momentum_half_life_barrier(
                 closes=candles_5m.get("close", []),
                 time_elapsed_minutes=elapsed_mins,

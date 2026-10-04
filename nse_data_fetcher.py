@@ -73,8 +73,8 @@ class NSEIndiaFetcher:
             try:
                 import streamlit as st
                 active_scrip = st.session_state.get("selected_scrip", "")
-                if "ADANI" in str(active_scrip).upper():
-                    sym = "ADANIENT"
+                if active_scrip:
+                    sym = resolve_symbol(symbol=active_scrip)
             except Exception:
                 pass
         if not sym:

@@ -1787,7 +1787,12 @@ class GrowwMarketFeed:
                     parsed_chain = []
                     for c in contracts:
                         raw_strike = float(c.get("strikePrice", 0))
-                        strike = round(raw_strike / 100.0, 1) if raw_strike > 10000 else round(raw_strike, 1)
+                        if underlying == "SENSEX":
+                            strike = round(raw_strike / 100.0, 1) if raw_strike > 200000 else round(raw_strike, 1)
+                        elif underlying == "NIFTY":
+                            strike = round(raw_strike / 100.0, 1) if raw_strike > 100000 else round(raw_strike, 1)
+                        else:
+                            strike = round(raw_strike / 100.0, 1) if raw_strike > 10000 else round(raw_strike, 1)
                         ce = c.get("ce", {})
                         pe = c.get("pe", {})
                         ce_l = ce.get("liveData", {})

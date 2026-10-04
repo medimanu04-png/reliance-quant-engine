@@ -256,15 +256,7 @@ class BreakoutTriggerManager:
                     del st.session_state[k]
             return 0.0
 
-# ==============================================================================
-# 1. PAGE SETUP & INSTITUTIONAL THEME - F&O QUANTITATIVE DESK
-# ==============================================================================
-st.set_page_config(
-    page_title="Quantitative F&O Trading Engine",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Note: Primary st.set_page_config is executed at line 25 before st.navigation router
 
 # Universal Streamlit Width Helpers (Cleanly supports Streamlit 1.60+ width='stretch' with fallback)
 def st_button_stretch(label: str, **kwargs) -> bool:
@@ -4280,7 +4272,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                     {best['instrument']} &nbsp;<span style="font-size: 0.80rem; background: {'#DC2626' if is_pe_dominant else '#059669'}; color: #FFFFFF; padding: 2px 10px; border-radius: 4px; font-weight: 700;">Score: {best['score']}/100</span>
                 </div>
                 <div style="font-size: 0.80rem; color: #E2E8F0; margin-top: 4px;">
-                    Delta <b style="color: #38BDF8;">{abs(best_delta):.2f}</b> requires only <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{move_sign}{best_spot_move} pts</b> spot move to hit target (within daily ATR 17.8 pts) • <b style="color: #FFFFFF;">₹{best_intrinsic:.2f}</b> intrinsic cushion • <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{best_oi_chg:+.1f}%</b> {best_oi_narrative}
+                    Delta <b style="color: #38BDF8;">{abs(best_delta):.2f}</b> requires only <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{move_sign}{best_spot_move} pts</b> spot move to hit target (well within daily ATR) • <b style="color: #FFFFFF;">₹{best_intrinsic:.2f}</b> intrinsic cushion • <b style="color: {'#F87171' if is_pe_dominant else '#34D399'};">{best_oi_chg:+.1f}%</b> {best_oi_narrative}
                 </div>
                 <div style="font-size: 0.69rem; color: #94A3B8; margin-top: 5px;">
                     📡 <b>Source:</b> Black-Scholes Greeks (Delta/Intrinsic) & Groww Live Option Chain (0-Delay Stream)
@@ -7086,14 +7078,14 @@ if df is not None and not df.empty:
         # Build or reference active trade_plan for instant execution in Live Cockpit
         _cockpit_trade_plan = locals().get("trade_plan", None)
         if _cockpit_trade_plan is None:
-            _active_plan_ltp = live_broker_ltp if live_broker_ltp > 0 else (c1_live_ltp if atm_strike == lower_atm else c2_live_ltp) if ('c1_live_ltp' in locals() and 'lower_atm' in locals()) else 18.0
+            _active_plan_ltp = live_broker_ltp if live_broker_ltp > 0 else (c1_live_ltp if atm_strike == lower_atm else c2_live_ltp) if ('c1_live_ltp' in locals() and 'lower_atm' in locals()) else spec.default_call_price
             _var_greeks = MultiIndicatorMath.calculate_value_at_risk_and_greeks_neutrality(
                 spot=spot,
-                option_ltp=_active_plan_ltp if _active_plan_ltp > 0 else 18.0,
+                option_ltp=_active_plan_ltp if _active_plan_ltp > 0 else spec.default_call_price,
                 num_lots=kelly_recommended_lots,
                 lot_size=lot_size,
                 delta=0.52,
-                iv=float(latest.get('Parkinson_Vol', 21.0)) / 100.0,
+                iv=float(latest.get('Parkinson_Vol', spec.bsm_sigma * 100.0)) / 100.0,
                 dte=expiry_plan.get("dte", 30),
                 contract_type=recommended_contract_type if recommended_contract_type else "CE",
                 confidence_level=0.99
@@ -7163,7 +7155,7 @@ if df is not None and not df.empty:
                 "midday_penalty_active": midday_penalty_active,
                 "is_midday_chop_zone": is_midday_chop_zone,
                 "is_circuit_breaker_tripped": is_circuit_breaker_tripped,
-                "session_sl_count": st.session_state.get("session_sl_count", 0),
+                "session_sl_count": st.session_state.get(f"session_sl_count_{scrip_symbol}", st.session_state.get("session_sl_count", 0)),
                 "max_daily_sl_allowed": max_daily_sl_allowed,
                 "alpha_spread": alpha_spread,
                 "vix_scaler": vix_scaler,
@@ -7887,7 +7879,7 @@ if df is not None and not df.empty:
             k1_intrinsic = max(0.0, round(upper_atm - spot, 2))
             k1_oi_chg = high_data['put_oi_change_pct']
             k1_oi_lots = high_data['put_oi_lots']
-            k1_b1 = f'<b style="color: #FFFFFF;">Delta Efficiency ({k1_delta_val:.2f}):</b> Requires only <b style="color: #F87171;">-{k1_spot_move:.1f} pts</b> spot drop to hit +{target_pts:.1f} pts target (within daily ATR 17.8 pts).'
+            k1_b1 = f'<b style="color: #FFFFFF;">Delta Efficiency ({k1_delta_val:.2f}):</b> Requires only <b style="color: #F87171;">-{k1_spot_move:.1f} pts</b> spot drop to hit +{target_pts:.1f} pts target (well within daily ATR).'
             k1_b2 = f'<b style="color: #FFFFFF;">Intrinsic Buffer (₹{k1_intrinsic:.2f}):</b> In-the-money cushion protects against pure theta time decay.'
             k1_b3 = f'<b style="color: #FFFFFF;">Downside Velocity Catalyst:</b> <b style="color: #F87171;">{k1_oi_chg:+.1f}%</b> institutional put writing support creates powerful downside acceleration.'
 
@@ -7944,7 +7936,7 @@ if df is not None and not df.empty:
             k1_intrinsic = low_data['intrinsic_ce']
             k1_oi_chg = low_data['call_oi_change_pct']
             k1_oi_lots = low_data['call_oi_lots']
-            k1_b1 = f'<b style="color: #FFFFFF;">Delta Efficiency ({k1_delta_val}):</b> Requires only <b style="color: #34D399;">+{k1_spot_move} pts</b> spot move to hit +{target_pts:.1f} pts target (within daily ATR 17.8 pts).'
+            k1_b1 = f'<b style="color: #FFFFFF;">Delta Efficiency ({k1_delta_val}):</b> Requires only <b style="color: #34D399;">+{k1_spot_move} pts</b> spot move to hit +{target_pts:.1f} pts target (well within daily ATR).'
             k1_b2 = f'<b style="color: #FFFFFF;">Intrinsic Buffer (₹{k1_intrinsic:.2f}):</b> In-the-money cushion protects against pure theta time decay.'
             k1_b3 = f'<b style="color: #FFFFFF;">Short Squeeze Catalyst:</b> <b style="color: #34D399;">{k1_oi_chg:+.1f}%</b> surge in {k1_oi_lots:,} lots creates explosive short-covering fuel.'
 
@@ -8056,11 +8048,11 @@ if df is not None and not df.empty:
         active_plan_ltp = live_broker_ltp if live_broker_ltp > 0 else (c1_live_ltp if atm_strike == lower_atm else c2_live_ltp)
         var_greeks_app = MultiIndicatorMath.calculate_value_at_risk_and_greeks_neutrality(
             spot=spot,
-            option_ltp=active_plan_ltp if active_plan_ltp > 0 else 18.0,
+            option_ltp=active_plan_ltp if active_plan_ltp > 0 else spec.default_call_price,
             num_lots=kelly_recommended_lots,
             lot_size=lot_size,
             delta=0.52,
-            iv=float(latest.get('Parkinson_Vol', 21.0)) / 100.0,
+            iv=float(latest.get('Parkinson_Vol', spec.bsm_sigma * 100.0)) / 100.0,
             dte=expiry_plan.get("dte", 30),
             contract_type=recommended_contract_type if recommended_contract_type else "CE",
             confidence_level=0.99
@@ -8133,7 +8125,7 @@ if df is not None and not df.empty:
             "is_midday_chop_zone": is_midday_chop_zone,
             # Institutional Integrations: Circuit Breaker, Alpha Divergence, VIX Scaler
             "is_circuit_breaker_tripped": is_circuit_breaker_tripped,
-            "session_sl_count": st.session_state.get("session_sl_count", 0),
+            "session_sl_count": st.session_state.get(f"session_sl_count_{scrip_symbol}", st.session_state.get("session_sl_count", 0)),
             "max_daily_sl_allowed": max_daily_sl_allowed,
             "alpha_spread": alpha_spread,
             "vix_scaler": vix_scaler,

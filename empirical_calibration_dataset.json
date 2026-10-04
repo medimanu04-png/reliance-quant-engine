@@ -26486,36 +26486,5 @@
     "outcome": null,
     "target_hit": null,
     "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-04T01:36:14.402675+05:30",
-    "dominant_score": 72.8,
-    "bullish_score": 72.8,
-    "bearish_score": 29.8,
-    "win_expectancy_pct": 58.0,
-    "is_tradable": false,
-    "intraday_regime": "TRENDING_REGIME",
-    "vector_scores": {
-      "v1_bull": 12.5,
-      "v1_bear": 1.5,
-      "v2_bull": 15.5,
-      "v2_bear": 3.5,
-      "v3_bull": 2.0,
-      "v3_bear": 1.0,
-      "v4_bull": 12.5,
-      "v4_bear": 10.5,
-      "v5_bull": 12.0,
-      "v5_bear": 2.0,
-      "v6_bull": 12.0,
-      "v6_bear": 10.0,
-      "macro_bull": 2.0,
-      "macro_bear": -2.0,
-      "raw_bull": 70.97,
-      "raw_bear": 24.97,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 3.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd"
+  }
+]

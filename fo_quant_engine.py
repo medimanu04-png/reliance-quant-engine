@@ -5706,7 +5706,7 @@ class UltraHighConvictionRelianceEngine:
 
         # ATM Straddle Expected Move Corridor
         straddle_p, exp_upper, exp_lower, exp_move_pts, straddle_regime = MultiIndicatorMath.calculate_atm_straddle_expected_move(
-            spot, opt_telemetry.get("call_ltp", 18.5), opt_telemetry.get("put_ltp", 18.5)
+            spot, opt_telemetry.get("call_ltp", active_spec.default_call_price), opt_telemetry.get("put_ltp", active_spec.default_put_price)
         )
         if straddle_regime == "SQUEEZE_EXPANSION_OUTSIDE_EXPECTED_MOVE":
             v4_bull += 2.0  # Dealers forced to delta-hedge long gamma
@@ -6453,15 +6453,21 @@ class UltraHighConvictionRelianceEngine:
                 with open(_journal_path, "r", encoding="utf-8") as _jf:
                     _journal_data = json.load(_jf)
                 if isinstance(_journal_data, list):
+                    sym_kw = "ADANI" if active_sym == "ADANIENT" else active_sym
                     _trade_pnls.extend([
                         float(t.get("net_pnl", t.get("realised_pnl", 0.0)))
                         for t in _journal_data if t.get("is_closed", False)
+                        and (
+                            sym_kw in str(t.get("trading_symbol", "")).upper()
+                            or sym_kw in str(t.get("instrument", "")).upper()
+                            or str(t.get("symbol", "")).upper() == active_sym
+                        )
                     ])
         except Exception:
             pass
 
         try:
-            if os.path.exists(_calib_path):
+            if os.path.exists(_calib_path) and active_sym == "RELIANCE":
                 with open(_calib_path, "r", encoding="utf-8") as _cf:
                     _calib_data = json.load(_cf)
                 if isinstance(_calib_data, list):
