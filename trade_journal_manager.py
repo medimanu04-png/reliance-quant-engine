@@ -292,7 +292,8 @@ class TradeJournalManager:
             return []
 
         if symbol:
-            sym_clean = "ADANI" if "ADANI" in symbol.upper() else ("RELIANCE" if "RELIANCE" in symbol.upper() else symbol.upper())
+            sym_canon = resolve_symbol(symbol)
+            sym_clean = "ADANI" if sym_canon == "ADANIENT" else sym_canon
             matching = [
                 e for e in raw_entries
                 if sym_clean in str(e.get("trading_symbol", "")).upper() or sym_clean in str(e.get("instrument", "")).upper()
@@ -411,7 +412,8 @@ class TradeJournalManager:
         current_entries = cls._load_raw_entries()
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         today_day = datetime.now(IST).strftime("%A")
-        sym_kw = "ADANI" if (symbol_filter and "ADANI" in symbol_filter.upper()) else "RELIANCE"
+        sym_canon = resolve_symbol(symbol_filter)
+        sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
 
         # Deduplicate existing entries strictly by unique trade ID
         unique_entries = {}
@@ -699,7 +701,8 @@ class ShadowMonitoringEngine:
             records = cls._bootstrap_from_existing()
 
         if symbol:
-            sym_kw = "ADANI" if "ADANI" in symbol.upper() else "RELIANCE"
+            sym_canon = resolve_symbol(symbol)
+            sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
             return [
                 r for r in records
                 if sym_kw in str(r.get("symbol", "")).upper() or sym_kw in str(r.get("instrument", "")).upper()
@@ -2179,8 +2182,9 @@ class SequentialTradeEngine:
         Trade # | Instrument | Planned Entry | Actual Groww Entry | Executed (Yes/No) | SL | Target | Status (Open / Target Hit / SL Hit) | P&L
         """
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        sym_kw = "ADANI" if (symbol and "ADANI" in symbol.upper()) else "RELIANCE"
-        journal = TradeJournalManager.load_journal(symbol=sym_kw)
+        sym_canon = resolve_symbol(symbol)
+        sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
+        journal = TradeJournalManager.load_journal(symbol=sym_canon)
 
         # Strictly trades for this symbol for today
         today_trades = [
