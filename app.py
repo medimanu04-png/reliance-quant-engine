@@ -2022,8 +2022,8 @@ else:
 
 time_gate_allowed = time_gate_pass
 
-# Circuit Breaker Status
-is_circuit_breaker_tripped = st.session_state.get("session_sl_count", 0) >= max_daily_sl_allowed
+# Circuit Breaker Status (Scoped strictly per Desk)
+is_circuit_breaker_tripped = st.session_state.get(f"session_sl_count_{scrip_symbol}", 0) >= max_daily_sl_allowed
 
 # Simulation flags & Mode Resolution
 is_live_flow = (sim_scenario == "🟢 Live Market Flow")
@@ -6453,10 +6453,10 @@ if df is not None and not df.empty:
                 st.rerun()
 
             act_entry = float(active_trade.get("actual_entry", active_trade.get("planned_entry", 30.0)))
-            target_p = float(active_trade.get("target", act_entry + 10.0))
-            sl_p = float(active_trade.get("sl", act_entry - 4.5))
+            target_p = float(active_trade.get("target", act_entry + scrip_target_pts))
+            sl_p = float(active_trade.get("sl", max(0.05, act_entry - scrip_sl_pts)))
             trail_sl = float(active_trade.get("trailing_sl", sl_p))
-            qty_val = int(active_trade.get("qty", 1000))
+            qty_val = int(active_trade.get("qty", scrip_total_qty))
             unreal_pnl = round((active_ltp - act_entry) * qty_val, 2)
             pnl_col = "#10B981" if unreal_pnl >= 0 else "#EF4444"
             pnl_sign = "+" if unreal_pnl >= 0 else ""
@@ -6492,7 +6492,7 @@ if df is not None and not df.empty:
                             {active_trade.get('instrument', active_contract)}
                         </div>
                         <div style="font-size: 0.74rem; color: #38BDF8; margin-top: 2px;">
-                            Qty: {qty_val:,} ({active_trade.get('num_lots', 2)} Lots)
+                            Qty: {qty_val:,} ({active_trade.get('num_lots', scrip_lots_count)} Lots)
                         </div>
                     </div>
 
@@ -6799,8 +6799,14 @@ if df is not None and not df.empty:
                     st.caption(f"Strict Sequential Mode: Clicking will propose Trade #{next_t_num} and request Groww execution verification.")
                 with prop_c2:
                     if st.button(f"🚀 Arm & Propose Trade #{next_t_num}", use_container_width=True):
+                        try:
+                            clean_exp = str(expiry_date_str).split()[0].replace("-", " ")
+                            dt_exp = datetime.strptime(clean_exp, "%d %b %Y")
+                            exp_code = dt_exp.strftime("%y%b").upper()
+                        except Exception:
+                            exp_code = "26OCT"
                         SequentialTradeEngine.propose_trade(
-                            contract=f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}",
+                            contract=f"{scrip_symbol}{exp_code}{atm_strike}{recommended_contract_type}",
                             instrument=rec_instrument,
                             planned_entry=float(estimated_premium),
                             sl=float(sl_premium),
@@ -8686,7 +8692,7 @@ if df is not None and not df.empty:
                                 sl=m_sl,
                                 target=m_target,
                                 direction=m_action,
-                                expiry=expiry_date_str if 'expiry_date_str' in locals() else "27-OCT-2026",
+                                expiry=expiry_date_str if 'expiry_date_str' in locals() else active_mandate_expiry,
                                 confluence=m_confluence,
                                 qty=qty_calc,
                                 num_lots=int(m_lots),
@@ -8785,6 +8791,10 @@ if df is not None and not df.empty:
                 else:
                     conf_str = "—"
 
+                spec_r = get_asset_spec(symbol=r.get("symbol") or scrip_symbol, contract=r.get("instrument"))
+                tgt_pts_val = r.get('target_pts') if r.get('target_pts') is not None else spec_r.target_pts
+                sl_pts_val = r.get('sl_pts') if r.get('sl_pts') is not None else spec_r.sl_pts
+
                 shadow_table_rows.append({
                     "Date": r.get("date"),
                     "Timestamp": r.get("timestamp"),
@@ -8792,8 +8802,8 @@ if df is not None and not df.empty:
                     "Action": r.get("action", "BUY"),
                     "Confluence Score": conf_str,
                     "Planned Entry": f"₹{float(r.get('entry', 0.0)):.2f}",
-                    "Target": f"₹{float(r.get('target', 0.0)):.2f} (+{r.get('target_pts', 10.0)})",
-                    "SL": f"₹{float(r.get('sl', 0.0)):.2f} (-{r.get('sl_pts', 4.5)})",
+                    "Target": f"₹{float(r.get('target', 0.0)):.2f} (+{tgt_pts_val})",
+                    "SL": f"₹{float(r.get('sl', 0.0)):.2f} (-{sl_pts_val})",
                     "User Executed": user_exec,
                     "Actual Entry (Groww)": act_e_str,
                     "Actual Exit (Groww)": act_x_str,
@@ -8974,6 +8984,12 @@ if df is not None and not df.empty:
 
                         c_given, c_taken, c_audit = st.columns([1.1, 1.2, 1.1])
 
+                        spec_ent = get_asset_spec(symbol=entry.get('symbol') or scrip_symbol, contract=entry.get('trading_symbol') or entry.get('instrument'))
+                        def_ent_tgt = entry.get('suggested_target_pts', spec_ent.target_pts)
+                        def_ent_sl = entry.get('suggested_sl_pts', spec_ent.sl_pts)
+                        def_ent_lots = entry.get('num_lots', spec_ent.default_lots)
+                        def_ent_qty = entry.get('qty', spec_ent.lot_size * def_ent_lots)
+
                         with c_given:
                             st.markdown(f"""
                             <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; height: 100%;">
@@ -8984,8 +9000,8 @@ if df is not None and not df.empty:
                                     • <b>Time Given:</b> <span style="color: #FFFFFF;">{entry.get('trade_given_time', '09:15:00 AM IST')}</span><br>
                                     • <b>Contract:</b> <span style="color: #38BDF8; font-weight: 700;">{entry.get('suggested_contract', entry.get('trading_symbol'))}</span><br>
                                     • <b>Suggested Entry:</b> ₹{entry.get('suggested_entry', 0.0):.2f}<br>
-                                    • <b>Suggested Exit:</b> ₹{entry.get('suggested_exit', 0.0):.2f} (+{entry.get('suggested_target_pts', 10.0)} pts)<br>
-                                    • <b>Suggested Stop Loss:</b> ₹{entry.get('suggested_sl', 0.0):.2f} (-{entry.get('suggested_sl_pts', 4.5)} pts)<br>
+                                    • <b>Suggested Exit:</b> ₹{entry.get('suggested_exit', 0.0):.2f} (+{def_ent_tgt} pts)<br>
+                                    • <b>Suggested Stop Loss:</b> ₹{entry.get('suggested_sl', 0.0):.2f} (-{def_ent_sl} pts)<br>
                                     • <b>Confluence Score:</b> {entry.get('confluence_score', 0.0):.1f}%
                                 </div>
                             </div>
@@ -9003,7 +9019,7 @@ if df is not None and not df.empty:
                                 <div style="font-size: 0.80rem; color: #CBD5E1; line-height: 1.6;">
                                     • <b>Actual Entry:</b> <b style="color: #FFFFFF;">₹{entry.get('actual_entry_price', entry.get('entry_price', 0.0)):.2f}</b> @ {entry.get('actual_entry_time', 'N/A')}<br>
                                     • <b>Actual Exit:</b> <b style="color: #FFFFFF;">₹{entry.get('actual_exit_price', entry.get('exit_price', 0.0)):.2f}</b> @ {entry.get('actual_exit_time') or 'Holding (Live Open)'}<br>
-                                    • <b>Traded Qty:</b> {entry.get('qty', 1000):,} units ({entry.get('num_lots', 2)} Lots)<br>
+                                    • <b>Traded Qty:</b> {def_ent_qty:,} units ({def_ent_lots} Lots)<br>
                                     • <b>Capital Deployed:</b> ₹{entry.get('capital_deployed', 0.0):,.2f}<br>
                                     • <b>Entry Slippage:</b> <span style="color: {slip_col}; font-weight: 700;">{slip_sign}{slip:.2f} pts</span><br>
                                     • <b>Broker Sync:</b> Verified Groww Live API Fill
@@ -9115,6 +9131,10 @@ if df is not None and not df.empty:
                 tot_c = float(entry.get("total_cash", all_summary_kpi['starting_capital']))
                 has_ss = "✅ Attached" if (entry.get("screenshot") or entry.get("screenshot_data_uri")) else "❌ None"
 
+                spec_row = get_asset_spec(symbol=entry.get('symbol') or scrip_symbol, contract=entry.get('trading_symbol') or entry.get('instrument'))
+                e_lots = entry.get('num_lots', spec_row.default_lots)
+                e_qty = entry.get('qty', spec_row.lot_size * e_lots)
+
                 display_rows.append({
                     "Date": entry.get("date"),
                     "Given Time": entry.get("trade_given_time", "09:15:00 AM IST"),
@@ -9124,7 +9144,7 @@ if df is not None and not df.empty:
                     "Sugg SL": f"₹{entry.get('suggested_sl', 0.0):.2f}",
                     "Actual Entry": f"₹{entry.get('actual_entry_price', entry.get('entry_price', 0.0)):.2f} ({entry.get('actual_entry_time', '')})",
                     "Actual Exit": f"₹{entry.get('actual_exit_price', entry.get('exit_price', 0.0)):.2f} ({entry.get('actual_exit_time', 'OPEN')})",
-                    "Traded Qty": f"{entry.get('qty', 1000):,} ({entry.get('num_lots', 2)}L)",
+                    "Traded Qty": f"{e_qty:,} ({e_lots}L)",
                     "Total Profit": f"+₹{pnl:,.2f}" if pnl >= 0 else f"-₹{abs(pnl):,.2f}",
                     "Trade ROI %": f"+{roi:.1f}%" if roi >= 0 else f"{roi:.1f}%",
                     "Status": outcome_badge,
@@ -9176,6 +9196,8 @@ if df is not None and not df.empty:
                     m_notes = st.text_input("Audit Notes", value="Manual Trade Adjustment")
                     m_submit = st_form_submit_button_stretch("💾 Save Trade Record")
                     if m_submit:
+                        spec_m = get_asset_spec(symbol=scrip_symbol, contract=m_sym)
+                        m_lot_sz = spec_m.lot_size
                         rec = {
                             "date": m_date.strftime("%Y-%m-%d"),
                             "day": m_date.strftime("%A"),
@@ -9188,17 +9210,17 @@ if df is not None and not df.empty:
                             "trade_given_time": "09:15:00 AM IST",
                             "suggested_contract": m_sym,
                             "suggested_entry": float(m_entry),
-                            "suggested_exit": round(float(m_entry + 10.0), 2),
-                            "suggested_sl": round(float(max(0.05, m_entry - 4.5)), 2),
-                            "suggested_target_pts": 10.0,
-                            "suggested_sl_pts": 4.5,
+                            "suggested_exit": round(float(m_entry + spec_m.target_pts), 2),
+                            "suggested_sl": round(float(max(0.05, m_entry - spec_m.sl_pts)), 2),
+                            "suggested_target_pts": spec_m.target_pts,
+                            "suggested_sl_pts": spec_m.sl_pts,
                             "actual_entry_time": datetime.now(IST).strftime("%I:%M:%S %p IST"),
                             "actual_entry_price": float(m_entry),
                             "entry_price": float(m_entry),
                             "actual_exit_time": datetime.now(IST).strftime("%I:%M:%S %p IST") if m_status != "OPEN" else "",
                             "actual_exit_price": float(m_exit),
-                            "num_lots": max(1, round(m_qty / st.session_state.get("lot_size", 250))),
-                            "lot_size": st.session_state.get("lot_size", 250),
+                            "num_lots": max(1, round(m_qty / m_lot_sz)),
+                            "lot_size": m_lot_sz,
                             "qty": int(m_qty),
                             "capital_deployed": round(float(m_entry) * m_qty, 2),
                             "realised_pnl": float(m_pnl),

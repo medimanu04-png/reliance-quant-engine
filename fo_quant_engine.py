@@ -4852,6 +4852,7 @@ class UltraHighConvictionRelianceEngine:
         spot = c5m["close"][-1]
         active_spec = get_asset_spec(symbol or getattr(self, "symbol", "RELIANCE"))
         active_sym = active_spec.symbol
+        active_risk = RelianceRiskBudget.for_symbol(active_sym)
         is_adani = (active_sym == "ADANIENT")
 
         # VECTOR 1: Multi-Timeframe Trend & ORB-15 Structure (20 pts)
@@ -5331,7 +5332,7 @@ class UltraHighConvictionRelianceEngine:
 
         # Stand down if option bid-ask spread exceeds asset risk threshold (prevents spread slippage losses on 1 lot)
         opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
-        max_allowed_spread = 2.5 if active_sym in ("NIFTY", "SENSEX") else (0.80 if is_adani else 0.35)
+        max_allowed_spread = float(active_spec.spread_threshold)
         spread_stand_down = (opt_spread > max_allowed_spread) and not is_synthetic_feed
 
         # Corwin-Schultz (2012) High-Low Effective Spread Estimator -> Cluster C
@@ -5573,7 +5574,9 @@ class UltraHighConvictionRelianceEngine:
             pass
 
         # Dynamically adapt Target and SL based on 15m ATR, Delta and India VIX regime
-        self.risk.adapt_to_volatility(atr_15m, delta=0.52, india_vix=india_vix)
+        active_risk.adapt_to_volatility(atr_15m, delta=0.52, india_vix=india_vix)
+        if active_sym == getattr(self, "symbol", "RELIANCE"):
+            self.risk.adapt_to_volatility(atr_15m, delta=0.52, india_vix=india_vix)
 
         # HAR-RV Volatility Forecasting (Corsi 2009) — Multi-horizon Realized Volatility
         har_rv_forecast, har_rv_regime = MultiIndicatorMath.calculate_har_rv(
@@ -5589,12 +5592,15 @@ class UltraHighConvictionRelianceEngine:
             intraday_gk_rv=har_rv_forecast,
             delta=0.52,
             horizon_minutes=45,
-            base_target_pts=self.risk.target_pts,
-            base_sl_pts=self.risk.stop_loss_pts,
+            base_target_pts=active_risk.target_pts,
+            base_sl_pts=active_risk.stop_loss_pts,
             reward_risk_ratio=2.14
         )
-        self.risk.target_pts = dyn_tgt_barrier
-        self.risk.stop_loss_pts = dyn_sl_barrier
+        active_risk.target_pts = dyn_tgt_barrier
+        active_risk.stop_loss_pts = dyn_sl_barrier
+        if active_sym == getattr(self, "symbol", "RELIANCE"):
+            self.risk.target_pts = dyn_tgt_barrier
+            self.risk.stop_loss_pts = dyn_sl_barrier
 
 
         v4_bull = 0.0
@@ -5931,7 +5937,7 @@ class UltraHighConvictionRelianceEngine:
         # Options Time Value Decay Acceleration Guard (Suggestion 9)
         opt_ref_ltp = float(opt_telemetry.get("call_ltp", 18.0))
         is_theta_safe, theta_drag_rs_per_hr, theta_guard_desc = MultiIndicatorMath.calculate_theta_acceleration_guard(
-            current_time=current_time, unrealized_pnl_pts=0.0, option_ltp=opt_ref_ltp, iv=iv, dte=dte_val, lot_size=self.risk.lot_size
+            current_time=current_time, unrealized_pnl_pts=0.0, option_ltp=opt_ref_ltp, iv=iv, dte=dte_val, lot_size=active_spec.lot_size
         )
         if not is_theta_safe:
             v6_bull = max(0.0, v6_bull - 3.0)
@@ -6201,8 +6207,8 @@ class UltraHighConvictionRelianceEngine:
             kyle_lambda=curr_lambda,
             amihud_illiquidity=float(amihud_val),
             bid_ask_spread=float(opt_spread),
-            order_size_lots=self.risk.num_lots,
-            lot_size=self.risk.lot_size
+            order_size_lots=active_risk.num_lots,
+            lot_size=active_risk.lot_size
         )
 
 
@@ -6262,7 +6268,7 @@ class UltraHighConvictionRelianceEngine:
             tier_rating = "TIER 4 (STAND DOWN / CAPITAL PRESERVATION)"
 
         # Multi-Day Virgin VWAP Liquidity Magnets (Recommendation 5: Dalbar / Auction Market Theory)
-        target_spot_delta = (self.risk.target_pts / delta_ce) if recommended_type == "CE" else -(self.risk.target_pts / delta_pe)
+        target_spot_delta = (active_risk.target_pts / delta_ce) if recommended_type == "CE" else -(active_risk.target_pts / delta_pe)
         estimated_target_spot = spot + target_spot_delta
         # Approximate historical daily VWAP levels around spot (e.g. W-AVWAP, Prior Day pivots)
         prior_vwaps = [w_avwap, (pdh_val + pdl_val + pdc_val) / 3.0]
@@ -6359,11 +6365,11 @@ class UltraHighConvictionRelianceEngine:
         active_data = low_data if atm_strike == lower_atm else high_data
         current_option_ltp = active_data["call_ltp"] if recommended_type == "CE" else active_data["put_ltp"]
         entry_premium = round(current_option_ltp + 1.20, 2)
-        limit_entry_premium = round(entry_premium + self.risk.limit_collar_pts, 2)
-        contract_name = f"{self.symbol} {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | {self.risk.num_lots} Lot / {self.risk.total_quantity} Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
-        tp_premium = round(entry_premium + self.risk.target_pts, 2)
-        sl_premium = round(entry_premium - self.risk.stop_loss_pts, 2)
-        sl_limit_collar = round(sl_premium - self.risk.limit_collar_pts, 2)
+        limit_entry_premium = round(entry_premium + active_risk.limit_collar_pts, 2)
+        contract_name = f"{active_sym} {atm_strike} {recommended_type} ({expiry_date_str}) [🏆 Quantitative Best Strike of Dual ATM Corridor Rs. {lower_atm}/Rs. {upper_atm}] | {active_risk.num_lots} Lot / {active_risk.total_quantity} Qty | Current Price: Rs. {current_option_ltp:.2f} (Spot: Rs. {spot:.2f})"
+        tp_premium = round(entry_premium + active_risk.target_pts, 2)
+        sl_premium = round(entry_premium - active_risk.stop_loss_pts, 2)
+        sl_limit_collar = round(sl_premium - active_risk.limit_collar_pts, 2)
 
         # Defined-Risk Debit Spread Recommendation (ATM Long + OTM Short Hedge)
         spread_step = active_spec.strike_step * 2
@@ -6374,8 +6380,8 @@ class UltraHighConvictionRelianceEngine:
             short_ltp = float(otm_row.get("call_ltp", current_option_ltp * 0.45)) if otm_row else round(current_option_ltp * 0.45, 2)
             net_debit = round(max(0.5, current_option_ltp - short_ltp), 2)
             max_spread_profit_pts = round(spread_step - net_debit, 2)
-            spread_max_profit_rs = round(max_spread_profit_pts * self.risk.total_quantity, 2)
-            spread_max_loss_rs = round(net_debit * self.risk.total_quantity, 2)
+            spread_max_profit_rs = round(max_spread_profit_pts * active_risk.total_quantity, 2)
+            spread_max_loss_rs = round(net_debit * active_risk.total_quantity, 2)
             spread_name = f"BULL CALL DEBIT SPREAD (+1 {atm_strike} CE @ Rs. {current_option_ltp:.2f} / -1 {otm_strike} CE @ Rs. {short_ltp:.2f})"
         else:
             otm_strike = atm_strike - spread_step
@@ -6383,8 +6389,8 @@ class UltraHighConvictionRelianceEngine:
             short_ltp = float(otm_row.get("put_ltp", current_option_ltp * 0.45)) if otm_row else round(current_option_ltp * 0.45, 2)
             net_debit = round(max(0.5, current_option_ltp - short_ltp), 2)
             max_spread_profit_pts = round(spread_step - net_debit, 2)
-            spread_max_profit_rs = round(max_spread_profit_pts * self.risk.total_quantity, 2)
-            spread_max_loss_rs = round(net_debit * self.risk.total_quantity, 2)
+            spread_max_profit_rs = round(max_spread_profit_pts * active_risk.total_quantity, 2)
+            spread_max_loss_rs = round(net_debit * active_risk.total_quantity, 2)
             spread_name = f"BEAR PUT DEBIT SPREAD (+1 {atm_strike} PE @ Rs. {current_option_ltp:.2f} / -1 {otm_strike} PE @ Rs. {short_ltp:.2f})"
 
         debit_spread_rec = {
@@ -6397,7 +6403,7 @@ class UltraHighConvictionRelianceEngine:
             "max_reward_rupees": spread_max_profit_rs,
             "hedged_against_theta": True,
             "hedged_against_iv_crush": True,
-            "recommended_allocation": f"{self.risk.num_lots} Lot ({self.risk.total_quantity} Units)"
+            "recommended_allocation": f"{active_risk.num_lots} Lot ({active_risk.total_quantity} Units)"
         }
 
         if is_synthetic_feed:
@@ -6405,7 +6411,7 @@ class UltraHighConvictionRelianceEngine:
         elif auto_sq_active:
             status_text = "POST-MARKET / AUTO SQUARE-OFF (15:05 PM IST) — CAPITAL PRESERVED"
         elif spread_stand_down:
-            status_text = f"STAND DOWN — WIDE BID-ASK SPREAD (Spread Rs. {opt_spread:.2f} > Rs. 0.35 threshold)"
+            status_text = f"STAND DOWN — WIDE BID-ASK SPREAD (Spread Rs. {opt_spread:.2f} > Rs. {max_allowed_spread:.2f} threshold)"
         elif is_tradable:
             status_text = f"TRADABLE DAY / ACTIVE {dominant_side} SETUP [{tier_rating}]"
         elif is_choppy_regime:
@@ -6434,7 +6440,7 @@ class UltraHighConvictionRelianceEngine:
 
         # Mathematical Expected Value (EV in R-Multiples):
         # EV = (Win Rate * Reward) - (Loss Rate * Risk)
-        rr_ratio = self.risk.target_pts / self.risk.stop_loss_pts if self.risk.stop_loss_pts > 0 else 2.22
+        rr_ratio = active_risk.target_pts / active_risk.stop_loss_pts if active_risk.stop_loss_pts > 0 else 2.22
         expected_value_r = round(((dominant_win_exp / 100.0) * rr_ratio) - ((100.0 - dominant_win_exp) / 100.0), 2)
 
         # Automated Walk-Forward Kelly Updating via Realized Trade Log (Upgrade 5)
@@ -6486,9 +6492,9 @@ class UltraHighConvictionRelianceEngine:
             trade_pnls=_trade_pnls,
             win_rate=effective_win_rate,
             reward_risk_ratio=effective_rr,
-            capital=73643.72,
+            capital=active_spec.total_capital,
             atr=atr_15m,
-            lot_size=self.risk.lot_size
+            lot_size=active_spec.lot_size
         )
         if not is_energy_coupled and kelly_lots > 1:
             kelly_lots = 1
@@ -6500,7 +6506,7 @@ class UltraHighConvictionRelianceEngine:
             spot=spot,
             option_ltp=current_option_ltp if current_option_ltp > 0 else 18.0,
             num_lots=kelly_lots,
-            lot_size=self.risk.lot_size,
+            lot_size=active_spec.lot_size,
             delta=active_delta,
             iv=iv,
             dte=dte_val,
@@ -6515,10 +6521,10 @@ class UltraHighConvictionRelianceEngine:
             bid_qty=int(opt_telemetry.get("bid_qty", 1000)),
             ask_qty=int(opt_telemetry.get("ask_qty", 1000)),
             target_lots=kelly_lots,
-            lot_size=self.risk.lot_size,
+            lot_size=active_spec.lot_size,
             urgency="COLLAR_TRIGGER" if is_tradable else "PASSIVE",
             entry_trigger=entry_premium,
-            max_collar_pts=self.risk.limit_collar_pts
+            max_collar_pts=active_risk.limit_collar_pts
         )
 
         # Tiered Automated Trailing Breakeven Escalator Guidelines
@@ -6539,8 +6545,8 @@ class UltraHighConvictionRelianceEngine:
         lock_profit_sl = round(entry_premium + (be_pts_offset - 0.50), 2)
 
         target_text = (
-            f"TARGET: Rs. {tp_premium:.2f} (+{self.risk.target_pts:.1f} pts | Gross +Rs. {self.risk.target_reward_rupees:,.0f} | Net ~Rs. {self.risk.net_target_reward_rupees:,.0f}) | "
-            f"STOP LOSS: Rs. {sl_premium:.2f} (-{self.risk.stop_loss_pts:.1f} pts | Gross -Rs. {self.risk.max_risk_rupees:,.0f} | Net ~Rs. {self.risk.net_max_risk_rupees:,.0f}) "
+            f"TARGET: Rs. {tp_premium:.2f} (+{active_risk.target_pts:.1f} pts | Gross +Rs. {active_risk.target_reward_rupees:,.0f} | Net ~Rs. {active_risk.net_target_reward_rupees:,.0f}) | "
+            f"STOP LOSS: Rs. {sl_premium:.2f} (-{active_risk.stop_loss_pts:.1f} pts | Gross -Rs. {active_risk.max_risk_rupees:,.0f} | Net ~Rs. {active_risk.net_max_risk_rupees:,.0f}) "
             f"[Order: SL-LMT Trigger {entry_premium:.2f} / Limit {limit_entry_premium:.2f} | Pegged Limit: Rs. {pegged_routing['pegged_limit_price']:.2f} | Routing: {pegged_routing['routing_mode']}] "
             f"🛡️ [Breakeven Escalator: 1) At +{be_pts_offset:.1f} pts (Rs. {breakeven_trigger_price:.2f}) -> Move SL to Cost Rs. {breakeven_sl:.2f} (Risk-Free!) | 2) At +{lock_pts_offset:.1f} pts (Rs. {lock_profit_trigger_price:.2f}) -> Lock SL to Rs. {lock_profit_sl:.2f}] {be_escalator_note} "
             f"📊 [VaR 99%: Rs. {var_greeks['var_99_rupees']:,.0f} | Delta Eqv: {var_greeks['portfolio_delta_shares']:+.1f} Sh | {var_greeks['neutrality_regime']}]"
@@ -6549,7 +6555,7 @@ class UltraHighConvictionRelianceEngine:
         )
 
         res = {
-            "1. SCRIP NAME": f"{self.symbol} (NSE: {self.symbol})",
+            "1. SCRIP NAME": f"{active_sym} (NSE: {active_sym})",
             "2. TRADE STATUS": status_text,
             "3. CONFLUENCE SCORE": f"{bullish_score}% Bullish (CE) / {bearish_score}% Bearish (PE) [Confluence: {dominant_score}/100 | Estimated Win Rate: {dominant_win_exp}% | {tier_rating}]",
             "4. RECOMMENDED INSTRUMENT": contract_name if is_tradable else "N/A — STAND DOWN",

@@ -990,6 +990,22 @@ class GrowwMarketFeed:
         spec = get_asset_spec(symbol=canon_sym)
         return spec.groww_company_slug, canon_sym
 
+    @staticmethod
+    def _resolve_official_expiry(symbol: str) -> str:
+        try:
+            from nse_data_fetcher import NSEIndiaFetcher
+            mandate = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=symbol)
+            if mandate and mandate.get("selected_expiry"):
+                return str(mandate["selected_expiry"])
+        except Exception:
+            pass
+        canon = resolve_symbol(symbol=symbol)
+        if canon == "NIFTY":
+            return "06-OCT-2026"
+        elif canon == "SENSEX":
+            return "08-OCT-2026"
+        return "27-OCT-2026"
+
     def _get_fallback_spot(self, underlying: str = "RELIANCE") -> Dict[str, Any]:
         canon_sym = resolve_symbol(symbol=underlying)
         if canon_sym == "ADANIENT":
@@ -1011,7 +1027,7 @@ class GrowwMarketFeed:
             "prev_close": spot_p,
             "volume": vol,
             "turnover_lakhs": round((vol * spot_p) / 100000.0, 2),
-            "official_expiry": "06-OCT-2026" if canon_sym == "NIFTY" else ("08-OCT-2026" if canon_sym == "SENSEX" else "27-OCT-2026"),
+            "official_expiry": self._resolve_official_expiry(canon_sym),
             "expiry_cycle": "Weekly Derivatives" if canon_sym in ("NIFTY", "SENSEX") else "Monthly Derivatives (NSE Mandate)",
             "fo_holidays": [],
             "raw_quote": None
@@ -1070,7 +1086,7 @@ class GrowwMarketFeed:
             "prev_close": 2816.80,
             "volume": 1420500,
             "turnover_lakhs": 40012.30,
-            "official_expiry": "27-OCT-2026",
+            "official_expiry": self._resolve_official_expiry("ADANIENT"),
             "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
             "fo_holidays": [],
             "raw_quote": None
@@ -1100,7 +1116,7 @@ class GrowwMarketFeed:
             "prev_close": 1171.20,
             "volume": 13138735,
             "turnover_lakhs": 160350.38,
-            "official_expiry": "27-OCT-2026",
+            "official_expiry": self._resolve_official_expiry("RELIANCE"),
             "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
             "fo_holidays": [],
             "raw_quote": None
@@ -1261,7 +1277,7 @@ class GrowwMarketFeed:
                         "total_buy_qty": total_buy,
                         "total_sell_qty": total_sell,
                         "turnover_lakhs": round((vol * ltp) / 100000.0, 2),
-                        "official_expiry": "27-OCT-2026",
+                        "official_expiry": self._resolve_official_expiry(underlying),
                         "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
                         "fo_holidays": [],
                         "raw_quote": q
@@ -1322,7 +1338,7 @@ class GrowwMarketFeed:
                         "total_buy_qty": 0,
                         "total_sell_qty": 0,
                         "turnover_lakhs": round((spec_item.volume_norm * ltp) / 100000.0, 2),
-                        "official_expiry": "06-OCT-2026" if idx_sym == "NIFTY" else "08-OCT-2026",
+                        "official_expiry": self._resolve_official_expiry(idx_sym),
                         "expiry_cycle": "Weekly Derivatives (NSE/BSE Mandate)",
                         "fo_holidays": [],
                         "raw_quote": pdata.get("raw")
@@ -1382,7 +1398,7 @@ class GrowwMarketFeed:
                     "total_buy_qty": total_buy_qty,
                     "total_sell_qty": total_sell_qty,
                     "turnover_lakhs": round((volume * ltp) / 100000.0, 2),
-                    "official_expiry": "27-OCT-2026",
+                    "official_expiry": self._resolve_official_expiry(underlying),
                     "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
                     "fo_holidays": [],
                     "raw_quote": d

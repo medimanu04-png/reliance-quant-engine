@@ -202,9 +202,11 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
         elif "net_profit" in e and e["net_profit"] is not None:
             net = float(e["net_profit"])
         elif e.get("status") == "HIT":
-            net = float(e.get("amount_captured", 10000.0))
+            def_cap = round(spec_entry.target_pts * qty, 2)
+            net = float(e.get("amount_captured", def_cap))
         elif e.get("status") == "FAIL":
-            net = -float(e.get("amount_lost", 9000.0))
+            def_lost = round(spec_entry.sl_pts * qty, 2)
+            net = -float(e.get("amount_lost", def_lost))
         else:
             net = 0.0
 
@@ -338,20 +340,41 @@ class TradeJournalManager:
 
         entries = [e for e in entries if not is_match(e)]
         entries.append(new_entry)
-        recalculated = recalculate_journal(entries, starting_cash)
-        cls.save_journal(recalculated)
-        return recalculated
+        
+        # Partition and recalculate cleanly per symbol to maintain independent capital & cumulative profit ledgers
+        by_symbol: Dict[str, List[Dict[str, Any]]] = {}
+        for e in entries:
+            sym_c = resolve_symbol(e.get("symbol") or e.get("trading_symbol") or e.get("instrument"))
+            by_symbol.setdefault(sym_c, []).append(e)
+        
+        all_recalculated = []
+        for sym_c, sym_entries in by_symbol.items():
+            sym_starting = get_asset_spec(sym_c).total_capital
+            all_recalculated.extend(recalculate_journal(sym_entries, sym_starting))
+            
+        all_recalculated.sort(key=lambda x: (x.get("date", ""), x.get("actual_entry_time", "")))
+        cls.save_journal(all_recalculated)
+        return all_recalculated
 
     @classmethod
     def delete_entry(cls, entry_id: str, starting_cash: float = None) -> List[Dict[str, Any]]:
         """Deletes trade record by ID or date across all assets."""
-        if starting_cash is None:
-            starting_cash = STARTING_CAPITAL
         entries = cls._load_raw_entries()
         entries = [e for e in entries if e.get("id") != entry_id and e.get("date") != entry_id]
-        recalculated = recalculate_journal(entries, starting_cash)
-        cls.save_journal(recalculated)
-        return recalculated
+        
+        by_symbol: Dict[str, List[Dict[str, Any]]] = {}
+        for e in entries:
+            sym_c = resolve_symbol(e.get("symbol") or e.get("trading_symbol") or e.get("instrument"))
+            by_symbol.setdefault(sym_c, []).append(e)
+            
+        all_recalculated = []
+        for sym_c, sym_entries in by_symbol.items():
+            sym_starting = get_asset_spec(sym_c).total_capital
+            all_recalculated.extend(recalculate_journal(sym_entries, sym_starting))
+            
+        all_recalculated.sort(key=lambda x: (x.get("date", ""), x.get("actual_entry_time", "")))
+        cls.save_journal(all_recalculated)
+        return all_recalculated
 
     @classmethod
     def reset_to_default(cls, starting_cash: float = None) -> List[Dict[str, Any]]:
@@ -627,18 +650,20 @@ class TradeJournalManager:
         total_lost = sum(e.get("amount_lost", 0.0) for e in entries)
         total_profit = total_captured - total_lost
         
-        starting_capital = starting_cash if (starting_cash is not None and starting_cash > 0) else STARTING_CAPITAL
-        total_cash = round(starting_capital + total_profit, 2)
-        
         # Today's required capital for configured lot count
         entry_sym = symbol
         if not entry_sym and entries:
             for e in entries:
-                c = str(e.get("contract", "") or e.get("symbol", "") or e.get("trading_symbol", ""))
-                if "ADANI" in c.upper():
-                    entry_sym = "ADANIENT"
+                c = str(e.get("contract", "") or e.get("symbol", "") or e.get("trading_symbol", "") or e.get("instrument", ""))
+                res = resolve_symbol(c)
+                if res:
+                    entry_sym = res
                     break
+        entry_sym = resolve_symbol(entry_sym or "RELIANCE")
         spec = get_asset_spec(symbol=entry_sym)
+        
+        starting_capital = starting_cash if (starting_cash is not None and starting_cash > 0) else spec.total_capital
+        total_cash = round(starting_capital + total_profit, 2)
         ref_prem = today_strike_price if (today_strike_price is not None and today_strike_price > 0) else spec.default_call_price
         today_2lot_capital = round(spec.default_lots * spec.lot_size * ref_prem, 2)
         
@@ -751,10 +776,11 @@ class ShadowMonitoringEngine:
                             status_raw = j.get("status", "HIT")
                             outcome = "Target Hit" if status_raw == "HIT" else ("Stop-Loss Hit" if status_raw == "FAIL" else "Active Monitoring")
                             has_verified_exec = bool(j.get("source") == "GROWW_VERIFIED" and (j.get("actual_entry_time") or j.get("screenshot")))
+                            j_date = j.get("date") or datetime.now(IST).strftime("%Y-%m-%d")
                             rec = {
-                                "id": j.get("id") or f"SIG-{j.get('date', '2026-09-29').replace('-', '')}-01-{sym}",
+                                "id": j.get("id") or f"SIG-{j_date.replace('-', '')}-01-{sym}",
                                 "timestamp": j.get("trade_given_time", "09:15:00 AM IST"),
-                                "date": j.get("date", "2026-09-29"),
+                                "date": j_date,
                                 "symbol": sym,
                                 "instrument": j.get("instrument") or j.get("suggested_contract") or sym,
                                 "action": j.get("type", "BUY PE" if "PE" in sym else "BUY CE"),
@@ -829,8 +855,13 @@ class ShadowMonitoringEngine:
             return None
 
         time_mins = _parse_mins(time_str)
+        target_canon = resolve_symbol(symbol)
         for r in records:
-            if r.get("date") == date_str and (r.get("symbol") == symbol or symbol in r.get("symbol", "") or r.get("symbol", "") in symbol):
+            r_sym_raw = str(r.get("symbol") or r.get("instrument") or "").strip()
+            if not r_sym_raw:
+                continue
+            r_canon = resolve_symbol(r_sym_raw)
+            if r.get("date") == date_str and r_canon == target_canon:
                 if r.get("shadow_status") == "Active Monitoring":
                     return r
                 r_mins = _parse_mins(r.get("timestamp"))
@@ -1627,7 +1658,7 @@ class SequentialTradeEngine:
             spec_fallback = get_asset_spec(symbol=active_sym)
             parsed_strike = int(digits[-1]) if digits else spec_fallback.default_strike
 
-        limit_entry = round(float(planned_entry) + 0.35, 2)
+        limit_entry = round(float(planned_entry) + float(spec.limit_collar_pts), 2)
         sl_val = round(float(sl), 2)
         hard_sl_pts = round((float(planned_entry) - sl_val) * 1.5, 2)
         hard_sl = round(max(0.05, float(planned_entry) - hard_sl_pts), 2)
