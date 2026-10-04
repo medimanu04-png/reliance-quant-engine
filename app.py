@@ -1493,7 +1493,7 @@ if active_route == "":
 
     with col_idx1:
         st.html(f"""
-        <a href="./Nifty?stock=Nifty" target="_self" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1528,7 +1528,7 @@ if active_route == "":
 
     with col_idx2:
         st.html(f"""
-        <a href="./Sensex?stock=Sensex" target="_self" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Sensex?stock=Sensex" target="_blank" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid rgba(168, 85, 247, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1570,7 +1570,7 @@ if active_route == "":
 
     with col_eq1:
         st.html(f"""
-        <a href="./Reliance?stock=Reliance" target="_self" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Reliance?stock=Reliance" target="_blank" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-reliance" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -1605,7 +1605,7 @@ if active_route == "":
 
     with col_eq2:
         st.html(f"""
-        <a href="./Adani?stock=Adani" target="_self" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Adani?stock=Adani" target="_blank" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-adani" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
