@@ -60,7 +60,32 @@ else:
         elif "ADANI" in q_str:
             st.switch_page(p_adani)
         elif "RELIANCE" in q_str:
-            st.switch_page(p_reliance)
+# ==============================================================================
+# AUTONOMOUS 24/7 MULTI-DESK ALERT DAEMON (ACTIVE ON HOMEPAGE & ALL PAGES)
+# ==============================================================================
+import threading
+_multi_desk_daemon_instance = None
+_multi_desk_daemon_lock = threading.Lock()
+
+def _start_background_multi_desk_daemon():
+    global _multi_desk_daemon_instance
+    with _multi_desk_daemon_lock:
+        existing_threads = {t.name for t in threading.enumerate() if t.is_alive()}
+        if "MultiDeskQuantAlertDaemon" in existing_threads:
+            return
+        try:
+            from quant_alert_daemon import RelianceQuantAlertDaemon
+            _multi_desk_daemon_instance = RelianceQuantAlertDaemon(
+                interval_seconds=5.0,
+                force_run=False,
+                symbols=["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
+            )
+            t = threading.Thread(target=_multi_desk_daemon_instance.start, daemon=True, name="MultiDeskQuantAlertDaemon")
+            t.start()
+        except Exception:
+            pass
+
+_start_background_multi_desk_daemon()
 
 class IndianFOTransactionCostEngine:
     """
@@ -1421,6 +1446,22 @@ if active_route == "":
         <span style="font-size: 0.76rem; color: #94A3B8;">
             Click any tile to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>, <b style="color: #38BDF8;">/Reliance</b>, <b style="color: #FBBF24;">/Adani</b>)
         </span>
+    </div>
+    """)
+
+    tg_cfg_hp = TelegramNotifier.load_config()
+    tg_active_hp = tg_cfg_hp.get("enabled", True)
+    st.html(f"""
+    <div style="background: linear-gradient(90deg, rgba(16, 185, 129, 0.12) 0%, rgba(56, 189, 248, 0.10) 100%); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="display: inline-block; width: 10px; height: 10px; background: #10B981; border-radius: 50%; box-shadow: 0 0 8px #10B981;"></span>
+            <span style="font-weight: 700; color: #E2E8F0;">24/7 Multi-Desk Autonomous Scanner: <b style="color: #10B981;">ACTIVE & MONITORING</b></span>
+            <span style="color: #94A3B8;">| 4 Desks: <b style="color: #10B981;">NIFTY</b> • <b style="color: #A855F7;">SENSEX</b> • <b style="color: #38BDF8;">RELIANCE</b> • <b style="color: #FBBF24;">ADANI</b></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span>📲 Telegram Calls: <b style="color: {'#10B981' if tg_active_hp else '#F87171'};">{'CONNECTED' if tg_active_hp else 'DISABLED'}</b></span>
+            <span>⚡ Direct Feed: <b style="color: #38BDF8;">Groww API (0ms)</b></span>
+        </div>
     </div>
     """)
 

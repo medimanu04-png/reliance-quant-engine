@@ -20,7 +20,7 @@ def main():
     print("=" * 75)
     print("🚀 LAUNCHING MULTI-ASSET QUANTITATIVE LIVE TRADING DESK")
     print("=" * 75)
-    print("Desk Targets   : RELIANCE (1,000 Qty / 2L) | ADANIENT (618 Qty / 2L)")
+    print("Desk Targets   : RELIANCE (1,000 Qty / 2L) | ADANIENT (618 Qty / 2L) | NIFTY (130 Qty / 2L) | SENSEX (40 Qty / 2L)")
     print("Trading Hours  : 09:15 AM - 03:30 PM IST")
     print("Confluence Gate: Score >= 68.0%")
     print("=" * 75)
@@ -51,7 +51,7 @@ def main():
         daemon = RelianceQuantAlertDaemon(
             interval_seconds=5.0,
             force_run="--now" in sys.argv,
-            symbols=["RELIANCE", "ADANIENT"]
+            symbols=["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
         )
         daemon.start()
     except KeyboardInterrupt:
