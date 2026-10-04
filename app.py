@@ -1603,8 +1603,9 @@ if active_route == "":
     </div>
     """)
 
-    tab_audit, tab_live, tab_downloads = st.tabs([
-        "📈 Empirical Backtest Audit (Jan - Sep 2026)",
+    tab_audit, tab_comp, tab_live, tab_downloads = st.tabs([
+        "📈 Empirical Backtest Audit (Original Preserved)",
+        "⚡ 4-Solution Comparative Audit (Before vs After)",
         "🟢 Live Trade Forward Desk (Oct 05, 2026 Onwards)",
         "🗂️ Audit Datasets & Reports"
     ])
@@ -1617,10 +1618,10 @@ if active_route == "":
             
             c_aud1, c_aud2 = st.columns([3, 1])
             with c_aud1:
-                st.caption("⚡ **Interactive Audit Tool**: Adjust lot sizes (1 to 100+ lots), switch between NIFTY 50, BSE SENSEX, Reliance, and Adani desks, view monthly distributions, and examine individual verified trade tickets.")
+                st.caption("⚡ **Interactive Audit Tool (Original Preserved)**: Baseline execution logs with original fixed stops across NIFTY 50, BSE SENSEX, Reliance, and Adani.")
             with c_aud2:
                 st_download_button_stretch(
-                    label="📥 Download Backtest Audit HTML",
+                    label="📥 Download Original Audit HTML",
                     data=audit_html_content,
                     file_name="trade_audit_dashboard.html",
                     mime="text/html",
@@ -1630,6 +1631,28 @@ if active_route == "":
             components.html(audit_html_content, height=1100, scrolling=True)
         else:
             st.warning("trade_audit_dashboard.html not found.")
+
+    with tab_comp:
+        comp_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "walkforward_comparison_dashboard.html")
+        if os.path.exists(comp_file_path):
+            with open(comp_file_path, "r", encoding="utf-8") as f:
+                comp_html_content = f.read()
+            
+            c_cmp1, c_cmp2 = st.columns([3, 1])
+            with c_cmp1:
+                st.caption("🚀 **4-Solution Walk-Forward Comparison**: Dynamic ATR SL, Two-Tier Stop (Wick Shield), 15-Min Re-Entry Protocol, and Chandelier Trailing compared side-by-side with baseline.")
+            with c_cmp2:
+                st_download_button_stretch(
+                    label="📥 Download Comparison Audit HTML",
+                    data=comp_html_content,
+                    file_name="walkforward_comparison_dashboard.html",
+                    mime="text/html",
+                    key="dl_btn_comp_html"
+                )
+            
+            components.html(comp_html_content, height=1100, scrolling=True)
+        else:
+            st.warning("walkforward_comparison_dashboard.html not found.")
 
     with tab_live:
         # Trigger generator if available to guarantee freshest state
