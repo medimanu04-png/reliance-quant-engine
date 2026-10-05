@@ -21,18 +21,16 @@
     "confluence": 75.8
   },
   "last_closed_trade": {
-    "trade_num": 5,
-    "instrument": "NIFTY 22450 PE (06-OCT-2026)",
-    "planned_entry": 57.8,
-    "actual_entry": 57.8,
+    "trade_num": 4,
+    "instrument": "NIFTY26O0622450PE",
+    "planned_entry": 117.21,
+    "actual_entry": 117.21,
     "executed": "Yes",
-    "sl": 21.8,
-    "target": 107.8,
+    "sl": 81.21,
+    "target": 167.21,
     "status": "SL Hit",
-    "exit_price": 60.5,
-    "exit_time": "02:10:02 PM IST",
-    "pnl": "+\u20b9351.00 (+2.70 pts)"
+    "pnl": "\u20b9-27,031.55"
   },
   "today_trade_count": 5,
-  "updated_at": "2026-10-05 02:10:02 PM IST"
+  "updated_at": "2026-10-05 02:10:03 PM IST"
 }
