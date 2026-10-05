@@ -168,9 +168,16 @@
   },
   "2026-10-05_SENSEX": {
     "date": "2026-10-05",
+    "trade_given_time": "03:11:10 PM IST",
+    "full_contract": "SENSEX 72300 CE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b972300 & \u20b972400] | 2 Lots / 40 Qty | Current Price: \u20b9532.00 (Spot: \u20b972316.62)",
     "symbol": "SENSEX",
-    "strike": 2000,
     "contract_type": "CE",
-    "trade_given_time": "03:11:10 PM IST"
+    "action": "BUY CE",
+    "strike": 72300,
+    "expiry": "08-OCT-2026",
+    "suggested_entry": 544.15,
+    "suggested_exit": 664.15,
+    "suggested_sl": 484.15,
+    "confluence_score": 96.0
   }
 }
