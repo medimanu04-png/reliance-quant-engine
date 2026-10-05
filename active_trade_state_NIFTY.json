@@ -3,12 +3,12 @@
   "symbol": "NIFTY",
   "contract": "NIFTY 22450 PE (06-OCT-2026)",
   "action": "BUY NIFTY 22450 PE (06-OCT-2026)",
-  "current_spot": 22525.4,
+  "current_spot": 22518.85,
   "entry_spot": 110.4,
   "entry_time": "12:07:30 PM IST",
-  "peak_spot": 22525.4,
+  "peak_spot": 22518.85,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -6357.0,
+  "unrealized_pnl_2lots": -6207.5,
   "target_pts": 50.0,
   "target_2_pts": 110.0,
   "sl_pts": 36.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-36.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "02:09:45 PM IST"
+  "last_update": "02:09:53 PM IST"
 }
