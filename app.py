@@ -1229,6 +1229,7 @@ def render_auto_rescan_controller():
         try:
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
+            gw.clear_all_caches()
             with ThreadPoolExecutor(max_workers=9) as ex:
                 for sym_scan in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
                     ex.submit(gw._fetch_reliance_spot_now, sym_scan)
@@ -1236,13 +1237,44 @@ def render_auto_rescan_controller():
                 ex.submit(gw._execute_live_benchmark_fetch)
         except Exception:
             pass
+
         from nse_data_fetcher import NSEIndiaFetcher
-        NSEIndiaFetcher._cached_data = None
-        NSEIndiaFetcher._last_fetch_time = 0
+        NSEIndiaFetcher.clear_all_caches()
+        st.cache_data.clear()
+
+        # Trigger multi-desk alert daemon ticks
+        try:
+            global _multi_desk_daemon_instance
+            if _multi_desk_daemon_instance is not None:
+                for sym_daemon in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+                    _multi_desk_daemon_instance.run_single_symbol_tick(symbol=sym_daemon)
+        except Exception:
+            pass
+
+        now_dt = datetime.now(IST)
+        rescan_time_str = now_dt.strftime('%I:%M:%S %p IST')
+        try:
+            rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
+            with open(rescan_file, "w", encoding="utf-8") as rf:
+                json.dump({
+                    "timestamp": now,
+                    "time_str": rescan_time_str,
+                    "manual": bool(rescan_btn),
+                    "symbols": ["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
+                }, rf)
+        except Exception:
+            pass
+
         st.session_state["last_auto_rescan_ts"] = now
         st.session_state["just_rescanned"] = bool(rescan_btn)
         st.session_state["manual_rescan_clicked"] = bool(rescan_btn)
-        st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
+        st.session_state["rescan_time"] = rescan_time_str
+        st.session_state["desk_rescan_needed"] = {
+            "RELIANCE": True,
+            "ADANIENT": True,
+            "NIFTY": True,
+            "SENSEX": True
+        }
         st.rerun(scope="app")
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
@@ -1252,41 +1284,73 @@ def render_auto_rescan_controller():
     spec_sensex = get_asset_spec("SENSEX")
 
     if active_route == "":
-        # Homepage Mode: display ALL 4 desks cleanly under the instant rescan controller
+        # Homepage Mode: display ALL 4 desks with live refreshed spot prices and target parameters
+        from groww_market_feed import GrowwMarketFeed
+        gw_feed = GrowwMarketFeed.get_instance()
+        spot_rel = gw_feed.get_live_spot_data(symbol="RELIANCE")
+        spot_ada = gw_feed.get_live_spot_data(symbol="ADANIENT")
+        spot_nifty = gw_feed.get_live_spot_data(symbol="NIFTY")
+        spot_sensex = gw_feed.get_live_spot_data(symbol="SENSEX")
+
+        def _fmt_desk(s_dict, spec_obj):
+            ltp = float(s_dict.get("spot_ltp", spec_obj.default_spot))
+            prev_c = float(s_dict.get("prev_close", ltp))
+            chg = ltp - prev_c
+            sign = "+" if chg >= 0 else ""
+            color = "#10B981" if chg >= 0 else "#EF4444"
+            return ltp, chg, sign, color
+
+        r_ltp, r_chg, r_sign, r_col = _fmt_desk(spot_rel, spec_rel)
+        a_ltp, a_chg, a_sign, a_col = _fmt_desk(spot_ada, spec_ada)
+        n_ltp, n_chg, n_sign, n_col = _fmt_desk(spot_nifty, spec_nifty)
+        s_ltp, s_chg, s_sign, s_col = _fmt_desk(spot_sensex, spec_sensex)
+
         st.html(f"""
         <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
             <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
-            <span>Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
-            <span>⚡ <b style="color: #34D399;">~4ms</b></span>
+            <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+            <span>⚡ Multi-Desk Engine: <b style="color: #34D399;">All 4 Desks Live</b></span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                    <span>📈 <b style="color: #10B981;">{spec_nifty.yf_symbol}</b> ({spec_nifty.lot_size}/L)</span>
-                    <span>🎯 <b style="color: #34D399;">+{spec_nifty.target_pts:.0f}</b></span>
-                    <span>🛑 <b style="color: #F87171;">-{spec_nifty.sl_pts:.0f}</b></span>
-                    <span>🚦 <b style="color: #FCD34D;">≥{spec_nifty.min_confluence_gate:.0f}%</b></span>
-                </div>
-                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                    <span>🏛️ <b style="color: #A855F7;">{spec_sensex.yf_symbol}</b> ({spec_sensex.lot_size}/L)</span>
-                    <span>🎯 <b style="color: #34D399;">+{spec_sensex.target_pts:.0f}</b></span>
-                    <span>🛑 <b style="color: #F87171;">-{spec_sensex.sl_pts:.0f}</b></span>
-                    <span>🚦 <b style="color: #FCD34D;">≥{spec_sensex.min_confluence_gate:.0f}%</b></span>
-                </div>
+                <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                        <span>📈 <b style="color: #10B981;">{spec_nifty.yf_symbol}</b> ({spec_nifty.lot_size}/L)</span>
+                        <span>₹<b style="color: #FFFFFF;">{n_ltp:,.2f}</b> (<b style="color: {n_col};">{n_sign}{n_chg:.1f}</b>)</span>
+                        <span>🎯 <b style="color: #34D399;">+{spec_nifty.target_pts:.0f}</b></span>
+                        <span>🛑 <b style="color: #F87171;">-{spec_nifty.sl_pts:.0f}</b></span>
+                        <span>🚦 <b style="color: #FCD34D;">≥{spec_nifty.min_confluence_gate:.0f}%</b></span>
+                    </div>
+                </a>
+                <a href="./Sensex?stock=Sensex" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                        <span>🏛️ <b style="color: #A855F7;">{spec_sensex.yf_symbol}</b> ({spec_sensex.lot_size}/L)</span>
+                        <span>₹<b style="color: #FFFFFF;">{s_ltp:,.2f}</b> (<b style="color: {s_col};">{s_sign}{s_chg:.1f}</b>)</span>
+                        <span>🎯 <b style="color: #34D399;">+{spec_sensex.target_pts:.0f}</b></span>
+                        <span>🛑 <b style="color: #F87171;">-{spec_sensex.sl_pts:.0f}</b></span>
+                        <span>🚦 <b style="color: #FCD34D;">≥{spec_sensex.min_confluence_gate:.0f}%</b></span>
+                    </div>
+                </a>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                    <span>⚡ <b style="color: #38BDF8;">{spec_rel.yf_symbol}</b> ({spec_rel.lot_size}/L)</span>
-                    <span>🎯 <b style="color: #34D399;">+{spec_rel.target_pts:.1f}</b></span>
-                    <span>🛑 <b style="color: #F87171;">-{spec_rel.sl_pts:.1f}</b></span>
-                    <span>🚦 <b style="color: #FCD34D;">≥{spec_rel.min_confluence_gate:.0f}%</b></span>
-                </div>
-                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                    <span>🔥 <b style="color: #FBBF24;">{spec_ada.yf_symbol}</b> ({spec_ada.lot_size}/L)</span>
-                    <span>🎯 <b style="color: #34D399;">+{spec_ada.target_pts:.1f}</b></span>
-                    <span>🛑 <b style="color: #F87171;">-{spec_ada.sl_pts:.1f}</b></span>
-                    <span>🚦 <b style="color: #FCD34D;">≥{spec_ada.min_confluence_gate:.0f}%</b></span>
-                </div>
+                <a href="./Reliance?stock=Reliance" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                        <span>⚡ <b style="color: #38BDF8;">{spec_rel.yf_symbol}</b> ({spec_rel.lot_size}/L)</span>
+                        <span>₹<b style="color: #FFFFFF;">{r_ltp:,.2f}</b> (<b style="color: {r_col};">{r_sign}{r_chg:.1f}</b>)</span>
+                        <span>🎯 <b style="color: #34D399;">+{spec_rel.target_pts:.1f}</b></span>
+                        <span>🛑 <b style="color: #F87171;">-{spec_rel.sl_pts:.1f}</b></span>
+                        <span>🚦 <b style="color: #FCD34D;">≥{spec_rel.min_confluence_gate:.0f}%</b></span>
+                    </div>
+                </a>
+                <a href="./Adani?stock=Adani" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                        <span>🔥 <b style="color: #FBBF24;">{spec_ada.yf_symbol}</b> ({spec_ada.lot_size}/L)</span>
+                        <span>₹<b style="color: #FFFFFF;">{a_ltp:,.2f}</b> (<b style="color: {a_col};">{a_sign}{a_chg:.1f}</b>)</span>
+                        <span>🎯 <b style="color: #34D399;">+{spec_ada.target_pts:.1f}</b></span>
+                        <span>🛑 <b style="color: #F87171;">-{spec_ada.sl_pts:.1f}</b></span>
+                        <span>🚦 <b style="color: #FCD34D;">≥{spec_ada.min_confluence_gate:.0f}%</b></span>
+                    </div>
+                </a>
             </div>
         </div>
         """)
@@ -1319,15 +1383,27 @@ st.markdown("---")
 # ==============================================================================
 # 1.5. LIVE MACRO BENCHMARKS TELEMETRY: NIFTY 50 | BANK NIFTY | GIFT NIFTY | S&P 500 (US) | INDIA VIX | CRUDE OIL
 # ==============================================================================
-is_rescan = st.session_state.get("just_rescanned", False)
+is_rescan = st.session_state.get("just_rescanned", False) or st.session_state.get("manual_rescan_clicked", False)
 manual_rescan = st.session_state.get("manual_rescan_clicked", False)
+
+if is_rescan:
+    # Refresh all 4 desks in parallel
+    from concurrent.futures import ThreadPoolExecutor
+    try:
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            for s in ("NIFTY", "SENSEX", "RELIANCE", "ADANIENT"):
+                ex.submit(NSEIndiaFetcher.get_reliance_official_data, force_refresh=True, symbol=s)
+            ex.submit(NSEIndiaFetcher.get_live_market_benchmarks, force_refresh=True)
+    except Exception:
+        pass
+
 cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
 active_feed_sym = resolve_symbol(cur_sel_scrip)
 nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=active_feed_sym)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
 if manual_rescan:
-    st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete! Live macro benchmarks (NIFTY 50, BANK NIFTY, GIFT NIFTY, S&P 500 [US], INDIA VIX, CRUDE OIL [MCX]), technical indicators, news sentiment, and Dual ATM option flow 100% updated.")
+    st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete across all 4 Quantitative Trading Desks! Live spot quotes, options chain telemetry, and macro benchmarks (NIFTY 50, BSE SENSEX, RELIANCE, ADANI ENTERPRISES) 100% updated.")
     st.session_state["manual_rescan_clicked"] = False
 st.session_state["just_rescanned"] = False
 
@@ -1497,13 +1573,24 @@ if active_route == "":
     spec_nifty_hp = get_asset_spec("NIFTY")
     spec_sensex_hp = get_asset_spec("SENSEX")
 
+    gw_feed_hp = GrowwMarketFeed.get_instance()
+    spot_nifty_hp = gw_feed_hp.get_live_spot_data("NIFTY")
+    spot_sensex_hp = gw_feed_hp.get_live_spot_data("SENSEX")
+    spot_rel_hp = gw_feed_hp.get_live_spot_data("RELIANCE")
+    spot_ada_hp = gw_feed_hp.get_live_spot_data("ADANIENT")
+
+    ltp_nifty_hp = float(spot_nifty_hp.get("spot_ltp", spec_nifty_hp.default_spot))
+    ltp_sensex_hp = float(spot_sensex_hp.get("spot_ltp", spec_sensex_hp.default_spot))
+    ltp_rel_hp = float(spot_rel_hp.get("spot_ltp", spec_rel_hp.default_spot))
+    ltp_ada_hp = float(spot_ada_hp.get("spot_ltp", spec_ada_hp.default_spot))
+
     with col_idx1:
         st.html(f"""
         <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">📈 NIFTY 50 QUANT DESK</span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">📈 NIFTY 50 QUANT DESK <span style="font-size: 0.85rem; color: #34D399; font-weight: 700; margin-left: 6px;">₹{ltp_nifty_hp:,.2f}</span></span>
                         <span style="background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_nifty_hp.lot_size} QTY/LOT</span>
                     </div>
                     <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
@@ -1538,7 +1625,7 @@ if active_route == "":
             <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid rgba(168, 85, 247, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🏛️ BSE SENSEX QUANT DESK</span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🏛️ BSE SENSEX QUANT DESK <span style="font-size: 0.85rem; color: #C084FC; font-weight: 700; margin-left: 6px;">₹{ltp_sensex_hp:,.2f}</span></span>
                         <span style="background: rgba(168, 85, 247, 0.15); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_sensex_hp.lot_size} QTY/LOT</span>
                     </div>
                     <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
@@ -1580,7 +1667,7 @@ if active_route == "":
             <div class="quant-desk-tile tile-reliance" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">⚡ RELIANCE QUANT DESK</span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">⚡ RELIANCE QUANT DESK <span style="font-size: 0.85rem; color: #38BDF8; font-weight: 700; margin-left: 6px;">₹{ltp_rel_hp:,.2f}</span></span>
                         <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_rel_hp.lot_size} QTY/LOT</span>
                     </div>
                     <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
@@ -1615,7 +1702,7 @@ if active_route == "":
             <div class="quant-desk-tile tile-adani" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🔥 ADANI QUANT DESK</span>
+                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🔥 ADANI QUANT DESK <span style="font-size: 0.85rem; color: #FBBF24; font-weight: 700; margin-left: 6px;">₹{ltp_ada_hp:,.2f}</span></span>
                         <span style="background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_ada_hp.lot_size} QTY/LOT</span>
                     </div>
                     <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
@@ -1907,6 +1994,28 @@ scrip_min_gate = spec.min_confluence_gate
 # Dynamically resolve active expiry mandate for currently active ticker (Weekly for NIFTY/SENSEX, Monthly for Equities)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=scrip_symbol)
 active_mandate_expiry = expiry_plan["selected_expiry"]
+
+# Synchronize Desk with Global Homepage Rescan Event
+desk_force_rescan = False
+if st.session_state.get("desk_rescan_needed", {}).get(scrip_symbol, False):
+    desk_force_rescan = True
+    st.session_state["desk_rescan_needed"][scrip_symbol] = False
+
+global_rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
+if os.path.exists(global_rescan_file):
+    try:
+        with open(global_rescan_file, "r", encoding="utf-8") as rf:
+            g_meta = json.load(rf)
+        g_ts = g_meta.get("timestamp", 0)
+        last_sync = st.session_state.get(f"_desk_last_sync_{scrip_symbol}", 0)
+        if g_ts > last_sync:
+            desk_force_rescan = True
+            st.session_state[f"_desk_last_sync_{scrip_symbol}"] = g_ts
+    except Exception:
+        pass
+
+if desk_force_rescan:
+    is_rescan = True
 
 # Sync active scoped values to active keys so switching scrips never cross-pollinates
 st.session_state["live_broker_ltp"] = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
@@ -2817,7 +2926,7 @@ def fetch_reliance_data(interval: str, force_key: str = ""):
     return fetch_scrip_candles(scrip=st.session_state.get("selected_scrip", "RELIANCE"), interval=interval, force_key=force_key)
 
 
-df = fetch_scrip_candles(scrip=scrip_choice, interval=timeframe)
+df = fetch_scrip_candles(scrip=scrip_choice, interval=timeframe, force_key=st.session_state.get("rescan_time", ""))
 
 
 # ==============================================================================
@@ -4736,7 +4845,7 @@ if df is not None and not df.empty:
     from groww_market_feed import GrowwMarketFeed
     gw_inst = GrowwMarketFeed.get_instance()
     if gw_inst.is_connected and is_mkt_open:
-        gw_spot_data = gw_inst.get_live_spot_data(symbol=scrip_symbol)
+        gw_spot_data = gw_inst.get_live_spot_data(symbol=scrip_symbol, force_refresh=is_rescan)
         gw_live_spot = gw_spot_data.get("spot_ltp", 0.0)
         spot = float(gw_live_spot) if (gw_live_spot and float(gw_live_spot) > 0) else float(latest['Close'])
     else:

@@ -176,15 +176,15 @@
   "2026-10-05_SENSEX": {
     "date": "2026-10-05",
     "trade_given_time": "03:11:10 PM IST",
-    "full_contract": "SENSEX 72000 CE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b972000 & \u20b972100] | 2 Lots / 40 Qty | Current Price: \u20b9533.05 (Spot: \u20b972000.00)",
+    "full_contract": "SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9478.90 (Spot: \u20b971904.62)",
     "symbol": "SENSEX",
-    "contract_type": "CE",
-    "action": "BUY CE",
+    "contract_type": "PE",
+    "action": "BUY PE",
     "strike": 72000,
     "expiry": "08-OCT-2026",
     "suggested_entry": 544.15,
     "suggested_exit": 664.15,
     "suggested_sl": 484.15,
-    "confluence_score": 96.0
+    "confluence_score": 85.8
   }
 }
