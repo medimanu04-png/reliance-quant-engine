@@ -1224,7 +1224,7 @@ def render_auto_rescan_controller():
     elapsed = now - st.session_state["last_auto_rescan_ts"]
     should_auto = auto_active and (elapsed >= 4.5)
 
-    if rescan_btn:
+    if rescan_btn or should_auto:
         from concurrent.futures import ThreadPoolExecutor
         try:
             from groww_market_feed import GrowwMarketFeed
@@ -1240,14 +1240,10 @@ def render_auto_rescan_controller():
         NSEIndiaFetcher._cached_data = None
         NSEIndiaFetcher._last_fetch_time = 0
         st.session_state["last_auto_rescan_ts"] = now
-        st.session_state["just_rescanned"] = True
-        st.session_state["manual_rescan_clicked"] = True
+        st.session_state["just_rescanned"] = bool(rescan_btn)
+        st.session_state["manual_rescan_clicked"] = bool(rescan_btn)
         st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
         st.rerun(scope="app")
-    elif should_auto:
-        st.session_state["last_auto_rescan_ts"] = now
-        st.session_state["just_rescanned"] = False
-        st.session_state["rescan_time"] = datetime.now(IST).strftime('%I:%M:%S %p IST')
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     spec_rel = get_asset_spec("RELIANCE")
