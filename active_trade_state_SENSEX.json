@@ -3,10 +3,10 @@
   "symbol": "SENSEX",
   "contract": "SENSEX 72000 PE (08-OCT-2026)",
   "action": "BUY SENSEX 72000 PE (08-OCT-2026)",
-  "current_spot": 72361.97,
+  "current_spot": 72363.1,
   "entry_spot": 544.15,
   "entry_time": "03:11:10 PM IST",
-  "peak_spot": 72361.97,
+  "peak_spot": 72363.1,
   "peak_profit_rs": 0.0,
   "unrealized_pnl_2lots": -9424.0,
   "target_pts": 120.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-60.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "02:14:44 PM IST"
+  "last_update": "02:14:45 PM IST"
 }
