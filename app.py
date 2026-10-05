@@ -3727,22 +3727,16 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         """)
 
     elif is_live_trade_running:
-        act_entry = float(active_trade_obj.get("actual_entry", active_trade_obj.get("planned_entry", active_live_ltp)))
-        act_target = float(active_trade_obj.get("target", act_entry + plan_target_pts))
-        act_sl = float(active_trade_obj.get("sl", act_entry - plan_sl_pts))
-        act_trail_sl = float(active_trade_obj.get("trailing_sl", act_sl))
-        effective_sl = max(act_sl, act_trail_sl)
-        act_qty = int(active_trade_obj.get("qty", plan_qty))
-        act_lots = int(active_trade_obj.get("num_lots", plan_num_lots))
-        act_inst = active_trade_obj.get("instrument", f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})")
-        act_trade_num = active_trade_obj.get("trade_num", 1)
-
-        active_track_ltp = active_live_ltp
         try:
             from groww_market_feed import GrowwMarketFeed
             gw_feed_inst = GrowwMarketFeed.get_instance()
-            act_contract_id = active_trade_obj.get("contract", "")
-            act_inst_lbl = active_trade_obj.get("instrument", "")
+        except Exception:
+            gw_feed_inst = None
+
+        act_contract_id = active_trade_obj.get("contract", "")
+        act_inst_lbl = active_trade_obj.get("instrument", "")
+        active_track_ltp = active_live_ltp
+        try:
             resolved_price = None
             if gw_feed_inst and gw_feed_inst.is_connected:
                 resolved_price = gw_feed_inst.get_option_contract_ltp(act_contract_id or act_inst_lbl, symbol=active_sym)
@@ -3763,24 +3757,33 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 active_track_ltp = float(active_trade_obj["current_ltp"])
         except Exception as e:
             logger.debug(f"Direct active LTP tracking error: {e}")
+
+        # Sync active trade parameters with Groww positions & executed orders
+        trade_update = SequentialTradeEngine.update_active_trade(
+            current_ltp=active_track_ltp,
+            groww_feed=gw_feed_inst,
+            starting_cash=STARTING_CAPITAL,
+            symbol=active_sym
+        )
+        curr_state = SequentialTradeEngine.get_state(symbol=active_sym)
+        if curr_state.get("active_trade"):
+            active_trade_obj = curr_state["active_trade"]
+
+        act_entry = float(active_trade_obj.get("actual_entry", active_trade_obj.get("planned_entry", active_live_ltp)))
+        act_target = float(active_trade_obj.get("target", act_entry + plan_target_pts))
+        act_sl = float(active_trade_obj.get("sl", act_entry - plan_sl_pts))
+        act_trail_sl = float(active_trade_obj.get("trailing_sl", act_sl))
+        effective_sl = max(act_sl, act_trail_sl)
+        act_qty = int(active_trade_obj.get("qty", plan_qty))
+        act_lots = int(active_trade_obj.get("num_lots", plan_num_lots))
+        act_inst = active_trade_obj.get("instrument", f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})")
+        act_trade_num = active_trade_obj.get("trade_num", 1)
+
         unreal_pts = round(active_track_ltp - act_entry, 2)
         unreal_pnl = round(unreal_pts * act_qty, 2)
         pnl_col = "#10B981" if unreal_pnl >= 0 else "#EF4444"
         pnl_sign = "+" if unreal_pnl >= 0 else ""
         pts_sign = "+" if unreal_pts >= 0 else ""
-
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            gw_inst = GrowwMarketFeed.get_instance()
-        except Exception:
-            gw_inst = None
-
-        trade_update = SequentialTradeEngine.update_active_trade(
-            current_ltp=active_track_ltp,
-            groww_feed=gw_inst,
-            starting_cash=STARTING_CAPITAL,
-            symbol=active_sym
-        )
 
         today_date = datetime.now(IST).strftime("%Y-%m-%d")
 
@@ -6655,6 +6658,10 @@ if df is not None and not df.empty:
             if tr_update.get("closed_trade"):
                 st.rerun()
 
+            latest_s = SequentialTradeEngine.get_state(symbol=scrip_symbol)
+            if latest_s.get("active_trade"):
+                active_trade = latest_s["active_trade"]
+
             act_entry = float(active_trade.get("actual_entry", active_trade.get("planned_entry", 30.0)))
             target_p = float(active_trade.get("target", act_entry + scrip_target_pts))
             sl_p = float(active_trade.get("sl", max(0.05, act_entry - scrip_sl_pts)))
@@ -6748,7 +6755,9 @@ if df is not None and not df.empty:
                     st.rerun()
             with it_c3:
                 if st.button("🔄 Sync with Groww Positions", use_container_width=True):
-                    SequentialTradeEngine.update_active_trade(current_ltp=active_ltp, groww_feed=groww_feed, starting_cash=account_cash, symbol=scrip_symbol)
+                    sync_res = SequentialTradeEngine.sync_with_groww_positions(groww_feed=groww_feed, symbol=scrip_symbol, starting_cash=account_cash)
+                    if sync_res.get("status") == "SUCCESS":
+                        st.toast("✅ Reconciled with live Groww position!")
                     st.rerun()
 
         elif current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
