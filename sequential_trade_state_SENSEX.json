@@ -15,10 +15,22 @@
     "qty": 40,
     "num_lots": 2,
     "lot_size": 20,
-    "highest_price": 544.15,
-    "trailing_sl": 484.15,
-    "status": "Open",
-    "confluence": 79.9
+    "highest_price": 7039.05,
+    "trailing_sl": 544.15,
+    "status": "T1 Banked - Runner Active",
+    "confluence": 79.9,
+    "breakeven_activated": true,
+    "profit_lock_activated": true,
+    "trailing_mode": "CHANDELIER_ATR",
+    "current_ltp": 7039.05,
+    "unrealized_pnl": 259796.0,
+    "t1_status": "BANKED",
+    "t1_exit_price": 7039.05,
+    "t1_exit_time": "02:12:45 PM IST",
+    "t1_pnl": 129898.0,
+    "t2_status": "RUNNER_ACTIVE",
+    "target_2": 824.15,
+    "notes": "Tranche 1 (50%) Banked @ \u20b97039.05 (+6494.9 pts). Runner Stop-Loss locked at Cost (\u20b9544.15) trailing to Target 2 (\u20b9824.15)"
   },
   "last_closed_trade": {
     "trade_num": 1,
@@ -29,12 +41,12 @@
     "sl": 484.15,
     "target": 664.15,
     "status": "Hard Catastrophic SL Hit",
-    "exit_price": 329.9,
-    "exit_time": "02:12:37 PM IST",
-    "pnl": "\u20b9-8,570.00 (-214.25 pts)"
+    "exit_price": 326.7,
+    "exit_time": "02:12:45 PM IST",
+    "pnl": "\u20b9-8,698.00 (-217.45 pts)"
   },
   "today_trade_count": 1,
-  "updated_at": "2026-10-05 02:12:37 PM IST",
+  "updated_at": "2026-10-05 02:12:45 PM IST",
   "re_entry_armed": {
     "armed": true,
     "symbol": "SENSEX",
@@ -44,14 +56,14 @@
     "confluence": 79.9,
     "planned_entry": 544.15,
     "actual_entry": 544.15,
-    "wick_extreme_sl": 329.9,
-    "stop_loss_pts": 214.25,
+    "wick_extreme_sl": 326.7,
+    "stop_loss_pts": 217.45,
     "target": 664.15,
     "target_2": 0.0,
     "qty": 40,
     "num_lots": 2,
-    "armed_at": "2026-10-05 02:12:37 PM IST",
-    "expires_at": "2026-10-05 02:27:37 PM IST",
-    "notes": "High conviction (79.9%) setup stopped on early wick at 02:12:37 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
+    "armed_at": "2026-10-05 02:12:45 PM IST",
+    "expires_at": "2026-10-05 02:27:45 PM IST",
+    "notes": "High conviction (79.9%) setup stopped on early wick at 02:12:45 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
   }
 }
