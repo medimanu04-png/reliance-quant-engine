@@ -1,14 +1,14 @@
 {
   "is_active": true,
   "symbol": "NIFTY",
-  "contract": "NIFTY26O0622450PE",
-  "action": "BUY NIFTY26O0622450PE",
-  "current_spot": 22462.8,
-  "entry_spot": 117.21,
-  "entry_time": "12:08:14 PM IST",
-  "peak_spot": 22462.8,
+  "contract": "NIFTY 22450 PE (06-OCT-2026)",
+  "action": "BUY NIFTY 22450 PE (06-OCT-2026)",
+  "current_spot": 22465.0,
+  "entry_spot": 110.4,
+  "entry_time": "12:07:30 PM IST",
+  "peak_spot": 22465.0,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -16430.05,
+  "unrealized_pnl_2lots": -3471.0,
   "target_pts": 50.0,
   "target_2_pts": 110.0,
   "sl_pts": 36.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-36.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "01:29:55 PM IST"
+  "last_update": "01:31:16 PM IST"
 }

@@ -39,7 +39,7 @@
     "confluence_score": 78.5,
     "trade_roi_pct": 21.7,
     "cumulative_profit": 6375.0,
-    "total_cash": 80018.72,
+    "total_cash": 62199.92,
     "estimated_statutory_charges": 130.0,
     "net_pnl_after_charges": 6245.0,
     "planned_entry_price": 29.25,
@@ -96,8 +96,8 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": 0.0,
     "trade_roi_pct": 0.0,
-    "cumulative_profit": 0.0,
-    "total_cash": 100000.0
+    "cumulative_profit": 6375.0,
+    "total_cash": 62199.92
   },
   {
     "id": "TRD-20261005-02-NIFTY26O0622450PE",
@@ -147,7 +147,7 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": -16745.05,
     "trade_roi_pct": -30.8,
-    "cumulative_profit": -16430.05,
-    "total_cash": 83569.95
+    "cumulative_profit": -10055.05,
+    "total_cash": 45769.87
   }
 ]
