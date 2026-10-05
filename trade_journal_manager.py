@@ -2407,8 +2407,11 @@ class SequentialTradeEngine:
         state["last_closed_trade"] = closed_summary
         state["today_trade_count"] = max(int(state.get("today_trade_count", 0)), t_num)
 
-        # Solution 3: Resumption Re-Entry Arming Protocol
-        if "SL" in status and float(active.get("confluence", 70.0)) >= getattr(spec_close, "re_entry_min_confidence", 65.0):
+        # Solution 3: Resumption Re-Entry Arming Protocol (Single-Shot Second Chance Guard)
+        if active.get("is_re_entry") or int(state.get("today_trade_count", 0)) >= 2:
+            # SAFEGUARD: Never arm re-entry if trade was already a re-entry, or if max 2 trades hit today
+            state["re_entry_armed"] = None
+        elif "SL" in status and float(active.get("confluence", 70.0)) >= getattr(spec_close, "re_entry_min_confidence", 65.0):
             t_open_mins = 5
             try:
                 clean_t = str(active.get("actual_entry_time", "")).replace(" IST", "").strip()
