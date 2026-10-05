@@ -1390,6 +1390,12 @@ def render_live_macro_benchmarks_strip():
 
         icon_prefix = f"{data['icon']} " if data.get('icon') else ""
 
+        tick_is_up = data.get('tick_direction') == 'UP'
+        tick_arrow = "▲" if tick_is_up else "▼"
+        tick_color = "#34D399" if tick_is_up else "#F87171"
+        tick_bg = "rgba(16, 185, 129, 0.15)" if tick_is_up else "rgba(239, 68, 68, 0.15)"
+        tick_delta_val = data.get('tick_delta', 0.0)
+
         cards_html.append(f"""
         <div class="live-benchmark-card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1400,8 +1406,8 @@ def render_live_macro_benchmarks_strip():
             </div>
             <div style="font-size: 1.55rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0; letter-spacing: -0.5px; display: flex; align-items: baseline; justify-content: space-between;">
                 <span>{val_str}</span>
-                <span style="font-size: 0.76rem; color: {'#34D399' if data.get('tick_direction')=='UP' else '#F87171'}; font-weight: 800; background: {'rgba(16, 185, 129, 0.15)' if data.get('tick_direction')=='UP' else 'rgba(239, 68, 68, 0.15)'}; padding: 1px 6px; border-radius: 4px;">
-                    {pts_arrow} {data.get('tick_delta', 0.0):+.2f}
+                <span style="font-size: 0.76rem; color: {tick_color}; font-weight: 800; background: {tick_bg}; padding: 1px 6px; border-radius: 4px;">
+                    {tick_arrow} {tick_delta_val:+.2f}
                 </span>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
