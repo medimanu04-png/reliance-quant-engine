@@ -1,5 +1,5 @@
 {
-  "current_state": "TRADE CLOSED & AUDITED",
+  "current_state": "IDLE / SCANNING",
   "symbol": "NIFTY",
   "active_trade": null,
   "last_closed_trade": {
@@ -10,11 +10,11 @@
     "executed": "Yes",
     "sl": 74.4,
     "target": 160.4,
-    "status": "SL Hit",
-    "exit_price": 57.8,
-    "exit_time": "2026-10-05T13:40:11.974",
-    "pnl": "\u20b9-6,838.00 (-52.60 pts)"
+    "status": "T1 (+102.6) | TRAIL COST (0.0)",
+    "exit_price": 165.0,
+    "exit_time": "01:54:14 PM IST",
+    "pnl": "+\u20b910,218.00 (+78.60 pts)"
   },
   "today_trade_count": 2,
-  "updated_at": "2026-10-05 01:47:25 PM IST"
+  "updated_at": "2026-10-05 01:54:14 PM IST"
 }

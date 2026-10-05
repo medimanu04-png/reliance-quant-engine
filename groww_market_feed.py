@@ -2022,10 +2022,13 @@ class GrowwMarketFeed:
         symbol: Optional[str] = None
     ) -> Optional[float]:
         """
-        Zero-Latency Direct LTP Resolver for a specific Option Contract (Reliance or Adani).
-        Resolves strike (e.g. 2800 or 1200) and type (CE/PE) from contract name
+        Zero-Latency Direct LTP Resolver for a specific Option Contract.
+        Resolves strike (e.g. 72000, 22450, 1180, 2850) and type (CE/PE) from contract name
         and returns the exact live market price from Groww in 0ms.
         """
+        if not contract_symbol or not isinstance(contract_symbol, str):
+            return None
+
         if symbol:
             resolved_sym = symbol
         elif "NIFTY" in contract_symbol.upper():
@@ -2036,6 +2039,7 @@ class GrowwMarketFeed:
             resolved_sym = "ADANIENT"
         else:
             resolved_sym = "RELIANCE"
+
         chain = self.get_live_option_chain(symbol=resolved_sym, expiry=expiry, force_refresh=force_refresh)
         if not chain:
             return None
@@ -2044,21 +2048,38 @@ class GrowwMarketFeed:
         norm = contract_symbol.upper().replace(" ", "").replace("-", "")
         is_pe = "PE" in norm or "PUT" in norm
 
-        match = re.search(r"(\d{3,5})", norm)
-        target_strike = float(match.group(1)) if match else None
+        # 1. Match known strikes from the actual option chain to avoid spurious regex digit matches
+        target_strike = None
+        for item in chain:
+            stk_int = int(item.get("strike", 0))
+            if str(stk_int) in norm:
+                target_strike = float(stk_int)
+                break
+
+        # 2. Fallback to regex strike search if not found in chain iterations
+        if target_strike is None:
+            m_candidates = re.findall(r"\b(\d{4,6})\b", contract_symbol)
+            for cand in m_candidates:
+                if cand not in ("2024", "2025", "2026", "2027"):
+                    target_strike = float(cand)
+                    break
 
         if target_strike is not None:
             for item in chain:
                 if abs(item.get("strike", 0.0) - target_strike) < 0.5:
-                    return float(item.get("put_ltp", 0.0) if is_pe else item.get("call_ltp", 0.0))
+                    ltp = float(item.get("put_ltp", 0.0) if is_pe else item.get("call_ltp", 0.0))
+                    if ltp > 0.0:
+                        return ltp
 
-        for item in chain:
-            ce_id = str(item.get("groww_contract_ce", "")).upper()
-            pe_id = str(item.get("groww_contract_pe", "")).upper()
-            if norm in ce_id:
-                return float(item.get("call_ltp", 0.0))
-            if norm in pe_id:
-                return float(item.get("put_ltp", 0.0))
+        # 3. Match exact full Groww contract trading symbols only (must be exact match or length >= 12)
+        if len(norm) >= 12:
+            for item in chain:
+                ce_id = str(item.get("groww_contract_ce", "")).upper()
+                pe_id = str(item.get("groww_contract_pe", "")).upper()
+                if ce_id and (norm == ce_id or ce_id in norm):
+                    return float(item.get("call_ltp", 0.0))
+                if pe_id and (norm == pe_id or pe_id in norm):
+                    return float(item.get("put_ltp", 0.0))
 
         return None
 
