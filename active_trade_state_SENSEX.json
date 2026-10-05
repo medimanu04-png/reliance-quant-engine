@@ -1,5 +1,5 @@
 {
-  "is_active": true,
+  "is_active": false,
   "symbol": "SENSEX",
   "contract": "SENSEX 72000 PE (08-OCT-2026)",
   "action": "BUY SENSEX 72000 PE (08-OCT-2026)",
@@ -8,12 +8,12 @@
   "entry_time": "03:11:10 PM IST",
   "peak_spot": 72162.78,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -6458.0,
+  "unrealized_pnl_2lots": -6940.0,
   "target_pts": 120.0,
   "target_2_pts": 280.0,
   "sl_pts": 60.0,
   "confluence_score": 70.0,
-  "market_status": "\ud83d\udfe2 LIVE IN-TRADE",
+  "market_status": "MONITORING (09:15 - 15:30 IST)",
   "strategy_mode": "OPTION 1: MULTI-TRANCHE RUNNER (50/50)",
   "tranche_1": {
     "status": "PENDING",
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-60.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "02:07:41 PM IST"
+  "last_update": "02:07:49 PM IST"
 }
