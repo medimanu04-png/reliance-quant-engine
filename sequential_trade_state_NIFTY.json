@@ -19,10 +19,10 @@
     "trailing_sl": 77.8,
     "status": "Open",
     "confluence": 75.8,
-    "current_ltp": 60.15,
-    "unrealized_pnl": 305.5,
-    "wick_touches": 2,
-    "wick_guard_alert": "Wick touch @ \u20b960.15 <= \u20b977.80. Soft SL active, waiting for 5m candle close confirmation.",
+    "current_ltp": 59.85,
+    "unrealized_pnl": 266.5,
+    "wick_touches": 3,
+    "wick_guard_alert": "Wick touch @ \u20b959.85 <= \u20b977.80. Soft SL active, waiting for 5m candle close confirmation.",
     "breakeven_activated": true,
     "profit_lock_activated": true
   },
@@ -38,5 +38,5 @@
     "pnl": "\u20b9-27,031.55"
   },
   "today_trade_count": 5,
-  "updated_at": "2026-10-05 02:10:10 PM IST"
+  "updated_at": "2026-10-05 02:10:15 PM IST"
 }
