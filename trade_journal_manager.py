@@ -2283,6 +2283,33 @@ class SequentialTradeEngine:
 
             return {"status": "SUCCESS", "active_trade": active}
 
+        # If no open position exists on Groww, reconcile active trade if it was closed or phantom
+        if active:
+            matching_closed = None
+            all_positions = pos_data.get("positions", []) if isinstance(pos_data, dict) else []
+            for p in all_positions:
+                if sym_kw in str(p.get("trading_symbol", "")).upper() and int(p.get("quantity", 0)) == 0:
+                    matching_closed = p
+                    break
+            
+            if matching_closed or matching_trade:
+                src = matching_closed or matching_trade or {}
+                exit_p = float(src.get("net_price", 0.0) or src.get("debit_price", 0.0) or src.get("exit_price", active.get("actual_entry", 0.0)))
+                rpnl = float(src.get("realised_pnl", 0.0))
+                status_lbl = "Target Hit" if rpnl >= 0 else "SL Hit"
+                return cls.close_trade(
+                    exit_price=exit_p,
+                    status=status_lbl,
+                    notes=f"Auto-reconciled with closed Groww position (PnL: ₹{rpnl:,.2f})",
+                    starting_cash=starting_cash,
+                    symbol=sym_kw
+                )
+            else:
+                state["current_state"] = cls.STATE_IDLE
+                state["active_trade"] = None
+                cls.save_state(state, symbol=sym_kw)
+                return {"status": "CLEARED_PHANTOM", "message": f"Cleared phantom active trade for {sym_kw} (not in Groww)"}
+
         return {"status": "NO_POSITION", "message": f"No open positions found in Groww for {sym_kw}"}
 
     @classmethod
