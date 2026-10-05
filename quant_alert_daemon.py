@@ -603,7 +603,9 @@ class RelianceQuantAlertDaemon:
             cur_trade_ltp = active_option_ltp
             if self.groww_feed.is_connected:
                 try:
-                    gw_opt_ltp = self.groww_feed.get_option_contract_ltp(inst_sym)
+                    gw_opt_ltp = self.groww_feed.get_option_contract_ltp(inst_sym, symbol=sym)
+                    if not gw_opt_ltp or gw_opt_ltp <= 0:
+                        gw_opt_ltp = self.groww_feed.get_option_contract_ltp(active_trade.get("contract", ""), symbol=sym)
                     if gw_opt_ltp and gw_opt_ltp > 0:
                         cur_trade_ltp = float(gw_opt_ltp)
                 except Exception:

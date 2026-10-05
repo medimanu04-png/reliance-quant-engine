@@ -1986,6 +1986,8 @@ class SequentialTradeEngine:
         if groww_feed and getattr(groww_feed, "is_connected", False) and hasattr(groww_feed, "get_option_contract_ltp"):
             try:
                 gw_ltp = groww_feed.get_option_contract_ltp(contract, symbol=active_sym)
+                if not gw_ltp or gw_ltp <= 0:
+                    gw_ltp = groww_feed.get_option_contract_ltp(active.get("instrument", ""), symbol=active_sym)
                 if gw_ltp and gw_ltp > 0:
                     current_ltp = float(gw_ltp)
             except Exception:

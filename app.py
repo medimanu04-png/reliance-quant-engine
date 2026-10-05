@@ -6671,17 +6671,24 @@ if df is not None and not df.empty:
             if groww_feed.is_connected:
                 try:
                     resolved_ltp = groww_feed.get_option_contract_ltp(active_contract, symbol=scrip_symbol)
+                    if not resolved_ltp or resolved_ltp <= 0:
+                        resolved_ltp = groww_feed.get_option_contract_ltp(active_trade.get("instrument", ""), symbol=scrip_symbol)
                     if resolved_ltp and resolved_ltp > 0:
                         active_ltp = float(resolved_ltp)
                     else:
                         gw_chain_live = groww_feed.get_live_option_chain(symbol=scrip_symbol)
                         if gw_chain_live:
+                            import re
+                            m_stk = re.search(r"\b(\d{4,6})\b", str(active_contract) + " " + str(active_trade.get("instrument", "")))
+                            t_stk = float(m_stk.group(1)) if m_stk else active_trade.get("strike", atm_strike)
+                            is_trade_pe = "PE" in str(active_contract).upper() or "PUT" in str(active_trade.get("instrument", "")).upper()
                             for rw in gw_chain_live:
-                                if abs(rw.get("strike", 0) - active_trade.get("strike", atm_strike)) < 0.5:
-                                    if "PE" in active_contract and rw.get("put_ltp"):
+                                if abs(rw.get("strike", 0) - t_stk) < 0.5:
+                                    if is_trade_pe and rw.get("put_ltp"):
                                         active_ltp = float(rw["put_ltp"])
-                                    elif "CE" in active_contract and rw.get("call_ltp"):
+                                    elif not is_trade_pe and rw.get("call_ltp"):
                                         active_ltp = float(rw["call_ltp"])
+                                    break
                 except Exception:
                     pass
 
