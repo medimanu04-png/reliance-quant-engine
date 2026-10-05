@@ -2178,7 +2178,8 @@ else:
 time_gate_allowed = time_gate_pass
 
 # Circuit Breaker Status (Scoped strictly per Desk)
-is_circuit_breaker_tripped = st.session_state.get(f"session_sl_count_{scrip_symbol}", 0) >= max_daily_sl_allowed
+has_loss_disk, cb_loss_reason = SequentialTradeEngine.has_daily_loss(symbol=scrip_symbol)
+is_circuit_breaker_tripped = (st.session_state.get(f"session_sl_count_{scrip_symbol}", 0) >= max_daily_sl_allowed) or has_loss_disk
 
 # Simulation flags & Mode Resolution
 is_live_flow = (sim_scenario == "🟢 Live Market Flow")
@@ -3825,8 +3826,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         today_date = datetime.now(IST).strftime("%Y-%m-%d")
 
         if active_track_ltp >= act_target or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") == "Target Hit"):
-            target_alert_key = f"tg_sent_target_{today_date}_{active_sym}_{act_trade_num}_{plan_strike}"
-            if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(target_alert_key):
+            target_alert_key = f"tg_sent_target_{today_date}_{active_sym}_{act_trade_num}"
+            if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(target_alert_key, cooldown_seconds=86400):
                 profit_rs = round(unreal_pnl)
                 alert_msg = TelegramNotifier.format_target_hit_alert(
                     contract=act_inst,
@@ -3888,8 +3889,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             """)
 
         elif active_track_ltp <= effective_sl or (trade_update.get("closed_trade") and trade_update.get("closed_trade", {}).get("status") in ["SL Hit", "Hard Catastrophic SL Hit"]):
-            sl_alert_key = f"tg_sent_sl_{today_date}_{active_sym}_{act_trade_num}_{plan_strike}"
-            if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(sl_alert_key):
+            sl_alert_key = f"tg_sent_sl_{today_date}_{active_sym}_{act_trade_num}"
+            if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(sl_alert_key, cooldown_seconds=86400):
                 loss_rs = abs(round(unreal_pnl))
                 alert_msg = TelegramNotifier.format_stop_loss_alert(
                     contract=act_inst,

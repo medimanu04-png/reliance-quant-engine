@@ -1,5 +1,5 @@
 {
-  "current_state": "TRADE CLOSED & AUDITED",
+  "current_state": "IDLE / SCANNING",
   "symbol": "NIFTY",
   "active_trade": null,
   "last_closed_trade": {
@@ -16,6 +16,6 @@
     "pnl": "\u20b9-1,248.00 (-9.60 pts)"
   },
   "today_trade_count": 5,
-  "updated_at": "2026-10-05 02:29:25 PM IST",
+  "updated_at": "2026-10-05 02:29:26 PM IST",
   "re_entry_armed": null
 }
