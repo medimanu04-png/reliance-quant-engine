@@ -29,10 +29,10 @@
     "sl": 21.8,
     "target": 107.8,
     "status": "SL Hit",
-    "exit_price": 51.65,
-    "exit_time": "02:20:33 PM IST",
-    "pnl": "\u20b9-799.50 (-6.15 pts)"
+    "exit_price": 51.0,
+    "exit_time": "02:20:40 PM IST",
+    "pnl": "\u20b9-884.00 (-6.80 pts)"
   },
   "today_trade_count": 5,
-  "updated_at": "2026-10-05 02:20:33 PM IST"
+  "updated_at": "2026-10-05 02:20:40 PM IST"
 }
