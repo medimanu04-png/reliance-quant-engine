@@ -162,21 +162,20 @@
   "2026-10-05_NIFTY": {
     "date": "2026-10-05",
     "trade_given_time": "10:14:39 AM IST",
-    "full_contract": "NIFTY 22550 CE (06-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b922550 & \u20b922600] | 2 Lots / 130 Qty | Current Price: \u20b995.70 (Spot: \u20b922550.55)",
+    "full_contract": "NIFTY 22450 PE (06-OCT-2026)",
     "symbol": "NIFTY",
-    "contract_type": "CE",
-    "action": "BUY CE",
-    "strike": 22550,
+    "contract_type": "PE",
+    "strike": 6202622450,
     "expiry": "06-OCT-2026",
     "suggested_entry": 98.7,
     "suggested_exit": 148.7,
     "suggested_sl": 62.7,
-    "confluence_score": 96.0
+    "confluence_score": 86.5
   },
   "2026-10-05_SENSEX": {
     "date": "2026-10-05",
     "trade_given_time": "03:11:10 PM IST",
-    "full_contract": "SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9478.90 (Spot: \u20b971904.62)",
+    "full_contract": "SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9487.30 (Spot: \u20b971917.04)",
     "symbol": "SENSEX",
     "contract_type": "PE",
     "action": "BUY PE",
@@ -185,6 +184,6 @@
     "suggested_entry": 544.15,
     "suggested_exit": 664.15,
     "suggested_sl": 484.15,
-    "confluence_score": 85.8
+    "confluence_score": 79.9
   }
 }

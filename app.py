@@ -1378,8 +1378,6 @@ def render_auto_rescan_controller():
 
 
 
-st.markdown("---")
-
 # ==============================================================================
 # 1.5. LIVE MACRO BENCHMARKS TELEMETRY: NIFTY 50 | BANK NIFTY | GIFT NIFTY | S&P 500 (US) | INDIA VIX | CRUDE OIL
 # ==============================================================================
@@ -1402,8 +1400,11 @@ active_feed_sym = resolve_symbol(cur_sel_scrip)
 nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=active_feed_sym)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
-if manual_rescan:
+if manual_rescan and active_route == "":
     st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete across all 4 Quantitative Trading Desks! Live spot quotes, options chain telemetry, and macro benchmarks (NIFTY 50, BSE SENSEX, RELIANCE, ADANI ENTERPRISES) 100% updated.")
+    st.session_state["manual_rescan_clicked"] = False
+elif manual_rescan and active_route != "":
+    st.toast(f"⚡ {cur_sel_scrip} Desk Synchronized ({st.session_state.get('rescan_time')})")
     st.session_state["manual_rescan_clicked"] = False
 st.session_state["just_rescanned"] = False
 
@@ -1519,25 +1520,23 @@ def render_live_macro_benchmarks_strip():
     </div>
     """)
 
-render_live_macro_benchmarks_strip()
-
-st.markdown("---")
-
-# ==============================================================================
-# 1.6. FAST RESCAN CONTROLLER & LIVE REAL-TIME QUANT DESK CLOCK WATCH
-# ==============================================================================
-top_ctrl_col, top_clock_col = st.columns([2.3, 1.7])
-with top_ctrl_col:
-    render_auto_rescan_controller()
-with top_clock_col:
-    render_quant_desk_clock()
-
-st.markdown("---")
-
 # ==============================================================================
 # HOMEPAGE EXECUTIVE ROUTING GATE (Limited ONLY to General Market Telemetry)
 # ==============================================================================
 if active_route == "":
+    render_live_macro_benchmarks_strip()
+
+    st.markdown("---")
+
+    # Fast Rescan Controller & Live Real-Time Quant Desk Clock Watch
+    top_ctrl_col, top_clock_col = st.columns([2.3, 1.7])
+    with top_ctrl_col:
+        render_auto_rescan_controller()
+    with top_clock_col:
+        render_quant_desk_clock()
+
+    st.markdown("---")
+
     st.html("""
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -6466,6 +6465,34 @@ if df is not None and not df.empty:
             </div>
         </div>
         """)
+
+    # Clean Stock Name Heading for Dedicated Desk Mode
+    st.html(f"""
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px; margin-bottom: 12px; padding: 2px 0;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.45rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">
+                {spec.display_name.upper()}
+            </span>
+            <span style="background: {scrip_accent}; color: {scrip_color}; border: 1px solid {scrip_color}55; padding: 3px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 800;">
+                {spec.yf_symbol} • {spec.lot_size} QTY/LOT
+            </span>
+            <span style="background: rgba(15, 23, 42, 0.8); border: 1px solid #1E293B; color: #94A3B8; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;">
+                Expiry: <b style="color: #F8FAFC;">{active_mandate_expiry}</b>
+            </span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="background: rgba(16, 185, 129, 0.12); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;">
+                🎯 Target: +{spec.target_pts:.1f} pts
+            </span>
+            <span style="background: rgba(239, 68, 68, 0.12); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;">
+                🛑 SL: -{spec.sl_pts:.1f} pts
+            </span>
+            <span style="background: rgba(245, 158, 11, 0.12); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;">
+                🚦 Gate: ≥{spec.min_confluence_gate:.0f}%
+            </span>
+        </div>
+    </div>
+    """)
 
     # 5 Institutional Sub-Pages / Tabs
     tab_cockpit, tab_radar, tab_corridor, tab_ledger, tab_settings = st.tabs([
