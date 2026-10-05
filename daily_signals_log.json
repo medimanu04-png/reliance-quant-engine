@@ -161,16 +161,16 @@
   },
   "2026-10-05_NIFTY": {
     "date": "2026-10-05",
-    "trade_given_time": "10:14:39 AM IST",
+    "trade_given_time": "12:07:30 PM IST",
     "full_contract": "NIFTY 22450 PE (06-OCT-2026)",
-    "symbol": "NIFTY",
+    "symbol": "NIFTY26OCT22450PE",
     "contract_type": "PE",
-    "strike": 6202622450,
+    "strike": 22450,
     "expiry": "06-OCT-2026",
-    "suggested_entry": 98.7,
-    "suggested_exit": 148.7,
-    "suggested_sl": 62.7,
-    "confluence_score": 86.5
+    "suggested_entry": 110.40,
+    "suggested_exit": 160.40,
+    "suggested_sl": 74.40,
+    "confluence_score": 75.8
   },
   "2026-10-05_SENSEX": {
     "date": "2026-10-05",

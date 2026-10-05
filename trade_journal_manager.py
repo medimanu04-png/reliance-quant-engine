@@ -1322,6 +1322,7 @@ class SequentialTradeEngine:
     def get_state(cls, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Loads and returns current sequential engine state for the specified symbol."""
         sym_kw = resolve_symbol(symbol=symbol)
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
         state_file = cls.get_state_file_path(sym_kw)
         if os.path.exists(state_file):
             try:
@@ -1330,6 +1331,46 @@ class SequentialTradeEngine:
                     if isinstance(state, dict) and "current_state" in state:
                         if "symbol" not in state:
                             state["symbol"] = sym_kw
+                        # If active_trade is already active, return state immediately
+                        if state.get("current_state") in [cls.STATE_IN_TRADE, cls.STATE_ENTRY_PENDING] and state.get("active_trade"):
+                            return state
+                        # If IDLE, check if SignalTracker recorded a trade recommendation for today
+                        sig = SignalTracker.get_signal(today_str, symbol=sym_kw)
+                        if sig and sig.get("suggested_entry") and sig.get("full_contract"):
+                            journal = TradeJournalManager.load_journal(symbol=sym_kw)
+                            today_trades = [
+                                t for t in journal 
+                                if t.get("date") == today_str and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
+                            ]
+                            closed_trades = [t for t in today_trades if t.get("status") in ["HIT", "FAIL"] or t.get("is_closed") is True]
+                            c_full = sig.get("full_contract", "")
+                            is_closed = any(c_full in str(ct.get("instrument", "")) or sig.get("symbol", "") in str(ct.get("trading_symbol", "")) for ct in closed_trades)
+                            if not is_closed:
+                                spec_tr = get_asset_spec(symbol=sym_kw, contract=sig.get("symbol"))
+                                s_entry = float(sig.get("suggested_entry", 0.0))
+                                state["current_state"] = cls.STATE_IN_TRADE
+                                state["symbol"] = sym_kw
+                                state["active_trade"] = {
+                                    "trade_num": len(closed_trades) + 1,
+                                    "contract": sig.get("symbol", f"{sym_kw}_{sig.get('strike')}_{sig.get('contract_type')}"),
+                                    "instrument": sig.get("full_contract", f"{sym_kw} {sig.get('strike')} {sig.get('contract_type')} ({sig.get('expiry')})"),
+                                    "planned_entry": s_entry,
+                                    "actual_entry": s_entry,
+                                    "actual_entry_time": sig.get("trade_given_time", ""),
+                                    "executed": "Signal Given",
+                                    "sl": float(sig.get("suggested_sl", round(max(0.05, s_entry - spec_tr.sl_pts), 2))),
+                                    "target": float(sig.get("suggested_exit", round(s_entry + spec_tr.target_pts, 2))),
+                                    "direction": f"BUY {sig.get('contract_type', 'PE')}",
+                                    "qty": spec_tr.lot_size * spec_tr.default_lots,
+                                    "num_lots": spec_tr.default_lots,
+                                    "lot_size": spec_tr.lot_size,
+                                    "highest_price": s_entry,
+                                    "trailing_sl": float(sig.get("suggested_sl", round(max(0.05, s_entry - spec_tr.sl_pts), 2))),
+                                    "status": "Open",
+                                    "confluence": float(sig.get("confluence_score", 75.0))
+                                }
+                                state["today_trade_count"] = len(closed_trades) + 1
+                                cls.save_state(state, symbol=sym_kw)
                         return state
             except Exception as e:
                 logger.debug(f"Error reading sequential state ({state_file}): {e}")

@@ -1,8 +1,28 @@
 {
-  "current_state": "IDLE / SCANNING",
+  "current_state": "IN-TRADE (ACTIVE MONITORING)",
   "symbol": "NIFTY",
-  "active_trade": null,
+  "active_trade": {
+    "trade_num": 1,
+    "contract": "NIFTY26OCT22450PE",
+    "instrument": "NIFTY 22450 PE (06-OCT-2026)",
+    "planned_entry": 110.4,
+    "actual_entry": 110.4,
+    "actual_entry_time": "12:07:30 PM IST",
+    "executed": "Signal Given",
+    "sl": 74.4,
+    "target": 160.4,
+    "direction": "BUY PE",
+    "qty": 130,
+    "num_lots": 2,
+    "lot_size": 65,
+    "highest_price": 110.4,
+    "trailing_sl": 74.4,
+    "status": "Open",
+    "confluence": 75.8,
+    "current_ltp": 86.4,
+    "unrealized_pnl": -3120.0
+  },
   "last_closed_trade": null,
-  "today_trade_count": 0,
-  "updated_at": "2026-10-05 12:14:19 PM IST"
+  "today_trade_count": 1,
+  "updated_at": "2026-10-05 12:31:01 PM IST"
 }

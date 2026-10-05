@@ -978,6 +978,26 @@ class RelianceQuantAlertDaemon:
 
                 try:
                     exp_clean = expiry_date.replace("-", "").upper()
+                    seq_cur = SequentialTradeEngine.get_state(symbol=sym)
+                    if seq_cur.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED]:
+                        SequentialTradeEngine.enter_trade_direct(
+                            contract=f"{sym}{exp_clean}{recommended_strike}{contract_type}",
+                            instrument=contract_label,
+                            entry_price=active_option_ltp,
+                            sl=round(max(0.05, active_option_ltp - dynamic_sl_pts), 2),
+                            target=round(active_option_ltp + dynamic_target_pts, 2),
+                            direction=f"BUY {contract_type}",
+                            expiry=expiry_date,
+                            confluence=dominant_score,
+                            qty=active_risk.lot_size * active_risk.num_lots,
+                            num_lots=active_risk.num_lots,
+                            symbol=sym
+                        )
+                except Exception as e:
+                    logger.debug(f"SequentialTradeEngine enter error in daemon: {e}")
+
+                try:
+                    exp_clean = expiry_date.replace("-", "").upper()
                     ShadowMonitoringEngine.log_signal(
                         symbol=f"{sym}{exp_clean}{recommended_strike}{contract_type}",
                         action=f"BUY {contract_type}",
