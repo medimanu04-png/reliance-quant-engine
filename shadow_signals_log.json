@@ -113,13 +113,13 @@
     "screenshot": "",
     "screenshot_data_uri": "",
     "shadow_status": "Active Monitoring",
-    "highest_price_reached": 80.6,
-    "lowest_price_reached": 80.35,
-    "current_price": 80.6,
+    "highest_price_reached": 80.9,
+    "lowest_price_reached": 77.0,
+    "current_price": 77.0,
     "exit_price": null,
     "exit_time": "",
-    "shadow_pts": 0.2,
-    "shadow_pnl": 26.0,
+    "shadow_pts": -3.4,
+    "shadow_pnl": -442.0,
     "confluence_score": 75.0,
     "notes": "Verified Groww Execution \u2022 Buy \u20b980.40"
   }
