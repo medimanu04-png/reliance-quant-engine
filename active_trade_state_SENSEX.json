@@ -3,12 +3,12 @@
   "symbol": "SENSEX",
   "contract": "SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9487.30 (Spot: \u20b971917.04)",
   "action": "BUY SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9487.30 (Spot: \u20b971917.04)",
-  "current_spot": 71995.9,
+  "current_spot": 71997.03,
   "entry_spot": 544.15,
   "entry_time": "03:11:10 PM IST",
-  "peak_spot": 71995.9,
+  "peak_spot": 71997.03,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -3406.0,
+  "unrealized_pnl_2lots": -3400.0,
   "target_pts": 120.0,
   "target_2_pts": 280.0,
   "sl_pts": 60.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "COST LOCK (\u20b9544.15)",
     "pnl_rs": 0.0
   },
-  "last_update": "12:59:29 PM IST"
+  "last_update": "01:00:34 PM IST"
 }
