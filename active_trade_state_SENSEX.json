@@ -8,7 +8,7 @@
   "entry_time": "03:11:10 PM IST",
   "peak_spot": 72355.7,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -9634.0,
+  "unrealized_pnl_2lots": -9570.0,
   "target_pts": 120.0,
   "target_2_pts": 280.0,
   "sl_pts": 60.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "COST LOCK (\u20b9544.15)",
     "pnl_rs": 0.0
   },
-  "last_update": "02:22:23 PM IST"
+  "last_update": "02:22:29 PM IST"
 }
