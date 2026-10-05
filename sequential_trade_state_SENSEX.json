@@ -15,10 +15,22 @@
     "qty": 40,
     "num_lots": 2,
     "lot_size": 20,
-    "highest_price": 544.15,
-    "trailing_sl": 484.15,
-    "status": "Open",
-    "confluence": 79.9
+    "highest_price": 7039.05,
+    "trailing_sl": 544.15,
+    "status": "T1 Banked - Runner Active",
+    "confluence": 79.9,
+    "breakeven_activated": true,
+    "profit_lock_activated": true,
+    "trailing_mode": "CHANDELIER_ATR",
+    "current_ltp": 7039.05,
+    "unrealized_pnl": 259796.0,
+    "t1_status": "BANKED",
+    "t1_exit_price": 7039.05,
+    "t1_exit_time": "02:18:27 PM IST",
+    "t1_pnl": 129898.0,
+    "t2_status": "RUNNER_ACTIVE",
+    "target_2": 824.15,
+    "notes": "Tranche 1 (50%) Banked @ \u20b97039.05 (+6494.9 pts). Runner Stop-Loss locked at Cost (\u20b9544.15) trailing to Target 2 (\u20b9824.15)"
   },
   "last_closed_trade": {
     "trade_num": 1,
@@ -34,7 +46,7 @@
     "pnl": "\u20b9-7,640.00 (-191.00 pts)"
   },
   "today_trade_count": 1,
-  "updated_at": "2026-10-05 02:18:25 PM IST",
+  "updated_at": "2026-10-05 02:18:27 PM IST",
   "re_entry_armed": {
     "armed": true,
     "symbol": "SENSEX",
