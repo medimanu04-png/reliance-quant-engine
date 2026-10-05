@@ -48,28 +48,55 @@ def load_live_trades():
                         sym = resolve_symbol(raw_sym)
                         month_str = entry_date[:7]
                         
+                        is_closed = bool(entry.get("is_closed", False)) or entry.get("status") in ["HIT", "FAIL", "CLOSED"]
+                        act_e = float(entry.get("actual_entry_price") or entry.get("suggested_entry") or entry.get("entry_price") or 0.0)
+                        act_x = float(entry.get("actual_exit_price") or entry.get("exit_price") or 0.0) if is_closed else 0.0
+                        
+                        # Real Peak values: NEVER fallback to target_exit or target_pts for open trades!
+                        peak_spot_val = float(entry.get("peak_spot") or entry.get("highest_price_reached") or act_e)
+                        peak_pts_val = max(0.0, round(peak_spot_val - act_e, 2)) if peak_spot_val > act_e else 0.0
+                        peak_time_val = entry.get("peak_time") or entry.get("actual_entry_time") or entry.get("trade_given_time") or "—"
+                        if peak_pts_val <= 0:
+                            peak_time_val = entry.get("actual_entry_time") or entry.get("trade_given_time") or "—"
+
+                        spec = get_asset_spec(sym)
+                        lot_size = spec.lot_size
+                        num_lots = int(entry.get("num_lots", 2) or 2)
+                        peak_amt_rs = round(peak_pts_val * lot_size * num_lots * 0.52, 2)
+                        
+                        if is_closed:
+                            exit_time_val = entry.get("actual_exit_time") or entry.get("exit_time") or "03:30:00 PM"
+                            exit_reason_val = entry.get("status", "TARGET HIT")
+                            pnl_pts_val = float(entry.get("pnl_pts", 0.0) or round(act_x - act_e, 2))
+                            realised_pnl_val = float(entry.get("realised_pnl", 0.0) or entry.get("total_profit", 0.0))
+                        else:
+                            exit_time_val = "—"
+                            exit_reason_val = "OPEN (Currently Holding)"
+                            pnl_pts_val = 0.0
+                            realised_pnl_val = 0.0
+
                         row = {
                             "month": month_str,
                             "date": entry_date,
                             "action": entry.get("type", "BUY CE"),
                             "entry_time": entry.get("actual_entry_time", entry.get("trade_given_time", "09:15:00 AM")),
-                            "entry_spot": entry.get("actual_entry_price", entry.get("suggested_entry", entry.get("entry_price", 0.0))),
-                            "peak_spot": entry.get("peak_spot", entry.get("suggested_exit", 0.0)),
-                            "peak_time": entry.get("peak_time", "10:04:15 AM"),
-                            "peak_pts": float(entry.get("peak_pts", 0.0) or entry.get("suggested_target_pts", 0.0) or 0.0),
-                            "peak_amount_rs": float(entry.get("peak_amount_rs", entry.get("realised_pnl", 0.0)) or 0.0),
+                            "entry_spot": act_e,
+                            "peak_spot": peak_spot_val,
+                            "peak_time": peak_time_val,
+                            "peak_pts": peak_pts_val,
+                            "peak_amount_rs": peak_amt_rs,
                             "least_spot": entry.get("least_spot", "—"),
                             "least_amount_rs": float(entry.get("least_amount_rs", 0.0) or 0.0),
-                            "exit_time": entry.get("actual_exit_time", "09:37:20 AM"),
-                            "exit_spot": entry.get("actual_exit_price", entry.get("exit_price", entry.get("suggested_exit", 0.0))),
-                            "exit_reason": entry.get("status", "TARGET HIT"),
-                            "pnl_pts": float(entry.get("pnl_pts", 0.0) or (float(entry.get("actual_exit_price", 0.0) or 0.0) - float(entry.get("actual_entry_price", 0.0) or 0.0)) or 0.0),
-                            "pnl_1lot": float(entry.get("realised_pnl", 0.0) or 0.0) / (entry.get("num_lots", 2) or 2),
-                            "pnl_2lots": float(entry.get("realised_pnl", 0.0) or 0.0),
+                            "exit_time": exit_time_val,
+                            "exit_spot": act_x,
+                            "exit_reason": exit_reason_val,
+                            "pnl_pts": pnl_pts_val,
+                            "pnl_1lot": round(realised_pnl_val / max(1, num_lots), 2),
+                            "pnl_2lots": realised_pnl_val,
                             "status": "LIVE_TRADE",
                             "score": float(entry.get("confluence_score", 75.0) or 75.0),
-                            "runner_pnl_pts": float(entry.get("runner_pnl_pts", entry.get("pnl_pts", 0.0)) or 0.0),
-                            "runner_exit_reason": entry.get("runner_exit_reason", entry.get("status", "TARGET HIT")),
+                            "runner_pnl_pts": pnl_pts_val,
+                            "runner_exit_reason": exit_reason_val,
                             "is_live": True
                         }
                         if sym in trades_map:

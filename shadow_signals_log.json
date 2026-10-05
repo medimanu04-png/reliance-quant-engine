@@ -53,11 +53,11 @@
     "shadow_status": "Active Monitoring",
     "highest_price_reached": 117.21,
     "lowest_price_reached": 86.75,
-    "current_price": 89.5,
+    "current_price": 91.85,
     "exit_price": null,
     "exit_time": "",
-    "shadow_pts": -27.71,
-    "shadow_pnl": -3602.3,
+    "shadow_pts": -25.36,
+    "shadow_pnl": -3296.8,
     "confluence_score": 75.8,
     "notes": "Live Open Position in Groww \u2022 Buy \u20b9117.21 (12:08:14 PM IST) \u2022 Currently Holding"
   }
