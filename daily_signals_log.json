@@ -140,17 +140,31 @@
   },
   "2026-10-05_RELIANCE": {
     "date": "2026-10-05",
+    "trade_given_time": "03:11:10 PM IST",
+    "full_contract": "RELIANCE 1190 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91190 & \u20b91200] | 2 Lots / 1000 Qty | Current Price: \u20b931.65 (Spot: \u20b91191.50)",
     "symbol": "RELIANCE",
-    "strike": 2000,
     "contract_type": "CE",
-    "trade_given_time": "03:11:10 PM IST"
+    "action": "BUY CE",
+    "strike": 1190,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 32.85,
+    "suggested_exit": 40.85,
+    "suggested_sl": 30.65,
+    "confluence_score": 96.0
   },
   "2026-10-05": {
     "date": "2026-10-05",
+    "trade_given_time": "03:11:10 PM IST",
+    "full_contract": "RELIANCE 1190 CE (27-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b91190 & \u20b91200] | 2 Lots / 1000 Qty | Current Price: \u20b931.65 (Spot: \u20b91191.50)",
     "symbol": "RELIANCE",
-    "strike": 2000,
     "contract_type": "CE",
-    "trade_given_time": "03:11:10 PM IST"
+    "action": "BUY CE",
+    "strike": 1190,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 32.85,
+    "suggested_exit": 40.85,
+    "suggested_sl": 30.65,
+    "confluence_score": 96.0
   },
   "2026-10-05_ADANIENT": {
     "date": "2026-10-05",
@@ -175,14 +189,15 @@
   "2026-10-05_SENSEX": {
     "date": "2026-10-05",
     "trade_given_time": "03:11:10 PM IST",
-    "full_contract": "SENSEX 72000 PE (08-OCT-2026)",
+    "full_contract": "SENSEX 72300 CE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b972300 & \u20b972400] | 2 Lots / 40 Qty | Current Price: \u20b9517.90 (Spot: \u20b972343.69)",
     "symbol": "SENSEX",
     "contract_type": "CE",
-    "strike": 72000,
+    "action": "BUY CE",
+    "strike": 72300,
     "expiry": "08-OCT-2026",
     "suggested_entry": 544.15,
     "suggested_exit": 664.15,
     "suggested_sl": 484.15,
-    "confluence_score": 79.9
+    "confluence_score": 96.0
   }
 }
