@@ -1,7 +1,25 @@
 {
-  "current_state": "TRADE CLOSED & AUDITED",
+  "current_state": "IN-TRADE (ACTIVE MONITORING)",
   "symbol": "SENSEX",
-  "active_trade": null,
+  "active_trade": {
+    "trade_num": 1,
+    "contract": "SENSEX",
+    "instrument": "SENSEX 72000 PE (08-OCT-2026)",
+    "planned_entry": 544.15,
+    "actual_entry": 544.15,
+    "actual_entry_time": "03:11:10 PM IST",
+    "executed": "Signal Given",
+    "sl": 484.15,
+    "target": 664.15,
+    "direction": "BUY CE",
+    "qty": 40,
+    "num_lots": 2,
+    "lot_size": 20,
+    "highest_price": 544.15,
+    "trailing_sl": 484.15,
+    "status": "Open",
+    "confluence": 79.9
+  },
   "last_closed_trade": {
     "trade_num": 1,
     "instrument": "SENSEX 72000 PE (08-OCT-2026)",
@@ -10,12 +28,30 @@
     "executed": "Yes",
     "sl": 484.15,
     "target": 664.15,
-    "status": "T1 (+6494.9) | TRAIL COST (0.0)",
-    "exit_price": 594.15,
-    "exit_time": "02:07:31 PM IST",
-    "pnl": "+\u20b9130,898.00 (+3272.45 pts)"
+    "status": "Hard Catastrophic SL Hit",
+    "exit_price": 382.7,
+    "exit_time": "02:07:41 PM IST",
+    "pnl": "\u20b9-6,458.00 (-161.45 pts)"
   },
   "today_trade_count": 1,
-  "updated_at": "2026-10-05 02:07:32 PM IST",
-  "re_entry_armed": null
+  "updated_at": "2026-10-05 02:07:41 PM IST",
+  "re_entry_armed": {
+    "armed": true,
+    "symbol": "SENSEX",
+    "contract": "SENSEX",
+    "instrument": "SENSEX 72000 PE (08-OCT-2026)",
+    "direction": "BUY CE",
+    "confluence": 79.9,
+    "planned_entry": 544.15,
+    "actual_entry": 544.15,
+    "wick_extreme_sl": 382.7,
+    "stop_loss_pts": 161.45,
+    "target": 664.15,
+    "target_2": 0.0,
+    "qty": 40,
+    "num_lots": 2,
+    "armed_at": "2026-10-05 02:07:41 PM IST",
+    "expires_at": "2026-10-05 02:22:41 PM IST",
+    "notes": "High conviction (79.9%) setup stopped on early wick at 02:07:41 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
+  }
 }

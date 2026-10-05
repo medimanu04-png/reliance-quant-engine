@@ -196,8 +196,8 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": -27345.25,
     "trade_roi_pct": -50.7,
-    "cumulative_profit": 97948.0,
-    "total_cash": 197948.0
+    "cumulative_profit": -26944.0,
+    "total_cash": 73056.0
   },
   {
     "id": "TRD-20261005-02-NIFTY26O0622450PE",
@@ -247,7 +247,7 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": -27346.55,
     "trade_roi_pct": -50.7,
-    "cumulative_profit": 70916.45,
-    "total_cash": 170916.45
+    "cumulative_profit": -53975.55,
+    "total_cash": 46024.45
   }
 ]
