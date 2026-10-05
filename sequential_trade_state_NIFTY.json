@@ -10,11 +10,11 @@
     "executed": "Yes",
     "sl": 74.4,
     "target": 160.4,
-    "status": "Hard Catastrophic SL Hit",
-    "exit_price": 44.9,
-    "exit_time": "01:54:25 PM IST",
-    "pnl": "\u20b9-8,515.00 (-65.50 pts)"
+    "status": "SL Hit",
+    "exit_price": 65.75,
+    "exit_time": "02:05:47 PM IST",
+    "pnl": "\u20b9-5,804.50 (-44.65 pts)"
   },
   "today_trade_count": 3,
-  "updated_at": "2026-10-05 01:54:25 PM IST"
+  "updated_at": "2026-10-05 02:05:47 PM IST"
 }
