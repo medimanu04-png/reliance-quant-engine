@@ -10,6 +10,8 @@ import json
 import os
 import math
 import pytz
+import logging
+logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict, Any, Tuple
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -1571,6 +1573,8 @@ if active_route == "":
     col_idx1, col_idx2 = st.columns(2)
     spec_nifty_hp = get_asset_spec("NIFTY")
     spec_sensex_hp = get_asset_spec("SENSEX")
+    spec_rel_hp = get_asset_spec("RELIANCE")
+    spec_ada_hp = get_asset_spec("ADANIENT")
 
     gw_feed_hp = GrowwMarketFeed.get_instance()
     spot_nifty_hp = gw_feed_hp.get_live_spot_data("NIFTY")

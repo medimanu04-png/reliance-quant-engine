@@ -469,6 +469,9 @@ class TradeJournalManager:
             spec = get_asset_spec(sym or sym_kw)
             qty = int(gt.get("qty", spec.lot_size * spec.default_lots))
             is_closed = bool(gt.get("is_closed", False))
+            realised_pnl = float(gt.get("realised_pnl", 0.0))
+            if is_closed and realised_pnl == 0.0 and exit_p > 0 and entry_p > 0:
+                realised_pnl = round((exit_p - entry_p) * qty, 2)
             
             raw_entry_t = gt.get("entry_time", "")
             raw_exit_t = gt.get("exit_time", "")
@@ -586,8 +589,8 @@ class TradeJournalManager:
                 "actual_exit_time": actual_exit_time_str,
                 "actual_exit_price": exit_p,
                 "exit_price": exit_p,
-                "num_lots": max(1, round(qty / get_asset_spec(symbol=symbol, contract=trading_symbol).lot_size)),
-                "lot_size": get_asset_spec(symbol=symbol, contract=trading_symbol).lot_size,
+                "num_lots": max(1, round(qty / spec_exec.lot_size)) if spec_exec.lot_size > 0 else 1,
+                "lot_size": spec_exec.lot_size,
                 "qty": qty,
                 "capital_deployed": cap_deployed,
                 "realised_pnl": realised_pnl,
