@@ -1726,7 +1726,7 @@ if active_route == "":
             
             c_liv1, c_liv2 = st.columns([3, 1])
             with c_liv1:
-                st.caption("🟢 **Live Forward Desk (Oct 05, 2026 Onwards)**: Strictly forward ledger recording actual trading actions across NIFTY 50, BSE SENSEX, Reliance, and Adani desks.")
+                st.caption("🟢 **Live Forward Desk (Oct 05, 2026 Onwards)**: Live forward trading ledger powered by the Enhanced 4-Solution Quant Engine (Dynamic ATR SL, Two-Tier Wick Shield, 15m Re-Entry, and Chandelier Trailing) across NIFTY 50, BSE SENSEX, Reliance, and Adani desks.")
             with c_liv2:
                 st_download_button_stretch(
                     label="📥 Download Live Desk HTML",
