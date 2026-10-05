@@ -216,16 +216,39 @@ def get_all_active_states():
         except Exception:
             exp_str = "06-OCT-2026" if sym == "NIFTY" else ("08-OCT-2026" if sym == "SENSEX" else "27-OCT-2026")
             
+        # Dynamic Daily Support & Resistance Zones calculation
+        spec_item = get_asset_spec(sym)
+        live_spot = cfg["spot"]
+        live_high = None
+        live_low = None
+        live_close = None
+        try:
+            off_data = NSEIndiaFetcher.get_official_data(symbol=sym)
+            if off_data and off_data.get("spot_ltp"):
+                live_spot = float(off_data.get("spot_ltp") or live_spot)
+                live_high = float(off_data.get("high") or (live_spot * 1.006))
+                live_low = float(off_data.get("low") or (live_spot * 0.994))
+                live_close = float(off_data.get("prev_close") or live_spot)
+        except Exception:
+            pass
+
+        sr_zones = spec_item.calculate_daily_sr_zones(
+            spot=live_spot,
+            high=live_high,
+            low=live_low,
+            prev_close=live_close
+        )
+
         contract_name = f"{sym} {cfg['strike']} {cfg['type']} ({exp_str})"
         states[sym] = {
             "name": cfg["name"],
             "symbol": sym,
             "contract": contract_name,
             "action": "AWAITING MARKET OPEN (ARMED)",
-            "current_spot": cfg["spot"],
-            "entry_spot": cfg["spot"],
+            "current_spot": live_spot,
+            "entry_spot": live_spot,
             "entry_time": "09:15:00 AM",
-            "peak_spot": cfg["spot"],
+            "peak_spot": live_spot,
             "peak_profit_rs": 0.0,
             "unrealized_pnl_2lots": 0.0,
             "target_1_pts": cfg["target_1_pts"],
@@ -244,7 +267,8 @@ def get_all_active_states():
             "confluence_score": cfg["score"],
             "lot_size": cfg["lot_size"],
             "badge_color": cfg["badge_color"],
-            "market_status": "🟢 ARMED FOR MONDAY, OCT 05 (09:15 AM IST)"
+            "market_status": "🟢 ARMED FOR MONDAY, OCT 05 (09:15 AM IST)",
+            "sr_zones": sr_zones
         }
         sym_file = os.path.join(BASE_DIR, f"active_trade_state_{sym}.json")
         if not os.path.exists(sym_file) and sym == "RELIANCE":
@@ -285,6 +309,17 @@ def generate_live_dashboard():
     t2_st = active_state.get("tranche_2", {})
     t1_status_str = t1_st.get("status", "PENDING")
     t2_status_str = t2_st.get("status", "PENDING_T1")
+
+    init_sr = active_state.get("sr_zones", {})
+    init_res = init_sr.get("resistance_zones", {})
+    init_sup = init_sr.get("support_zones", {})
+    init_cpr = init_sr.get("cpr", {})
+    init_r3 = init_res.get("r3", {})
+    init_r2 = init_res.get("r2", {})
+    init_r1 = init_res.get("r1", {})
+    init_s1 = init_sup.get("s1", {})
+    init_s2 = init_sup.get("s2", {})
+    init_s3 = init_sup.get("s3", {})
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -740,8 +775,250 @@ def generate_live_dashboard():
             color: var(--text-muted);
         }}
 
-        .tranche-row strong {{
+        /* Dynamic Daily Support & Resistance Zones Card */
+        .sr-card {{
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 22px 24px;
+            margin-bottom: 22px;
+            box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+        }}
+
+        .sr-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }}
+
+        .sr-header h3 {{
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+
+        .sr-badges-cluster {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+
+        .sr-badge {{
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }}
+
+        .sr-badge-spot {{
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.35);
+        }}
+
+        .sr-badge-range {{
+            background: rgba(255, 255, 255, 0.05);
+            color: #e2e8f0;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }}
+
+        .sr-badge-regime {{
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.35);
+        }}
+
+        .sr-grid-layout {{
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }}
+
+        @media (min-width: 1024px) {{
+            .sr-grid-layout {{
+                grid-template-columns: 1fr 1fr;
+            }}
+        }}
+
+        .sr-column-box {{
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }}
+
+        .sr-column-title {{
             font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }}
+
+        .sr-res-title {{
+            color: #f87171;
+        }}
+
+        .sr-sup-title {{
+            color: #34d399;
+        }}
+
+        .sr-levels-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }}
+
+        .sr-level-tile {{
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 12px 14px;
+            transition: all 0.2s ease;
+        }}
+
+        .sr-level-tile:hover {{
+            background: rgba(255, 255, 255, 0.06);
+        }}
+
+        .sr-level-tile.resistance-tile {{
+            border-left: 4px solid #ef4444;
+        }}
+
+        .sr-level-tile.support-tile {{
+            border-left: 4px solid #10b981;
+        }}
+
+        .sr-level-tile.testing-active {{
+            box-shadow: 0 0 14px rgba(245, 158, 11, 0.3);
+            border-color: rgba(245, 158, 11, 0.6);
+            background: rgba(245, 158, 11, 0.08);
+        }}
+
+        .sr-tile-top {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }}
+
+        .sr-tag-name {{
+            font-size: 13px;
+            font-weight: 800;
+        }}
+
+        .sr-tag-status {{
+            font-size: 10.5px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }}
+
+        .status-supply {{
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }}
+
+        .status-demand {{
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }}
+
+        .status-testing {{
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.5);
+            animation: pulse 1.5s infinite;
+        }}
+
+        .status-breached {{
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }}
+
+        .sr-tile-mid {{
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }}
+
+        .sr-tile-mid .level-val {{
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }}
+
+        .sr-tile-mid .dist-val {{
+            font-size: 12px;
+            font-weight: 700;
+        }}
+
+        .sr-tile-bot {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 4px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }}
+
+        /* CPR Mid Anchor Bar */
+        .cpr-mid-bar {{
+            grid-column: 1 / -1;
+            background: rgba(168, 85, 247, 0.08);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }}
+
+        .cpr-mid-group {{
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            flex-wrap: wrap;
+        }}
+
+        .cpr-item {{
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .cpr-item span {{
+            font-size: 10.5px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }}
+
+        .cpr-item strong {{
+            font-size: 15px;
+            font-weight: 700;
+            color: #e2e8f0;
         }}
 
         /* Sizing Card */
@@ -1591,6 +1868,188 @@ def generate_live_dashboard():
         </div>
     </div>
 
+    <!-- Dynamic Daily Support & Resistance Zones Desk (3 Resistance & 3 Support Zones) -->
+    <div class="sr-card" id="sr-zones-card">
+        <div class="sr-header">
+            <h3>
+                <span>🎯 DYNAMIC DAILY S/R &amp; PIVOT CORRIDOR:</span>
+                <span class="mono" id="sr-desk-title" style="color:var(--accent-cyan);">{active_state.get('name', 'Reliance Industries')}</span>
+            </h3>
+            <div class="sr-badges-cluster">
+                <span class="sr-badge sr-badge-spot" id="sr-badge-spot">Live Spot: ₹{active_state.get('current_spot', 0.0):.1f}</span>
+                <span class="sr-badge sr-badge-range" id="sr-badge-range">H: ₹{init_sr.get('high', 0.0):.1f} | L: ₹{init_sr.get('low', 0.0):.1f} (Range: {init_sr.get('range', 0.0):.1f} pts)</span>
+                <span class="sr-badge sr-badge-regime" id="sr-badge-regime">{init_cpr.get('regime', 'NORMAL CPR')}</span>
+                <span class="badge-live" style="background:rgba(6,182,212,0.12);border-color:var(--accent-cyan);color:var(--accent-cyan);">⚡ DYNAMIC INTRADAY CALIBRATION</span>
+            </div>
+        </div>
+
+        <div class="sr-grid-layout">
+            <!-- Resistance Column (3 Dynamic Resistance Zones) -->
+            <div class="sr-column-box">
+                <div class="sr-column-title sr-res-title">
+                    <span>🔴 3 Dynamic Resistance Zones (Supply)</span>
+                    <span style="font-size:11px;color:var(--text-muted);font-weight:600;">Upper Take-Profit / Reversal Levels</span>
+                </div>
+                <div class="sr-levels-list">
+                    <!-- R3 -->
+                    <div class="sr-level-tile resistance-tile {'testing-active' if init_r3.get('is_testing') else ''}" id="sr-r3-tile">
+                        <div class="sr-tile-top">
+                            <span class="sr-tag-name mono" style="color:#f87171;">R3 RESISTANCE ZONE</span>
+                            <span class="sr-tag-status {'status-testing' if init_r3.get('is_testing') else ('status-breached' if init_r3.get('dist_pts', 0) < 0 else 'status-supply')}" id="sr-r3-status">
+                                {init_r3.get('status', '🔴 SUPPLY BARRIER')}
+                            </span>
+                        </div>
+                        <div class="sr-tile-mid">
+                            <span class="level-val mono" id="sr-r3-level" style="color:#f87171;">₹{init_r3.get('level', 0.0):.1f}</span>
+                            <span class="dist-val mono" id="sr-r3-dist" style="color:{'#f87171' if init_r3.get('dist_pts', 0) >= 0 else '#38bdf8'};">
+                                {'+' if init_r3.get('dist_pts', 0) >= 0 else ''}{init_r3.get('dist_pts', 0.0):.1f} pts ({'+' if init_r3.get('dist_pct', 0) >= 0 else ''}{init_r3.get('dist_pct', 0.0):.2f}%)
+                            </span>
+                        </div>
+                        <div class="sr-tile-bot">
+                            <span id="sr-r3-band">Zone: ₹{init_r3.get('zone_low', 0.0):.1f} - ₹{init_r3.get('zone_high', 0.0):.1f}</span>
+                            <span>Extreme Extension / Exhaustion Reversal</span>
+                        </div>
+                    </div>
+
+                    <!-- R2 -->
+                    <div class="sr-level-tile resistance-tile {'testing-active' if init_r2.get('is_testing') else ''}" id="sr-r2-tile">
+                        <div class="sr-tile-top">
+                            <span class="sr-tag-name mono" style="color:#fb7185;">R2 RESISTANCE ZONE</span>
+                            <span class="sr-tag-status {'status-testing' if init_r2.get('is_testing') else ('status-breached' if init_r2.get('dist_pts', 0) < 0 else 'status-supply')}" id="sr-r2-status">
+                                {init_r2.get('status', '🔴 SUPPLY BARRIER')}
+                            </span>
+                        </div>
+                        <div class="sr-tile-mid">
+                            <span class="level-val mono" id="sr-r2-level" style="color:#fb7185;">₹{init_r2.get('level', 0.0):.1f}</span>
+                            <span class="dist-val mono" id="sr-r2-dist" style="color:{'#f87171' if init_r2.get('dist_pts', 0) >= 0 else '#38bdf8'};">
+                                {'+' if init_r2.get('dist_pts', 0) >= 0 else ''}{init_r2.get('dist_pts', 0.0):.1f} pts ({'+' if init_r2.get('dist_pct', 0) >= 0 else ''}{init_r2.get('dist_pct', 0.0):.2f}%)
+                            </span>
+                        </div>
+                        <div class="sr-tile-bot">
+                            <span id="sr-r2-band">Zone: ₹{init_r2.get('zone_low', 0.0):.1f} - ₹{init_r2.get('zone_high', 0.0):.1f}</span>
+                            <span>Major Structural Ceiling / Breakout Target</span>
+                        </div>
+                    </div>
+
+                    <!-- R1 -->
+                    <div class="sr-level-tile resistance-tile {'testing-active' if init_r1.get('is_testing') else ''}" id="sr-r1-tile">
+                        <div class="sr-tile-top">
+                            <span class="sr-tag-name mono" style="color:#fda4af;">R1 RESISTANCE ZONE</span>
+                            <span class="sr-tag-status {'status-testing' if init_r1.get('is_testing') else ('status-breached' if init_r1.get('dist_pts', 0) < 0 else 'status-supply')}" id="sr-r1-status">
+                                {init_r1.get('status', '🔴 SUPPLY BARRIER')}
+                            </span>
+                        </div>
+                        <div class="sr-tile-mid">
+                            <span class="level-val mono" id="sr-r1-level" style="color:#fda4af;">₹{init_r1.get('level', 0.0):.1f}</span>
+                            <span class="dist-val mono" id="sr-r1-dist" style="color:{'#f87171' if init_r1.get('dist_pts', 0) >= 0 else '#38bdf8'};">
+                                {'+' if init_r1.get('dist_pts', 0) >= 0 else ''}{init_r1.get('dist_pts', 0.0):.1f} pts ({'+' if init_r1.get('dist_pct', 0) >= 0 else ''}{init_r1.get('dist_pct', 0.0):.2f}%)
+                            </span>
+                        </div>
+                        <div class="sr-tile-bot">
+                            <span id="sr-r1-band">Zone: ₹{init_r1.get('zone_low', 0.0):.1f} - ₹{init_r1.get('zone_high', 0.0):.1f}</span>
+                            <span>Immediate Supply / Pullback Barrier</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Support Column (3 Dynamic Support Zones) -->
+            <div class="sr-column-box">
+                <div class="sr-column-title sr-sup-title">
+                    <span>🟢 3 Dynamic Support Zones (Demand)</span>
+                    <span style="font-size:11px;color:var(--text-muted);font-weight:600;">Lower Stop / Accumulation Levels</span>
+                </div>
+                <div class="sr-levels-list">
+                    <!-- S1 -->
+                    <div class="sr-level-tile support-tile {'testing-active' if init_s1.get('is_testing') else ''}" id="sr-s1-tile">
+                        <div class="sr-tile-top">
+                            <span class="sr-tag-name mono" style="color:#6ee7b7;">S1 SUPPORT ZONE</span>
+                            <span class="sr-tag-status {'status-testing' if init_s1.get('is_testing') else ('status-breached' if init_s1.get('dist_pts', 0) > 0 else 'status-demand')}" id="sr-s1-status">
+                                {init_s1.get('status', '🟢 DEMAND FLOOR')}
+                            </span>
+                        </div>
+                        <div class="sr-tile-mid">
+                            <span class="level-val mono" id="sr-s1-level" style="color:#6ee7b7;">₹{init_s1.get('level', 0.0):.1f}</span>
+                            <span class="dist-val mono" id="sr-s1-dist" style="color:{'#34d399' if init_s1.get('dist_pts', 0) <= 0 else '#f87171'};">
+                                {'+' if init_s1.get('dist_pts', 0) >= 0 else ''}{init_s1.get('dist_pts', 0.0):.1f} pts ({'+' if init_s1.get('dist_pct', 0) >= 0 else ''}{init_s1.get('dist_pct', 0.0):.2f}%)
+                            </span>
+                        </div>
+                        <div class="sr-tile-bot">
+                            <span id="sr-s1-band">Zone: ₹{init_s1.get('zone_low', 0.0):.1f} - ₹{init_s1.get('zone_high', 0.0):.1f}</span>
+                            <span>Immediate Demand / Value Area Support</span>
+                        </div>
+                    </div>
+
+                    <!-- S2 -->
+                    <div class="sr-level-tile support-tile {'testing-active' if init_s2.get('is_testing') else ''}" id="sr-s2-tile">
+                        <div class="sr-tile-top">
+                            <span class="sr-tag-name mono" style="color:#34d399;">S2 SUPPORT ZONE</span>
+                            <span class="sr-tag-status {'status-testing' if init_s2.get('is_testing') else ('status-breached' if init_s2.get('dist_pts', 0) > 0 else 'status-demand')}" id="sr-s2-status">
+                                {init_s2.get('status', '🟢 DEMAND FLOOR')}
+                            </span>
+                        </div>
+                        <div class="sr-tile-mid">
+                            <span class="level-val mono" id="sr-s2-level" style="color:#34d399;">₹{init_s2.get('level', 0.0):.1f}</span>
+                            <span class="dist-val mono" id="sr-s2-dist" style="color:{'#34d399' if init_s2.get('dist_pts', 0) <= 0 else '#f87171'};">
+                                {'+' if init_s2.get('dist_pts', 0) >= 0 else ''}{init_s2.get('dist_pts', 0.0):.1f} pts ({'+' if init_s2.get('dist_pct', 0) >= 0 else ''}{init_s2.get('dist_pct', 0.0):.2f}%)
+                            </span>
+                        </div>
+                        <div class="sr-tile-bot">
+                            <span id="sr-s2-band">Zone: ₹{init_s2.get('zone_low', 0.0):.1f} - ₹{init_s2.get('zone_high', 0.0):.1f}</span>
+                            <span>Major Value Area Low / Structural Floor</span>
+                        </div>
+                    </div>
+
+                    <!-- S3 -->
+                    <div class="sr-level-tile support-tile {'testing-active' if init_s3.get('is_testing') else ''}" id="sr-s3-tile">
+                        <div class="sr-tile-top">
+                            <span class="sr-tag-name mono" style="color:#10b981;">S3 SUPPORT ZONE</span>
+                            <span class="sr-tag-status {'status-testing' if init_s3.get('is_testing') else ('status-breached' if init_s3.get('dist_pts', 0) > 0 else 'status-demand')}" id="sr-s3-status">
+                                {init_s3.get('status', '🟢 DEMAND FLOOR')}
+                            </span>
+                        </div>
+                        <div class="sr-tile-mid">
+                            <span class="level-val mono" id="sr-s3-level" style="color:#10b981;">₹{init_s3.get('level', 0.0):.1f}</span>
+                            <span class="dist-val mono" id="sr-s3-dist" style="color:{'#34d399' if init_s3.get('dist_pts', 0) <= 0 else '#f87171'};">
+                                {'+' if init_s3.get('dist_pts', 0) >= 0 else ''}{init_s3.get('dist_pts', 0.0):.1f} pts ({'+' if init_s3.get('dist_pct', 0) >= 0 else ''}{init_s3.get('dist_pct', 0.0):.2f}%)
+                            </span>
+                        </div>
+                        <div class="sr-tile-bot">
+                            <span id="sr-s3-band">Zone: ₹{init_s3.get('zone_low', 0.0):.1f} - ₹{init_s3.get('zone_high', 0.0):.1f}</span>
+                            <span>Capitulation Floor / Extreme Demand</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Central Pivot Range (CPR) Anchor Bar -->
+            <div class="cpr-mid-bar">
+                <div class="cpr-mid-group">
+                    <span style="font-size:12px;font-weight:800;color:#c084fc;letter-spacing:0.5px;">⚡ CENTRAL PIVOT RANGE (CPR):</span>
+                    <div class="cpr-item">
+                        <span>TC (Top Central)</span>
+                        <strong class="mono" id="cpr-tc-val">₹{init_cpr.get('tc', 0.0):.1f}</strong>
+                    </div>
+                    <div class="cpr-item">
+                        <span>Pivot Point (P)</span>
+                        <strong class="mono" id="cpr-pivot-val" style="color:var(--accent-cyan);">₹{init_cpr.get('pivot', 0.0):.1f}</strong>
+                    </div>
+                    <div class="cpr-item">
+                        <span>BC (Bottom Central)</span>
+                        <strong class="mono" id="cpr-bc-val">₹{init_cpr.get('bc', 0.0):.1f}</strong>
+                    </div>
+                    <div class="cpr-item">
+                        <span>CPR Width %</span>
+                        <strong class="mono" id="cpr-width-val" style="color:var(--accent-amber);">{init_cpr.get('width_pct', 0.0):.2f}%</strong>
+                    </div>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:8px;">
+                    <span>Calculated dynamically from today's official High, Low &amp; Close</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Interactive Lot Sizing Controller (1 - 100+ Lots) -->
     <div class="sizing-card">
         <div class="sizing-title-group">
@@ -2022,6 +2481,102 @@ def generate_live_dashboard():
         }}
     }}
 
+    function updateSRZones() {{
+        const trade = allActiveStates[currentTicker];
+        if (!trade || !trade.sr_zones) return;
+        const sr = trade.sr_zones;
+        const res = sr.resistance_zones || {{}};
+        const sup = sr.support_zones || {{}};
+        const cpr = sr.cpr || {{}};
+        const spot = Number(trade.current_spot || sr.spot || 0);
+
+        // Desk symbol in header
+        const titleDesk = document.getElementById('sr-desk-title');
+        if (titleDesk) titleDesk.textContent = trade.name || currentTicker;
+
+        // Badges
+        const badgeRange = document.getElementById('sr-badge-range');
+        if (badgeRange) badgeRange.textContent = `H: ₹${{Number(sr.high).toFixed(1)}} | L: ₹${{Number(sr.low).toFixed(1)}} (Range: ${{Number(sr.range).toFixed(1)}} pts)`;
+
+        const badgeRegime = document.getElementById('sr-badge-regime');
+        if (badgeRegime) badgeRegime.textContent = cpr.regime || 'NORMAL CPR';
+
+        const badgeSpot = document.getElementById('sr-badge-spot');
+        if (badgeSpot) badgeSpot.textContent = `Live Spot: ₹${{spot.toFixed(1)}}`;
+
+        // CPR
+        const cprPivot = document.getElementById('cpr-pivot-val');
+        if (cprPivot) cprPivot.textContent = `₹${{Number(cpr.pivot).toFixed(1)}}`;
+        const cprTc = document.getElementById('cpr-tc-val');
+        if (cprTc) cprTc.textContent = `₹${{Number(cpr.tc).toFixed(1)}}`;
+        const cprBc = document.getElementById('cpr-bc-val');
+        if (cprBc) cprBc.textContent = `₹${{Number(cpr.bc).toFixed(1)}}`;
+        const cprWidth = document.getElementById('cpr-width-val');
+        if (cprWidth) cprWidth.textContent = `${{Number(cpr.width_pct).toFixed(2)}}%`;
+
+        // Populate R3, R2, R1
+        ['r3', 'r2', 'r1'].forEach(key => {{
+            const z = res[key];
+            if (!z) return;
+            const lvlEl = document.getElementById(`sr-${{key}}-level`);
+            if (lvlEl) lvlEl.textContent = `₹${{Number(z.level).toFixed(1)}}`;
+
+            const bandEl = document.getElementById(`sr-${{key}}-band`);
+            if (bandEl) bandEl.textContent = `Zone: ₹${{Number(z.zone_low).toFixed(1)}} - ₹${{Number(z.zone_high).toFixed(1)}}`;
+
+            const distEl = document.getElementById(`sr-${{key}}-dist`);
+            if (distEl) {{
+                const distPts = Number(z.dist_pts);
+                const distPct = Number(z.dist_pct);
+                const sign = distPts >= 0 ? '+' : '';
+                distEl.textContent = `${{sign}}${{distPts.toFixed(1)}} pts (${{sign}}${{distPct.toFixed(2)}}%)`;
+                distEl.style.color = distPts >= 0 ? '#f87171' : '#38bdf8';
+            }}
+
+            const statusEl = document.getElementById(`sr-${{key}}-status`);
+            if (statusEl) {{
+                statusEl.textContent = z.status;
+                statusEl.className = 'sr-tag-status ' + (z.is_testing ? 'status-testing' : (z.dist_pts < 0 ? 'status-breached' : 'status-supply'));
+            }}
+
+            const tileEl = document.getElementById(`sr-${{key}}-tile`);
+            if (tileEl) {{
+                tileEl.classList.toggle('testing-active', Boolean(z.is_testing));
+            }}
+        }});
+
+        // Populate S1, S2, S3
+        ['s1', 's2', 's3'].forEach(key => {{
+            const z = sup[key];
+            if (!z) return;
+            const lvlEl = document.getElementById(`sr-${{key}}-level`);
+            if (lvlEl) lvlEl.textContent = `₹${{Number(z.level).toFixed(1)}}`;
+
+            const bandEl = document.getElementById(`sr-${{key}}-band`);
+            if (bandEl) bandEl.textContent = `Zone: ₹${{Number(z.zone_low).toFixed(1)}} - ₹${{Number(z.zone_high).toFixed(1)}}`;
+
+            const distEl = document.getElementById(`sr-${{key}}-dist`);
+            if (distEl) {{
+                const distPts = Number(z.dist_pts);
+                const distPct = Number(z.dist_pct);
+                const sign = distPts >= 0 ? '+' : '';
+                distEl.textContent = `${{sign}}${{distPts.toFixed(1)}} pts (${{sign}}${{distPct.toFixed(2)}}%)`;
+                distEl.style.color = distPts <= 0 ? '#34d399' : '#f87171';
+            }}
+
+            const statusEl = document.getElementById(`sr-${{key}}-status`);
+            if (statusEl) {{
+                statusEl.textContent = z.status;
+                statusEl.className = 'sr-tag-status ' + (z.is_testing ? 'status-testing' : (z.dist_pts > 0 ? 'status-breached' : 'status-demand'));
+            }}
+
+            const tileEl = document.getElementById(`sr-${{key}}-tile`);
+            if (tileEl) {{
+                tileEl.classList.toggle('testing-active', Boolean(z.is_testing));
+            }}
+        }});
+    }}
+
     function switchTicker(ticker) {{
         if (!ticker) ticker = 'RELIANCE';
         ticker = String(ticker).toUpperCase().trim();
@@ -2069,10 +2624,13 @@ def generate_live_dashboard():
         // 3. Update active trade card
         updateActiveTradeCard();
         
-        // 4. Update lot sizing summary
+        // 4. Update dynamic S/R zones
+        updateSRZones();
+
+        // 5. Update lot sizing summary
         updateSizingSummary();
         
-        // 5. Render Table & KPI cards
+        // 6. Render Table & KPI cards
         renderTable();
     }}
 

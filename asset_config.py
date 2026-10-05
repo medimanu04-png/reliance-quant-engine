@@ -126,6 +126,116 @@ class AssetSpec:
         calculated_lots = int(max_risk_rupees // per_lot_risk)
         return max(1, calculated_lots)
 
+    def calculate_daily_sr_zones(
+        self,
+        spot: Optional[float] = None,
+        high: Optional[float] = None,
+        low: Optional[float] = None,
+        prev_close: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculates 3 Dynamic Resistance Zones and 3 Dynamic Support Zones for the active trading day.
+        Formulas:
+        - Pivot (P) = (High + Low + Close) / 3
+        - Central Pivot Range (CPR): BC = (High + Low) / 2, TC = (P - BC) + P
+        - Resistance 1 (R1) = 2*P - Low, Zone Band = +/- 0.15% (or 0.5x ATR)
+        - Resistance 2 (R2) = P + (High - Low)
+        - Resistance 3 (R3) = R1 + (High - Low)
+        - Support 1 (S1) = 2*P - High
+        - Support 2 (S2) = P - (High - Low)
+        - Support 3 (S3) = S1 - (High - Low)
+        """
+        curr_spot = float(spot if spot and spot > 0 else self.default_spot)
+        h = float(high if high and high > 0 else (curr_spot * 1.006))
+        l = float(low if low and low > 0 else (curr_spot * 0.994))
+        c = float(prev_close if prev_close and prev_close > 0 else curr_spot)
+        
+        # Ensure high >= low
+        if h <= l:
+            h = curr_spot * 1.006
+            l = curr_spot * 0.994
+
+        rng = round(h - l, 2)
+        p = round((h + l + c) / 3.0, 2)
+        bc = round((h + l) / 2.0, 2)
+        tc = round((p - bc) + p, 2)
+        cpr_top = max(tc, bc)
+        cpr_bottom = min(tc, bc)
+        cpr_width_pct = round(abs(tc - bc) / p * 100.0, 3) if p > 0 else 0.20
+
+        # Primary Pivot Levels
+        r1 = round(2.0 * p - l, 2)
+        s1 = round(2.0 * p - h, 2)
+        r2 = round(p + rng, 2)
+        s2 = round(p - rng, 2)
+        r3 = round(r1 + rng, 2)
+        s3 = round(s1 - rng, 2)
+
+        # Buffer width for zones (0.15% for R1/S1, 0.20% for R2/S2, 0.25% for R3/S3)
+        buf_r1 = max(0.5, round(r1 * 0.0015, 2))
+        buf_s1 = max(0.5, round(s1 * 0.0015, 2))
+        buf_r2 = max(0.8, round(r2 * 0.0020, 2))
+        buf_s2 = max(0.8, round(s2 * 0.0020, 2))
+        buf_r3 = max(1.0, round(r3 * 0.0025, 2))
+        buf_s3 = max(1.0, round(s3 * 0.0025, 2))
+
+        def make_zone(name: str, level: float, buf: float, is_res: bool, role: str) -> Dict[str, Any]:
+            dist_pts = round(level - curr_spot, 2)
+            dist_pct = round((dist_pts / curr_spot) * 100.0, 2)
+            z_low = round(level - buf, 2)
+            z_high = round(level + buf, 2)
+            is_testing = (z_low <= curr_spot <= z_high)
+            
+            if is_testing:
+                status = "⚠️ TESTING ZONE"
+            elif is_res:
+                status = f"🔴 SUPPLY BARRIER (+{dist_pts:.1f} pts)" if dist_pts > 0 else "🟢 BREACHED ABOVE"
+            else:
+                status = f"🟢 DEMAND FLOOR ({dist_pts:.1f} pts)" if dist_pts < 0 else "🔴 BREACHED BELOW"
+
+            return {
+                "name": name,
+                "level": level,
+                "zone_low": z_low,
+                "zone_high": z_high,
+                "buffer": buf,
+                "dist_pts": dist_pts,
+                "dist_pct": dist_pct,
+                "status": status,
+                "is_testing": is_testing,
+                "role": role
+            }
+
+        return {
+            "symbol": self.symbol,
+            "spot": curr_spot,
+            "high": round(h, 2),
+            "low": round(l, 2),
+            "prev_close": round(c, 2),
+            "range": rng,
+            "pivot": p,
+            "cpr": {
+                "pivot": p,
+                "bc": bc,
+                "tc": tc,
+                "top": cpr_top,
+                "bottom": cpr_bottom,
+                "width_pct": cpr_width_pct,
+                "regime": "NARROW (TRENDING BREAKOUT)" if cpr_width_pct <= 0.15 else ("WIDE (RANGE CHOP)" if cpr_width_pct >= 0.28 else "NORMAL CPR")
+            },
+            "resistance_zones": {
+                "r3": make_zone("R3", r3, buf_r3, True, "Extreme Extension / Exhaustion Reversal"),
+                "r2": make_zone("R2", r2, buf_r2, True, "Major Structural Ceiling / Breakout Target"),
+                "r1": make_zone("R1", r1, buf_r1, True, "Immediate Supply / Pullback Resistance")
+            },
+            "support_zones": {
+                "s1": make_zone("S1", s1, buf_s1, False, "Immediate Demand / Pullback Floor"),
+                "s2": make_zone("S2", s2, buf_s2, False, "Major Value Area Low / Structural Floor"),
+                "s3": make_zone("S3", s3, buf_s3, False, "Capitulation Floor / Extreme Demand")
+            }
+        }
+
+
 ASSET_SPECS: Dict[str, AssetSpec] = {
     "RELIANCE": AssetSpec(
         symbol="RELIANCE",
