@@ -875,9 +875,7 @@ class RelianceQuantAlertDaemon:
 
                 if re_arm and re_arm.get("armed"):
                     # Check resumption past entry
-                    if "PE" in re_dir and (active_option_ltp >= orig_entry or spot <= orig_entry):
-                        is_resumption_triggered = True
-                    elif "CE" in re_dir and (active_option_ltp >= orig_entry or spot >= orig_entry):
+                    if active_option_ltp >= orig_entry and orig_entry > 0:
                         is_resumption_triggered = True
 
                 if is_resumption_triggered:
