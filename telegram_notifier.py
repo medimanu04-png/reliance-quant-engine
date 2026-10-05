@@ -286,6 +286,20 @@ class TelegramNotifier:
         if not token:
             return False, "Telegram Bot Token is required."
 
+        # Anti-Flood Protection: Deduplicate identical broadcast messages within 60s
+        import hashlib
+        now_ts = time.time()
+        if not hasattr(cls, "_recent_msg_hashes"):
+            cls._recent_msg_hashes = {}
+        cls._recent_msg_hashes = {k: v for k, v in cls._recent_msg_hashes.items() if (now_ts - v) < 180}
+        norm_text = "".join(html_message.split())
+        msg_hash = hashlib.md5(norm_text.encode("utf-8")).hexdigest()
+        if msg_hash in cls._recent_msg_hashes:
+            elapsed = now_ts - cls._recent_msg_hashes[msg_hash]
+            if elapsed < 60:
+                return True, f"Anti-Flood Guard: duplicate message suppressed ({elapsed:.1f}s ago)"
+        cls._recent_msg_hashes[msg_hash] = now_ts
+
         successes = []
         failures = []
 
