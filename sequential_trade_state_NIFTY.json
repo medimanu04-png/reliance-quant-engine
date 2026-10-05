@@ -18,7 +18,11 @@
     "highest_price": 110.4,
     "trailing_sl": 74.4,
     "status": "Open",
-    "confluence": 75.8
+    "confluence": 75.8,
+    "current_ltp": 58.45,
+    "unrealized_pnl": -6753.5,
+    "wick_touches": 1,
+    "wick_guard_alert": "Wick touch @ \u20b958.45 <= \u20b974.40. Soft SL active, waiting for 5m candle close confirmation."
   },
   "last_closed_trade": {
     "trade_num": 5,
@@ -34,5 +38,5 @@
     "pnl": "+\u20b9273.00 (+2.10 pts)"
   },
   "today_trade_count": 5,
-  "updated_at": "2026-10-05 02:16:41 PM IST"
+  "updated_at": "2026-10-05 02:16:49 PM IST"
 }
