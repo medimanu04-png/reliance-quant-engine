@@ -7438,9 +7438,9 @@ if df is not None and not df.empty:
             </div>
             """)
 
-        # Institutional Interactive Multi-Timeframe Candlestick & CVD Chart
-        with st.expander("📈 Institutional Chart: Candlesticks, ORB-15 Anchored VWAP & Cumulative Volume Delta (CVD)", expanded=True):
-            render_institutional_candlestick_and_cvd_chart(df, spot, atm_strike, scrip_symbol=scrip_symbol)
+        # Institutional Interactive Multi-Timeframe Candlestick & CVD Chart (Preserved in codebase, hidden from UI across all 4 desks)
+        # with st.expander("📈 Institutional Chart: Candlesticks, ORB-15 Anchored VWAP & Cumulative Volume Delta (CVD)", expanded=True):
+        #     render_institutional_candlestick_and_cvd_chart(df, spot, atm_strike, scrip_symbol=scrip_symbol)
 
 
     with tab_radar:
