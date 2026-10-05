@@ -1055,10 +1055,16 @@ class ShadowMonitoringEngine:
             status = rec.get("shadow_status", "Active Monitoring")
             if status == "Active Monitoring":
                 live_price = None
+                contract_str = rec.get("instrument") or rec.get("contract") or sym
                 if groww_feed:
                     try:
-                        live_price = groww_feed.get_option_contract_ltp(sym)
+                        live_price = groww_feed.get_option_contract_ltp(contract_str, symbol=sym)
                     except Exception:
+                        live_price = None
+
+                # Sanity check: Option LTP cannot jump > 3.5x entry price or be an anomalous index/commodity quote
+                if live_price is not None and live_price > 0:
+                    if entry > 0 and live_price > (entry * 3.5):
                         live_price = None
 
                 if live_price is not None and live_price > 0:
