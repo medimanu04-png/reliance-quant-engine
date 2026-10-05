@@ -28,13 +28,13 @@
     "executed": "Yes",
     "sl": 484.15,
     "target": 664.15,
-    "status": "T1 (+6494.9) | TRAIL COST (0.0)",
-    "exit_price": 594.15,
-    "exit_time": "02:19:58 PM IST",
-    "pnl": "+\u20b9130,898.00 (+3272.45 pts)"
+    "status": "Hard Catastrophic SL Hit",
+    "exit_price": 312.3,
+    "exit_time": "02:20:06 PM IST",
+    "pnl": "\u20b9-9,274.00 (-231.85 pts)"
   },
   "today_trade_count": 1,
-  "updated_at": "2026-10-05 02:19:58 PM IST",
+  "updated_at": "2026-10-05 02:20:06 PM IST",
   "re_entry_armed": {
     "armed": true,
     "symbol": "SENSEX",
@@ -50,8 +50,8 @@
     "target_2": 0.0,
     "qty": 40,
     "num_lots": 2,
-    "armed_at": "2026-10-05 02:19:51 PM IST",
-    "expires_at": "2026-10-05 02:34:51 PM IST",
-    "notes": "High conviction (79.9%) setup stopped on early wick at 02:19:51 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
+    "armed_at": "2026-10-05 02:20:06 PM IST",
+    "expires_at": "2026-10-05 02:35:06 PM IST",
+    "notes": "High conviction (79.9%) setup stopped on early wick at 02:20:06 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
   }
 }
