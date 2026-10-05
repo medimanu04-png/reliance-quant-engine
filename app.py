@@ -8245,18 +8245,24 @@ if df is not None and not df.empty:
                     "confluence_score": round(float(dominant_score), 1)
                 }
                 SignalTracker.save_signal(sig_dict)
-                ShadowMonitoringEngine.log_signal(
-                    symbol=sig_dict["symbol"],
-                    action=sig_dict["action"],
-                    entry=sig_dict["suggested_entry"],
-                    target=sig_dict["suggested_exit"],
-                    sl=sig_dict["suggested_sl"],
-                    date_str=sig_dict["date"],
-                    time_str=sig_dict["trade_given_time"],
-                    instrument=sig_dict["full_contract"],
-                    confluence_score=sig_dict["confluence_score"],
-                    user_executed=False
-                )
+
+                # STRICT ENTRY CONFIRMATION GATE:
+                # Live Trade Forward Desk must ONLY record an active trade entry when the clear BUY breakout trigger
+                # is actually crossed (current_option_ltp >= estimated_premium). NEVER on 'SETUP ARMED' pre-alerts!
+                is_breakout_confirmed = (current_option_ltp >= estimated_premium) or is_sim_active
+                if is_breakout_confirmed:
+                    ShadowMonitoringEngine.log_signal(
+                        symbol=sig_dict["symbol"],
+                        action=sig_dict["action"],
+                        entry=sig_dict["suggested_entry"],
+                        target=sig_dict["suggested_exit"],
+                        sl=sig_dict["suggested_sl"],
+                        date_str=sig_dict["date"],
+                        time_str=sig_dict["trade_given_time"],
+                        instrument=sig_dict["full_contract"],
+                        confluence_score=sig_dict["confluence_score"],
+                        user_executed=False
+                    )
                 try:
                     from empirical_calibration_engine import EmpiricalCalibrationEngine
                     EmpiricalCalibrationEngine.record_signal_snapshot(
