@@ -1880,6 +1880,108 @@ class SequentialTradeEngine:
         active_sym = spec_act.symbol
         qty = int(active.get("qty", spec_act.lot_size))
 
+        # Synchronize active trade parameters with authentic Groww broker positions & orders
+        if groww_feed and getattr(groww_feed, "is_connected", False):
+            try:
+                open_pos_list = []
+                if hasattr(groww_feed, "get_live_positions"):
+                    pos_resp = groww_feed.get_live_positions()
+                    if isinstance(pos_resp, dict):
+                        open_pos_list = pos_resp.get("open_positions") or pos_resp.get("positions") or []
+                    elif isinstance(pos_resp, list):
+                        open_pos_list = pos_resp
+
+                executed_today = groww_feed.get_executed_trades_today(symbol_filter=active_sym)
+
+                import re
+                m_strk = re.search(r"(\d{4,6})", contract + " " + str(active.get("instrument", "")))
+                strike_str = m_strk.group(1) if m_strk else ""
+                opt_type = "PE" if ("PE" in contract.upper() or "PUT" in str(active.get("instrument", "")).upper() or "PE" in str(active.get("direction", "")).upper()) else "CE"
+
+                matching_pos = None
+                for p in open_pos_list:
+                    p_sym = str(p.get("trading_symbol", "")).upper()
+                    if active_sym in p_sym and (strike_str in p_sym if strike_str else True) and (opt_type in p_sym if opt_type else True):
+                        matching_pos = p
+                        break
+
+                matching_trade = None
+                for ex_tr in executed_today:
+                    ex_sym = str(ex_tr.get("symbol", "")).upper()
+                    if active_sym in ex_sym and (strike_str in ex_sym if strike_str else True) and (opt_type in ex_sym if opt_type else True):
+                        matching_trade = ex_tr
+                        break
+
+                if matching_pos:
+                    p_qty = int(matching_pos.get("quantity", 0))
+                    p_entry = float(matching_pos.get("net_price", 0.0) or matching_pos.get("credit_price", 0.0) or (matching_trade.get("entry_price", 0.0) if matching_trade else 0.0))
+                    p_time = matching_trade.get("entry_time", "") if matching_trade else ""
+
+                    changed = False
+                    if p_qty > 0 and p_qty != active.get("qty"):
+                        active["qty"] = p_qty
+                        qty = p_qty
+                        lot_sz = max(1, getattr(spec_act, "lot_size", 65 if active_sym == "NIFTY" else 15))
+                        active["num_lots"] = max(1, round(p_qty / lot_sz))
+                        changed = True
+                    if p_entry > 0 and abs(active.get("actual_entry", 0.0) - p_entry) > 0.01:
+                        active["actual_entry"] = round(p_entry, 2)
+                        active["planned_entry"] = round(p_entry, 2)
+                        actual_entry = round(p_entry, 2)
+                        spec_sl = float(getattr(spec_act, 'sl_pts', 36.0 if active_sym == 'NIFTY' else 4.5))
+                        spec_tgt = float(getattr(spec_act, 'target_pts', 50.0 if active_sym == 'NIFTY' else 10.0))
+                        active["sl"] = round(max(0.05, actual_entry - spec_sl), 2)
+                        active["target"] = round(actual_entry + spec_tgt, 2)
+                        target = active["target"]
+                        sl = active["sl"]
+                        if not active.get("breakeven_activated"):
+                            active["trailing_sl"] = active["sl"]
+                        changed = True
+                    if p_time and ("T" in p_time or "-" in p_time):
+                        try:
+                            t_part = p_time.split("T")[1].split(".")[0]
+                            dt = datetime.strptime(t_part, "%H:%M:%S")
+                            active["actual_entry_time"] = dt.strftime("%I:%M:%S %p IST")
+                            changed = True
+                        except Exception:
+                            pass
+                    if matching_pos.get("trading_symbol") and matching_pos.get("trading_symbol") != active.get("contract"):
+                        active["contract"] = matching_pos.get("trading_symbol")
+                        contract = active["contract"]
+                        changed = True
+                    if changed:
+                        active["executed"] = "Groww Verified"
+                        cls.save_state(state, symbol=symbol)
+
+                # Check if Groww recorded a closed position exit
+                if matching_trade and matching_trade.get("is_closed", False):
+                    journal_entries = TradeJournalManager.load_journal(starting_cash=starting_cash, symbol=active_sym)
+                    used_exit_times = {str(j.get("actual_exit_time")) for j in journal_entries if j.get("actual_exit_time")}
+                    raw_ex_t = str(matching_trade.get("exit_time", ""))
+                    if not (raw_ex_t and any(raw_ex_t in str(x) or str(x) in raw_ex_t for x in used_exit_times if x)):
+                        exit_p = float(matching_trade.get("exit_price", current_ltp))
+                        exit_t = matching_trade.get("exit_time", datetime.now(IST).strftime("%I:%M:%S %p IST"))
+                        real_pnl = float(matching_trade.get("realised_pnl", (exit_p - actual_entry) * qty))
+                        effective_sl_calc = max(sl, active.get("trailing_sl", sl))
+                        if exit_p >= (target - 0.25):
+                            status = "Target Hit"
+                        elif exit_p <= (effective_sl_calc + 0.25):
+                            status = "SL Hit"
+                        elif real_pnl > 0:
+                            status = "Discretionary Exit (+Profit)"
+                        else:
+                            status = "Discretionary Exit (-Loss)"
+                        return cls.close_trade(
+                            exit_price=exit_p,
+                            status=status,
+                            exit_time=exit_t,
+                            notes=f"Auto-synced Groww Position Exit @ ₹{exit_p:.2f} ({status})",
+                            starting_cash=starting_cash,
+                            symbol=active_sym
+                        )
+            except Exception as e:
+                logger.debug(f"Error checking broker sync for active trade: {e}")
+
         # Resolve real-time live LTP from Groww broker feed if connected (absolute zero latency)
         if groww_feed and getattr(groww_feed, "is_connected", False) and hasattr(groww_feed, "get_option_contract_ltp"):
             try:
@@ -1936,51 +2038,6 @@ class SequentialTradeEngine:
         unrealized_pnl = round((current_ltp - actual_entry) * qty, 2)
         active["current_ltp"] = current_ltp
         active["unrealized_pnl"] = unrealized_pnl
-
-        # Check automated broker sync if Groww feed is provided
-        if groww_feed and getattr(groww_feed, "is_connected", False):
-            try:
-                executed_today = groww_feed.get_executed_trades_today(symbol_filter=active_sym)
-                journal_entries = TradeJournalManager.load_journal(starting_cash=starting_cash, symbol=active_sym)
-                used_exit_times = {str(j.get("actual_exit_time")) for j in journal_entries if j.get("actual_exit_time")}
-                used_entry_times = {str(j.get("actual_entry_time")) for j in journal_entries if j.get("actual_entry_time")}
-
-                for ex_tr in executed_today:
-                    sym = ex_tr.get("symbol", "")
-                    if contract in sym or (str(active.get("strike", "")) in sym and active.get("direction", "")[-2:] in sym):
-                        raw_ex_t = str(ex_tr.get("exit_time", ""))
-                        raw_en_t = str(ex_tr.get("entry_time", ""))
-                        if raw_ex_t and any(raw_ex_t in str(x) or str(x) in raw_ex_t for x in used_exit_times if x):
-                            continue
-                        if raw_en_t and any(raw_en_t in str(n) or str(n) in raw_en_t for n in used_entry_times if n):
-                            continue
-
-                        t_num = int(active.get("trade_num", 1))
-                        if t_num > len(executed_today):
-                            continue
-
-                        if ex_tr.get("is_closed", False):
-                            exit_p = float(ex_tr.get("exit_price", current_ltp))
-                            exit_t = ex_tr.get("exit_time", datetime.now(IST).strftime("%I:%M:%S %p IST"))
-                            real_pnl = float(ex_tr.get("realised_pnl", (exit_p - actual_entry) * qty))
-                            if exit_p >= (target - 0.25):
-                                status = "Target Hit"
-                            elif exit_p <= (effective_sl + 0.25):
-                                status = "SL Hit"
-                            elif real_pnl > 0:
-                                status = "Discretionary Exit (+Profit)"
-                            else:
-                                status = "Discretionary Exit (-Loss)"
-                            return cls.close_trade(
-                                exit_price=exit_p,
-                                status=status,
-                                exit_time=exit_t,
-                                notes=f"Auto-synced Groww Position Exit @ ₹{exit_p:.2f} ({status})",
-                                starting_cash=starting_cash,
-                                symbol=active_sym
-                            )
-            except Exception as e:
-                logger.debug(f"Error checking broker sync for active trade: {e}")
 
         # Option 1 Multi-Tranche Execution (50% Bank at T1 + 50% Runner)
         target_1 = target
@@ -2087,6 +2144,144 @@ class SequentialTradeEngine:
             "distance_to_sl": round(current_ltp - effective_sl, 2),
             "state": state
         }
+
+    @classmethod
+    def sync_with_groww_positions(
+        cls,
+        groww_feed: Any = None,
+        symbol: Optional[str] = None,
+        starting_cash: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Manually or programmatically triggers a 100% full reconciliation against Groww live positions and orders.
+        Updates active_trade entry price, quantity, lots, stop loss, target, and unrealized P&L.
+        """
+        if not groww_feed:
+            try:
+                from groww_market_feed import GrowwMarketFeed
+                groww_feed = GrowwMarketFeed.get_instance()
+            except Exception:
+                pass
+
+        if not groww_feed or not getattr(groww_feed, "is_connected", False):
+            return {"status": "ERROR", "message": "Groww feed not connected"}
+
+        sym_kw = resolve_symbol(symbol=symbol)
+        spec = get_asset_spec(sym_kw)
+
+        # Force refresh positions and executed trades from Groww API
+        pos_data = groww_feed.get_live_positions(force_refresh=True)
+        open_positions = pos_data.get("open_positions", []) if isinstance(pos_data, dict) else []
+        if not open_positions and isinstance(pos_data, dict):
+            open_positions = [p for p in pos_data.get("positions", []) if int(p.get("quantity", 0)) != 0]
+
+        executed_today = groww_feed.get_executed_trades_today(symbol_filter=sym_kw, force_refresh=True)
+
+        state = cls.get_state(symbol=sym_kw)
+        active = state.get("active_trade")
+
+        # Find matching Groww position
+        matching_pos = None
+        for p in open_positions:
+            p_sym = str(p.get("trading_symbol", "")).upper()
+            if sym_kw in p_sym:
+                matching_pos = p
+                break
+
+        matching_trade = None
+        for t in executed_today:
+            t_sym = str(t.get("symbol", "")).upper()
+            if sym_kw in t_sym:
+                matching_trade = t
+                break
+
+        if matching_pos:
+            qty = int(matching_pos.get("quantity", 0))
+            entry_p = float(matching_pos.get("net_price", 0.0) or matching_pos.get("credit_price", 0.0))
+            if entry_p <= 0 and matching_trade:
+                entry_p = float(matching_trade.get("entry_price", 0.0))
+            
+            entry_time = ""
+            if matching_trade and matching_trade.get("entry_time"):
+                raw_t = matching_trade.get("entry_time")
+                try:
+                    if "T" in raw_t:
+                        t_part = raw_t.split("T")[1].split(".")[0]
+                        dt = datetime.strptime(t_part, "%H:%M:%S")
+                        entry_time = dt.strftime("%I:%M:%S %p IST")
+                    else:
+                        entry_time = str(raw_t)
+                except Exception:
+                    entry_time = str(raw_t)
+
+            trading_sym = str(matching_pos.get("trading_symbol", ""))
+
+            # Resolve live LTP for this contract
+            live_ltp = groww_feed.get_option_contract_ltp(trading_sym, symbol=sym_kw)
+            if not live_ltp or live_ltp <= 0:
+                live_ltp = entry_p
+
+            if not active:
+                active = {
+                    "trade_num": state.get("today_trade_count", 0) + 1,
+                    "contract": trading_sym,
+                    "instrument": f"{sym_kw} Contract ({trading_sym})",
+                    "planned_entry": entry_p,
+                    "actual_entry": entry_p,
+                    "actual_entry_time": entry_time or datetime.now(IST).strftime("%I:%M:%S %p IST"),
+                    "executed": "Groww Verified",
+                    "sl": round(max(0.05, entry_p - float(getattr(spec, 'sl_pts', 36.0))), 2),
+                    "target": round(entry_p + float(getattr(spec, 'target_pts', 50.0)), 2),
+                    "direction": "BUY PE" if "PE" in trading_sym else "BUY CE",
+                    "qty": qty,
+                    "num_lots": max(1, round(qty / max(1, getattr(spec, 'lot_size', 65)))),
+                    "lot_size": getattr(spec, 'lot_size', 65),
+                    "highest_price": max(entry_p, live_ltp),
+                    "trailing_sl": round(max(0.05, entry_p - float(getattr(spec, 'sl_pts', 36.0))), 2),
+                    "status": "Open",
+                    "current_ltp": live_ltp,
+                    "unrealized_pnl": round((live_ltp - entry_p) * qty, 2)
+                }
+                state["current_state"] = cls.STATE_IN_TRADE
+                state["active_trade"] = active
+            else:
+                active["contract"] = trading_sym
+                active["actual_entry"] = entry_p
+                active["planned_entry"] = entry_p
+                active["qty"] = qty
+                active["num_lots"] = max(1, round(qty / max(1, getattr(spec, 'lot_size', 65))))
+                if entry_time:
+                    active["actual_entry_time"] = entry_time
+                active["sl"] = round(max(0.05, entry_p - float(getattr(spec, 'sl_pts', 36.0))), 2)
+                active["target"] = round(entry_p + float(getattr(spec, 'target_pts', 50.0)), 2)
+                if not active.get("breakeven_activated"):
+                    active["trailing_sl"] = active["sl"]
+                active["current_ltp"] = live_ltp
+                active["unrealized_pnl"] = round((live_ltp - entry_p) * qty, 2)
+                active["executed"] = "Groww Verified"
+
+            cls.save_state(state, symbol=sym_kw)
+
+            # Update shadow signals log
+            try:
+                from trade_journal_manager import ShadowSignalTracker
+                recs = ShadowSignalTracker.load_records(symbol=sym_kw)
+                for r in recs:
+                    if r.get("date") == datetime.now(IST).strftime("%Y-%m-%d") and sym_kw in str(r.get("symbol", "")):
+                        r["actual_entry_price"] = entry_p
+                        r["entry"] = entry_p
+                        r["target"] = active["target"]
+                        r["sl"] = active["sl"]
+                        r["current_price"] = live_ltp
+                        if entry_time:
+                            r["actual_entry_time"] = entry_time
+                ShadowSignalTracker.save_records(recs)
+            except Exception as e:
+                logger.debug(f"Shadow tracker sync update error: {e}")
+
+            return {"status": "SUCCESS", "active_trade": active}
+
+        return {"status": "NO_POSITION", "message": f"No open positions found in Groww for {sym_kw}"}
 
     @classmethod
     def close_trade(
