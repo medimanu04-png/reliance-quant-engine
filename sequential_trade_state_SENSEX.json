@@ -29,12 +29,12 @@
     "sl": 484.15,
     "target": 664.15,
     "status": "Hard Catastrophic SL Hit",
-    "exit_price": 314.95,
-    "exit_time": "02:19:45 PM IST",
-    "pnl": "+\u20b9125,314.00 (+3132.85 pts)"
+    "exit_price": 312.3,
+    "exit_time": "02:19:51 PM IST",
+    "pnl": "\u20b9-9,274.00 (-231.85 pts)"
   },
   "today_trade_count": 1,
-  "updated_at": "2026-10-05 02:19:45 PM IST",
+  "updated_at": "2026-10-05 02:19:51 PM IST",
   "re_entry_armed": {
     "armed": true,
     "symbol": "SENSEX",
@@ -44,14 +44,14 @@
     "confluence": 79.9,
     "planned_entry": 544.15,
     "actual_entry": 544.15,
-    "wick_extreme_sl": 314.95,
-    "stop_loss_pts": 229.2,
+    "wick_extreme_sl": 312.3,
+    "stop_loss_pts": 231.85,
     "target": 664.15,
-    "target_2": 824.15,
+    "target_2": 0.0,
     "qty": 40,
     "num_lots": 2,
-    "armed_at": "2026-10-05 02:19:45 PM IST",
-    "expires_at": "2026-10-05 02:34:45 PM IST",
-    "notes": "High conviction (79.9%) setup stopped on early wick at 02:19:45 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
+    "armed_at": "2026-10-05 02:19:51 PM IST",
+    "expires_at": "2026-10-05 02:34:51 PM IST",
+    "notes": "High conviction (79.9%) setup stopped on early wick at 02:19:51 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
   }
 }
