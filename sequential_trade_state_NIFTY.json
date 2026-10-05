@@ -2,7 +2,7 @@
   "current_state": "IN-TRADE (ACTIVE MONITORING)",
   "symbol": "NIFTY",
   "active_trade": {
-    "trade_num": 2,
+    "trade_num": 3,
     "contract": "NIFTY26OCT22450PE",
     "instrument": "NIFTY 22450 PE (06-OCT-2026)",
     "planned_entry": 110.4,
@@ -19,11 +19,11 @@
     "trailing_sl": 74.4,
     "status": "Open",
     "confluence": 75.8,
-    "current_ltp": 80.0,
-    "unrealized_pnl": -3952.0
+    "current_ltp": 75.7,
+    "unrealized_pnl": -4511.0
   },
   "last_closed_trade": {
-    "trade_num": 1,
+    "trade_num": 2,
     "instrument": "NIFTY26O0622450PE",
     "planned_entry": 117.21,
     "actual_entry": 117.21,
@@ -31,10 +31,10 @@
     "sl": 81.21,
     "target": 167.21,
     "status": "SL Hit",
-    "exit_price": 79.85,
-    "exit_time": "01:15:21 PM IST",
-    "pnl": "\u20b9-16,998.80 (-37.36 pts)"
+    "exit_price": 75.2,
+    "exit_time": "01:22:20 PM IST",
+    "pnl": "\u20b9-19,114.55 (-42.01 pts)"
   },
-  "today_trade_count": 2,
-  "updated_at": "2026-10-05 01:16:24 PM IST"
+  "today_trade_count": 3,
+  "updated_at": "2026-10-05 01:22:35 PM IST"
 }

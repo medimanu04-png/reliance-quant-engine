@@ -12,6 +12,7 @@ port = 8501
 enableCORS = false
 enableXsrfProtection = false
 enableWebsocketCompression = false
+enableStaticServing = true
 maxUploadSize = 200
 
 [browser]

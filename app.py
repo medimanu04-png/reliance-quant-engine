@@ -1,3 +1,17 @@
+import sys
+if sys.platform == "win32":
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+        _orig_call_conn_lost = _ProactorBasePipeTransport._call_connection_lost
+        def _patched_call_conn_lost(self, exc=None):
+            try:
+                _orig_call_conn_lost(self, exc)
+            except (ConnectionResetError, OSError):
+                pass
+        _ProactorBasePipeTransport._call_connection_lost = _patched_call_conn_lost
+    except Exception:
+        pass
+
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
@@ -1226,7 +1240,7 @@ def render_auto_rescan_controller():
     elapsed = now - st.session_state["last_auto_rescan_ts"]
     should_auto = auto_active and (elapsed >= 4.5)
 
-    if rescan_btn or should_auto:
+    if rescan_btn:
         from concurrent.futures import ThreadPoolExecutor
         try:
             from groww_market_feed import GrowwMarketFeed
@@ -1261,15 +1275,15 @@ def render_auto_rescan_controller():
                 json.dump({
                     "timestamp": now,
                     "time_str": rescan_time_str,
-                    "manual": bool(rescan_btn),
+                    "manual": True,
                     "symbols": ["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
                 }, rf)
         except Exception:
             pass
 
         st.session_state["last_auto_rescan_ts"] = now
-        st.session_state["just_rescanned"] = bool(rescan_btn)
-        st.session_state["manual_rescan_clicked"] = bool(rescan_btn)
+        st.session_state["just_rescanned"] = True
+        st.session_state["manual_rescan_clicked"] = True
         st.session_state["rescan_time"] = rescan_time_str
         st.session_state["desk_rescan_needed"] = {
             "RELIANCE": True,
@@ -1278,6 +1292,11 @@ def render_auto_rescan_controller():
             "SENSEX": True
         }
         st.rerun(scope="app")
+    elif should_auto:
+        # Background automatic cycle: Keep data fresh silently inside this fragment.
+        # DO NOT call st.rerun(scope="app") — the fragment already updates local spot tickers
+        # without destroying the outer React DOM tree or dropping WebSocket connections on tab switch!
+        st.session_state["last_auto_rescan_ts"] = now
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     spec_rel = get_asset_spec("RELIANCE")
@@ -1761,58 +1780,32 @@ if active_route == "":
     </div>
     """)
 
-    tab_audit, tab_comp, tab_live, tab_downloads = st.tabs([
-        "📈 Empirical Backtest Audit (Original Preserved)",
-        "⚡ 4-Solution Comparative Audit (Before vs After)",
+    suite_views = [
         "🟢 Live Trade Forward Desk (Oct 05, 2026 Onwards)",
+        "⚡ 4-Solution Comparative Audit (Before vs After)",
+        "📈 Empirical Backtest Audit (Original Preserved)",
         "🗂️ Audit Datasets & Reports"
-    ])
+    ]
+    
+    selected_view = st.segmented_control(
+        "Select Performance & Audit Suite",
+        options=suite_views,
+        default=suite_views[0],
+        label_visibility="collapsed",
+        key="homepage_suite_segmented"
+    ) if hasattr(st, "segmented_control") else st.radio(
+        "Select Performance & Audit Suite",
+        options=suite_views,
+        index=0,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="homepage_suite_radio"
+    )
 
-    with tab_audit:
-        audit_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_audit_dashboard.html")
-        if os.path.exists(audit_file_path):
-            with open(audit_file_path, "r", encoding="utf-8") as f:
-                audit_html_content = f.read()
-            
-            c_aud1, c_aud2 = st.columns([3, 1])
-            with c_aud1:
-                st.caption("⚡ **Interactive Audit Tool (Original Preserved)**: Baseline execution logs with original fixed stops across NIFTY 50, BSE SENSEX, Reliance, and Adani.")
-            with c_aud2:
-                st_download_button_stretch(
-                    label="📥 Download Original Audit HTML",
-                    data=audit_html_content,
-                    file_name="trade_audit_dashboard.html",
-                    mime="text/html",
-                    key="dl_btn_audit_html"
-                )
-            
-            components.html(audit_html_content, height=1100, scrolling=True)
-        else:
-            st.warning("trade_audit_dashboard.html not found.")
+    if not selected_view:
+        selected_view = suite_views[0]
 
-    with tab_comp:
-        comp_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "walkforward_comparison_dashboard.html")
-        if os.path.exists(comp_file_path):
-            with open(comp_file_path, "r", encoding="utf-8") as f:
-                comp_html_content = f.read()
-            
-            c_cmp1, c_cmp2 = st.columns([3, 1])
-            with c_cmp1:
-                st.caption("🚀 **4-Solution Walk-Forward Comparison**: Dynamic ATR SL, Two-Tier Stop (Wick Shield), 15-Min Re-Entry Protocol, and Chandelier Trailing compared side-by-side with baseline.")
-            with c_cmp2:
-                st_download_button_stretch(
-                    label="📥 Download Comparison Audit HTML",
-                    data=comp_html_content,
-                    file_name="walkforward_comparison_dashboard.html",
-                    mime="text/html",
-                    key="dl_btn_comp_html"
-                )
-            
-            components.html(comp_html_content, height=1100, scrolling=True)
-        else:
-            st.warning("walkforward_comparison_dashboard.html not found.")
-
-    with tab_live:
+    if selected_view == "🟢 Live Trade Forward Desk (Oct 05, 2026 Onwards)":
         # Trigger generator if available to guarantee freshest state
         try:
             import live_dashboard_generator
@@ -1844,7 +1837,51 @@ if active_route == "":
         else:
             st.warning("live_trade_dashboard.html not found.")
 
-    with tab_downloads:
+    elif selected_view == "⚡ 4-Solution Comparative Audit (Before vs After)":
+        comp_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "walkforward_comparison_dashboard.html")
+        if os.path.exists(comp_file_path):
+            with open(comp_file_path, "r", encoding="utf-8") as f:
+                comp_html_content = f.read()
+            
+            c_cmp1, c_cmp2 = st.columns([3, 1])
+            with c_cmp1:
+                st.caption("🚀 **4-Solution Walk-Forward Comparison**: Dynamic ATR SL, Two-Tier Stop (Wick Shield), 15-Min Re-Entry Protocol, and Chandelier Trailing compared side-by-side with baseline.")
+            with c_cmp2:
+                st_download_button_stretch(
+                    label="📥 Download Comparison Audit HTML",
+                    data=comp_html_content,
+                    file_name="walkforward_comparison_dashboard.html",
+                    mime="text/html",
+                    key="dl_btn_comp_html"
+                )
+            
+            components.html(comp_html_content, height=1100, scrolling=True)
+        else:
+            st.warning("walkforward_comparison_dashboard.html not found.")
+
+    elif selected_view == "📈 Empirical Backtest Audit (Original Preserved)":
+        audit_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_audit_dashboard.html")
+        if os.path.exists(audit_file_path):
+            with open(audit_file_path, "r", encoding="utf-8") as f:
+                audit_html_content = f.read()
+            
+            c_aud1, c_aud2 = st.columns([3, 1])
+            with c_aud1:
+                st.caption("⚡ **Interactive Audit Tool (Original Preserved)**: Baseline execution logs with original fixed stops across NIFTY 50, BSE SENSEX, Reliance, and Adani.")
+            with c_aud2:
+                st_download_button_stretch(
+                    label="📥 Download Original Audit HTML",
+                    data=audit_html_content,
+                    file_name="trade_audit_dashboard.html",
+                    mime="text/html",
+                    key="dl_btn_audit_html"
+                )
+            
+            components.html(audit_html_content, height=1100, scrolling=True)
+        else:
+            st.warning("trade_audit_dashboard.html not found.")
+
+    elif selected_view == "🗂️ Audit Datasets & Reports":
         st.markdown("<h4 style='color: #FFFFFF; margin-top: 12px; margin-bottom: 4px;'>Institutional Data Repository</h4>", unsafe_allow_html=True)
         st.caption("Direct access to full backtested performance logs, real-time alert daemon logs, and active journal files across all 4 desks.")
         
