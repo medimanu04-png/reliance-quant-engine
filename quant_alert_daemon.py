@@ -62,6 +62,43 @@ from asset_config import get_asset_spec
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BREAKOUT_FILE = os.path.join(BASE_DIR, "breakout_triggers_log.json")
+DAEMON_LOCK_FILE = os.path.join(BASE_DIR, "quant_daemon.pid")
+
+
+def is_pid_alive(pid: int) -> bool:
+    """Checks whether a given process ID is actively running on the OS."""
+    if pid <= 0:
+        return False
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, int(pid))
+        if h:
+            kernel32.CloseHandle(h)
+            return True
+        return False
+    except Exception:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, PermissionError):
+            return False
+
+
+def is_daemon_running() -> Tuple[bool, Optional[int]]:
+    """Checks if another daemon worker is currently alive via lockfile."""
+    if not os.path.exists(DAEMON_LOCK_FILE):
+        return False, None
+    try:
+        with open(DAEMON_LOCK_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        pid = int(d.get("pid", 0))
+        if pid and is_pid_alive(pid):
+            return True, pid
+        return False, None
+    except Exception:
+        return False, None
 
 # Configure Logging
 logging.basicConfig(
@@ -1109,6 +1146,20 @@ class RelianceQuantAlertDaemon:
 
     def start(self):
         """Continuous production execution loop."""
+        running, running_pid = is_daemon_running()
+        if running and running_pid != os.getpid():
+            logger.warning(
+                f"⚠️ Another Quant Alert Daemon instance is already active (PID {running_pid}). "
+                f"Skipping duplicate start to prevent multiple alerts."
+            )
+            return
+
+        try:
+            with open(DAEMON_LOCK_FILE, "w", encoding="utf-8") as f:
+                json.dump({"pid": os.getpid(), "start_time": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")}, f)
+        except Exception:
+            pass
+
         print("=" * 75)
         print("⚡ MULTI-ASSET QUANTITATIVE INTRADAY ENGINE — STANDALONE ALERT DAEMON")
         print(f"Monitored Assets: {', '.join(self.symbols)}")
@@ -1125,25 +1176,35 @@ class RelianceQuantAlertDaemon:
         print("=" * 75)
         print("Press Ctrl+C at any time to gracefully stop the daemon.\n")
 
-        while self.running:
+        try:
+            while self.running:
+                try:
+                    is_open, reason = self.is_market_hours()
+                    if not is_open:
+                        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                        logger.info(f"[{now_str}] ⏸️ Market Closed ({reason}). Sleeping 30s... (Pass --now to scan anytime)")
+                        time.sleep(30.0)
+                        continue
+
+                    self.run_single_tick()
+                    time.sleep(self.interval)
+
+                except KeyboardInterrupt:
+                    print("\n🛑 Shutting down Reliance Quant Alert Daemon gracefully...")
+                    self.running = False
+                    break
+                except Exception as e:
+                    logger.error(f"Tick cycle error: {e}", exc_info=True)
+                    time.sleep(self.interval * 2)
+        finally:
             try:
-                is_open, reason = self.is_market_hours()
-                if not is_open:
-                    now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
-                    logger.info(f"[{now_str}] ⏸️ Market Closed ({reason}). Sleeping 30s... (Pass --now to scan anytime)")
-                    time.sleep(30.0)
-                    continue
-
-                self.run_single_tick()
-                time.sleep(self.interval)
-
-            except KeyboardInterrupt:
-                print("\n🛑 Shutting down Reliance Quant Alert Daemon gracefully...")
-                self.running = False
-                break
-            except Exception as e:
-                logger.error(f"Tick cycle error: {e}", exc_info=True)
-                time.sleep(self.interval * 2)
+                if os.path.exists(DAEMON_LOCK_FILE):
+                    with open(DAEMON_LOCK_FILE, "r", encoding="utf-8") as f:
+                        d = json.load(f)
+                    if d.get("pid") == os.getpid():
+                        os.remove(DAEMON_LOCK_FILE)
+            except Exception:
+                pass
 
 
 # Universal multi-asset daemon alias

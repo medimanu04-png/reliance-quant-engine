@@ -41,5 +41,6 @@ Program_1.py
 scratch_*
 scratch/
 data_cache/
+*.pid
 
 

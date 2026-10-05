@@ -2008,15 +2008,24 @@ class SequentialTradeEngine:
         active["unrealized_pnl"] = unrealized_pnl
 
         # Option 1 Multi-Tranche Execution (50% Bank at T1 + 50% Runner)
+        spec_tgt_pts = float(getattr(spec_act, 'target_pts', 10.0))
         target_1 = target
-        target_2 = float(active.get("target_2", actual_entry + getattr(spec_act, 'target_2_pts', spec_act.target_pts * 2.0)))
+        # Ensure target_1 is a valid price level strictly above actual entry
+        if target_1 <= actual_entry:
+            target_1 = round(actual_entry + spec_tgt_pts, 2)
+
+        spec_tgt2_pts = float(getattr(spec_act, 'target_2_pts', spec_tgt_pts * 2.0))
+        target_2 = float(active.get("target_2", actual_entry + spec_tgt2_pts))
+        if target_2 <= target_1:
+            target_2 = round(actual_entry + spec_tgt2_pts, 2)
+
         t1_status = active.get("t1_status", "PENDING")
         t1_qty = int(active.get("t1_qty", qty // 2))
         t2_qty = qty - t1_qty
 
         # Scenario 1: Tranche 1 is still pending
         if t1_status == "PENDING":
-            if current_ltp >= target_1:
+            if current_ltp >= target_1 and current_ltp > actual_entry:
                 # Bank Tranche 1 (50% Qty)
                 active["t1_status"] = "BANKED"
                 active["t1_exit_price"] = current_ltp

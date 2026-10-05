@@ -92,7 +92,11 @@ def _start_background_multi_desk_daemon():
         if "MultiDeskQuantAlertDaemon" in existing_threads:
             return
         try:
-            from quant_alert_daemon import RelianceQuantAlertDaemon
+            from quant_alert_daemon import RelianceQuantAlertDaemon, is_daemon_running
+            running, running_pid = is_daemon_running()
+            if running and running_pid != os.getpid():
+                # External standalone daemon worker is already active and handling alerts
+                return
             _multi_desk_daemon_instance = RelianceQuantAlertDaemon(
                 interval_seconds=5.0,
                 force_run=False,
