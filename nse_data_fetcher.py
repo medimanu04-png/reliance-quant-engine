@@ -39,6 +39,20 @@ class NSEIndiaFetcher:
     CACHE_TTL_SECONDS = 1.0  # Real-time Groww live feed with 0-delay instant caching
 
     @classmethod
+    def clear_all_caches(cls):
+        """Clears all in-memory caches across all 4 desks (NIFTY, SENSEX, RELIANCE, ADANIENT) and macro benchmarks."""
+        cls._cached_data = None
+        cls._cached_expiry_mandate = None
+        cls._cached_benchmarks = None
+        cls._last_benchmark_time = 0.0
+        cls._last_fetch_time = 0.0
+        for sym in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+            setattr(cls, f"_cached_data_{sym}", None)
+            setattr(cls, f"_last_fetch_time_{sym}", 0.0)
+            setattr(cls, f"_cached_expiry_mandate_{sym}", None)
+            setattr(cls, f"_last_calc_time_{sym}", 0.0)
+
+    @classmethod
     def get_official_data(cls, symbol_or_force: Any = None, force_refresh: bool = False, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Class alias for official data across all supported assets."""
         if isinstance(symbol_or_force, str):

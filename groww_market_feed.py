@@ -607,6 +607,24 @@ class GrowwMarketFeed:
     def user_profile(self) -> Optional[Dict[str, Any]]:
         return self._user_profile
 
+    def clear_all_caches(self):
+        """Clears all in-memory caches across all 4 desks to force fresh live data acquisition."""
+        with self._cache_lock:
+            if hasattr(self, "_cached_candles"):
+                self._cached_candles.clear()
+            if hasattr(self, "_cached_spots_by_symbol"):
+                self._cached_spots_by_symbol.clear()
+            if hasattr(self, "_cached_chains_by_key"):
+                self._cached_chains_by_key.clear()
+            if hasattr(self, "_cached_chains_by_expiry"):
+                self._cached_chains_by_expiry.clear()
+            self._cached_benchmarks = None
+            self._last_benchmark_time = 0.0
+            self._cached_reliance_spot = None
+            self._last_reliance_spot_ts = 0.0
+            self._cached_reliance_chain = None
+            self._last_reliance_chain_ts = 0.0
+
     # =========================================================================
     # GROWW DIRECT LIVE FEED ENGINE (0-DELAY REAL-TIME STREAMING)
     # =========================================================================
