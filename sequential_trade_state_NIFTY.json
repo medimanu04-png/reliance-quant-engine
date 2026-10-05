@@ -3,22 +3,28 @@
   "symbol": "NIFTY",
   "active_trade": {
     "trade_num": 5,
-    "contract": "NIFTY26OCT22450PE",
+    "contract": "NIFTY26O0622450PE",
     "instrument": "NIFTY 22450 PE (06-OCT-2026)",
-    "planned_entry": 110.4,
-    "actual_entry": 110.4,
-    "actual_entry_time": "12:07:30 PM IST",
-    "executed": "Signal Given",
-    "sl": 74.4,
-    "target": 160.4,
+    "planned_entry": 57.8,
+    "actual_entry": 57.8,
+    "actual_entry_time": "12:08:14 PM IST",
+    "executed": "Groww Verified",
+    "sl": 21.8,
+    "target": 107.8,
     "direction": "BUY PE",
     "qty": 130,
     "num_lots": 2,
     "lot_size": 65,
     "highest_price": 110.4,
-    "trailing_sl": 74.4,
+    "trailing_sl": 77.8,
     "status": "Open",
-    "confluence": 75.8
+    "confluence": 75.8,
+    "breakeven_activated": true,
+    "profit_lock_activated": true,
+    "current_ltp": 54.3,
+    "unrealized_pnl": -455.0,
+    "wick_touches": 1,
+    "wick_guard_alert": "Wick touch @ \u20b954.30 <= \u20b977.80. Soft SL active, waiting for 5m candle close confirmation."
   },
   "last_closed_trade": {
     "trade_num": 5,
@@ -34,5 +40,5 @@
     "pnl": "\u20b9-455.00 (-3.50 pts)"
   },
   "today_trade_count": 5,
-  "updated_at": "2026-10-05 02:10:33 PM IST"
+  "updated_at": "2026-10-05 02:10:35 PM IST"
 }
