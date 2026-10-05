@@ -2965,11 +2965,30 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     # REAL-TIME DYNAMIC "WHEN TO BUY" SIGNAL & EXECUTION TRIGGER ENGINE
     # ==========================================================================
     tp = trade_plan or {}
-    plan_tradable = tp.get("is_tradable", False)
-    plan_contract_type = tp.get("recommended_contract_type", "CE")
-    plan_strike = tp.get("atm_strike", corridor["lower_strike"])
     active_sym = tp.get("scrip_symbol", resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE")))
     spec_plan = get_asset_spec(symbol=active_sym)
+    sim_mode = tp.get("sim_mode", "LIVE")
+
+    active_seq_state = SequentialTradeEngine.get_state(symbol=active_sym)
+    active_trade_obj = active_seq_state.get("active_trade")
+    is_live_trade_running = (
+        active_seq_state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE
+        and active_trade_obj is not None
+        and sim_mode == "LIVE"
+    )
+
+    plan_tradable = tp.get("is_tradable", False)
+    if is_live_trade_running and active_trade_obj:
+        act_c = str(active_trade_obj.get("contract", "")).upper()
+        act_i = str(active_trade_obj.get("instrument", "")).upper()
+        act_d = str(active_trade_obj.get("direction", "")).upper()
+        plan_contract_type = "PE" if ("PE" in act_c or "PE" in act_d or "PUT" in act_i) else "CE"
+        import re
+        m_st = re.search(r"\b(\d{4,6})\b", act_c + " " + act_i)
+        plan_strike = float(m_st.group(1)) if m_st else tp.get("atm_strike", corridor["lower_strike"])
+    else:
+        plan_contract_type = tp.get("recommended_contract_type", "CE")
+        plan_strike = tp.get("atm_strike", corridor["lower_strike"])
     active_scrip_name = tp.get("scrip_name", spec_plan.display_name)
     plan_target_pts = tp.get("target_pts", spec_plan.target_pts)
     plan_sl_pts = tp.get("sl_pts", spec_plan.sl_pts)
@@ -3719,6 +3738,31 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         act_trade_num = active_trade_obj.get("trade_num", 1)
 
         active_track_ltp = active_live_ltp
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw_feed_inst = GrowwMarketFeed.get_instance()
+            act_contract_id = active_trade_obj.get("contract", "")
+            act_inst_lbl = active_trade_obj.get("instrument", "")
+            resolved_price = None
+            if gw_feed_inst and gw_feed_inst.is_connected:
+                resolved_price = gw_feed_inst.get_option_contract_ltp(act_contract_id or act_inst_lbl, symbol=active_sym)
+                if not resolved_price or resolved_price <= 0:
+                    gw_chain_inst = gw_feed_inst.get_live_option_chain(symbol=active_sym)
+                    if gw_chain_inst:
+                        import re
+                        m_strk = re.search(r"\b(\d{4,6})\b", act_contract_id + " " + act_inst_lbl)
+                        t_strike = float(m_strk.group(1)) if m_strk else float(plan_strike)
+                        is_trade_pe = "PE" in act_contract_id.upper() or "PUT" in act_inst_lbl.upper() or "PE" in str(active_trade_obj.get("direction", "")).upper()
+                        for rw in gw_chain_inst:
+                            if abs(rw.get("strike", 0) - t_strike) < 0.5:
+                                resolved_price = float(rw.get("put_ltp", 0.0) if is_trade_pe else rw.get("call_ltp", 0.0))
+                                break
+            if resolved_price and resolved_price > 0:
+                active_track_ltp = float(resolved_price)
+            elif active_trade_obj.get("current_ltp"):
+                active_track_ltp = float(active_trade_obj["current_ltp"])
+        except Exception as e:
+            logger.debug(f"Direct active LTP tracking error: {e}")
         unreal_pts = round(active_track_ltp - act_entry, 2)
         unreal_pnl = round(unreal_pts * act_qty, 2)
         pnl_col = "#10B981" if unreal_pnl >= 0 else "#EF4444"
