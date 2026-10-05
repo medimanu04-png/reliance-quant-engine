@@ -39,7 +39,7 @@
     "confluence_score": 78.5,
     "trade_roi_pct": 21.7,
     "cumulative_profit": 6375.0,
-    "total_cash": 106375.0,
+    "total_cash": 80018.72,
     "estimated_statutory_charges": 130.0,
     "net_pnl_after_charges": 6245.0,
     "planned_entry_price": 29.25,
@@ -96,8 +96,8 @@
     "estimated_statutory_charges": 225.0,
     "net_pnl_after_charges": -6513.75,
     "trade_roi_pct": -24.1,
-    "cumulative_profit": 86.25,
-    "total_cash": 100086.25
+    "cumulative_profit": -6288.75,
+    "total_cash": 93711.25
   },
   {
     "id": "TRD-20261005-05-NIFTY26O0622600PE",
@@ -146,8 +146,59 @@
     "estimated_statutory_charges": 90.0,
     "net_pnl_after_charges": -525.5,
     "trade_roi_pct": -2.5,
-    "cumulative_profit": -349.25,
-    "total_cash": 99650.75
+    "cumulative_profit": -6724.25,
+    "total_cash": 93275.75
+  },
+  {
+    "id": "TRD-20261005-02-SENSEX",
+    "date": "2026-10-05",
+    "day": "Monday",
+    "symbol": "SENSEX",
+    "trading_symbol": "SENSEX",
+    "instrument": "SENSEX 72000 PE (08-OCT-2026)",
+    "type": "BUY CE",
+    "decision": "TRADABLE (A+ SETUP)",
+    "source": "GROWW_VERIFIED",
+    "is_closed": true,
+    "trade_given_time": "02:22:49 PM IST",
+    "suggested_contract": "SENSEX 72000 PE (08-OCT-2026)",
+    "suggested_entry": 555.4,
+    "suggested_exit": 675.4,
+    "suggested_sl": 303.85,
+    "suggested_target_pts": 120.0,
+    "suggested_sl_pts": 251.55,
+    "actual_entry_time": "02:22:49 PM IST",
+    "actual_entry_price": 555.4,
+    "entry_price": 555.4,
+    "actual_exit_time": "02:23:01 PM IST",
+    "actual_exit_price": 605.4,
+    "exit_price": 605.4,
+    "num_lots": 2,
+    "lot_size": 20,
+    "qty": 40,
+    "capital_deployed": 22216.0,
+    "realised_pnl": 130673.0,
+    "total_profit": 130673.0,
+    "net_profit": 130673.0,
+    "net_pnl": 130673.0,
+    "amount_captured": 130673.0,
+    "amount_lost": 0.0,
+    "status": "HIT",
+    "entry_slippage_pts": 0.0,
+    "screenshot": "",
+    "notes": "Trade #2 Closed (T1 (+6483.65) | TRAIL COST (0.0)) \u2022 Exit: \u20b9605.40 (02:23:01 PM IST) \u2022 Option 1 Runner: T1 Banked (+6483.65 pts) + Runner Protected @ Cost (\u20b9555.40)",
+    "confluence_score": 79.9,
+    "planned_entry_price": 555.4,
+    "actual_fill_price": 555.4,
+    "planned_exit_price": 675.4,
+    "exit_slippage_pts": 70.0,
+    "total_slippage_pts": 70.0,
+    "total_slippage_drag_rupees": 2800.0,
+    "estimated_statutory_charges": 110.0,
+    "net_pnl_after_charges": 130563.0,
+    "trade_roi_pct": 588.2,
+    "cumulative_profit": 130673.0,
+    "total_cash": 250673.0
   },
   {
     "id": "TRD-20261005-01-NIFTY26O0622450PE",
@@ -196,8 +247,8 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": -27345.25,
     "trade_roi_pct": -50.7,
-    "cumulative_profit": -27379.5,
-    "total_cash": 72620.5
+    "cumulative_profit": -33754.5,
+    "total_cash": 66245.5
   },
   {
     "id": "TRD-20261005-02-NIFTY26O0622450PE",
@@ -247,7 +298,7 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": -27346.55,
     "trade_roi_pct": -50.7,
-    "cumulative_profit": -54411.05,
-    "total_cash": 45588.95
+    "cumulative_profit": -60786.05,
+    "total_cash": 39213.95
   }
 ]
