@@ -1,7 +1,25 @@
 {
-  "current_state": "TRADE CLOSED & AUDITED",
+  "current_state": "IN-TRADE (ACTIVE MONITORING)",
   "symbol": "SENSEX",
-  "active_trade": null,
+  "active_trade": {
+    "trade_num": 1,
+    "contract": "SENSEX",
+    "instrument": "SENSEX 72000 PE (08-OCT-2026)",
+    "planned_entry": 544.15,
+    "actual_entry": 544.15,
+    "actual_entry_time": "03:11:10 PM IST",
+    "executed": "Signal Given",
+    "sl": 484.15,
+    "target": 664.15,
+    "direction": "BUY CE",
+    "qty": 40,
+    "num_lots": 2,
+    "lot_size": 20,
+    "highest_price": 544.15,
+    "trailing_sl": 484.15,
+    "status": "Open",
+    "confluence": 79.9
+  },
   "last_closed_trade": {
     "trade_num": 1,
     "instrument": "SENSEX 72000 PE (08-OCT-2026)",
