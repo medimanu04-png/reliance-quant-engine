@@ -8,7 +8,7 @@
   "entry_time": "03:11:10 PM IST",
   "peak_spot": 72270.58,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -7984.0,
+  "unrealized_pnl_2lots": -8074.0,
   "target_pts": 120.0,
   "target_2_pts": 280.0,
   "sl_pts": 60.0,
@@ -16,18 +16,18 @@
   "market_status": "\ud83d\udfe2 LIVE IN-TRADE",
   "strategy_mode": "OPTION 1: MULTI-TRANCHE RUNNER (50/50)",
   "tranche_1": {
-    "status": "BANKED",
+    "status": "PENDING",
     "target_pts": 120.0,
     "qty_pct": "50%",
-    "exit_price": 7039.05,
-    "pnl_rs": 129898.0
-  },
-  "tranche_2": {
-    "status": "RUNNER_ACTIVE",
-    "target_pts": 280.0,
-    "qty_pct": "50%",
-    "trailing_sl": "COST LOCK (\u20b9544.15)",
+    "exit_price": null,
     "pnl_rs": 0.0
   },
-  "last_update": "02:16:07 PM IST"
+  "tranche_2": {
+    "status": "PENDING_T1",
+    "target_pts": 280.0,
+    "qty_pct": "50%",
+    "trailing_sl": "INITIAL SL (-60.0 pts)",
+    "pnl_rs": 0.0
+  },
+  "last_update": "02:16:14 PM IST"
 }
