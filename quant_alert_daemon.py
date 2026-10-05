@@ -679,9 +679,10 @@ class RelianceQuantAlertDaemon:
             if trade_update.get("wick_sweep_prevented"):
                 logger.info(f"🛡️ [Solution 2] WICK SWEEP SHIELD: Soft SL touched intra-candle ({sec_into_bar}s/300s) @ ₹{cur_trade_ltp:.2f} <= ₹{effective_sl:.2f}. Premature exit prevented!")
             if trade_update.get("tranche_event") == "T1_BANKED":
+                t1_key = f"tg_sent_t1_{today_date}_{sym}_{trade_num}"
                 t1_pnl_val = float(trade_update.get("t1_pnl", 0.0))
                 logger.info(f"🎯 TRANCHE 1 (50%) BANKED! Secured: ₹{t1_pnl_val:,.2f} | Runner SL locked at Cost ₹{act_entry:.2f}")
-                if tg_enabled:
+                if tg_enabled and not TelegramNotifier.is_alert_sent(t1_key, cooldown_seconds=86400):
                     try:
                         t1_msg = (
                             f"🎯 *TRANCHE 1 (50%) BANKED & SECURED!*\n"
@@ -692,6 +693,7 @@ class RelianceQuantAlertDaemon:
                             f"• Target 2: ₹{float(active_trade.get('target_2', act_entry + getattr(spec, 'target_2_pts', spec.target_pts * 2.0))):.2f}"
                         )
                         TelegramNotifier.send_message(bot_token, chat_id, t1_msg)
+                        TelegramNotifier.record_alert_sent(t1_key)
                     except Exception as e:
                         logger.debug(f"Telegram T1 dispatch error: {e}")
             if trade_update.get("closed_trade"):
@@ -769,8 +771,8 @@ class RelianceQuantAlertDaemon:
 
             # Target Hit Check
             if cur_trade_ltp >= target_p:
-                target_key = f"tg_sent_target_{today_date}_{sym}_{trade_num}_{recommended_strike}"
-                if tg_enabled and not TelegramNotifier.is_alert_sent(target_key):
+                target_key = f"tg_sent_target_{today_date}_{sym}_{trade_num}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(target_key, cooldown_seconds=86400):
                     profit_pts = round(cur_trade_ltp - act_entry, 2)
                     tot_pnl = round(profit_pts * trade_qty, 2)
                     tgt_msg = TelegramNotifier.format_target_hit_alert(
@@ -792,8 +794,8 @@ class RelianceQuantAlertDaemon:
             # Solution 2: Two-Tier Stop Loss Hit Check (Hard Catastrophic vs 5m Candle Close Soft SL)
             hard_sl_level = float(active_trade.get("hard_sl", max(0.05, act_entry - (spec.sl_pts * 1.5))))
             if cur_trade_ltp <= hard_sl_level or (cur_trade_ltp <= effective_sl and is_bar_closed):
-                sl_key = f"tg_sent_sl_{today_date}_{sym}_{trade_num}_{recommended_strike}"
-                if tg_enabled and not TelegramNotifier.is_alert_sent(sl_key):
+                sl_key = f"tg_sent_sl_{today_date}_{sym}_{trade_num}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(sl_key, cooldown_seconds=86400):
                     loss_pts = round(act_entry - cur_trade_ltp, 2)
                     tot_loss = round(loss_pts * trade_qty, 2)
                     is_hard = cur_trade_ltp <= hard_sl_level
@@ -895,16 +897,20 @@ class RelianceQuantAlertDaemon:
                         symbol=sym
                     )
                     if tg_enabled:
-                        re_msg = (
-                            f"🔄 🚀 *RESUMPTION RE-ENTRY AUTO-EXECUTED!*\n"
-                            f"• Instrument: {re_arm.get('instrument')}\n"
-                            f"• Signal: {re_dir}\n"
-                            f"• Re-Entry Price: ₹{active_option_ltp:.2f}\n"
-                            f"• Tighter SL (Wick Peak): ₹{tight_sl:.2f} (-{round(abs(active_option_ltp - tight_sl), 2)} pts)\n"
-                            f"• Target: ₹{round(active_option_ltp + dynamic_target_pts, 2):.2f}\n"
-                            f"• Rationale: Wick sweep confirmed! Market resumed directional breakdown in favor of high-conviction ({re_arm.get('confluence')}%) setup."
-                        )
-                        TelegramNotifier.send_message(bot_token, chat_id, re_msg)
+                        re_key = f"tg_sent_re_{today_date}_{sym}_{re_arm.get('instrument', '')}"
+                        if not TelegramNotifier.is_alert_sent(re_key, cooldown_seconds=86400):
+                            re_msg = (
+                                f"🔄 🚀 *RESUMPTION RE-ENTRY AUTO-EXECUTED!*\n"
+                                f"• Instrument: {re_arm.get('instrument')}\n"
+                                f"• Signal: {re_dir}\n"
+                                f"• Re-Entry Price: ₹{active_option_ltp:.2f}\n"
+                                f"• Tighter SL (Wick Peak): ₹{tight_sl:.2f} (-{round(abs(active_option_ltp - tight_sl), 2)} pts)\n"
+                                f"• Target: ₹{round(active_option_ltp + dynamic_target_pts, 2):.2f}\n"
+                                f"• Rationale: Wick sweep confirmed! Market resumed directional breakdown in favor of high-conviction ({re_arm.get('confluence')}%) setup."
+                            )
+                            ok, fb = TelegramNotifier.send_message(bot_token, chat_id, re_msg)
+                            if ok:
+                                TelegramNotifier.record_alert_sent(re_key)
                     return
 
             contract_label = f"{sym} {recommended_strike} {contract_type} ({expiry_date})"
@@ -979,7 +985,7 @@ class RelianceQuantAlertDaemon:
                 try:
                     exp_clean = expiry_date.replace("-", "").upper()
                     seq_cur = SequentialTradeEngine.get_state(symbol=sym)
-                    if seq_cur.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED]:
+                    if seq_cur.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not has_daily_loss:
                         SequentialTradeEngine.enter_trade_direct(
                             contract=f"{sym}{exp_clean}{recommended_strike}{contract_type}",
                             instrument=contract_label,
