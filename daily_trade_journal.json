@@ -39,7 +39,7 @@
     "confluence_score": 78.5,
     "trade_roi_pct": 21.7,
     "cumulative_profit": 6375.0,
-    "total_cash": 80018.72,
+    "total_cash": 106375.0,
     "estimated_statutory_charges": 130.0,
     "net_pnl_after_charges": 6245.0,
     "planned_entry_price": 29.25,
@@ -96,8 +96,8 @@
     "estimated_statutory_charges": 225.0,
     "net_pnl_after_charges": -6513.75,
     "trade_roi_pct": -24.1,
-    "cumulative_profit": -6288.75,
-    "total_cash": 93711.25
+    "cumulative_profit": 86.25,
+    "total_cash": 100086.25
   },
   {
     "id": "TRD-20261005-05-NIFTY26O0622600PE",
@@ -146,8 +146,8 @@
     "estimated_statutory_charges": 90.0,
     "net_pnl_after_charges": 0.0,
     "trade_roi_pct": 0.0,
-    "cumulative_profit": -6288.75,
-    "total_cash": 93711.25
+    "cumulative_profit": 86.25,
+    "total_cash": 100086.25
   },
   {
     "id": "TRD-20261005-02-SENSEX",
@@ -197,8 +197,8 @@
     "estimated_statutory_charges": 110.0,
     "net_pnl_after_charges": -6584.0,
     "trade_roi_pct": -31.0,
-    "cumulative_profit": -6474.0,
-    "total_cash": 113526.0
+    "cumulative_profit": -6387.75,
+    "total_cash": 93612.25
   },
   {
     "id": "TRD-20261005-01-NIFTY26O0622450PE",
@@ -247,8 +247,8 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": -27345.25,
     "trade_roi_pct": -50.7,
-    "cumulative_profit": -33319.0,
-    "total_cash": 66681.0
+    "cumulative_profit": -33418.0,
+    "total_cash": 66582.0
   },
   {
     "id": "TRD-20261005-02-NIFTY26O0622450PE",
@@ -298,7 +298,7 @@
     "estimated_statutory_charges": 315.0,
     "net_pnl_after_charges": -27346.55,
     "trade_roi_pct": -50.7,
-    "cumulative_profit": -60350.55,
-    "total_cash": 39649.45
+    "cumulative_profit": -60449.55,
+    "total_cash": 39550.45
   }
 ]
