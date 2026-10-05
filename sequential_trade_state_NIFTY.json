@@ -19,8 +19,8 @@
     "trailing_sl": 74.4,
     "status": "Open",
     "confluence": 75.8,
-    "current_ltp": 83.7,
-    "unrealized_pnl": -3471.0
+    "current_ltp": 79.9,
+    "unrealized_pnl": -3965.0
   },
   "last_closed_trade": {
     "trade_num": 2,
@@ -36,5 +36,5 @@
     "pnl": "\u20b9-16,430.05 (-36.11 pts)"
   },
   "today_trade_count": 2,
-  "updated_at": "2026-10-05 01:31:17 PM IST"
+  "updated_at": "2026-10-05 01:31:30 PM IST"
 }
