@@ -1,5 +1,5 @@
 {
-  "is_active": false,
+  "is_active": true,
   "symbol": "NIFTY",
   "contract": "NIFTY 22450 PE (06-OCT-2026)",
   "action": "BUY NIFTY 22450 PE (06-OCT-2026)",
@@ -13,7 +13,7 @@
   "target_2_pts": 110.0,
   "sl_pts": 36.0,
   "confluence_score": 70.0,
-  "market_status": "MONITORING (09:15 - 15:30 IST)",
+  "market_status": "\ud83d\udfe2 LIVE IN-TRADE",
   "strategy_mode": "OPTION 1: MULTI-TRANCHE RUNNER (50/50)",
   "tranche_1": {
     "status": "PENDING",
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-36.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "02:28:28 PM IST"
+  "last_update": "02:28:31 PM IST"
 }
