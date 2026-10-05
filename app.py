@@ -203,10 +203,22 @@ class BreakoutTriggerManager:
         records = cls._load_records()
         if key in records and isinstance(records[key], (int, float)) and records[key] > 0.0:
             val = float(records[key])
+            if current_ltp > 0.05:
+                expected_trigger = float(current_ltp) + float(buffer_pts)
+                if abs(val - expected_trigger) / max(1.0, current_ltp) > 0.35:
+                    val = round(expected_trigger, 2)
+                    records[key] = val
+                    cls._save_records(records)
             st.session_state[session_key] = val
             return val
         if legacy_key in records and isinstance(records[legacy_key], (int, float)) and records[legacy_key] > 0.0:
             val = float(records[legacy_key])
+            if current_ltp > 0.05:
+                expected_trigger = float(current_ltp) + float(buffer_pts)
+                if abs(val - expected_trigger) / max(1.0, current_ltp) > 0.35:
+                    val = round(expected_trigger, 2)
+                    records[legacy_key] = val
+                    cls._save_records(records)
             st.session_state[session_key] = val
             return val
 
@@ -5982,6 +5994,19 @@ if df is not None and not df.empty:
         current_option_ltp = low_data["call_ltp"]
     else:
         current_option_ltp = high_data["call_ltp"]
+
+    # Direct broker 0-delay real-time contract quote verification from Groww
+    if live_broker_ltp <= 0.0:
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            gw_contract_ltp = GrowwMarketFeed.get_instance().get_option_contract_ltp(
+                f"{scrip_symbol} {atm_strike} {recommended_contract_type}",
+                symbol=scrip_symbol
+            )
+            if gw_contract_ltp is not None and gw_contract_ltp > 0.05:
+                current_option_ltp = float(gw_contract_ltp)
+        except Exception:
+            pass
 
     # Re-calibrate M1 limit execution with final contract LTP (CE vs PE)
     if 'mtf_matrix' in locals() and isinstance(mtf_matrix, dict) and 'm1' in mtf_matrix:

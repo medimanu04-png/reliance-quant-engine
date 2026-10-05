@@ -161,16 +161,16 @@
   },
   "2026-10-05_NIFTY": {
     "date": "2026-10-05",
-    "trade_given_time": "03:11:10 PM IST",
-    "full_contract": "NIFTY 22550 CE (06-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b922550 & \u20b922600] | 2 Lots / 130 Qty | Current Price: \u20b965.86 (Spot: \u20b922550.55)",
+    "trade_given_time": "10:14:39 AM IST",
+    "full_contract": "NIFTY 22550 CE (06-OCT-2026) [🏆 Quantitative Best Strike | Dual ATM: ₹22550 & ₹22600] | 2 Lots / 130 Qty | Current Price: ₹95.70 (Spot: ₹22550.55)",
     "symbol": "NIFTY",
     "contract_type": "CE",
     "action": "BUY CE",
     "strike": 22550,
     "expiry": "06-OCT-2026",
-    "suggested_entry": 68.86,
-    "suggested_exit": 118.86,
-    "suggested_sl": 32.86,
+    "suggested_entry": 98.70,
+    "suggested_exit": 148.70,
+    "suggested_sl": 62.70,
     "confluence_score": 96.0
   },
   "2026-10-05_SENSEX": {

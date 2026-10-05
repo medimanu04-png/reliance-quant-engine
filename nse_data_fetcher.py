@@ -216,6 +216,9 @@ class NSEIndiaFetcher:
           Day 11 onwards: Dynamically roll over to Next Month Expiry.
         Automatically updates dynamically every single day based on live calendar progression.
         """
+        if isinstance(today_dt, str) and symbol is None:
+            symbol = today_dt
+            today_dt = None
         now_ts = time.time()
         sym = resolve_symbol(symbol=symbol)
         cache_attr = f"_cached_expiry_mandate_{sym}"

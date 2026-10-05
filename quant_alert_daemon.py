@@ -109,7 +109,17 @@ class StandaloneBreakoutManager:
         records = cls._load_records()
 
         if key in records and isinstance(records[key], (int, float)) and records[key] > 0.0:
-            return float(records[key])
+            stored_val = float(records[key])
+            if current_ltp > 0.05:
+                expected_trigger = float(current_ltp) + float(buffer_pts)
+                if abs(stored_val - expected_trigger) / max(1.0, current_ltp) > 0.35:
+                    logger.warning(
+                        f"Breakout trigger anomaly detected for {key}: Stored ₹{stored_val:.2f} vs Expected ₹{expected_trigger:.2f} (LTP ₹{current_ltp:.2f}). Auto-recalibrating."
+                    )
+                    records[key] = round(expected_trigger, 2)
+                    cls._save_records(records)
+                    return records[key]
+            return stored_val
 
         if current_ltp > 0.05:
             pinned = round(float(current_ltp) + float(buffer_pts), 2)
@@ -509,6 +519,17 @@ class RelianceQuantAlertDaemon:
         recommended_strike = best_pick["strike"]
         active_branch = low_data if recommended_strike == corridor["lower_strike"] else high_data
         active_option_ltp = active_branch["call_ltp"] if contract_type == "CE" else active_branch["put_ltp"]
+
+        # Direct broker 0-delay real-time contract quote verification from Groww
+        try:
+            direct_broker_ltp = self.groww_feed.get_option_contract_ltp(
+                f"{sym} {recommended_strike} {contract_type}",
+                symbol=sym
+            )
+            if direct_broker_ltp is not None and direct_broker_ltp > 0.05:
+                active_option_ltp = float(direct_broker_ltp)
+        except Exception as e:
+            logger.debug(f"Direct broker LTP fetch error for {sym} {recommended_strike} {contract_type}: {e}")
 
         # 4. Breakout Trigger Pinning & Bar Confirmation Gate
         breakout_buffer = spec.breakout_buffer
