@@ -1,8 +1,20 @@
 {
-  "current_state": "IDLE / SCANNING",
+  "current_state": "TRADE CLOSED & AUDITED",
   "symbol": "SENSEX",
   "active_trade": null,
-  "last_closed_trade": null,
-  "today_trade_count": 0,
-  "updated_at": "2026-10-04 02:10:02 AM IST"
+  "last_closed_trade": {
+    "trade_num": 1,
+    "instrument": "SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9487.30 (Spot: \u20b971917.04)",
+    "planned_entry": 544.15,
+    "actual_entry": 544.15,
+    "executed": "Yes",
+    "sl": 484.15,
+    "target": 664.15,
+    "status": "T1 (+6494.9) | T2 HIT (+6494.9)",
+    "exit_price": 7039.05,
+    "exit_time": "12:38:27 PM IST",
+    "pnl": "+\u20b9259,796.00 (+6494.90 pts)"
+  },
+  "today_trade_count": 1,
+  "updated_at": "2026-10-05 12:38:27 PM IST"
 }

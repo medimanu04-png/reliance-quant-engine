@@ -120,33 +120,42 @@ def load_live_trades():
                         else:
                             entry_spot_val = entry_opt
                         
-                        shadow_pts = float(item.get("shadow_pts") or 0.0)
-                        if shadow_pts == 0.0 and exit_opt > entry_opt:
-                            shadow_pts = round(exit_opt - entry_opt, 2)
-                        elif shadow_pts == 0.0:
-                            shadow_pts = target_pts
-                            
-                        highest_opt = float(item.get("highest_price_reached") or exit_opt)
+                        raw_status = str(item.get("shadow_status") or "Active Monitoring")
+                        has_exit = bool(item.get("exit_time") or item.get("actual_exit_time"))
+                        is_closed = (raw_status in ["Target Hit", "Stop-Loss Hit", "EOD Exit", "HIT", "FAIL"]) and has_exit and (raw_status != "Active Monitoring")
+
+                        current_opt = float(item.get("current_price") or entry_opt)
+                        highest_opt = float(item.get("highest_price_reached") or entry_opt)
                         # Anomaly filter: guard against quote corruption where highest option price exceeds 3.5x entry
                         if entry_opt > 0 and highest_opt > (entry_opt * 3.5):
-                            highest_opt = exit_opt
+                            highest_opt = entry_opt
 
-                        peak_pts = max(shadow_pts, round(highest_opt - entry_opt, 2) if highest_opt > entry_opt else target_pts)
+                        # Real peak points gained above entry (0.0 if trade hasn't moved into profit)
+                        peak_pts = max(0.0, round(highest_opt - entry_opt, 2))
                         if target_pts > 0 and peak_pts > (target_pts * 2.5):
                             peak_pts = target_pts
 
                         is_ce = "CE" in str(item.get("action", "")).upper()
                         if entry_spot_val > 500.0:
                             peak_spot_val = round(entry_spot_val + (peak_pts if is_ce else -peak_pts), 1)
-                            exit_spot_val = round(entry_spot_val + (shadow_pts if is_ce else -shadow_pts), 1)
+                            exit_spot_val = round(entry_spot_val + (shadow_pts if is_ce else -shadow_pts), 1) if is_closed else 0.0
                         else:
-                            peak_spot_val = highest_opt
-                            exit_spot_val = exit_opt
+                            peak_spot_val = round(highest_opt, 2)
+                            exit_spot_val = round(exit_opt, 2) if is_closed else 0.0
 
                         entry_time_str = item.get("actual_entry_time") or item.get("timestamp") or "09:15:00 AM IST"
-                        exit_time_str = item.get("exit_time") or item.get("actual_exit_time") or "10:04:15 AM IST"
-                        if "PM" in entry_time_str and "AM" in exit_time_str:
-                            entry_time_str = "09:16:38 AM IST" if sym == "SENSEX" else "09:30:15 AM IST"
+                        
+                        if is_closed:
+                            exit_time_str = item.get("exit_time") or item.get("actual_exit_time") or "03:30:00 PM IST"
+                            exit_reason_str = item.get("shadow_status") or "Target Hit"
+                            shadow_pts = float(item.get("shadow_pts") or round(exit_opt - entry_opt, 2))
+                        else:
+                            exit_time_str = "—"
+                            exit_reason_str = "OPEN (Currently Holding)"
+                            shadow_pts = round(current_opt - entry_opt, 2)
+
+                        # Peak Time: time of true peak; if no gain yet, display entry time or Holding
+                        peak_time_str = item.get("peak_time") or (entry_time_str if peak_pts <= 0 else (exit_time_str if is_closed and "Target" in exit_reason_str else entry_time_str))
 
                         spec = get_asset_spec(sym)
                         lot_size = spec.lot_size
@@ -160,21 +169,21 @@ def load_live_trades():
                             "entry_time": entry_time_str,
                             "entry_spot": entry_spot_val,
                             "peak_spot": peak_spot_val,
-                            "peak_time": exit_time_str,
+                            "peak_time": peak_time_str,
                             "peak_pts": peak_pts,
                             "peak_amount_rs": peak_amount_2lots,
                             "least_spot": item.get("lowest_price_reached", "—"),
                             "least_amount_rs": 0.0,
                             "exit_time": exit_time_str,
                             "exit_spot": exit_spot_val,
-                            "exit_reason": item.get("shadow_status") or "Target Hit",
+                            "exit_reason": exit_reason_str,
                             "pnl_pts": shadow_pts,
                             "pnl_1lot": round(calc_pnl_2lots / 2.0, 2),
                             "pnl_2lots": calc_pnl_2lots,
                             "status": "LIVE_TRADE",
                             "score": float(item.get("confluence_score", 75.0) or 75.0),
                             "runner_pnl_pts": shadow_pts,
-                            "runner_exit_reason": item.get("shadow_status") or "Target Hit",
+                            "runner_exit_reason": exit_reason_str,
                             "is_live": True
                         }
                         if sym in trades_map:
