@@ -1,19 +1,19 @@
 {
-  "is_active": false,
+  "is_active": true,
   "symbol": "SENSEX",
   "contract": "SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9487.30 (Spot: \u20b971917.04)",
   "action": "BUY SENSEX 72000 PE (08-OCT-2026) [\ud83c\udfc6 Quantitative Best Strike | Dual ATM: \u20b971900 & \u20b972000] | 2 Lots / 40 Qty | Current Price: \u20b9487.30 (Spot: \u20b971917.04)",
-  "current_spot": 72023.95,
+  "current_spot": 72318.11,
   "entry_spot": 544.15,
   "entry_time": "03:11:10 PM IST",
-  "peak_spot": 72023.95,
+  "peak_spot": 72318.11,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -4454.0,
+  "unrealized_pnl_2lots": -9660.0,
   "target_pts": 120.0,
   "target_2_pts": 280.0,
   "sl_pts": 60.0,
   "confluence_score": 70.0,
-  "market_status": "MONITORING (09:15 - 15:30 IST)",
+  "market_status": "\ud83d\udfe2 LIVE IN-TRADE",
   "strategy_mode": "OPTION 1: MULTI-TRANCHE RUNNER (50/50)",
   "tranche_1": {
     "status": "BANKED",
@@ -29,5 +29,5 @@
     "trailing_sl": "COST LOCK (\u20b9544.15)",
     "pnl_rs": 0.0
   },
-  "last_update": "01:05:39 PM IST"
+  "last_update": "01:42:53 PM IST"
 }
