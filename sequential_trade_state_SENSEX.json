@@ -29,7 +29,9 @@
     "trailing_sl": 359.8,
     "status": "Open (Re-Entry)",
     "proposed_at": "02:06:05 PM IST",
-    "symbol": "SENSEX"
+    "symbol": "SENSEX",
+    "current_ltp": 360.55,
+    "unrealized_pnl": -6408.0
   },
   "last_closed_trade": {
     "trade_num": 2,
@@ -45,6 +47,6 @@
     "pnl": "\u20b9-6,474.00 (-161.85 pts)"
   },
   "today_trade_count": 2,
-  "updated_at": "2026-10-05 02:06:05 PM IST",
+  "updated_at": "2026-10-05 02:06:20 PM IST",
   "re_entry_armed": null
 }
