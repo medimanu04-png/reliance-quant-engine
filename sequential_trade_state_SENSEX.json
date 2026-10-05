@@ -30,11 +30,11 @@
     "target": 664.15,
     "status": "T1 (+6494.9) | TRAIL COST (0.0)",
     "exit_price": 594.15,
-    "exit_time": "02:16:34 PM IST",
+    "exit_time": "02:16:41 PM IST",
     "pnl": "+\u20b9130,898.00 (+3272.45 pts)"
   },
   "today_trade_count": 1,
-  "updated_at": "2026-10-05 02:16:34 PM IST",
+  "updated_at": "2026-10-05 02:16:41 PM IST",
   "re_entry_armed": {
     "armed": true,
     "symbol": "SENSEX",
