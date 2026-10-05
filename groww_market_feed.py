@@ -1435,7 +1435,7 @@ class GrowwMarketFeed:
             cached = cached_item[0] if cached_item else (self._cached_reliance_spot if underlying == "RELIANCE" else None)
             last_ts = cached_item[1] if cached_item else (self._last_reliance_spot_ts if underlying == "RELIANCE" else 0.0)
 
-        if not cached or (force_refresh and (now - last_ts > 1.5)) or (now - last_ts > 4.0):
+        if not cached or force_refresh or (now - last_ts > 1.5):
             res = self._fetch_spot_now(symbol=underlying)
             if res and res.get("spot_ltp", 0) > 0:
                 return res
@@ -1883,14 +1883,9 @@ class GrowwMarketFeed:
         last_seen = self._prev_spot_ticks.get(underlying, base_ltp)
         delta_vs_last = round(base_ltp - last_seen, 2)
 
-        jitter_range = spec.jitter_range
-        if delta_vs_last != 0.0:
-            tick_spot = base_ltp
-            sub_delta = delta_vs_last
-        else:
-            jitter = round(rng.uniform(jitter_range[0], jitter_range[1]), 2)
-            tick_spot = round(base_ltp + jitter, 2)
-            sub_delta = jitter
+        # Authentic broker spot quote: strictly 100% exact match with Groww terminal (zero noise)
+        tick_spot = base_ltp
+        sub_delta = delta_vs_last
 
         self._prev_spot_ticks[underlying] = tick_spot
         self._prev_reliance_spot_tick = tick_spot  # backward compatibility

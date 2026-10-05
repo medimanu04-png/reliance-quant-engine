@@ -498,25 +498,17 @@ class NSEIndiaFetcher:
             prev_price = cls._prev_benchmark_ticks.get(key, base_price)
             real_delta = round(base_price - prev_price, 2)
             
-            # If the macro price didn't jump this exact second, apply sub-tick order book micro-step
-            # so the trader sees active live running numbers every second
-            if real_delta != 0.0:
-                tick_price = base_price
-                tick_delta = real_delta
-            else:
-                scale = 0.35 if "NIFTY" in key or "S&P" in key else (0.50 if "BANK" in key else 0.20)
-                micro_jitter = round(rng.uniform(-scale, scale), 2)
-                tick_price = round(base_price + micro_jitter, 2)
-                tick_delta = micro_jitter
-
+            # Pure authentic broker quote: 100% exact match with Groww terminal (zero artificial noise)
+            tick_price = base_price
+            tick_delta = real_delta
             cls._prev_benchmark_ticks[key] = tick_price
             tick_direction = "UP" if tick_delta > 0 or (tick_delta == 0 and base_chg >= 0) else "DOWN"
             
             tick_data[key] = {
                 **item,
-                "price": tick_price,
-                "change": round(base_chg + (tick_price - base_price), 2),
-                "pct_change": round(pct + ((tick_price - base_price) / max(1.0, base_price)) * 100.0, 2),
+                "price": base_price,
+                "change": base_chg,
+                "pct_change": pct,
                 "tick_direction": tick_direction,
                 "tick_delta": tick_delta
             }
@@ -801,8 +793,8 @@ class NSEIndiaFetcher:
         s_low = corridor["lower_strike"]
         s_high = corridor["upper_strike"]
 
-        # Micro-fluctuation on spot (+/- 0.30 pts)
-        spot_tick = round(spot + rng.uniform(-0.25, 0.35), 2)
+        # Authentic broker spot price (zero artificial noise)
+        spot_tick = round(spot, 2)
 
         # Expiry parameters dynamically resolved via mandate
         expiry_meta = cls.resolve_dynamic_expiry_mandate(symbol=sym)
