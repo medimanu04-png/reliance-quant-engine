@@ -162,6 +162,15 @@ def load_live_trades():
                         if target_pts > 0 and peak_pts > (target_pts * 2.5):
                             peak_pts = target_pts
 
+                        if is_closed:
+                            exit_time_str = item.get("exit_time") or item.get("actual_exit_time") or "03:30:00 PM IST"
+                            exit_reason_str = item.get("shadow_status") or "Target Hit"
+                            shadow_pts = float(item.get("shadow_pts") or round(exit_opt - entry_opt, 2))
+                        else:
+                            exit_time_str = "—"
+                            exit_reason_str = "OPEN (Currently Holding)"
+                            shadow_pts = round(current_opt - entry_opt, 2)
+
                         is_ce = "CE" in str(item.get("action", "")).upper()
                         if entry_spot_val > 500.0:
                             peak_spot_val = round(entry_spot_val + (peak_pts if is_ce else -peak_pts), 1)
@@ -171,15 +180,6 @@ def load_live_trades():
                             exit_spot_val = round(exit_opt, 2) if is_closed else 0.0
 
                         entry_time_str = item.get("actual_entry_time") or item.get("timestamp") or "09:15:00 AM IST"
-                        
-                        if is_closed:
-                            exit_time_str = item.get("exit_time") or item.get("actual_exit_time") or "03:30:00 PM IST"
-                            exit_reason_str = item.get("shadow_status") or "Target Hit"
-                            shadow_pts = float(item.get("shadow_pts") or round(exit_opt - entry_opt, 2))
-                        else:
-                            exit_time_str = "—"
-                            exit_reason_str = "OPEN (Currently Holding)"
-                            shadow_pts = round(current_opt - entry_opt, 2)
 
                         # Peak Time: time of true peak; if no gain yet, display entry time or Holding
                         peak_time_str = item.get("peak_time") or (entry_time_str if peak_pts <= 0 else (exit_time_str if is_closed and "Target" in exit_reason_str else entry_time_str))

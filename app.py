@@ -4001,7 +4001,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
 
         # Immediate Zero-Delay Sequential State Transition
         seq_now = SequentialTradeEngine.get_state(symbol=active_sym)
-        if seq_now.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
+        has_cb_loss, _ = SequentialTradeEngine.has_daily_loss(symbol=active_sym)
+        if seq_now.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not has_cb_loss and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
             exp_tag = plan_expiry.replace("-", "").upper()
             SequentialTradeEngine.enter_trade_direct(
                 contract=f"{active_sym}{exp_tag}{plan_strike}{plan_contract_type}",
@@ -4020,7 +4021,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
 
         # Telegram Alert Dispatch (Instant on Entry Trigger or Simulation)
         tg_status_html = ""
-        if tg_on and tg_token and tg_chat:
+        if tg_on and tg_token and tg_chat and not has_cb_loss:
             today_date = datetime.now(IST).strftime("%Y-%m-%d")
             if sim_entry or (sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
                 alert_sent_key = f"tg_sent_sim_entry_{sim_run_id}_{active_sym}_{plan_strike}_{plan_contract_type}"

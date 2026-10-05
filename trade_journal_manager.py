@@ -1458,6 +1458,11 @@ class SequentialTradeEngine:
         return False, ""
 
     @classmethod
+    def has_daily_loss(cls, symbol: Optional[str] = None) -> Tuple[bool, str]:
+        """Convenience alias for has_daily_loss_occurred_today."""
+        return cls.has_daily_loss_occurred_today(symbol=symbol)
+
+    @classmethod
     def check_theta_stagnation(
         cls,
         entry_time_str: str,
