@@ -193,6 +193,11 @@ class GrowwMarketFeed:
             if token:
                 self._access_token = token
                 self._inspect_token_roles(token)
+                try:
+                    from growwapi import GrowwAPI
+                    self._groww_api = GrowwAPI(token=token.strip())
+                except Exception:
+                    pass
 
             if not prof and (totp_secret or totp_token or token):
                 prof = {
