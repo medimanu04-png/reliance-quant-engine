@@ -1,20 +1,20 @@
 {
-  "current_state": "IDLE / SCANNING",
+  "current_state": "TRADE CLOSED & AUDITED",
   "symbol": "NIFTY",
   "active_trade": null,
   "last_closed_trade": {
-    "trade_num": 2,
+    "trade_num": 3,
     "instrument": "NIFTY 22450 PE (06-OCT-2026)",
     "planned_entry": 110.4,
     "actual_entry": 110.4,
     "executed": "Yes",
     "sl": 74.4,
     "target": 160.4,
-    "status": "T1 (+102.6) | TRAIL COST (0.0)",
-    "exit_price": 165.0,
-    "exit_time": "01:54:14 PM IST",
-    "pnl": "+\u20b910,218.00 (+78.60 pts)"
+    "status": "Hard Catastrophic SL Hit",
+    "exit_price": 44.9,
+    "exit_time": "01:54:25 PM IST",
+    "pnl": "\u20b9-8,515.00 (-65.50 pts)"
   },
-  "today_trade_count": 2,
-  "updated_at": "2026-10-05 01:54:14 PM IST"
+  "today_trade_count": 3,
+  "updated_at": "2026-10-05 01:54:25 PM IST"
 }
