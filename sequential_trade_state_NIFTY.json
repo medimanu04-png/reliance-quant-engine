@@ -1,40 +1,20 @@
 {
-  "current_state": "IN-TRADE (ACTIVE MONITORING)",
+  "current_state": "TRADE CLOSED & AUDITED",
   "symbol": "NIFTY",
-  "active_trade": {
+  "active_trade": null,
+  "last_closed_trade": {
     "trade_num": 2,
-    "contract": "NIFTY26OCT22450PE",
     "instrument": "NIFTY 22450 PE (06-OCT-2026)",
     "planned_entry": 110.4,
     "actual_entry": 110.4,
-    "actual_entry_time": "12:07:30 PM IST",
-    "executed": "Signal Given",
+    "executed": "Yes",
     "sl": 74.4,
     "target": 160.4,
-    "direction": "BUY PE",
-    "qty": 130,
-    "num_lots": 2,
-    "lot_size": 65,
-    "highest_price": 110.4,
-    "trailing_sl": 74.4,
-    "status": "Open",
-    "confluence": 75.8,
-    "current_ltp": 79.9,
-    "unrealized_pnl": -3965.0
-  },
-  "last_closed_trade": {
-    "trade_num": 2,
-    "instrument": "NIFTY26O0622450PE",
-    "planned_entry": 117.21,
-    "actual_entry": 117.21,
-    "executed": "Yes",
-    "sl": 81.21,
-    "target": 167.21,
     "status": "SL Hit",
-    "exit_price": 81.1,
-    "exit_time": "01:29:56 PM IST",
-    "pnl": "\u20b9-16,430.05 (-36.11 pts)"
+    "exit_price": 62.1,
+    "exit_time": "01:39:31 PM IST",
+    "pnl": "\u20b9-6,279.00 (-48.30 pts)"
   },
   "today_trade_count": 2,
-  "updated_at": "2026-10-05 01:31:30 PM IST"
+  "updated_at": "2026-10-05 01:39:31 PM IST"
 }
