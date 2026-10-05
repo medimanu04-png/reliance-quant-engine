@@ -18,11 +18,7 @@
     "highest_price": 110.4,
     "trailing_sl": 74.4,
     "status": "Open",
-    "confluence": 75.8,
-    "current_ltp": 56.95,
-    "unrealized_pnl": -6948.5,
-    "wick_touches": 1,
-    "wick_guard_alert": "Wick touch @ \u20b956.95 <= \u20b974.40. Soft SL active, waiting for 5m candle close confirmation."
+    "confluence": 75.8
   },
   "last_closed_trade": {
     "trade_num": 5,
@@ -34,9 +30,9 @@
     "target": 107.8,
     "status": "SL Hit",
     "exit_price": 56.6,
-    "exit_time": "02:12:37 PM IST",
+    "exit_time": "02:12:52 PM IST",
     "pnl": "\u20b9-156.00 (-1.20 pts)"
   },
   "today_trade_count": 5,
-  "updated_at": "2026-10-05 02:12:45 PM IST"
+  "updated_at": "2026-10-05 02:12:52 PM IST"
 }
