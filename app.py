@@ -6663,13 +6663,16 @@ if df is not None and not df.empty:
                 if current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
                     for ex_tr in gw_executed:
                         if active_trade.get("contract", "") in ex_tr.get("symbol", ""):
+                            fill_rerun_key = f"fill_rerun_{scrip_symbol}_{active_trade.get('contract', '')}"
                             SequentialTradeEngine.confirm_groww_fill(
                                 confirmed=True,
                                 actual_price=float(ex_tr.get("entry_price", active_trade["planned_entry"])),
                                 actual_time=ex_tr.get("entry_time", datetime.now(IST).strftime("%I:%M:%S %p IST")),
                                 symbol=scrip_symbol
                             )
-                            st.rerun()
+                            if not st.session_state.get(fill_rerun_key):
+                                st.session_state[fill_rerun_key] = True
+                                st.rerun()
             except Exception as e:
                 logger.debug(f"Auto-verify sequential check error: {e}")
 
@@ -6710,7 +6713,11 @@ if df is not None and not df.empty:
                 symbol=scrip_symbol
             )
             if tr_update.get("closed_trade"):
-                st.rerun()
+                closed_tr_id = str(tr_update.get("closed_trade", {}).get("timestamp", "")) or str(active_trade.get("entry_time", "")) or str(datetime.now(IST).strftime("%Y%m%d_%H%M"))
+                rerun_key = f"closed_trade_rerun_{scrip_symbol}_{closed_tr_id}"
+                if not st.session_state.get(rerun_key):
+                    st.session_state[rerun_key] = True
+                    st.rerun()
 
             latest_s = SequentialTradeEngine.get_state(symbol=scrip_symbol)
             if latest_s.get("active_trade"):

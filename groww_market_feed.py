@@ -224,6 +224,7 @@ class GrowwMarketFeed:
             return
         self._starting_up = True
         try:
+            time.sleep(1.0)
             self._load_saved_credentials()
         except Exception as e:
             logger.debug(f"Deferred credential load error: {e}")
@@ -241,11 +242,6 @@ class GrowwMarketFeed:
 
         def _launch_worker(target, name):
             t = threading.Thread(target=target, daemon=True, name=name)
-            try:
-                from streamlit.runtime.scriptrunner import add_script_run_ctx
-                add_script_run_ctx(t)
-            except Exception:
-                pass
             t.start()
             return t
         
@@ -1458,13 +1454,21 @@ class GrowwMarketFeed:
             cached = cached_item[0] if cached_item else (self._cached_reliance_spot if underlying == "RELIANCE" else None)
             last_ts = cached_item[1] if cached_item else (self._last_reliance_spot_ts if underlying == "RELIANCE" else 0.0)
 
-        if not cached or force_refresh or (now - last_ts > 1.5):
-            res = self._fetch_spot_now(symbol=underlying)
-            if res and res.get("spot_ltp", 0) > 0:
-                return res
-
         if cached:
+            if (force_refresh or (now - last_ts > 2.0)) and not getattr(self, f"_spot_fetching_{underlying}", False):
+                setattr(self, f"_spot_fetching_{underlying}", True)
+                def _async_spot(sym=underlying):
+                    try:
+                        self._fetch_spot_now(symbol=sym)
+                    finally:
+                        setattr(self, f"_spot_fetching_{sym}", False)
+                threading.Thread(target=_async_spot, daemon=True, name=f"GrowwSpotAsync_{underlying}").start()
             return cached.copy()
+
+        # If absolutely no cache exists yet, fetch with fallback
+        res = self._fetch_spot_now(symbol=underlying)
+        if res and res.get("spot_ltp", 0) > 0:
+            return res
         return self._get_fallback_spot(underlying)
 
     def get_reliance_historical_candles(self, interval: str = "5m", days: int = 5, symbol: Optional[str] = None) -> Optional[Any]:
@@ -1993,14 +1997,22 @@ class GrowwMarketFeed:
             if underlying == "RELIANCE" and not last_ts:
                 last_ts = self._last_reliance_chain_ts
 
-        # If cache is missing, or force_refresh requested AND cache > 2.0s old, or older than 5.0s:
-        if chain is None or (force_refresh and (now - last_ts > 2.0)) or (now - last_ts > 5.0):
-            res = self._fetch_chain_now(expiry_iso=expiry, symbol=underlying)
-            if res and len(res) > 0:
-                return [dict(x) for x in res]
-
+        # Non-blocking async background fetch if stale
         if chain and len(chain) > 0:
+            if (force_refresh or (now - last_ts > 3.0)) and not getattr(self, f"_chain_fetching_{underlying}", False):
+                setattr(self, f"_chain_fetching_{underlying}", True)
+                def _async_chain(sym=underlying, exp=expiry):
+                    try:
+                        self._fetch_chain_now(expiry_iso=exp, symbol=sym)
+                    finally:
+                        setattr(self, f"_chain_fetching_{sym}", False)
+                threading.Thread(target=_async_chain, daemon=True, name=f"GrowwChainAsync_{underlying}").start()
             return [dict(x) for x in chain]
+
+        # If cache is missing, fetch synchronously
+        res = self._fetch_chain_now(expiry_iso=expiry, symbol=underlying)
+        if res and len(res) > 0:
+            return [dict(x) for x in res]
 
         fallback = self._get_fallback_chain(underlying, expiry)
         return [dict(x) for x in fallback]
