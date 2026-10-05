@@ -9676,6 +9676,7 @@ if df is not None and not df.empty:
                             st.error(f"Error: {msg}")
     # 8. BACKEND TELEMETRY & INSTITUTIONAL SPECIFICATION (RUNS IN-MEMORY)
     # ==============================================================================
+    score_cleared = bool(dominant_score > MIN_HIT_PERCENTAGE)
     if is_orb_cooldown_window and not time_gate_allowed:
         gate_status_desc = f"SETUP ARMED / ORB-15 COOLDOWN (Dominant Bias: {dominant_side} {dominant_score}% > {MIN_HIT_PERCENTAGE:.0f}% | Execution Locked: {time_gate_msg})"
         gate_decision_desc = f"ARMED / ORB-15 COOLDOWN (Confluence {dominant_score}% cleared {MIN_HIT_PERCENTAGE:.0f}% gate; unlocks 09:30 AM)"
