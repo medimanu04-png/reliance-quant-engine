@@ -91,6 +91,10 @@ def _start_background_multi_desk_daemon():
         existing_threads = {t.name for t in threading.enumerate() if t.is_alive()}
         if "MultiDeskQuantAlertDaemon" in existing_threads:
             return
+        # Disable background daemon on cloud hosting environments (Streamlit Cloud, Heroku, Docker)
+        # to prevent ghost alert spamming from cloud instances
+        if os.environ.get("STREAMLIT_SHARING_MODE") or os.environ.get("IS_STREAMLIT_CLOUD") or os.path.exists("/mount/src") or os.path.exists("/app"):
+            return
         try:
             from quant_alert_daemon import RelianceQuantAlertDaemon, is_daemon_running
             running, running_pid = is_daemon_running()
