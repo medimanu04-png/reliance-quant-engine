@@ -30,11 +30,11 @@
     "target": 664.15,
     "status": "Hard Catastrophic SL Hit",
     "exit_price": 330.6,
-    "exit_time": "02:12:10 PM IST",
+    "exit_time": "02:12:11 PM IST",
     "pnl": "\u20b9-8,542.00 (-213.55 pts)"
   },
   "today_trade_count": 1,
-  "updated_at": "2026-10-05 02:12:10 PM IST",
+  "updated_at": "2026-10-05 02:12:12 PM IST",
   "re_entry_armed": {
     "armed": true,
     "symbol": "SENSEX",
@@ -50,8 +50,8 @@
     "target_2": 0.0,
     "qty": 40,
     "num_lots": 2,
-    "armed_at": "2026-10-05 02:12:10 PM IST",
-    "expires_at": "2026-10-05 02:27:10 PM IST",
-    "notes": "High conviction (79.9%) setup stopped on early wick at 02:12:10 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
+    "armed_at": "2026-10-05 02:12:11 PM IST",
+    "expires_at": "2026-10-05 02:27:11 PM IST",
+    "notes": "High conviction (79.9%) setup stopped on early wick at 02:12:11 PM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9544.15."
   }
 }
