@@ -684,13 +684,13 @@ class RelianceQuantAlertDaemon:
                 logger.info(f"🎯 TRANCHE 1 (50%) BANKED! Secured: ₹{t1_pnl_val:,.2f} | Runner SL locked at Cost ₹{act_entry:.2f}")
                 if tg_enabled and not TelegramNotifier.is_alert_sent(t1_key, cooldown_seconds=86400):
                     try:
-                        t1_msg = (
-                            f"🎯 *TRANCHE 1 (50%) BANKED & SECURED!*\n"
-                            f"• Contract: {inst_sym}\n"
-                            f"• Exit: ₹{cur_trade_ltp:.2f} (+{round(cur_trade_ltp - act_entry, 2)} pts)\n"
-                            f"• Banked P&L: +₹{t1_pnl_val:,.2f}\n"
-                            f"• 🚀 *Tranche 2 (50% Runner)*: Trailing SL locked at Cost (₹{act_entry:.2f}). Pure risk-free upside!\n"
-                            f"• Target 2: ₹{float(active_trade.get('target_2', act_entry + getattr(spec, 'target_2_pts', spec.target_pts * 2.0))):.2f}"
+                        t1_msg = TelegramNotifier.format_tranche_1_alert(
+                            contract=inst_sym,
+                            entry_price=act_entry,
+                            exit_price=cur_trade_ltp,
+                            banked_pnl=t1_pnl_val,
+                            target_2=float(active_trade.get('target_2', act_entry + getattr(spec, 'target_2_pts', spec.target_pts * 2.0))),
+                            symbol=sym
                         )
                         TelegramNotifier.send_message(bot_token, chat_id, t1_msg)
                         TelegramNotifier.record_alert_sent(t1_key)
@@ -847,7 +847,7 @@ class RelianceQuantAlertDaemon:
                         spot=spot
                     )
                     if ou_exit:
-                        stag_alert += f"\n\n⏱️ *OU Half-Life Decay Alert*: Momentum half-life estimated at {ou_half_life:.1f}m. Directional edge exhausted; market exit advised."
+                        stag_alert += f"\n\n⏱️ <b>OU Half-Life Decay Alert:</b> Momentum half-life estimated at {ou_half_life:.1f}m. Directional edge exhausted; market exit advised."
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, stag_alert)
                     if ok:
                         TelegramNotifier.record_alert_sent(stag_key)
@@ -899,14 +899,14 @@ class RelianceQuantAlertDaemon:
                     if tg_enabled:
                         re_key = f"tg_sent_re_{today_date}_{sym}_{re_arm.get('instrument', '')}"
                         if not TelegramNotifier.is_alert_sent(re_key, cooldown_seconds=86400):
-                            re_msg = (
-                                f"🔄 🚀 *RESUMPTION RE-ENTRY AUTO-EXECUTED!*\n"
-                                f"• Instrument: {re_arm.get('instrument')}\n"
-                                f"• Signal: {re_dir}\n"
-                                f"• Re-Entry Price: ₹{active_option_ltp:.2f}\n"
-                                f"• Tighter SL (Wick Peak): ₹{tight_sl:.2f} (-{round(abs(active_option_ltp - tight_sl), 2)} pts)\n"
-                                f"• Target: ₹{round(active_option_ltp + dynamic_target_pts, 2):.2f}\n"
-                                f"• Rationale: Wick sweep confirmed! Market resumed directional breakdown in favor of high-conviction ({re_arm.get('confluence')}%) setup."
+                            re_msg = TelegramNotifier.format_resumption_reentry_alert(
+                                contract=re_arm.get('instrument', ''),
+                                direction=re_dir,
+                                entry_price=active_option_ltp,
+                                sl_price=tight_sl,
+                                target_price=round(active_option_ltp + dynamic_target_pts, 2),
+                                confluence=float(re_arm.get('confluence', 75.0)),
+                                symbol=sym
                             )
                             ok, fb = TelegramNotifier.send_message(bot_token, chat_id, re_msg)
                             if ok:

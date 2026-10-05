@@ -503,33 +503,20 @@ class TelegramNotifier:
 
     @classmethod
     def send_test_alert(cls, bot_token: str, chat_ids_input: Any, symbol: str = "RELIANCE") -> Tuple[bool, str]:
-        """Sends a verification test alert to confirm bot configuration across all recipients."""
+        """Sends a clean, beautiful verification test alert to confirm bot configuration across all recipients."""
         chat_ids = cls.parse_chat_ids(chat_ids_input)
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST | %d-%b-%Y")
-        recipients_str = ", ".join(chat_ids) if chat_ids else "None"
+        now_str = datetime.now(IST).strftime("%I:%M %p IST • %d-%b-%Y")
+        recipients_str = f"{len(chat_ids)} Recipient(s)"
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol)
         stock_name = cls._stock_name(symbol=symbol)
-        msg = f"""
-<b>{stock_name}</b>
-⚡ <b>{scrip_name} QUANTITATIVE ENGINE — TELEGRAM BROADCAST CONNECTED</b> ⚡
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ <b>Status:</b> Notification Broadcast Active
+        msg = f"""<b>⚡ {scrip_name} QUANT ENGINE • DISPATCH ACTIVE</b>
+────────────────────────
+✅ <b>Status:</b> High-Precision Dispatch Connected
 ⏰ <b>Time:</b> {now_str}
-👥 <b>Recipients ({len(chat_ids)}):</b> <code>{recipients_str}</code>
-🤖 <b>Multi-User Integration:</b> Zero-Delay Push Alerts Verified
-
-📡 You will receive instant notifications whenever:
-• 🟡 <b>Setup is Armed</b> (Approaching Breakout Level)
-• 🚀 <b>Entry Trigger Confirmed</b> (LTP Breaches Breakout)
-• 🎯 <b>Target is Reached</b> (+10.0 pts)
-• 🛑 <b>Stop Loss is Hit</b>
-• ⚡ <b>Trailing SL Activated</b> (Move SL to Cost)
-• 🔒 <b>End of Day Auto-Square-Off</b> (03:05 PM IST)
-• 🛡️ <b>Consolidation Chop Warning</b> (CHOP > 61.8)
-
-<i>You can now minimize the browser without worrying about missing trade execution!</i>
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+👥 <b>Target:</b> <code>{recipients_str}</code>
+🏛️ <b>Asset:</b> {stock_name}
+────────────────────────
+📡 <i>Instant notifications configured for Entry, Targets, Stop-Loss, Trailing Stops, and Risk Filters.</i>"""
         buttons = {
             "inline_keyboard": [
                 [
@@ -558,77 +545,57 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats an institutional grade entry alert for Telegram (supports both CE and PE)."""
+        """Formats a clean, modern institutional grade entry alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         if lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         target_price = round(entry_price + target_pts, 2)
-        sl_price = round(entry_price - sl_pts, 2)
+        sl_price = max(0.05, round(entry_price - sl_pts, 2))
         potential_gain = round(total_qty * target_pts)
         potential_loss = round(total_qty * sl_pts)
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
+        scrip_sym = spec.symbol
 
         is_call = ("BULLISH" in direction.upper() or "CE" in direction.upper())
-        dir_icon = "🟢" if is_call else "🔴"
-        action = "BUY CALL (CE)" if is_call else "BUY PUT (PE)"
+        dir_badge = "🟢 BUY CALL (CE)" if is_call else "🔴 BUY PUT (PE)"
+        rr_ratio = round(target_pts / max(0.1, sl_pts), 1)
 
-        quant_block = f"""
-🔬 <b>Institutional Quantitative Telemetry:</b>
-{rationale}
-━━━━━━━━━━━━━━━━━━━━━━━━━━""" if rationale else ""
-
-        msg = f"""
-<b>{stock_name}</b>
-🚀 <b>TRADE ENTRY CONFIRMED — {action}</b> 🚀
-━━━━━━━━━━━━━━━━━━━━━━━━━━
+        msg = f"""<b>{dir_badge} • {scrip_sym}</b>
+────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
-⚡ <b>Order Type:</b> <b>LIMIT ORDER ONLY @ ₹{entry_price:.2f}</b>
-⚠️ <b>Slippage Warning:</b> <i>DO NOT USE MARKET BUY (Prevents ₹500–₹1,500 spread drag)</i>
-{dir_icon} <b>Direction:</b> {direction}
-📊 <b>Statistical Win Rate:</b> <b>{win_prob:.1f}%</b> (Execution Gate >60%)
+📊 <b>Win Probability:</b> <b>{win_prob:.1f}%</b> (A+ Confluence)
 
-💰 <b>Entry Limit Price:</b> <b>₹{entry_price:.2f}</b>
-🎯 <b>Profit Target:</b> <b>₹{target_price:.2f}</b> (+{target_pts:.1f} pts | +₹{potential_gain:,})
-🛑 <b>Stop Loss:</b> <b>₹{sl_price:.2f}</b> (-{sl_pts:.1f} pts | -₹{potential_loss:,})
-📦 <b>Position Sizing:</b> {num_lots} Lot ({total_qty:,} Units) — Strict 1-Lot Capital Preservation
-📍 <b>{cls._spot_label(symbol=symbol, contract=contract)}:</b> ₹{spot:.2f}
-⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━{quant_block}
-💡 <b>Institutional Execution Checklist:</b>
-1. Place <b>LIMIT BUY</b> order at <b>₹{entry_price:.2f}</b> on Groww / broker
-2. Verify Bid-Ask Spread on Groww is ≤ ₹0.25 (Stand down if spread > ₹0.35)
-3. Set GTT / Stop-loss order at <b>₹{sl_price:.2f}</b>
-4. Set profit target order at <b>₹{target_price:.2f}</b>
-5. Mandatory auto square-off at <b>03:05 PM IST</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+💰 <b>Limit Entry:</b> <code>₹{entry_price:.2f}</code>
+🎯 <b>Target:</b> <code>₹{target_price:.2f}</code> (+{target_pts:.1f} pts • +₹{potential_gain:,})
+🛑 <b>Stop Loss:</b> <code>₹{sl_price:.2f}</code> (-{sl_pts:.1f} pts • -₹{potential_loss:,})
+📦 <b>Sizing:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty) • R:R 1:{rr_ratio}
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+⚡ <i>Place LIMIT BUY @ ₹{entry_price:.2f} on broker. Set GTT SL & Target.</i>"""
         return msg
 
     @classmethod
     def format_daily_circuit_breaker_alert(cls, reason: str, spot: float = 0.0, symbol: str = "RELIANCE") -> str:
-        """Formats an alert when the 1-loss daily circuit breaker activates."""
+        """Formats a clean alert when the 1-loss daily circuit breaker activates."""
         spot = cls._resolve_live_spot(spot, symbol=symbol)
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
-        stock_name = cls._stock_name(symbol=symbol)
-        return f"""
-<b>{stock_name}</b>
-🛑 <b>DAILY LOSS CIRCUIT BREAKER ACTIVATED</b> 🛑
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛡️ <b>Capital Preservation Rule:</b> <b>ONE-AND-DONE MANDATE</b>
-⏰ <b>Time:</b> {now_str}
-📍 <b>{cls._spot_label(symbol=symbol)}:</b> ₹{spot:.2f}
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol)
+        scrip_sym = spec.symbol
+        return f"""<b>🚨 CIRCUIT BREAKER • {scrip_sym} LOCKED</b>
+────────────────────────
+🛡️ <b>Desk:</b> {scrip_sym} Intraday Desk
 ⚠️ <b>Trigger:</b> {reason}
+🔒 <b>Action:</b> <b>ALL NEW ENTRIES LOCKED TODAY</b>
 
-🔒 <b>Engine Decision:</b> <b>ALL NEW ENTRIES LOCKED FOR TODAY</b>
-• Zero further orders will be initiated.
-• Prevents emotional revenge trading and drawdown compounding.
-• Account capital remains safely preserved for tomorrow's market.
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+• Risk Rule: One-and-Done Capital Defense
+• Zero revenge trading. Capital preserved for tomorrow.
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+🛑 <i>Disciplined capital preservation enforced. Session standing down.</i>"""
 
     @classmethod
     def format_armed_alert(
@@ -648,52 +615,28 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats an institutional grade ARMED PRE-ALERT for Telegram (Preparing for Breakout, DO NOT BUY YET)."""
+        """Formats a clean, modern ARMED PRE-ALERT for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         if lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
-        total_qty = num_lots * lot_size
-        potential_gain = round(total_qty * target_pts)
-        potential_loss = round(total_qty * sl_pts)
-        target_price = round(breakout_trigger + target_pts, 2)
-        sl_price = max(0.05, round(breakout_trigger - sl_pts, 2))
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
+        scrip_sym = spec.symbol
         is_call = ("BULLISH" in direction.upper() or "CE" in direction.upper())
-        dir_icon = "🟢" if is_call else "🔴"
-        bias_label = "BULLISH CALL (CE)" if is_call else "BEARISH PUT (PE)"
-        dist_pct = (distance_pts / current_ltp * 100.0) if current_ltp > 0 else 0.0
+        dir_badge = "CALL (CE)" if is_call else "PUT (PE)"
 
-        msg = f"""
-<b>{stock_name}</b>
-🟡 <b>SETUP ARMED — PREPARING FOR BREAKOUT ENTRY</b> 🟡
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ <b>ACTION:</b> <b>DO NOT BUY YET — GET READY ON BROKER!</b>
-📌 <b>Contract to Watch:</b> <code>{contract}</code>
-{dir_icon} <b>Directional Bias:</b> {bias_label}
-📊 <b>Statistical Confluence:</b> <b>{win_prob:.1f}%</b> (Execution Gate >60%)
+        return f"""<b>🟡 SETUP ARMED • {scrip_sym} {dir_badge}</b>
+────────────────────────
+📌 <b>Watchlist:</b> <code>{contract}</code>
+📊 <b>Confluence:</b> <b>{win_prob:.1f}%</b> (Approaching Breakout)
 
-💰 <b>Current Live LTP:</b> <b>₹{current_ltp:.2f}</b>
-⚡ <b>Breakout Trigger Level:</b> <b>₹{breakout_trigger:.2f}</b>
-📏 <b>Distance to Trigger:</b> <b>{distance_pts:.2f} pts away</b> ({dist_pct:.1f}% from entry)
-
-🎯 <b>Planned Target:</b> ₹{target_price:.2f} (+{target_pts:.1f} pts | +₹{potential_gain:,})
-🛑 <b>Planned Stop Loss:</b> ₹{sl_price:.2f} (-{sl_pts:.1f} pts | -₹{potential_loss:,})
-📦 <b>Planned Sizing:</b> {num_lots} Lots ({total_qty:,} Units)
-📍 <b>{cls._spot_label(symbol=symbol, contract=contract)}:</b> ₹{spot:.2f}
-⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 <b>Action Plan While Armed:</b>
-1. Open your <b>Groww / Zerodha</b> terminal
-2. Add <b>{contract}</b> to your active watchlist
-3. Keep the Order Placement window ready
-4. <b>WAIT</b> for the final <b>🚀 BUY NOW</b> confirmation push alert before placing your order!
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-        return msg
+⚡ <b>Breakout Trigger:</b> <code>₹{breakout_trigger:.2f}</code>
+💰 <b>Current LTP:</b> ₹{current_ltp:.2f} ({distance_pts:.2f} pts away)
+🎯 <b>Plan Target:</b> +{target_pts:.1f} pts | 🛑 <b>Plan SL:</b> -{sl_pts:.1f} pts
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+⏳ <i>DO NOT BUY YET. Keep contract on broker watchlist and await ENTRY alert.</i>"""
 
     @classmethod
     def format_target_hit_alert(
@@ -710,39 +653,28 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a TARGET HIT celebration alert for Telegram."""
+        """Formats a clean, celebratory TARGET HIT alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         target_pts = profit_pts or kwargs.get("target_pts", 10.0)
         realized_pnl = total_pnl if total_pnl is not None else round(total_qty * target_pts)
-        dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-        return f"""
-<b>{stock_name}</b>
-🎯 <b>PROFIT TARGET HIT — FULL PROFIT BOOKED</b> 🎯
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 <b>RESULT:</b> <b>PROFIT TARGET HIT (+{target_pts:.1f} PTS)</b>
-📌 <b>Contract:</b> <code>{contract}</code>
-{dir_icon} <b>Direction:</b> {direction}
-💰 <b>Net Realized Profit:</b> <b>+₹{realized_pnl:,.2f}</b>
+        scrip_sym = spec.symbol
 
-💵 <b>Entry Price:</b> ₹{entry_price:.2f}
-🏁 <b>Exit Price (Target):</b> <b>₹{exit_price:.2f}</b> (+{target_pts:.1f} pts)
-📦 <b>Position Sized:</b> {num_lots} Lots ({total_qty:,} Units)
-📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}
-⏰ <b>Execution Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ <b>Post-Trade Mandate:</b>
-1. Full {total_qty:,} quantity squared off at target ₹{exit_price:.2f}
-2. Profit +₹{realized_pnl:,} locked in trading capital
-3. Stand down for the session — Daily Profit Target achieved!
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        return f"""<b>🎯 TARGET HIT • {scrip_sym} PROFIT BOOKED</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+💰 <b>Net Realized Profit:</b> <b>+₹{realized_pnl:,.2f}</b> (+{target_pts:.1f} pts)
+
+💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  🏁 <b>Exit:</b> <code>₹{exit_price:.2f}</code>
+📦 <b>Filled Size:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty)
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+🏆 <i>Full profit booked & locked into capital. Stand down for session.</i>"""
 
     @classmethod
     def format_stop_loss_alert(
@@ -759,40 +691,29 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a STOP LOSS risk preservation alert for Telegram."""
+        """Formats a clean STOP LOSS risk preservation alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         stop_pts = loss_pts or kwargs.get("sl_pts", 9.0)
         sl_exit_price = sl_price or kwargs.get("sl_exit_price", max(0.05, round(entry_price - stop_pts, 2)))
         capital_loss = total_loss if total_loss is not None else round(total_qty * stop_pts)
-        dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-        return f"""
-<b>{stock_name}</b>
-🛑 <b>STOP LOSS HIT — CAPITAL PRESERVATION EXIT</b> 🛑
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛡️ <b>RESULT:</b> <b>STOP LOSS TRIGGERED (-{stop_pts:.1f} PTS)</b>
-📌 <b>Contract:</b> <code>{contract}</code>
-{dir_icon} <b>Direction:</b> {direction}
-⚠️ <b>Preserved Capital Risk:</b> <b>-₹{capital_loss:,.2f}</b>
+        scrip_sym = spec.symbol
 
-💵 <b>Entry Price:</b> ₹{entry_price:.2f}
-🛑 <b>SL Exit Price:</b> <b>₹{sl_exit_price:.2f}</b> (-{stop_pts:.1f} pts)
-📦 <b>Position Sized:</b> {num_lots} Lots ({total_qty:,} Units)
-📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}
-⏰ <b>Exit Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 <b>Risk Discipline Protocol:</b>
-1. Position exited strictly at predetermined stop level ₹{sl_exit_price:.2f}
-2. Maximum capital risk limited strictly to ₹{capital_loss:,}
-3. 0 revenge trading — wait for fresh A+ institutional confluence
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        return f"""<b>🛑 STOP LOSS HIT • {scrip_sym} RISK CUT</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+⚠️ <b>Risk Exit:</b> <b>-₹{capital_loss:,.2f}</b> (-{stop_pts:.1f} pts)
+
+💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  🛑 <b>Exit:</b> <code>₹{sl_exit_price:.2f}</code>
+📦 <b>Closed Size:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty)
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+🛡️ <i>Disciplined capital defense: risk strictly limited. Zero revenge trading.</i>"""
 
     @classmethod
     def format_trailing_sl_alert(
@@ -810,42 +731,30 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a TRAILING STOP LOSS alert (Move SL to Cost) for Telegram."""
+        """Formats a clean TRAILING STOP LOSS alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         locked_pts = secured_pts or kwargs.get("locked_pts", 5.0)
         orig_entry = entry_price if entry_price is not None else trailing_sl
         new_sl = trailing_sl
         locked_pnl = secured_pnl if secured_pnl is not None else round(total_qty * locked_pts)
-        dir_icon = "🟢" if "CE" in direction.upper() or "BULLISH" in direction.upper() else "🔴"
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-        return f"""
-<b>{stock_name}</b>
-⚡ <b>TRAILING STOP LOSS — RISK-FREE TRADE SECURED</b> ⚡
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛡️ <b>STATUS:</b> <b>SL MOVED TO COST (0 RISK ACTIVE)</b>
-📌 <b>Contract:</b> <code>{contract}</code>
-{dir_icon} <b>Direction:</b> {direction}
-📈 <b>Running Move:</b> <b>+{locked_pts:.1f} pts in profit (+₹{locked_pnl:,})</b>
+        scrip_sym = spec.symbol
 
-💵 <b>Original Entry:</b> ₹{orig_entry:.2f}
-⚡ <b>Current Option LTP:</b> <b>₹{current_ltp:.2f}</b>
-🔒 <b>New Trailing SL:</b> <b>₹{new_sl:.2f} (Entry Price / Cost)</b>
-📦 <b>Position Sizing:</b> {num_lots} Lots ({total_qty:,} Units)
-📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}
-⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 <b>Trade Management:</b>
-1. Modify pending SL order to cost (₹{new_sl:.2f}) on Groww / broker
-2. Trade is now 100% RISK-FREE — Zero capital loss possible!
-3. Trail remaining quantity toward target!
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        return f"""<b>⚡ TRAILING SL LOCKED • {scrip_sym} RISK-FREE</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+📈 <b>Secured Move:</b> <b>+{locked_pts:.1f} pts</b> (+₹{locked_pnl:,.2f})
+
+💵 <b>Entry:</b> ₹{orig_entry:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f}
+🔒 <b>New Trailing SL:</b> <code>₹{new_sl:.2f}</code>
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+🛡️ <i>Update SL to ₹{new_sl:.2f} on broker. Trade is 100% risk-free.</i>"""
 
     @classmethod
     def format_breakeven_alert(
@@ -859,40 +768,29 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a BREAKEVEN ALERT (+3.5 pts reached, SL moved to Cost) for Telegram."""
+        """Formats a clean BREAKEVEN ESCALATOR alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         be_sl = round(entry_price + 0.10, 2)
         gain_pts = round(current_ltp - entry_price, 2)
         gain_rs = round(gain_pts * total_qty)
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-        return f"""
-<b>{stock_name}</b>
-🛡️ <b>BREAKEVEN ESCALATOR ACTIVATED — RISK-FREE TRADE</b> 🛡️
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ <b>STATUS:</b> <b>MOVE STOP-LOSS TO ENTRY / COST (0 RISK ACTIVE)</b>
-📌 <b>Contract:</b> <code>{contract}</code>
-📈 <b>Running Move:</b> <b>+{gain_pts:.2f} pts in profit (+₹{gain_rs:,})</b>
+        scrip_sym = spec.symbol
 
-💵 <b>Original Entry:</b> ₹{entry_price:.2f}
-⚡ <b>Current Option LTP:</b> <b>₹{current_ltp:.2f}</b>
-🔒 <b>New Trailing Stop-Loss:</b> <b>₹{be_sl:.2f} (Entry Price / Cost)</b>
-📦 <b>Position Sizing:</b> {num_lots} Lot ({total_qty:,} Units)
-📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}
-⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 <b>Mandatory Trade Management:</b>
-1. Open your <b>Groww / Broker</b> Orders tab immediately
-2. Modify your pending SL order trigger from initial SL to <b>₹{be_sl:.2f}</b>
-3. Your trade is now <b>100% RISK-FREE</b> — No loss of capital possible!
-4. Let the position run towards final target!
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        return f"""<b>🛡️ BREAKEVEN ACTIVATED • {scrip_sym} RISK-FREE</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+📈 <b>Profit Running:</b> <b>+{gain_pts:.2f} pts</b> (+₹{gain_rs:,.2f})
+
+💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f}
+🔒 <b>New SL (Cost):</b> <code>₹{be_sl:.2f}</code>
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+⚡ <i>Move pending SL trigger to ₹{be_sl:.2f} on Groww. Zero capital at risk.</i>"""
 
     @classmethod
     def format_profit_lock_alert(
@@ -906,41 +804,84 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a PROFIT LOCK ALERT (Locks +3.0 pts for Reliance / +12.0 pts for Adani) for Telegram."""
+        """Formats a clean PROFIT LOCK alert for Telegram."""
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol, contract)
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         locked_pts = kwargs.get("locked_pts", spec.profit_lock_locked)
         lock_sl = round(entry_price + locked_pts, 2)
         locked_pnl = round(locked_pts * total_qty)
-        gain_pts = round(current_ltp - entry_price, 2)
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-        return f"""
-<b>{stock_name}</b>
-🔒 <b>PROFIT LOCK ESCALATOR ACTIVATED (+{locked_pts:.1f} PTS GUARANTEED)</b> 🔒
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏆 <b>STATUS:</b> <b>GUARANTEED PROFIT LOCKED IN CAPITAL</b>
-📌 <b>Contract:</b> <code>{contract}</code>
-📈 <b>Running Move:</b> <b>+{gain_pts:.2f} pts in profit</b>
+        scrip_sym = spec.symbol
 
-💵 <b>Original Entry:</b> ₹{entry_price:.2f}
-⚡ <b>Current Option LTP:</b> <b>₹{current_ltp:.2f}</b>
-🔒 <b>New Locked SL:</b> <b>₹{lock_sl:.2f} (+{locked_pts:.1f} pts guaranteed profit)</b>
-💰 <b>Guaranteed Minimum Profit:</b> <b>+₹{locked_pnl:,.2f}</b>
-📦 <b>Position Sizing:</b> {num_lots} Lot ({total_qty:,} Units)
-📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}
-⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 <b>Action Required:</b>
-1. Modify your pending SL order on Groww to <b>₹{lock_sl:.2f}</b>
-2. Even on an instant market reversal, you walk away with +₹{locked_pnl:,} profit!
-3. Target limit remains active for full profit exit!
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        return f"""<b>🔒 PROFIT LOCKED • {scrip_sym} (+{locked_pts:.1f} PTS)</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+🏆 <b>Guaranteed Profit:</b> <b>+₹{locked_pnl:,.2f}</b>
+
+💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f}
+🔒 <b>Locked Stop-Loss:</b> <code>₹{lock_sl:.2f}</code>
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+💰 <i>Modify SL order to ₹{lock_sl:.2f}. Guaranteed profit secured.</i>"""
+
+    @classmethod
+    def format_tranche_1_alert(
+        cls,
+        contract: str,
+        entry_price: float,
+        exit_price: float,
+        banked_pnl: float,
+        target_2: float,
+        symbol: str = "",
+        **kwargs
+    ) -> str:
+        """Formats a clean TRANCHE 1 BANKED alert for Telegram."""
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol, contract)
+        scrip_sym = spec.symbol
+        gain_pts = round(exit_price - entry_price, 2)
+        return f"""<b>🎯 TRANCHE 1 BANKED • {scrip_sym} 50% SECURED</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+💰 <b>Banked Profit (50%):</b> <b>+₹{banked_pnl:,.2f}</b> (+{gain_pts:.2f} pts)
+
+💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  🏁 <b>Exit 1:</b> <code>₹{exit_price:.2f}</code>
+🔒 <b>Runner SL:</b> <code>₹{entry_price:.2f}</code> (Locked at Cost)
+🚀 <b>Target 2:</b> <code>₹{target_2:.2f}</code> (Pure Risk-Free Upside)
+────────────────────────
+🏁 <i>Half size booked at Target 1. 50% runner trailing with zero risk.</i>"""
+
+    @classmethod
+    def format_resumption_reentry_alert(
+        cls,
+        contract: str,
+        direction: str,
+        entry_price: float,
+        sl_price: float,
+        target_price: float,
+        confluence: float = 75.0,
+        symbol: str = "",
+        **kwargs
+    ) -> str:
+        """Formats a clean RESUMPTION RE-ENTRY alert for Telegram."""
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol, contract)
+        scrip_sym = spec.symbol
+        tight_pts = round(abs(entry_price - sl_price), 2)
+        return f"""<b>🔄 RESUMPTION RE-ENTRY • {scrip_sym} {direction}</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+⚡ <b>Action:</b> Auto Re-Entered @ <code>₹{entry_price:.2f}</code>
+📊 <b>Setup Confluence:</b> {confluence:.1f}%
+
+🛑 <b>Tight SL (Wick Peak):</b> <code>₹{sl_price:.2f}</code> (-{tight_pts:.1f} pts)
+🎯 <b>Target:</b> <code>₹{target_price:.2f}</code>
+────────────────────────
+🛡️ <i>Wick sweep confirmed. Directional resumption entered with tight risk.</i>"""
 
     @classmethod
     def format_auto_square_off_alert(
@@ -954,32 +895,24 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats an AUTO-SQUARE-OFF EOD CUTOFF alert for Telegram."""
+        """Formats a clean AUTO-SQUARE-OFF EOD CUTOFF alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         if lot_size is None or lot_size in (250, 0):
             lot_size = spec.lot_size
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-        return f"""
-<b>{stock_name}</b>
-🔒 <b>INTRADAY AUTO-SQUARE-OFF MANDATE (03:05 PM IST)</b> 🔒
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ <b>ACTION REQUIRED:</b> <b>CLOSE ALL OPEN F&O POSITIONS IMMEDIATELY</b>
+        scrip_sym = spec.symbol
+
+        return f"""<b>🔒 MANDATORY AUTO-SQUARE-OFF • {scrip_sym}</b>
+────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
-⏰ <b>Session Time:</b> <b>03:05 PM IST (EOD Cutoff)</b>
-⚡ <b>Current Option LTP:</b> ₹{current_ltp:.2f}
-📦 <b>Quantity:</b> {num_lots} Lots ({total_qty:,} Units)
-📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 <b>Mandatory EOD Protocol:</b>
-1. Square off all intraday MIS/Normal positions before 03:10 PM broker auto-square-off
-2. Avoid overnight gap-down / gap-up carrying risk
-3. Reason: {reason}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+⏰ <b>Cutoff Time:</b> <b>03:05 PM IST</b> (Broker EOD Cutoff)
+⚡ <b>LTP:</b> ₹{current_ltp:.2f} • <b>Size:</b> {total_qty:,} Qty
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+⚠️ <i>Square off open intraday derivative positions now to avoid broker auto-SQ penalty.</i>"""
 
     @classmethod
     def format_chop_standdown_alert(
@@ -991,25 +924,18 @@ class TelegramNotifier:
         symbol: str = "RELIANCE",
         **kwargs
     ) -> str:
-        """Formats a CHOPPINESS STAND DOWN warning alert for Telegram."""
+        """Formats a clean CHOPPINESS STAND DOWN warning alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol)
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
-        stock_name = cls._stock_name(symbol=symbol)
-        return f"""
-<b>{stock_name}</b>
-🛡️ <b>CHOPPINESS REGIME DETECTED — STAND DOWN ENFORCED</b> 🛡️
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛑 <b>RULE:</b> <b>0 TRADES PERMITTED IN SIDEWAYS CHOP</b>
-📊 <b>Wilder's Choppiness Index (CHOP-14):</b> <b>{chop_val:.1f}</b> (&gt; 61.8 Threshold)
-📍 <b>{cls._spot_label(symbol=symbol)}:</b> ₹{spot:.2f} {f'({corridor_str})' if corridor_str else ''}
-⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ <b>Risk Assessment:</b>
-• Fractal consolidation indicates strong institutional absorption with no directional breakout
-• Option buying in CHOP &gt; 61.8 suffers severe theta decay and false whipsaws
-• Strict capital preservation active — engine stands down until CHOP &lt; 45
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol)
+        scrip_sym = spec.symbol
+        return f"""<b>🛡️ CHOP FILTER ACTIVE • {scrip_sym} STAND DOWN</b>
+────────────────────────
+📊 <b>Wilder's CHOP-14:</b> <b>{chop_val:.1f}</b> (&gt; 61.8 Sideways Churn)
+📍 <b>Spot:</b> ₹{spot:,.2f} {f'({corridor_str})' if corridor_str else ''} • {now_str}
+────────────────────────
+🛑 <i>0 trades permitted in chop. Capital preserved until trend breaks out.</i>"""
 
     @classmethod
     def format_circuit_breaker_alert(
@@ -1022,27 +948,19 @@ class TelegramNotifier:
         symbol: str = "RELIANCE",
         **kwargs
     ) -> str:
-        """Formats a MAX DAILY DRAWDOWN CIRCUIT BREAKER LOCK alert for Telegram."""
+        """Formats a clean MAX DAILY DRAWDOWN CIRCUIT BREAKER LOCK alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol)
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
-        stock_name = cls._stock_name(symbol=symbol)
-        return f"""
-<b>{stock_name}</b>
-🚨 <b>MAX DAILY DRAWDOWN REACHED — SESSION LOCKED</b> 🚨
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛑 <b>DAILY RISK GATE:</b> <b>CIRCUIT BREAKER TRIPPED</b>
-📊 <b>Consecutive Stop Losses Hit:</b> <b>{sl_count} / {max_allowed} Max Allowed</b>
-💰 <b>Protected Account Capital:</b> ₹{capital_preserved:,.2f}
-📍 <b>{cls._spot_label(symbol=symbol)}:</b> ₹{spot:.2f}
-⏰ <b>Trigger Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔒 <b>Institutional Execution Mandate:</b>
-• Daily drawdown threshold reached — order generation automatically disabled.
-• Zero new trades permitted for the remainder of today's trading session.
-• Strict capital preservation protocol active: survive to trade another day.
-• Stance: <b>STAND DOWN & NO REVENGE TRADING</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol)
+        scrip_sym = spec.symbol
+        return f"""<b>🚨 MAX DRAWDOWN REACHED • {scrip_sym} LOCKED</b>
+────────────────────────
+🛑 <b>Circuit Breaker:</b> {sl_count}/{max_allowed} Daily Stop-Loss Limit Hit
+💰 <b>Protected Capital:</b> ₹{capital_preserved:,.2f}
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+🔒 <i>Order routing disabled for today. Survive to trade tomorrow. Stand down.</i>"""
 
     @classmethod
     def format_theta_stagnation_alert(
@@ -1056,27 +974,21 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a THETA STAGNATION TIME-STOP alert for Telegram (45-minute stagnation rule)."""
+        """Formats a clean THETA STAGNATION TIME-STOP alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        scrip_sym = spec.symbol
         decay_pts = round(entry_price - current_ltp, 2)
-        stock_name = cls._stock_name(symbol=symbol, contract=contract)
-        return f"""
-<b>{stock_name}</b>
-⏳ <b>THETA STAGNATION SHIELD TRIGGERED (TIME-STOP)</b> ⏳
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ <b>ACTION:</b> <b>CONSIDER EARLY EXIT / STAND DOWN</b>
+        return f"""<b>⏳ TIME-STOP TRIGGERED • {scrip_sym} THETA SHIELD</b>
+────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
-⏱️ <b>Time in Trade:</b> <b>{elapsed_minutes} Minutes</b> (Threshold: 45 Mins)
-💰 <b>Entry Price:</b> ₹{entry_price:.2f} | <b>Current LTP:</b> ₹{current_ltp:.2f}
-📉 <b>Theta Decay Drag:</b> -{decay_pts:.2f} pts (Unrealized P&L: -₹{abs(unrealized_pnl):,.0f})
-📍 <b>{cls._spot_label(symbol, contract)}:</b> ₹{spot:.2f}
-⏰ <b>Time:</b> {now_str}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 <b>Institutional Mandate:</b>
-• Price action has consolidated sideways for {elapsed_minutes} minutes without directional impulse.
-• Holding naked options through prolonged stagnation leads to guaranteed theta bleed.
-• Rule: Exit position at current market price to prevent further time decay.
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+⏱️ <b>Hold Time:</b> <b>{elapsed_minutes} Minutes</b> (Stagnation Limit)
+
+💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f} (-{decay_pts:.2f} pts)
+📉 <b>Unrealized Drag:</b> -₹{abs(unrealized_pnl):,.2f}
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+⚠️ <i>Sideways consolidation detected. Market exit advised to avoid theta bleed.</i>"""
 
