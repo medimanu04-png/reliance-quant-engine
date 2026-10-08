@@ -40,13 +40,13 @@ class NSEIndiaFetcher:
 
     @classmethod
     def clear_all_caches(cls):
-        """Clears all in-memory caches across all 4 desks (NIFTY, SENSEX, RELIANCE, ADANIENT) and macro benchmarks."""
+        """Clears all in-memory caches across benchmark desks (NIFTY, SENSEX) and macro benchmarks."""
         cls._cached_data = None
         cls._cached_expiry_mandate = None
         cls._cached_benchmarks = None
         cls._last_benchmark_time = 0.0
         cls._last_fetch_time = 0.0
-        for sym in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+        for sym in ("NIFTY", "SENSEX"):
             setattr(cls, f"_cached_data_{sym}", None)
             setattr(cls, f"_last_fetch_time_{sym}", 0.0)
             setattr(cls, f"_cached_expiry_mandate_{sym}", None)
@@ -92,7 +92,7 @@ class NSEIndiaFetcher:
             except Exception:
                 pass
         if not sym:
-            sym = "RELIANCE"
+            sym = "NIFTY"
 
         cache_attr = f"_cached_data_{sym}"
         time_attr = f"_last_fetch_time_{sym}"

@@ -727,7 +727,7 @@ class GrowwMarketFeed:
             try:
                 ohlc_resp = self._groww_api.get_ohlc(
                     segment=getattr(self._groww_api, "SEGMENT_CASH", "CASH"),
-                    exchange_trading_symbols=("NSE:NIFTY", "NSE:BANKNIFTY", "NSE:RELIANCE", "NSE:ADANIENT"),
+                    exchange_trading_symbols=("NSE:NIFTY", "NSE:BANKNIFTY"),
                     timeout=2.0
                 )
                 if ohlc_resp and isinstance(ohlc_resp, dict):
@@ -750,16 +750,6 @@ class GrowwMarketFeed:
                                 "change": chg, "pct_change": pct,
                                 "currency": "INR", "prefix": "₹", "unit": "pts", "icon": "🏦", "category": "Groww Official SDK (0-Delay)"
                             }
-                        elif "ADANIENT" in sym_key and ltp > 0:
-                            with self._cache_lock:
-                                if not hasattr(self, "_cached_spots_by_symbol"):
-                                    self._cached_spots_by_symbol = {}
-                                self._cached_spots_by_symbol["ADANIENT"] = ({
-                                    "symbol": "ADANIENT", "spot_ltp": round(ltp, 2), "prev_close": round(close, 2),
-                                    "diff": chg, "diff_pct": pct, "volume": int(ohlc_item.get("volume", 0)),
-                                    "tick_direction": "UP" if chg >= 0 else "DOWN", "tick_delta": chg,
-                                    "source": "Groww Official SDK (0-Delay)", "raw_quote": ohlc_item
-                                }, time.time())
             except Exception as e:
                 logger.debug(f"growwapi get_ohlc benchmarks fallback: {e}")
 
@@ -767,7 +757,7 @@ class GrowwMarketFeed:
             try:
                 ltp_resp = self._groww_api.get_ltp(
                     segment=getattr(self._groww_api, "SEGMENT_CASH", "CASH"),
-                    exchange_trading_symbols=("NSE_NIFTY", "NSE_BANKNIFTY", "NSE_RELIANCE", "NSE_ADANIENT"),
+                    exchange_trading_symbols=("NSE_NIFTY", "NSE_BANKNIFTY"),
                     timeout=2.0
                 )
                 if ltp_resp and isinstance(ltp_resp, dict):
@@ -1025,12 +1015,8 @@ class GrowwMarketFeed:
             return "08-OCT-2026"
         return "27-OCT-2026"
 
-    def _get_fallback_spot(self, underlying: str = "RELIANCE") -> Dict[str, Any]:
+    def _get_fallback_spot(self, underlying: str = "NIFTY") -> Dict[str, Any]:
         canon_sym = resolve_symbol(symbol=underlying)
-        if canon_sym == "ADANIENT":
-            return self._get_fallback_adani_spot()
-        elif canon_sym == "RELIANCE":
-            return self._get_fallback_reliance_spot()
         spec = get_asset_spec(symbol=canon_sym)
         spot_p = spec.default_spot
         vol = spec.volume_norm
@@ -1047,21 +1033,16 @@ class GrowwMarketFeed:
             "volume": vol,
             "turnover_lakhs": round((vol * spot_p) / 100000.0, 2),
             "official_expiry": self._resolve_official_expiry(canon_sym),
-            "expiry_cycle": "Weekly Derivatives" if canon_sym in ("NIFTY", "SENSEX") else "Monthly Derivatives (NSE Mandate)",
+            "expiry_cycle": "Weekly Derivatives",
             "fo_holidays": [],
             "raw_quote": None
         }
 
-    def _get_fallback_chain(self, underlying: str = "RELIANCE", expiry_iso: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _get_fallback_chain(self, underlying: str = "NIFTY", expiry_iso: Optional[str] = None) -> List[Dict[str, Any]]:
         canon_sym = resolve_symbol(symbol=underlying)
-        if canon_sym == "ADANIENT":
-            return self._get_fallback_adani_chain(expiry_iso)
-        elif canon_sym == "RELIANCE":
-            return self._get_fallback_reliance_chain(expiry_iso)
-        elif canon_sym == "NIFTY":
-            return self._get_fallback_nifty_chain(expiry_iso)
-        elif canon_sym == "SENSEX":
+        if canon_sym == "SENSEX":
             return self._get_fallback_sensex_chain(expiry_iso)
+        return self._get_fallback_nifty_chain(expiry_iso)
         spec = get_asset_spec(symbol=canon_sym)
         step = spec.strike_step
         base_spot = spec.default_spot
@@ -2042,15 +2023,11 @@ class GrowwMarketFeed:
             return None
 
         if symbol:
-            resolved_sym = symbol
-        elif "NIFTY" in contract_symbol.upper():
-            resolved_sym = "NIFTY"
+            resolved_sym = resolve_symbol(symbol)
         elif "SENSEX" in contract_symbol.upper() or "BSE" in contract_symbol.upper():
             resolved_sym = "SENSEX"
-        elif "ADANI" in contract_symbol.upper():
-            resolved_sym = "ADANIENT"
         else:
-            resolved_sym = "RELIANCE"
+            resolved_sym = "NIFTY"
 
         chain = self.get_live_option_chain(symbol=resolved_sym, expiry=expiry, force_refresh=force_refresh)
         if not chain:
@@ -2368,7 +2345,7 @@ class GrowwMarketFeed:
 
     def get_executed_trades_today(
         self,
-        symbol_filter: Optional[str] = "RELIANCE",
+        symbol_filter: Optional[str] = "NIFTY",
         force_refresh: bool = False
     ) -> List[Dict[str, Any]]:
         """
@@ -2586,7 +2563,7 @@ class GrowwMarketFeed:
         self,
         trading_symbol: str,
         expiry: str,
-        underlying: str = "RELIANCE"
+        underlying: str = "NIFTY"
     ) -> Optional[Dict[str, float]]:
         """
         Directly queries Groww's official risk engine for exact Black-Scholes Greeks:
@@ -2624,7 +2601,7 @@ class GrowwMarketFeed:
             logger.debug(f"growwapi batch LTP call error: {e}")
             return {}
 
-    def get_official_expiries(self, underlying: str = "RELIANCE") -> List[str]:
+    def get_official_expiries(self, underlying: str = "NIFTY") -> List[str]:
         """
         Directly queries Groww's official broker API and live Option Chain service for active exchange F&O expiry dates.
         Returns list of expiry date strings in YYYY-MM-DD format.
@@ -2677,14 +2654,12 @@ class GrowwMarketFeed:
         defaults = {
             "nifty": ["2026-10-06", "2026-10-13", "2026-10-19", "2026-10-27"],
             "sp-bse-sensex": ["2026-10-08", "2026-10-15", "2026-10-22", "2026-10-29"],
-            "reliance-industries-ltd": ["2026-10-27", "2026-11-23", "2026-12-29"],
-            "adani-enterprises-ltd": ["2026-10-27", "2026-11-23", "2026-12-29"],
         }
-        res_fallback = defaults.get(slug, ["2026-10-06" if resolved_underlying == "NIFTY" else ("2026-10-08" if resolved_underlying == "SENSEX" else "2026-10-27")])
+        res_fallback = defaults.get(slug, ["2026-10-06" if resolved_underlying == "NIFTY" else "2026-10-08"])
         self._cached_official_expiries[slug] = (res_fallback, now_ts)
         return res_fallback
 
-    def get_official_contracts(self, expiry: str, underlying: str = "RELIANCE") -> List[Dict[str, Any]]:
+    def get_official_contracts(self, expiry: str, underlying: str = "NIFTY") -> List[Dict[str, Any]]:
         """
         Directly queries Groww for list of listed contracts for a specific expiry.
         Non-blocking: skips if token lacks market data role.

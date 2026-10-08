@@ -1,16 +1,16 @@
 """
 MULTI-ASSET F&O ULTRA-HIGH-CONVICTION QUANTITATIVE ENGINE (NSE)
 ===============================================================
-Calibrated for RELIANCE and ADANI ENTERPRISES F&O Intraday Trading
+Calibrated for NIFTY 50 and BSE SENSEX F&O Intraday Trading
 Target Hit Probability Threshold: STRICTLY >= 90.0% (A+ Institutional Setup Only)
 
 Operational Mandates & Parameters (via Canonical AssetSpec):
-  1. Assets: RELIANCE (NSE: RELIANCE) & ADANIENT (NSE: ADANIENT)
-  2. Lot Sizes: RELIANCE = 500 Qty/Lot | ADANIENT = 309 Qty/Lot (Configured via AssetSpec)
-  3. Strike Mandate: DUAL ATM CORRIDOR (10-Pt Steps for RELIANCE, 50-Pt Steps for ADANIENT)
+  1. Assets: NIFTY 50 (NSE: ^NSEI) & BSE SENSEX (BSE: ^BSESN)
+  2. Lot Sizes: NIFTY = 65 Qty/Lot | SENSEX = 20 Qty/Lot (Configured via AssetSpec)
+  3. Strike Mandate: DUAL ATM CORRIDOR (50-Pt Steps for NIFTY, 100-Pt Steps for SENSEX)
   4. Expiry Mandate: STRICTLY 10-DAY VOLATILITY / DECAY AVOIDANCE (Zero Gamma Decay Risk)
-  5. Optimal Targets: RELIANCE +10.0 Pts | ADANIENT +35.0 Pts (Scales with VIX/ATR)
-  6. Optimal Stop Losses: RELIANCE -4.5 Pts | ADANIENT -15.0 Pts (Tiered Breakeven Escalator)
+  5. Optimal Targets: NIFTY +50.0 Pts | SENSEX +120.0 Pts (Scales with VIX/ATR)
+  6. Optimal Stop Losses: NIFTY -36.0 Pts | SENSEX -60.0 Pts (Tiered Breakeven Escalator)
   7. Risk Preservation: Strict <= 4.0% Risk Cap per Trade with 1-and-Done Session Lockout
   8. Trading Window: 09:15 AM to 03:10 PM IST (Cutoff: 02:45 PM | Auto-Square-Off: 03:05 PM)
   9. ULTRA-HIGH-CONVICTION GATE:
@@ -81,18 +81,18 @@ ASSET_REGISTRY: Dict[str, Dict[str, Any]] = {
 # ============================================================================
 @dataclass
 class RelianceRiskBudget:
-    total_capital: float = 73643.72
-    lot_size: int = 500  # NSE standard lot size (500 Reliance, 309 Adani)
+    total_capital: float = 100000.0
+    lot_size: int = 65   # NSE standard lot size (65 NIFTY, 20 SENSEX)
     num_lots: int = 2    # Standard 2 lots mandate
-    target_pts: float = 10.0  # Optimal Intraday Target
-    stop_loss_pts: float = 4.5  # Optimal Stop Loss
-    limit_collar_pts: float = 0.65  # Institutional Stop-Limit execution collar
-    estimated_tax_per_lot: float = 65.0  # Estimated statutory charges
-    daily_sl_cap_rupees: float = 5000.0  # Strict 1-and-Done Cap for 2 lots
+    target_pts: float = 50.0  # Optimal Intraday Target
+    stop_loss_pts: float = 36.0  # Optimal Stop Loss
+    limit_collar_pts: float = 1.50  # Institutional Stop-Limit execution collar
+    estimated_tax_per_lot: float = 45.0  # Estimated statutory charges
+    daily_sl_cap_rupees: float = 6000.0  # Strict 1-and-Done Cap for 2 lots
     max_daily_sl_trades: int = 1  # 1-and-Done Rule (ceases immediately if 1 SL is hit)
 
     @classmethod
-    def for_symbol(cls, symbol: str = "RELIANCE", spot: float = 0.0) -> "RelianceRiskBudget":
+    def for_symbol(cls, symbol: str = "NIFTY", spot: float = 0.0) -> "RelianceRiskBudget":
         """Instantiates risk budget calibrated specifically to the active scrip from canonical AssetSpec."""
         rb = cls()
         spec = get_asset_spec(symbol)
@@ -4743,8 +4743,8 @@ class QuantConfig:
 # 3. ULTRA-HIGH-CONVICTION ENGINE (>= 90% HIT PROBABILITY GATE)
 # ============================================================================
 class UltraHighConvictionRelianceEngine:
-    def __init__(self, quant_config: Optional[QuantConfig] = None, symbol: Optional[str] = "RELIANCE"):
-        self.symbol = (symbol or "RELIANCE").upper()
+    def __init__(self, quant_config: Optional[QuantConfig] = None, symbol: Optional[str] = "NIFTY"):
+        self.symbol = (symbol or "NIFTY").upper()
         self.risk = RelianceRiskBudget.for_symbol(self.symbol)
         self.config = quant_config or QuantConfig()
         
@@ -4850,10 +4850,10 @@ class UltraHighConvictionRelianceEngine:
         time_allowed = market_open <= current_time <= market_close and current_time <= cutoff
         auto_sq_active = current_time >= auto_sq
         spot = c5m["close"][-1]
-        active_spec = get_asset_spec(symbol or getattr(self, "symbol", "RELIANCE"))
+        active_spec = get_asset_spec(symbol or getattr(self, "symbol", "NIFTY"))
         active_sym = active_spec.symbol
         active_risk = RelianceRiskBudget.for_symbol(active_sym)
-        is_adani = (active_sym == "ADANIENT")
+        is_adani = False
 
         # VECTOR 1: Multi-Timeframe Trend & ORB-15 Structure (20 pts)
         ema9 = MultiIndicatorMath.calculate_ema(c5m["close"], 9)[-1]
@@ -4994,8 +4994,8 @@ class UltraHighConvictionRelianceEngine:
         pdh_val = float(max(c15m["high"][:min(len(c15m["high"]), 75)])) if len(c15m["high"]) > 10 else float(max(c5m["high"]))
         pdl_val = float(min(c15m["low"][:min(len(c15m["low"]), 75)])) if len(c15m["low"]) > 10 else float(min(c5m["low"]))
         actual_prev_close = spot
-        active_sym = resolve_symbol(symbol=symbol or getattr(self, "symbol", "RELIANCE"))
-        is_adani_asset = (active_sym == "ADANIENT")
+        active_sym = resolve_symbol(symbol=symbol or getattr(self, "symbol", "NIFTY"))
+        is_adani_asset = False
         try:
             official_data = NSEIndiaFetcher.get_reliance_official_data(symbol=active_sym)
             if isinstance(official_data, dict) and float(official_data.get("prev_close", 0.0)) > 100.0:
@@ -6929,9 +6929,9 @@ class UltraHighConvictionRelianceEngine:
 # ============================================================================
 # 4. EXECUTION RUNNER
 # ============================================================================
-def main(symbol: str = "RELIANCE"):
-    if len(sys.argv) > 1 and sys.argv[1].upper() in ("ADANIENT", "ADANI", "RELIANCE"):
-        symbol = "ADANIENT" if "ADANI" in sys.argv[1].upper() else "RELIANCE"
+def main(symbol: str = "NIFTY"):
+    if len(sys.argv) > 1 and sys.argv[1].upper() in ("NIFTY", "SENSEX"):
+        symbol = sys.argv[1].upper()
     engine = UltraHighConvictionRelianceEngine(symbol=symbol)
     session_time = time(10, 15)
 

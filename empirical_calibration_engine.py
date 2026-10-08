@@ -564,7 +564,7 @@ class EmpiricalCalibrationEngine:
                 "id": tr_id,
                 "timestamp": f"{t_date} {t.get('entry_time', '09:30:00')}",
                 "date": t_date,
-                "instrument": f"RELIANCE {t_dir} (Walk-Forward Backtest)",
+                "instrument": f"{t.get('instrument', 'NIFTY')} (Walk-Forward Backtest)",
                 "direction": t_dir,
                 "planned_entry": float(t.get("entry_price", 0.0)),
                 "target": float(t.get("target", 0.0)),
@@ -684,7 +684,7 @@ class EmpiricalCalibrationEngine:
         cls,
         target_count: int = 500,
         period: str = "60d",
-        symbol: str = "RELIANCE"
+        symbol: str = "NIFTY"
     ) -> int:
         """
         Generates 500+ authentic empirical shadow observations from historical 5-minute candles.
@@ -846,7 +846,7 @@ class EmpiricalCalibrationEngine:
                     "id": obs_id,
                     "timestamp": candle_dt.strftime("%Y-%m-%d %I:%M:%S %p IST"),
                     "date": candle_dt.strftime("%Y-%m-%d"),
-                    "instrument": f"RELIANCE {rec_type} (Shadow Observation)",
+                    "instrument": f"{sym_canon} {rec_type} (Shadow Observation)",
                     "direction": f"BUY {rec_type}",
                     "planned_entry": spot_entry,
                     "target": target_spot,

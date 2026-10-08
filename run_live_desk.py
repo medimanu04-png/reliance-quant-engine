@@ -1,9 +1,9 @@
 """
-1-Click Monday Live Quantitative Trading Desk Launcher
-======================================================
+1-Click Live Quantitative Trading Desk Launcher
+===============================================
 1. Generates fresh state for live_trade_dashboard.html.
 2. Launches live_trade_dashboard.html in default web browser.
-3. Starts the QuantAlertDaemon to monitor Reliance and Adani 5m candles in real-time.
+3. Starts the QuantAlertDaemon to monitor NIFTY and SENSEX 5m candles in real-time.
 4. Auto-appends every live executed trade and continuously tracks in-flight trades.
 """
 
@@ -20,7 +20,7 @@ def main():
     print("=" * 75)
     print("🚀 LAUNCHING MULTI-ASSET QUANTITATIVE LIVE TRADING DESK")
     print("=" * 75)
-    print("Desk Targets   : RELIANCE (1,000 Qty / 2L) | ADANIENT (618 Qty / 2L) | NIFTY (130 Qty / 2L) | SENSEX (40 Qty / 2L)")
+    print("Desk Targets   : NIFTY (130 Qty / 2L) | SENSEX (40 Qty / 2L)")
     print("Trading Hours  : 09:15 AM - 03:30 PM IST")
     print("Confluence Gate: Score >= 68.0%")
     print("=" * 75)
@@ -51,7 +51,7 @@ def main():
         daemon = RelianceQuantAlertDaemon(
             interval_seconds=5.0,
             force_run="--now" in sys.argv,
-            symbols=["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
+            symbols=["NIFTY", "SENSEX"]
         )
         daemon.start()
     except KeyboardInterrupt:

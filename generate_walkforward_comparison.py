@@ -25,7 +25,7 @@ def extract_datasets():
     with open(INPUT_FILE, "r", encoding="utf-8") as f:
         content = f.read()
 
-    for sym in ["Reliance", "Adani", "Nifty", "Sensex"]:
+    for sym in ["Nifty", "Sensex"]:
         var_name = f"data{sym}"
         pattern = rf"const\s+{var_name}\s*=\s*(\[.*?\]);"
         m = re.search(pattern, content)
@@ -59,26 +59,6 @@ def process_enhanced_trades(datasets):
             "t1": 90.0,
             "t2": 210.0,
             "min_peak": 40.0,
-            "chandelier_mult": 2.0
-        },
-        "RELIANCE": {
-            "lot_size": 500,
-            "old_sl": 5.0,
-            "dynamic_sl": 10.0,
-            "hard_sl": 16.5,
-            "t1": 7.0,
-            "t2": 15.0,
-            "min_peak": 3.0,
-            "chandelier_mult": 2.0
-        },
-        "ADANI": {
-            "lot_size": 309,
-            "old_sl": 15.0,
-            "dynamic_sl": 25.0,
-            "hard_sl": 42.0,
-            "t1": 22.0,
-            "t2": 45.0,
-            "min_peak": 10.0,
             "chandelier_mult": 2.0
         }
     }
@@ -812,8 +792,6 @@ def build_html_dashboard(datasets):
         <div class="nav-tabs">
             <button class="nav-btn active" id="tab-nifty" onclick="switchTicker('NIFTY')">NIFTY 50</button>
             <button class="nav-btn" id="tab-sensex" onclick="switchTicker('SENSEX')">BSE SENSEX</button>
-            <button class="nav-btn" id="tab-rel" onclick="switchTicker('RELIANCE')">Reliance Industries</button>
-            <button class="nav-btn" id="tab-ada" onclick="switchTicker('ADANI')">Adani Enterprises</button>
         </div>
 
         <div class="filter-group">
@@ -875,8 +853,6 @@ def build_html_dashboard(datasets):
 <script>
     const dataNifty = {json.dumps(datasets["NIFTY"])};
     const dataSensex = {json.dumps(datasets["SENSEX"])};
-    const dataReliance = {json.dumps(datasets["RELIANCE"])};
-    const dataAdani = {json.dumps(datasets["ADANI"])};
 
     let currentTicker = 'NIFTY';
     let currentLots = 2;
@@ -884,9 +860,6 @@ def build_html_dashboard(datasets):
     let currentAuditMode = 'ENHANCED'; // 'ENHANCED', 'BASELINE', 'COMPARISON'
 
     function getLotSize(ticker) {{
-        if (ticker === 'RELIANCE') return 500;
-        if (ticker === 'ADANI') return 309;
-        if (ticker === 'NIFTY') return 65;
         if (ticker === 'SENSEX') return 20;
         return 65;
     }}
@@ -927,8 +900,6 @@ def build_html_dashboard(datasets):
         currentTicker = ticker;
         document.getElementById('tab-nifty').classList.toggle('active', ticker === 'NIFTY');
         document.getElementById('tab-sensex').classList.toggle('active', ticker === 'SENSEX');
-        document.getElementById('tab-rel').classList.toggle('active', ticker === 'RELIANCE');
-        document.getElementById('tab-ada').classList.toggle('active', ticker === 'ADANI');
         renderTable();
     }}
 
@@ -939,10 +910,7 @@ def build_html_dashboard(datasets):
     }}
 
     function renderTable() {{
-        let rawData = dataNifty;
-        if (currentTicker === 'SENSEX') rawData = dataSensex;
-        else if (currentTicker === 'RELIANCE') rawData = dataReliance;
-        else if (currentTicker === 'ADANI') rawData = dataAdani;
+        let rawData = currentTicker === 'SENSEX' ? dataSensex : dataNifty;
 
         const lotSize = getLotSize(currentTicker);
         const totalQty = lotSize * currentLots;

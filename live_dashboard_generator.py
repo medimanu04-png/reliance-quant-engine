@@ -26,7 +26,7 @@ START_DATE = "2026-10-05"  # Forward-testing cycle start (Monday October 05 onwa
 
 def load_live_trades():
     """Loads forward trades recorded across daily trade journal and live signals logs."""
-    trades_map = {"RELIANCE": [], "ADANIENT": [], "NIFTY": [], "SENSEX": []}
+    trades_map = {"NIFTY": [], "SENSEX": []}
     seen_ids = set()
 
     # 1. Load from daily_trade_journal.json (Verified executed trades)
@@ -219,43 +219,13 @@ def load_live_trades():
             print(f"Notice reading shadow signals: {e}")
 
     # Live forward testing ledger returns verified forward trades executed from START_DATE onwards
-    return trades_map["RELIANCE"], trades_map["ADANIENT"], trades_map["NIFTY"], trades_map["SENSEX"]
+    return trades_map["NIFTY"], trades_map["SENSEX"]
 
 
 def get_all_active_states():
-    """Generates the live active in-flight or armed trade state for all 4 desks."""
+    """Generates the live active in-flight or armed trade state for NIFTY and SENSEX desks."""
     from nse_data_fetcher import NSEIndiaFetcher
     desk_configs = {
-        "RELIANCE": {
-            "name": "Reliance Industries",
-            "spot": 1410.5,
-            "strike": 1420,
-            "type": "CE",
-            "target_1_pts": 7.0,
-            "target_2_pts": 15.0,
-            "sl_pts": 5.0,
-            "atr_val": 4.1,
-            "dynamic_sl_pts": 6.2,   # Solution 1: 1.5x ATR
-            "hard_sl_pts": 10.3,     # Solution 2: 2.5x ATR catastrophe stop
-            "score": 74.2,
-            "lot_size": 500,
-            "badge_color": "#38bdf8"
-        },
-        "ADANIENT": {
-            "name": "Adani Enterprises",
-            "spot": 2945.0,
-            "strike": 2950,
-            "type": "CE",
-            "target_1_pts": 20.0,
-            "target_2_pts": 45.0,
-            "sl_pts": 12.0,
-            "atr_val": 11.0,
-            "dynamic_sl_pts": 16.5,  # Solution 1: 1.5x ATR
-            "hard_sl_pts": 27.5,     # Solution 2: 2.5x ATR catastrophe stop
-            "score": 72.8,
-            "lot_size": 309,
-            "badge_color": "#f59e0b"
-        },
         "NIFTY": {
             "name": "NIFTY 50",
             "spot": 22415.0,
@@ -263,26 +233,26 @@ def get_all_active_states():
             "type": "CE",
             "target_1_pts": 35.0,
             "target_2_pts": 80.0,
-            "sl_pts": 18.0,
-            "atr_val": 16.3,
-            "dynamic_sl_pts": 24.5,  # Solution 1: 1.5x ATR
-            "hard_sl_pts": 40.8,     # Solution 2: 2.5x ATR catastrophe stop
-            "score": 76.5,
+            "sl_pts": 20.0,
+            "atr_val": 42.0,
+            "dynamic_sl_pts": 36.0,  # Solution 1: 1.5x ATR
+            "hard_sl_pts": 60.0,     # Solution 2: 2.5x ATR catastrophe stop
+            "score": 75.5,
             "lot_size": 65,
             "badge_color": "#10b981"
         },
         "SENSEX": {
             "name": "BSE SENSEX",
-            "spot": 74250.0,
-            "strike": 74200,
+            "spot": 72150.0,
+            "strike": 72100,
             "type": "CE",
-            "target_1_pts": 120.0,
-            "target_2_pts": 280.0,
-            "sl_pts": 60.0,
-            "atr_val": 54.7,
-            "dynamic_sl_pts": 82.0,  # Solution 1: 1.5x ATR
-            "hard_sl_pts": 136.8,    # Solution 2: 2.5x ATR catastrophe stop
-            "score": 75.0,
+            "target_1_pts": 95.0,
+            "target_2_pts": 220.0,
+            "sl_pts": 55.0,
+            "atr_val": 125.0,
+            "dynamic_sl_pts": 60.0,  # Solution 1: 1.5x ATR
+            "hard_sl_pts": 150.0,    # Solution 2: 2.5x ATR catastrophe stop
+            "score": 74.0,
             "lot_size": 20,
             "badge_color": "#a855f7"
         }
@@ -351,8 +321,6 @@ def get_all_active_states():
             "sr_zones": sr_zones
         }
         sym_file = os.path.join(BASE_DIR, f"active_trade_state_{sym}.json")
-        if not os.path.exists(sym_file) and sym == "RELIANCE":
-            sym_file = ACTIVE_STATE_FILE
         if os.path.exists(sym_file):
             try:
                 with open(sym_file, "r", encoding="utf-8") as f_st:
@@ -367,22 +335,14 @@ def get_all_active_states():
 def get_active_state():
     """Reads current real-time in-flight trade state if one exists."""
     all_st = get_all_active_states()
-    if os.path.exists(ACTIVE_STATE_FILE):
-        try:
-            with open(ACTIVE_STATE_FILE, "r", encoding="utf-8") as f:
-                st = json.load(f)
-                if isinstance(st, dict) and st.get("contract"):
-                    return st
-        except Exception:
-            pass
-    return all_st.get("RELIANCE")
+    return all_st.get("NIFTY")
 
 
 def generate_live_dashboard():
     """Generates the live HTML dashboard strictly starting Monday, October 05, 2026."""
-    trades_rel, trades_ada, trades_nifty, trades_sensex = load_live_trades()
+    trades_nifty, trades_sensex = load_live_trades()
     all_active_states = get_all_active_states()
-    active_state = all_active_states.get("RELIANCE", {})
+    active_state = all_active_states.get("NIFTY", {})
     now_str = datetime.now(IST).strftime("%d %B %Y, %I:%M:%S %p IST")
 
     t1_st = active_state.get("tranche_1", {})
@@ -1771,15 +1731,7 @@ def generate_live_dashboard():
             <div class="header-subtitle">Forward Execution &amp; Recording Ledger | Baseline Start Date: <strong>Monday, October 05, 2026</strong> | Engine Ping: <span class="mono" style="color:#38bdf8;">{now_str}</span></div>
         </div>
         <div class="desk-badge-group">
-            <div class="desk-pill active-pill" id="pill-rel" onclick="switchTicker('RELIANCE')" style="cursor:pointer;" title="Click to view Reliance Desk">
-                <span>Reliance Desk</span>
-                <strong>500 Qty / Lot</strong>
-            </div>
-            <div class="desk-pill" id="pill-ada" onclick="switchTicker('ADANIENT')" style="cursor:pointer;" title="Click to view Adani Desk">
-                <span>Adani Desk</span>
-                <strong>309 Qty / Lot</strong>
-            </div>
-            <div class="desk-pill" id="pill-nifty" onclick="switchTicker('NIFTY')" style="cursor:pointer;" title="Click to view Nifty Desk">
+            <div class="desk-pill active-pill" id="pill-nifty" onclick="switchTicker('NIFTY')" style="cursor:pointer;" title="Click to view Nifty Desk">
                 <span>Nifty Desk</span>
                 <strong>65 Qty / Lot</strong>
             </div>
@@ -1797,9 +1749,7 @@ def generate_live_dashboard():
             <small>Instantly switch active in-flight trade setup, lot sizing, and verified forward ledger</small>
         </div>
         <div class="nav-tabs">
-            <button class="nav-btn active" id="top-tab-rel" onclick="switchTicker('RELIANCE')">Reliance Industries</button>
-            <button class="nav-btn" id="top-tab-ada" onclick="switchTicker('ADANIENT')">Adani Enterprises</button>
-            <button class="nav-btn" id="top-tab-nifty" onclick="switchTicker('NIFTY')">NIFTY 50</button>
+            <button class="nav-btn active" id="top-tab-nifty" onclick="switchTicker('NIFTY')">NIFTY 50</button>
             <button class="nav-btn" id="top-tab-sensex" onclick="switchTicker('SENSEX')">BSE SENSEX</button>
         </div>
     </div>
@@ -1953,7 +1903,7 @@ def generate_live_dashboard():
         <div class="sr-header">
             <h3>
                 <span>🎯 DYNAMIC DAILY S/R &amp; PIVOT CORRIDOR:</span>
-                <span class="mono" id="sr-desk-title" style="color:var(--accent-cyan);">{active_state.get('name', 'Reliance Industries')}</span>
+                <span class="mono" id="sr-desk-title" style="color:var(--accent-cyan);">{active_state.get('name', 'NIFTY 50')}</span>
             </h3>
             <div class="sr-badges-cluster">
                 <span class="sr-badge sr-badge-spot" id="sr-badge-spot">Live Spot: ₹{active_state.get('current_spot', 0.0):.1f}</span>
@@ -2270,9 +2220,7 @@ def generate_live_dashboard():
     <!-- Controls & Filters -->
     <div class="controls-card">
         <div class="nav-tabs">
-            <button class="nav-btn active" id="tab-rel" onclick="switchTicker('RELIANCE')">Reliance Industries</button>
-            <button class="nav-btn" id="tab-ada" onclick="switchTicker('ADANIENT')">Adani Enterprises</button>
-            <button class="nav-btn" id="tab-nifty" onclick="switchTicker('NIFTY')">NIFTY 50</button>
+            <button class="nav-btn active" id="tab-nifty" onclick="switchTicker('NIFTY')">NIFTY 50</button>
             <button class="nav-btn" id="tab-sensex" onclick="switchTicker('SENSEX')">BSE SENSEX</button>
         </div>
 
@@ -2340,13 +2288,11 @@ def generate_live_dashboard():
 </div>
 
 <script>
-    const dataReliance = {json.dumps(trades_rel)};
-    const dataAdani = {json.dumps(trades_ada)};
     const dataNifty = {json.dumps(trades_nifty)};
     const dataSensex = {json.dumps(trades_sensex)};
     const allActiveStates = {json.dumps(all_active_states)};
     
-    let currentTicker = 'RELIANCE';
+    let currentTicker = 'NIFTY';
     let currentLots = 2;
     let currentDeltaMode = 'OPTION'; // 'OPTION' (0.52 Δ), 'FUTURES' (1.00 Δ), 'ITM' (0.72 Δ)
     let currentExecutionEngine = 'ENHANCED'; // 'ENHANCED' (4 Solutions), 'RUNNER' (50/50), 'BASELINE' (100% T1)
@@ -2408,11 +2354,8 @@ def generate_live_dashboard():
     }}
 
     function getLotSize(ticker) {{
-        if (ticker === 'RELIANCE') return 500;
-        if (ticker === 'ADANIENT') return 309;
-        if (ticker === 'NIFTY') return 65;
         if (ticker === 'SENSEX') return 20;
-        return 500;
+        return 65;
     }}
 
     // Populate dropdown with 1 to 100 lots
@@ -2658,12 +2601,11 @@ def generate_live_dashboard():
     }}
 
     function switchTicker(ticker) {{
-        if (!ticker) ticker = 'RELIANCE';
+        if (!ticker) ticker = 'NIFTY';
         ticker = String(ticker).toUpperCase().trim();
-        if (ticker === 'ADANI' || ticker === 'ADANI ENTERPRISES') ticker = 'ADANIENT';
         if (ticker === 'NIFTY 50') ticker = 'NIFTY';
         if (ticker === 'BSE SENSEX') ticker = 'SENSEX';
-        if (!['RELIANCE', 'ADANIENT', 'NIFTY', 'SENSEX'].includes(ticker)) ticker = 'RELIANCE';
+        if (!['NIFTY', 'SENSEX'].includes(ticker)) ticker = 'NIFTY';
 
         currentTicker = ticker;
         try {{
@@ -2675,8 +2617,6 @@ def generate_live_dashboard():
         
         // 1. Sync all tabs (top bar and controls bar)
         const tabMap = {{
-            'RELIANCE': ['tab-rel', 'top-tab-rel'],
-            'ADANIENT': ['tab-ada', 'top-tab-ada'],
             'NIFTY': ['tab-nifty', 'top-tab-nifty'],
             'SENSEX': ['tab-sensex', 'top-tab-sensex']
         }};
@@ -2691,8 +2631,6 @@ def generate_live_dashboard():
         
         // 2. Sync header desk pills
         const pillMap = {{
-            'RELIANCE': 'pill-rel',
-            'ADANIENT': 'pill-ada',
             'NIFTY': 'pill-nifty',
             'SENSEX': 'pill-sensex'
         }};
@@ -2731,10 +2669,8 @@ def generate_live_dashboard():
 
     function renderTable() {{
         try {{
-            let rawData = dataReliance;
-            if (currentTicker === 'ADANIENT') rawData = dataAdani;
-            else if (currentTicker === 'NIFTY') rawData = dataNifty;
-            else if (currentTicker === 'SENSEX') rawData = dataSensex;
+            let rawData = dataNifty;
+            if (currentTicker === 'SENSEX') rawData = dataSensex;
 
             const monthFilter = document.getElementById('month-filter').value;
             const outcomeFilter = document.getElementById('outcome-filter').value;
@@ -2975,17 +2911,15 @@ def generate_live_dashboard():
 
     // Initialize with persisted desk preference
     initLotsDropdown();
-    let initialTicker = 'RELIANCE';
+    let initialTicker = 'NIFTY';
     try {{
         let hashTicker = window.location.hash ? window.location.hash.substring(1).toUpperCase().trim() : null;
-        if (hashTicker === 'ADANI') hashTicker = 'ADANIENT';
-        if (hashTicker && ['RELIANCE', 'ADANIENT', 'NIFTY', 'SENSEX'].includes(hashTicker)) {{
+        if (hashTicker && ['NIFTY', 'SENSEX'].includes(hashTicker)) {{
             initialTicker = hashTicker;
         }} else {{
             let stored = localStorage.getItem('active_live_desk');
             if (stored) stored = stored.toUpperCase().trim();
-            if (stored === 'ADANI') stored = 'ADANIENT';
-            if (stored && ['RELIANCE', 'ADANIENT', 'NIFTY', 'SENSEX'].includes(stored)) {{
+            if (stored && ['NIFTY', 'SENSEX'].includes(stored)) {{
                 initialTicker = stored;
             }}
         }}

@@ -36,7 +36,7 @@ from telegram_notifier import TelegramNotifier
 from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR, SequentialTradeEngine, ShadowMonitoringEngine
 
 # ==============================================================================
-# MULTI-PAGE NAVIGATION ROUTER (Clean URLs: / | /Reliance | /Adani)
+# MULTI-PAGE NAVIGATION ROUTER (Clean URLs: / | /Nifty | /Sensex)
 # ==============================================================================
 st.set_page_config(
     page_title="Manoj Quant Engine | Institutional F&O Desk",
@@ -48,13 +48,10 @@ st.set_page_config(
 p_home = st.Page(lambda: None, title="Market Overview", icon="🏠", url_path="", default=True)
 p_nifty = st.Page(lambda: None, title="Nifty 50 Quant Desk", icon="📈", url_path="Nifty")
 p_sensex = st.Page(lambda: None, title="Sensex Quant Desk", icon="🏛️", url_path="Sensex")
-p_reliance = st.Page(lambda: None, title="Reliance Quant Desk", icon="⚡", url_path="Reliance")
-p_adani = st.Page(lambda: None, title="Adani Quant Desk", icon="🔥", url_path="Adani")
 
 pg = st.navigation({
     "Overview": [p_home],
-    "Benchmark Index Desks": [p_nifty, p_sensex],
-    "Equity Stock Desks": [p_reliance, p_adani]
+    "Benchmark Index Desks": [p_nifty, p_sensex]
 })
 
 pg.run()
@@ -73,10 +70,6 @@ else:
             st.switch_page(p_sensex)
         elif "NIFTY" in q_str:
             st.switch_page(p_nifty)
-        elif "ADANI" in q_str:
-            st.switch_page(p_adani)
-        elif "RELIANCE" in q_str:
-            st.switch_page(p_reliance)
 
 # ==============================================================================
 # AUTONOMOUS 24/7 MULTI-DESK ALERT DAEMON (ACTIVE ON HOMEPAGE & ALL PAGES)
@@ -104,7 +97,7 @@ def _start_background_multi_desk_daemon():
             _multi_desk_daemon_instance = RelianceQuantAlertDaemon(
                 interval_seconds=5.0,
                 force_run=False,
-                symbols=["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
+                symbols=["NIFTY", "SENSEX"]
             )
             t = threading.Thread(target=_multi_desk_daemon_instance.start, daemon=True, name="MultiDeskQuantAlertDaemon")
             t.start()
@@ -1254,8 +1247,8 @@ def render_auto_rescan_controller():
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
             gw.clear_all_caches()
-            with ThreadPoolExecutor(max_workers=9) as ex:
-                for sym_scan in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                for sym_scan in ("NIFTY", "SENSEX"):
                     ex.submit(gw._fetch_reliance_spot_now, sym_scan)
                     ex.submit(gw._fetch_reliance_chain_now, None, sym_scan)
                 ex.submit(gw._execute_live_benchmark_fetch)
@@ -1270,7 +1263,7 @@ def render_auto_rescan_controller():
         try:
             global _multi_desk_daemon_instance
             if _multi_desk_daemon_instance is not None:
-                for sym_daemon in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+                for sym_daemon in ("NIFTY", "SENSEX"):
                     _multi_desk_daemon_instance.run_single_symbol_tick(symbol=sym_daemon)
         except Exception:
             pass
@@ -1284,7 +1277,7 @@ def render_auto_rescan_controller():
                     "timestamp": now,
                     "time_str": rescan_time_str,
                     "manual": True,
-                    "symbols": ["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
+                    "symbols": ["NIFTY", "SENSEX"]
                 }, rf)
         except Exception:
             pass
@@ -1294,8 +1287,6 @@ def render_auto_rescan_controller():
         st.session_state["manual_rescan_clicked"] = True
         st.session_state["rescan_time"] = rescan_time_str
         st.session_state["desk_rescan_needed"] = {
-            "RELIANCE": True,
-            "ADANIENT": True,
             "NIFTY": True,
             "SENSEX": True
         }
@@ -1307,17 +1298,13 @@ def render_auto_rescan_controller():
         st.session_state["last_auto_rescan_ts"] = now
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
-    spec_rel = get_asset_spec("RELIANCE")
-    spec_ada = get_asset_spec("ADANIENT")
     spec_nifty = get_asset_spec("NIFTY")
     spec_sensex = get_asset_spec("SENSEX")
 
     if active_route == "":
-        # Homepage Mode: display ALL 4 desks with live refreshed spot prices and target parameters
+        # Homepage Mode: display Benchmark desks with live refreshed spot prices and target parameters
         from groww_market_feed import GrowwMarketFeed
         gw_feed = GrowwMarketFeed.get_instance()
-        spot_rel = gw_feed.get_live_spot_data(symbol="RELIANCE")
-        spot_ada = gw_feed.get_live_spot_data(symbol="ADANIENT")
         spot_nifty = gw_feed.get_live_spot_data(symbol="NIFTY")
         spot_sensex = gw_feed.get_live_spot_data(symbol="SENSEX")
 
@@ -1329,8 +1316,6 @@ def render_auto_rescan_controller():
             color = "#10B981" if chg >= 0 else "#EF4444"
             return ltp, chg, sign, color
 
-        r_ltp, r_chg, r_sign, r_col = _fmt_desk(spot_rel, spec_rel)
-        a_ltp, a_chg, a_sign, a_col = _fmt_desk(spot_ada, spec_ada)
         n_ltp, n_chg, n_sign, n_col = _fmt_desk(spot_nifty, spec_nifty)
         s_ltp, s_chg, s_sign, s_col = _fmt_desk(spot_sensex, spec_sensex)
 
@@ -1338,7 +1323,7 @@ def render_auto_rescan_controller():
         <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
             <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
             <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
-            <span>⚡ Multi-Desk Engine: <b style="color: #34D399;">All 4 Desks Live</b></span>
+            <span>⚡ Multi-Desk Engine: <b style="color: #34D399;">Benchmark Desks Live</b></span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
@@ -1361,31 +1346,11 @@ def render_auto_rescan_controller():
                     </div>
                 </a>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                <a href="./Reliance?stock=Reliance" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                        <span>⚡ <b style="color: #38BDF8;">{spec_rel.yf_symbol}</b> ({spec_rel.lot_size}/L)</span>
-                        <span>₹<b style="color: #FFFFFF;">{r_ltp:,.2f}</b> (<b style="color: {r_col};">{r_sign}{r_chg:.1f}</b>)</span>
-                        <span>🎯 <b style="color: #34D399;">+{spec_rel.target_pts:.1f}</b></span>
-                        <span>🛑 <b style="color: #F87171;">-{spec_rel.sl_pts:.1f}</b></span>
-                        <span>🚦 <b style="color: #FCD34D;">≥{spec_rel.min_confluence_gate:.0f}%</b></span>
-                    </div>
-                </a>
-                <a href="./Adani?stock=Adani" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                        <span>🔥 <b style="color: #FBBF24;">{spec_ada.yf_symbol}</b> ({spec_ada.lot_size}/L)</span>
-                        <span>₹<b style="color: #FFFFFF;">{a_ltp:,.2f}</b> (<b style="color: {a_col};">{a_sign}{a_chg:.1f}</b>)</span>
-                        <span>🎯 <b style="color: #34D399;">+{spec_ada.target_pts:.1f}</b></span>
-                        <span>🛑 <b style="color: #F87171;">-{spec_ada.sl_pts:.1f}</b></span>
-                        <span>🚦 <b style="color: #FCD34D;">≥{spec_ada.min_confluence_gate:.0f}%</b></span>
-                    </div>
-                </a>
-            </div>
         </div>
         """)
     else:
         # Desk Mode: display active asset pill
-        cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
+        cur_sel_scrip = st.session_state.get("selected_scrip", "NIFTY")
         spec_active = get_asset_spec(symbol=cur_sel_scrip)
         cur_sel_sym = spec_active.yf_symbol
         cur_sel_lot = spec_active.lot_size
@@ -1414,23 +1379,23 @@ is_rescan = st.session_state.get("just_rescanned", False) or st.session_state.ge
 manual_rescan = st.session_state.get("manual_rescan_clicked", False)
 
 if is_rescan:
-    # Refresh all 4 desks in parallel
+    # Refresh benchmark desks in parallel
     from concurrent.futures import ThreadPoolExecutor
     try:
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            for s in ("NIFTY", "SENSEX", "RELIANCE", "ADANIENT"):
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            for s in ("NIFTY", "SENSEX"):
                 ex.submit(NSEIndiaFetcher.get_reliance_official_data, force_refresh=True, symbol=s)
             ex.submit(NSEIndiaFetcher.get_live_market_benchmarks, force_refresh=True)
     except Exception:
         pass
 
-cur_sel_scrip = st.session_state.get("selected_scrip", "RELIANCE")
+cur_sel_scrip = st.session_state.get("selected_scrip", "NIFTY")
 active_feed_sym = resolve_symbol(cur_sel_scrip)
 nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=active_feed_sym)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
 if manual_rescan and active_route == "":
-    st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete across all 4 Quantitative Trading Desks! Live spot quotes, options chain telemetry, and macro benchmarks (NIFTY 50, BSE SENSEX, RELIANCE, ADANI ENTERPRISES) 100% updated.")
+    st.success(f"⚡ **Instant Market Rescan Executed ({st.session_state.get('rescan_time')})**: Full synchronization complete across Benchmark Quantitative Trading Desks! Live spot quotes, options chain telemetry, and macro benchmarks (NIFTY 50, BSE SENSEX) 100% updated.")
     st.session_state["manual_rescan_clicked"] = False
 elif manual_rescan and active_route != "":
     st.toast(f"⚡ {cur_sel_scrip} Desk Synchronized ({st.session_state.get('rescan_time')})")
@@ -1575,7 +1540,7 @@ if active_route == "":
             </span>
         </div>
         <span style="font-size: 0.76rem; color: #94A3B8;">
-            Click any tile to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>, <b style="color: #38BDF8;">/Reliance</b>, <b style="color: #FBBF24;">/Adani</b>)
+            Click any tile to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>)
         </span>
     </div>
     """)
@@ -1586,8 +1551,8 @@ if active_route == "":
     <div style="background: linear-gradient(90deg, rgba(16, 185, 129, 0.12) 0%, rgba(56, 189, 248, 0.10) 100%); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
         <div style="display: flex; align-items: center; gap: 10px;">
             <span style="display: inline-block; width: 10px; height: 10px; background: #10B981; border-radius: 50%; box-shadow: 0 0 8px #10B981;"></span>
-            <span style="font-weight: 700; color: #E2E8F0;">24/7 Multi-Desk Autonomous Scanner: <b style="color: #10B981;">ACTIVE & MONITORING</b></span>
-            <span style="color: #94A3B8;">| 4 Desks: <b style="color: #10B981;">NIFTY</b> • <b style="color: #A855F7;">SENSEX</b> • <b style="color: #38BDF8;">RELIANCE</b> • <b style="color: #FBBF24;">ADANI</b></span>
+            <span style="font-weight: 700; color: #E2E8F0;">24/7 Benchmark Scanner: <b style="color: #10B981;">ACTIVE & MONITORING</b></span>
+            <span style="color: #94A3B8;">| 2 Desks: <b style="color: #10B981;">NIFTY 50</b> • <b style="color: #A855F7;">BSE SENSEX</b></span>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
             <span>📲 Telegram Calls: <b style="color: {'#10B981' if tg_active_hp else '#F87171'};">{'CONNECTED' if tg_active_hp else 'DISABLED'}</b></span>
@@ -1600,19 +1565,13 @@ if active_route == "":
     col_idx1, col_idx2 = st.columns(2)
     spec_nifty_hp = get_asset_spec("NIFTY")
     spec_sensex_hp = get_asset_spec("SENSEX")
-    spec_rel_hp = get_asset_spec("RELIANCE")
-    spec_ada_hp = get_asset_spec("ADANIENT")
 
     gw_feed_hp = GrowwMarketFeed.get_instance()
     spot_nifty_hp = gw_feed_hp.get_live_spot_data("NIFTY")
     spot_sensex_hp = gw_feed_hp.get_live_spot_data("SENSEX")
-    spot_rel_hp = gw_feed_hp.get_live_spot_data("RELIANCE")
-    spot_ada_hp = gw_feed_hp.get_live_spot_data("ADANIENT")
 
     ltp_nifty_hp = float(spot_nifty_hp.get("spot_ltp", spec_nifty_hp.default_spot))
     ltp_sensex_hp = float(spot_sensex_hp.get("spot_ltp", spec_sensex_hp.default_spot))
-    ltp_rel_hp = float(spot_rel_hp.get("spot_ltp", spec_rel_hp.default_spot))
-    ltp_ada_hp = float(spot_ada_hp.get("spot_ltp", spec_ada_hp.default_spot))
 
     with col_idx1:
         st.html(f"""
@@ -1678,83 +1637,6 @@ if active_route == "":
                 </div>
                 <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 8px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
                     <span>Benchmark Execution Terminal</span>
-                    <span>Launch Desk →</span>
-                </div>
-            </div>
-        </a>
-        """)
-
-    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
-
-    # Row 2: High-Conviction Equity F&O Desks
-    col_eq1, col_eq2 = st.columns(2)
-    spec_rel_hp = get_asset_spec("RELIANCE")
-    spec_ada_hp = get_asset_spec("ADANIENT")
-
-    with col_eq1:
-        st.html(f"""
-        <a href="./Reliance?stock=Reliance" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-            <div class="quant-desk-tile tile-reliance" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(56, 189, 248, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">⚡ RELIANCE QUANT DESK <span style="font-size: 0.85rem; color: #38BDF8; font-weight: 700; margin-left: 6px;">₹{ltp_rel_hp:,.2f}</span></span>
-                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_rel_hp.lot_size} QTY/LOT</span>
-                    </div>
-                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
-                        Institutional F&O Engine for <b style="color: #38BDF8;">RELIANCE.NS</b>. Equipped with 6-Vector Confluence, ATM Dual Corridor & Breakeven Escalator.
-                    </p>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
-                    <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_rel_hp.target_pts:.1f} pts</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_rel_hp.sl_pts:.1f} pts</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_rel_hp.min_confluence_gate:.0f}%</div>
-                    </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(56, 189, 248, 0.2); padding-top: 8px; font-size: 0.74rem; color: #38BDF8; font-weight: 700;">
-                    <span>Institutional Execution Terminal</span>
-                    <span>Launch Desk →</span>
-                </div>
-            </div>
-        </a>
-        """)
-
-    with col_eq2:
-        st.html(f"""
-        <a href="./Adani?stock=Adani" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-            <div class="quant-desk-tile tile-adani" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1.5px solid rgba(245, 158, 11, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🔥 ADANI QUANT DESK <span style="font-size: 0.85rem; color: #FBBF24; font-weight: 700; margin-left: 6px;">₹{ltp_ada_hp:,.2f}</span></span>
-                        <span style="background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_ada_hp.lot_size} QTY/LOT</span>
-                    </div>
-                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
-                        Institutional F&O Engine for <b style="color: #FBBF24;">ADANIENT.NS</b>. High-Beta Momentum Runner with 2.33:1 Asymmetric R:R.
-                    </p>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
-                    <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_ada_hp.target_pts:.1f} pts</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_ada_hp.sl_pts:.1f} pts</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_ada_hp.min_confluence_gate:.0f}%</div>
-                    </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(245, 158, 11, 0.2); padding-top: 8px; font-size: 0.74rem; color: #FBBF24; font-weight: 700;">
-                    <span>Institutional Execution Terminal</span>
                     <span>Launch Desk →</span>
                 </div>
             </div>
@@ -1831,7 +1713,7 @@ if active_route == "":
             
             c_liv1, c_liv2 = st.columns([3, 1])
             with c_liv1:
-                st.caption("🟢 **Live Forward Desk (Oct 05, 2026 Onwards)**: Live forward trading ledger powered by the Enhanced 4-Solution Quant Engine (Dynamic ATR SL, Two-Tier Wick Shield, 15m Re-Entry, and Chandelier Trailing) across NIFTY 50, BSE SENSEX, Reliance, and Adani desks.")
+                st.caption("🟢 **Live Forward Desk (Oct 05, 2026 Onwards)**: Live forward trading ledger powered by the Enhanced 4-Solution Quant Engine (Dynamic ATR SL, Two-Tier Wick Shield, 15m Re-Entry, and Chandelier Trailing) across NIFTY 50 and BSE SENSEX desks.")
             with c_liv2:
                 st_download_button_stretch(
                     label="📥 Download Live Desk HTML",
@@ -1875,7 +1757,7 @@ if active_route == "":
             
             c_aud1, c_aud2 = st.columns([3, 1])
             with c_aud1:
-                st.caption("⚡ **Interactive Audit Tool (Original Preserved)**: Baseline execution logs with original fixed stops across NIFTY 50, BSE SENSEX, Reliance, and Adani.")
+                st.caption("⚡ **Interactive Audit Tool (Original Preserved)**: Baseline execution logs with original fixed stops across NIFTY 50 and BSE SENSEX.")
             with c_aud2:
                 st_download_button_stretch(
                     label="📥 Download Original Audit HTML",
@@ -1891,14 +1773,14 @@ if active_route == "":
 
     elif selected_view == "🗂️ Audit Datasets & Reports":
         st.markdown("<h4 style='color: #FFFFFF; margin-top: 12px; margin-bottom: 4px;'>Institutional Data Repository</h4>", unsafe_allow_html=True)
-        st.caption("Direct access to full backtested performance logs, real-time alert daemon logs, and active journal files across all 4 desks.")
+        st.caption("Direct access to full backtested performance logs, real-time alert daemon logs, and active journal files across benchmark desks.")
         
         c_d1, c_d2 = st.columns(2)
         with c_d1:
             st.html("""
             <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-bottom: 12px;">
                 <b style="color: #38BDF8;">📊 Historical Calibration & Backtest Datasets</b>
-                <p style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px; margin-bottom: 0;">Complete 9-month tick-by-tick dataset across 180+ trading sessions for all 4 desks.</p>
+                <p style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px; margin-bottom: 0;">Complete 9-month tick-by-tick dataset across 180+ trading sessions for benchmark desks.</p>
             </div>
             """)
             emp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "empirical_calibration_dataset.json")
@@ -1916,8 +1798,6 @@ if active_route == "":
             csv_datasets = [
                 ("nifty_50_9months_full_spots.csv", "📥 Download NIFTY 50 9-Month Audit CSV", "dl_nifty_csv"),
                 ("bse_sensex_9months_full_spots.csv", "📥 Download BSE SENSEX 9-Month Audit CSV", "dl_sensex_csv"),
-                ("reliance_9months_full_spots.csv", "📥 Download Reliance 9-Month Audit CSV", "dl_rel_csv"),
-                ("adani_9months_full_spots.csv", "📥 Download Adani 9-Month Audit CSV", "dl_ada_csv"),
             ]
             for fname, lbl, k in csv_datasets:
                 fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scratch", fname)
@@ -1958,28 +1838,22 @@ last_route = st.session_state.get("_last_route_visited")
 if last_route != active_route:
     # Route actually changed — force the scrip to match the new route
     st.session_state["_last_route_visited"] = active_route
-    if route_lower == "reliance":
-        forced_choice = "RELIANCE"
-    elif route_lower == "adani":
-        forced_choice = "ADANI ENTERPRISES"
-    elif route_lower == "nifty":
-        forced_choice = "NIFTY 50"
-    elif route_lower == "sensex":
+    if route_lower == "sensex":
         forced_choice = "BSE SENSEX"
     else:
-        forced_choice = st.session_state.get("selected_scrip", "RELIANCE")
+        forced_choice = "NIFTY 50"
     st.session_state["selected_scrip"] = forced_choice
     st.session_state["sb_scrip_selector"] = forced_choice
 else:
     # Same route as before — respect the user's dropdown selection
-    forced_choice = st.session_state.get("sb_scrip_selector") or st.session_state.get("selected_scrip", "RELIANCE")
+    forced_choice = st.session_state.get("sb_scrip_selector") or st.session_state.get("selected_scrip", "NIFTY 50")
     st.session_state["selected_scrip"] = forced_choice
 
 if st.sidebar.button("🏠 ← Return to Market Hub (Homepage)", use_container_width=True, key="sb_btn_return_home"):
     st.switch_page(p_home)
 
-scrip_options = ["NIFTY 50", "BSE SENSEX", "RELIANCE", "ADANI ENTERPRISES"]
-scrip_idx = scrip_options.index(forced_choice) if forced_choice in scrip_options else 2
+scrip_options = ["NIFTY 50", "BSE SENSEX"]
+scrip_idx = scrip_options.index(forced_choice) if forced_choice in scrip_options else 0
 
 scrip_choice = st.sidebar.selectbox(
     "🎯 Active Trading Scrip",
@@ -1990,42 +1864,28 @@ scrip_choice = st.sidebar.selectbox(
 
 # Auto-switch page URL when user toggles dropdown
 current_route_scrip = {
-    "reliance": "RELIANCE",
-    "adani": "ADANI ENTERPRISES",
     "nifty": "NIFTY 50",
     "sensex": "BSE SENSEX"
 }.get(route_lower, "")
 
 if current_route_scrip and scrip_choice != current_route_scrip:
-    if scrip_choice == "ADANI ENTERPRISES":
-        st.switch_page(p_adani)
-    elif scrip_choice == "RELIANCE":
-        st.switch_page(p_reliance)
-    elif scrip_choice == "NIFTY 50":
-        st.switch_page(p_nifty)
-    elif scrip_choice == "BSE SENSEX":
+    if scrip_choice == "BSE SENSEX":
         st.switch_page(p_sensex)
+    else:
+        st.switch_page(p_nifty)
 
-is_adani = (scrip_choice == "ADANI ENTERPRISES")
+is_adani = False
 is_nifty = (scrip_choice == "NIFTY 50")
 is_sensex = (scrip_choice == "BSE SENSEX")
 
-if is_nifty:
-    scrip_symbol = "NIFTY"
-    scrip_color = "#10B981"
-    scrip_accent = "rgba(16, 185, 129, 0.15)"
-elif is_sensex:
+if is_sensex:
     scrip_symbol = "SENSEX"
     scrip_color = "#A855F7"
     scrip_accent = "rgba(168, 85, 247, 0.15)"
-elif is_adani:
-    scrip_symbol = "ADANIENT"
-    scrip_color = "#F59E0B"
-    scrip_accent = "rgba(245, 158, 11, 0.15)"
 else:
-    scrip_symbol = "RELIANCE"
-    scrip_color = "#38BDF8"
-    scrip_accent = "rgba(56, 189, 248, 0.15)"
+    scrip_symbol = "NIFTY"
+    scrip_color = "#10B981"
+    scrip_accent = "rgba(16, 185, 129, 0.15)"
 
 spec = get_asset_spec(symbol=scrip_symbol)
 
@@ -2116,7 +1976,7 @@ st.sidebar.html(f"""
 
 # Resolve parameters for engine computation
 symbol = scrip_yf
-scrip_choice = st.session_state.get("selected_scrip", "RELIANCE")
+scrip_choice = st.session_state.get("selected_scrip", "NIFTY 50")
 lot_size = scrip_lot
 st.session_state["lot_size"] = lot_size
 num_lots = int(st.session_state.get(f"num_lots_{scrip_symbol}", scrip_lots_count))
@@ -2137,7 +1997,7 @@ strike_selection_pref = st.session_state.get(f"strike_selection_pref_{scrip_symb
 stream_live_1s = bool(st.session_state.get("stream_live_1s", True))
 live_broker_ltp = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
 custom_trigger_override = float(st.session_state.get(f"custom_trigger_override_{scrip_symbol}", 0.0))
-contract_expiry_label = "Next Monthly Expiry"
+contract_expiry_label = "Current Weekly Expiry"
 
 if "allow_orb_early_entry" not in st.session_state:
     st.session_state["allow_orb_early_entry"] = True
@@ -2234,7 +2094,7 @@ tg_enabled = bool(tg_config.get("enabled", True))
 parsed_recipients = TelegramNotifier.parse_chat_ids(tg_chat_id)
  
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_global_news_and_macro(force_key: str = "", scrip_sym: str = "RELIANCE"):
+def fetch_global_news_and_macro(force_key: str = "", scrip_sym: str = "NIFTY"):
     """Fetches latest real-time news and macro telemetry for active scrip."""
     news_items = []
     macro_data = {"crude": "Neutral (Steady)", "global_sentiment": "Bullish Bias"}
@@ -2283,33 +2143,19 @@ def fetch_global_news_and_macro(force_key: str = "", scrip_sym: str = "RELIANCE"
         news_items = []
 
     if len(news_items) < 4:
-        if spec_news.symbol == "NIFTY":
-            defaults = [
-                {"title": "NSE Nifty 50 Benchmark Market Flow & Heavyweight Breadth", "summary": "Financial services, IT, and consumer giants demonstrate balanced capital rotation across intraday trading bands.", "provider": "Benchmark Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "India Domestic Macro: RBI Liquidity & Credit Policy Monitoring", "summary": "Systemic liquidity conditions and monthly headline inflation metrics remain well anchored within comfort corridors.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "FII & DII Derivative Open Interest & Index Gamma Structure", "summary": "Institutional positioning across headline Nifty 50 options strikes indicates disciplined dual-sided liquidity buffers.", "provider": "Derivatives Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "Corporate Earnings & Benchmark Trailing Multiples Overview", "summary": "Broad market index valuation bands reflect steady domestic mutual fund inflows and systematic investment support.", "provider": "Quant Research", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
-            ]
-        elif spec_news.symbol == "SENSEX":
+        if spec_news.symbol == "SENSEX":
             defaults = [
                 {"title": "BSE Sensex 30 Bluechip Weighted Momentum & Turnover Flow", "summary": "Top 30 constituent powerhouses sustain orderly volume absorption and steady institutional execution.", "provider": "Benchmark Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
                 {"title": "BSE F&O Derivatives Open Interest & Concentration Analysis", "summary": "Key strike clusters exhibit strong open interest buildup and robust volatility suppression into active trading hours.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
                 {"title": "Domestic Banking & Industrial Sector Contribution Tracking", "summary": "Banking and capital goods heavyweights provide balanced underpinning to benchmark index trajectories.", "provider": "Sector Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
                 {"title": "Global Macro Resilience & Emerging Market Equity Allocations", "summary": "Institutional allocations to frontline Indian benchmarks maintain structural outperformance premiums.", "provider": "Macro Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
             ]
-        elif spec_news.symbol == "ADANIENT":
-            defaults = [
-                {"title": "Adani Enterprises Infrastructure & Incubation Operational Flow", "summary": "Solar manufacturing, airport operations, and green hydrogen projects maintain targeted capex momentum.", "provider": "Institutional Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "Adani Group Energy & Utility Asset Telemetry", "summary": "Operational metrics across domestic power, transmission, and port utility hubs show robust quarterly utilization.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "Adani New Industries Green Energy Execution Update", "summary": "Integrated solar wafer capacity expansion and wind turbine manufacturing track institutional delivery milestones.", "provider": "Energy Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "Adani Enterprises Domestic Cash Flow & Debt Coverage Audit", "summary": "Consolidated debt-to-EBITDA buffers and operating cash liquidity remain well within institutional comfort thresholds.", "provider": "Institutional Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
-            ]
         else:
             defaults = [
-                {"title": "Reliance Industries Operational Flow & Fuel Margin Telemetry", "summary": "Domestic consumption in fuels and petrochemicals tracks historical median benchmarks across major hubs.", "provider": "Institutional Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "Government Energy Policy & Export Realization Monitoring", "summary": "Gross refining margins (GRM) for export plants remain aligned with regional crack spreads.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "Petrochemical & Polymer Realization Spread Review", "summary": "Specialty chemical demand in Asian markets continues in balanced inventory turnover bands.", "provider": "Energy Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
-                {"title": "Domestic Retail & Telecom ARPU Stability Audit", "summary": "Consumer additions and steady 5G subscriber migration maintain standard operational cash flow buffers.", "provider": "Consumer Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
+                {"title": "NSE Nifty 50 Benchmark Market Flow & Heavyweight Breadth", "summary": "Financial services, IT, and consumer giants demonstrate balanced capital rotation across intraday trading bands.", "provider": "Benchmark Desk", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "India Domestic Macro: RBI Liquidity & Credit Policy Monitoring", "summary": "Systemic liquidity conditions and monthly headline inflation metrics remain well anchored within comfort corridors.", "provider": "Macro Telemetry", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "FII & DII Derivative Open Interest & Index Gamma Structure", "summary": "Institutional positioning across headline Nifty 50 options strikes indicates disciplined dual-sided liquidity buffers.", "provider": "Derivatives Intel", "date": "Live", "sentiment": "NEUTRAL", "url": "#"},
+                {"title": "Corporate Earnings & Benchmark Trailing Multiples Overview", "summary": "Broad market index valuation bands reflect steady domestic mutual fund inflows and systematic investment support.", "provider": "Quant Research", "date": "Live", "sentiment": "NEUTRAL", "url": "#"}
             ]
         for d in defaults:
             if len(news_items) >= 4:
@@ -2482,7 +2328,7 @@ class MultiTimeframeMatrixEngine:
         }
 
 
-def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float, atm_strike: int, scrip_symbol: str = "RELIANCE"):
+def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float, atm_strike: int, scrip_symbol: str = "NIFTY"):
     """
     Renders an institutional interactive Plotly dual-panel chart:
     Panel 1: Candlesticks, Session VWAP, VWAP Bands, ORB-15 Anchored VWAP, 9/20 EMAs
@@ -2635,7 +2481,7 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key: str = ""):
+def fetch_scrip_candles(scrip: str = "NIFTY", interval: str = "5m", force_key: str = ""):
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     df = pd.DataFrame()
     cur_spec = get_asset_spec(scrip)
@@ -2720,12 +2566,6 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
         volumes[-1] = vol_range[1] * 2
         df = pd.DataFrame({"Open": opens, "High": highs, "Low": lows, "Close": closes, "Volume": volumes}, index=dates)
     else:
-        # If unadjusted pre-bonus data received (>2000) for RELIANCE ONLY, adjust to bonus-split price
-        if cur_spec.symbol == "RELIANCE" and df['Close'].iloc[-1] > 2000:
-            df['Close'] = df['Close'] / 2.0
-            df['Open'] = df['Open'] / 2.0
-            df['High'] = df['High'] / 2.0
-            df['Low'] = df['Low'] / 2.0
 
         # Live Forming Candle Synthesis with 0-Delay Spot
         # Strictly activate ONLY when market is open AND the last candle belongs to today's active session
@@ -2972,7 +2812,7 @@ def fetch_scrip_candles(scrip: str = "RELIANCE", interval: str = "5m", force_key
 
 
 def fetch_reliance_data(interval: str, force_key: str = ""):
-    return fetch_scrip_candles(scrip=st.session_state.get("selected_scrip", "RELIANCE"), interval=interval, force_key=force_key)
+    return fetch_scrip_candles(scrip=st.session_state.get("selected_scrip", "NIFTY"), interval=interval, force_key=force_key)
 
 
 df = fetch_scrip_candles(scrip=scrip_choice, interval=timeframe, force_key=st.session_state.get("rescan_time", ""))
@@ -2989,7 +2829,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     is_pe_dominant = (plan_contract_type == "PE")
 
     if corridor is None or low is None or high is None:
-        cur_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
+        cur_sym = resolve_symbol(st.session_state.get("selected_scrip", "NIFTY"))
         dyn_corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=cur_sym)
         dyn_atm = dyn_corridor["lower_strike"]
         stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
@@ -3011,7 +2851,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     # REAL-TIME DYNAMIC "WHEN TO BUY" SIGNAL & EXECUTION TRIGGER ENGINE
     # ==========================================================================
     tp = trade_plan or {}
-    active_sym = tp.get("scrip_symbol", resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE")))
+    active_sym = tp.get("scrip_symbol", resolve_symbol(st.session_state.get("selected_scrip", "NIFTY")))
     spec_plan = get_asset_spec(symbol=active_sym)
     sim_mode = tp.get("sim_mode", "LIVE")
 
@@ -4384,8 +4224,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             """)
         else:
             if plan_sector_trap:
-                is_cur_adani = (active_sym == "ADANIENT" or st.session_state.get("selected_scrip") == "ADANI ENTERPRISES")
-                sec_disp_name = "NIFTY INFRA / 50" if is_cur_adani else "NIFTY ENERGY"
+                sec_disp_name = "BENCHMARK / SECTOR"
                 standdown_title = "SECTOR DIVERGENCE TRAP ACTIVE"
                 standdown_desc = f"Directional score is <b style='color: #34D399;'>{plan_score:.1f}%</b> (> {plan_gate:.0f}% Gate), but <b style='color: #F87171;'>{active_scrip_name} ({plan_rel_pct:+.2f}%)</b> is diverging from parent sector <b style='color: #38BDF8;'>{sec_disp_name} ({plan_energy_pct:+.2f}%)</b>. Buying options against the broader sector carries severe mean-reversion whipsaw risk. BUY trigger is <b>LOCKED</b> until sector alignment is restored."
                 standdown_source = f"Institutional Sector Coupling Filter ({sec_disp_name} {plan_energy_pct:+.2f}% vs {active_scrip_name} {plan_rel_pct:+.2f}%)"
@@ -4433,7 +4272,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
 # ==============================================================================
 def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, is_streaming: bool = True, trade_plan: dict = None):
     tp = trade_plan or {}
-    cur_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
+    cur_sym = resolve_symbol(st.session_state.get("selected_scrip", "NIFTY"))
     plan_expiry = tp.get("expiry_date_str") or NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=cur_sym)["selected_expiry"]
     plan_contract_type = tp.get("recommended_contract_type") or tp.get("contract_type") or ("PE" if tp.get("action") == "BUY_PE" or tp.get("bias") == "BEARISH" else "CE")
     is_pe_dominant = (plan_contract_type == "PE")
@@ -4678,7 +4517,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
     # ==============================================================================
     # PARTICIPANT BUYER/SELLER CLASSIFICATION (FII • DII • PRO • RETAIL)
     # ==============================================================================
-    cur_flow_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
+    cur_flow_sym = resolve_symbol(st.session_state.get("selected_scrip", "NIFTY"))
     part_flow = NSEIndiaFetcher.get_participant_flow(spot, stock_volume, symbol=cur_flow_sym)
     fii = part_flow["participants"]["FII"]
     dii = part_flow["participants"]["DII"]
@@ -4919,8 +4758,8 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
 
 @st.fragment(run_every="6s")
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
-    # Dynamically pull current real-time spot from live feed on each tick (both scrips)
-    _feed_sym = resolve_symbol(st.session_state.get("selected_scrip", "RELIANCE"))
+    # Dynamically pull current real-time spot from live feed on each tick
+    _feed_sym = resolve_symbol(st.session_state.get("selected_scrip", "NIFTY"))
     try:
         from groww_market_feed import GrowwMarketFeed
         spot_tick_info = GrowwMarketFeed.get_instance().get_dynamic_spot_tick(symbol=_feed_sym)
@@ -4935,8 +4774,7 @@ if df is not None and not df.empty:
     latest = df.iloc[-1]
     prev = df.iloc[-2]
     
-    # Ground spot strictly on authentic Groww / NSE official data (unified for both scrips)
-    is_adani_active = (scrip_symbol == "ADANIENT")
+    # Ground spot strictly on authentic Groww / NSE official data
     now_ist = datetime.now(IST)
     is_mkt_open = (now_ist.weekday() < 5) and (9 * 60 + 15 <= now_ist.hour * 60 + now_ist.minute <= 15 * 60 + 30)
     from groww_market_feed import GrowwMarketFeed
@@ -5145,17 +4983,9 @@ if df is not None and not df.empty:
     elif breadth_bearish:
         v1_bull = max(0.0, v1_bull - 3.0)  # Broad market selling drag penalty
 
-    # Sector Alignment (NIFTY Energy for Reliance, NIFTY 50 / Infra for Adani, Benchmark Index for Nifty/Sensex)
-    if spec.parent_sector == "BENCHMARK INDEX":
-        sec_pct = nifty_pct
-        sec_name = spec.full_name
-    elif is_adani:
-        sec_pct = nifty_pct
-        sec_name = "NIFTY 50"
-    else:
-        energy_data = benchmarks.get("NIFTY ENERGY", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
-        sec_pct = float(energy_data.get("pct_change", 0.35))
-        sec_name = "NIFTY Energy"
+    # Sector Alignment (Benchmark Index for Nifty/Sensex)
+    sec_pct = nifty_pct
+    sec_name = spec.full_name
 
     sec_sector_bull = sec_pct >= 0.20
     sec_sector_bear = sec_pct <= -0.20
@@ -5758,15 +5588,8 @@ if df is not None and not df.empty:
         rel_iv = spec.bsm_sigma
 
     # Historical IV Range
-    if spec.parent_sector == "BENCHMARK INDEX":
-        iv_min = 0.100
-        iv_max = 0.250
-    elif is_adani:
-        iv_min = 0.220
-        iv_max = 0.600
-    else:
-        iv_min = 0.145
-        iv_max = 0.350
+    iv_min = 0.100
+    iv_max = 0.250
     iv_percentile = round(max(0.0, min(100.0, ((rel_iv - iv_min) / (iv_max - iv_min)) * 100.0)), 1)
     iv_elevated_crush_risk = iv_percentile > 70.0  # High IV: naked options buying is statistically disadvantageous
     iv_cheap_window = iv_percentile < 50.0  # Cheap IV: optimal statistical edge for naked options buying
@@ -5989,8 +5812,8 @@ if df is not None and not df.empty:
 
     try:
         from fo_quant_engine import MultiIndicatorMath
-        _target_sec_pct = nifty_pct if (spec.parent_sector == "BENCHMARK INDEX" or is_adani) else energy_pct
-        _target_sec_name = spec.full_name if spec.parent_sector == "BENCHMARK INDEX" else ("NIFTY 50" if is_adani else "NIFTY ENERGY")
+        _target_sec_pct = nifty_pct
+        _target_sec_name = spec.full_name
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = MultiIndicatorMath.calculate_sectoral_alignment(
             nifty_pct, energy_pct, reliance_pct,
             symbol=scrip_symbol,
@@ -6029,12 +5852,7 @@ if df is not None and not df.empty:
     raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull + news_modifier
     raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear - news_modifier
 
-    # Sector Divergence Liquidity Trap Filter:
-    # Strictly applicable to Reliance against Nifty Energy
-    is_sector_divergence_trap = (
-        (spot > rel_ref_close and energy_pct < -0.15 and reliance_pct > 0.10) or
-        (spot < rel_ref_close and energy_pct > 0.15 and reliance_pct < -0.10)
-    ) if (scrip_symbol == "RELIANCE") else False
+    is_sector_divergence_trap = False
 
     # Enhancement 1: Midday "Chop Zone" Time-of-Day Filter (11:30 AM – 01:15 PM IST)
     # Volume drops ~55% during this window, false breakouts peak, theta decay accelerates.
@@ -6231,23 +6049,13 @@ if df is not None and not df.empty:
     vix_val_current = float(benchmarks.get("INDIA VIX", {}).get("price", 13.50)) if "benchmarks" in locals() or "benchmarks" in globals() else 13.50
     vix_scaler = max(0.85, min(1.30, vix_val_current / 13.50))
 
-    if scrip_symbol in ("ADANIENT", "NIFTY", "SENSEX"):
-        volatility_adapted_sl = scrip_sl_pts
-        atr_dynamic_sl = volatility_adapted_sl
-        effective_sl_pts = scrip_sl_pts if not is_sim_active else sl_pts
+    volatility_adapted_sl = scrip_sl_pts
+    atr_dynamic_sl = volatility_adapted_sl
+    effective_sl_pts = scrip_sl_pts if not is_sim_active else sl_pts
 
-        volatility_adapted_target = scrip_target_pts
-        atr_dynamic_target = volatility_adapted_target
-        effective_target_pts = scrip_target_pts if not is_sim_active else target_pts
-    else:
-        volatility_adapted_sl = round(min(5.0, max(3.5, bs_delta * stock_atr * 0.85)), 1)
-        atr_dynamic_sl = volatility_adapted_sl
-        max_sl_from_capital_cap = round((account_cash * 0.04) / max(1, total_trading_qty), 1)
-        effective_sl_pts = min(volatility_adapted_sl, max_sl_from_capital_cap) if not is_sim_active else sl_pts
-
-        volatility_adapted_target = round(min(14.0, max(8.0, effective_sl_pts * 2.2 * vix_scaler)), 1)
-        atr_dynamic_target = volatility_adapted_target
-        effective_target_pts = volatility_adapted_target if not is_sim_active else target_pts
+    volatility_adapted_target = scrip_target_pts
+    atr_dynamic_target = volatility_adapted_target
+    effective_target_pts = scrip_target_pts if not is_sim_active else target_pts
 
     target_pts_display = effective_target_pts
     is_target_dynamic = abs(effective_target_pts - target_pts) > 0.3
@@ -7223,8 +7031,8 @@ if df is not None and not df.empty:
                     cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
                     cap_sub_desc = "🛡️ Protected from chop & theta decay"
                 elif is_sector_divergence_trap:
-                    _sec_title = "NIFTY 50" if spec.parent_sector == "BENCHMARK INDEX" else ("NIFTY Infra / 50" if is_adani else "NIFTY Energy")
-                    _sec_pct_val = nifty_pct if (is_adani or spec.parent_sector == "BENCHMARK INDEX") else energy_pct
+                    _sec_title = spec.full_name
+                    _sec_pct_val = nifty_pct
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE SETUP &bull; STAND DOWN"
                     stand_down_badge = f"⚠️ SECTOR DIVERGENCE TRAP ACTIVE"
                     stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
@@ -7718,15 +7526,8 @@ if df is not None and not df.empty:
             sim_v6 = v6_score
 
         # Pre-computed behavioral narratives
-        if spec.parent_sector == "BENCHMARK INDEX":
-            macro_beh_str = f"Benchmark Macro Telemetry: NIFTY 50 is at {nifty_pct:+.2f}%, INDIA VIX at {vix_val:.2f} ({vix_pct_chg:+.2f}%). Domestic capital flow momentum is aligned."
-            v1_macro_metric = ("Benchmark Macro Telemetry", f"VIX {vix_val:.2f} ({vix_pct_chg:+.2f}%)", "🟢 Steady Volatility (+2)" if vix_stable_regime else "🟡 High Volatility (0)")
-        elif is_adani:
-            macro_beh_str = f"NIFTY 50 Index Beta is at {nifty_pct:+.2f}% with Adani Infra momentum. Crude oil sits at {crude_pct:+.2f}% (Macro Commodity Steady)."
-            v1_macro_metric = ("NIFTY Infra / Sectoral Beta", f"NIFTY {nifty_pct:+.2f}% | Crude {crude_pct:+.2f}%", "🟢 Sectoral Tailwind (+2)" if nifty_pct > 0.2 else ("🔴 Market Drag (-3)" if nifty_pct < -0.5 else "🟡 Steady Beta"))
-        else:
-            macro_beh_str = f"MCX/Brent Crude Oil is at {crude_pct:+.2f}% ({'Refining Margin Tailwind (+2.0)' if crude_rallying else ('O2C Margin Drag Warning (-4.5)' if crude_dumping_severe else 'Steady')})."
-            v1_macro_metric = ("Brent / MCX Crude Telemetry", f"{crude_pct:+.2f}% (₹{crude_price:,.0f})", "🟢 O2C Tailwind (+2)" if crude_rallying else ("🔴 Severe Margin Drag (-4.5)" if crude_dumping_severe else "🟡 Steady"))
+        macro_beh_str = f"Benchmark Macro Telemetry: NIFTY 50 is at {nifty_pct:+.2f}%, INDIA VIX at {vix_val:.2f} ({vix_pct_chg:+.2f}%). Domestic capital flow momentum is aligned."
+        v1_macro_metric = ("Benchmark Macro Telemetry", f"VIX {vix_val:.2f} ({vix_pct_chg:+.2f}%)", "🟢 Steady Volatility (+2)" if vix_stable_regime else "🟡 High Volatility (0)")
 
         v1_beh = (
             f"Multi-Timeframe Matrix: M15 Structural Regime is {mtf_matrix['m15']['regime'].replace('_', ' ')} ({mtf_matrix['m15']['desc']}) with 9/20/50 EMAs stacked. "
@@ -9594,12 +9395,7 @@ if df is not None and not df.empty:
                     st.session_state["session_sl_count"] = 0
                     st.rerun()
 
-            if spec.parent_sector == "BENCHMARK INDEX":
-                macro_gate_desc = "Benchmark Liquidity & Volatility Gate Active"
-            elif is_adani:
-                macro_gate_desc = "NIFTY Infra / Sectoral Beta Gate Active"
-            else:
-                macro_gate_desc = "Brent/MCX Crude O2C Margin Gate Active"
+            macro_gate_desc = "Benchmark Liquidity & Volatility Gate Active"
 
             st.html(f"""
             <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 10px 14px; margin: 10px 0; font-size: 0.74rem; color: #CBD5E1; line-height: 1.5;">
@@ -9613,10 +9409,7 @@ if df is not None and not df.empty:
 
             st.markdown(f"### 🔒 Policy Safeguards & Market Timing ({scrip_symbol})")
             st.success(f"✅ **STRIKE**: Dual ATM Corridor ({scrip_symbol} {lower_atm} & {upper_atm})")
-            if spec.parent_sector == "BENCHMARK INDEX":
-                st.success(f"✅ **EXPIRY**: Current Week Weekly Expiry ({expiry_date_str}, {dte} DTE)")
-            else:
-                st.success(f"✅ **EXPIRY**: Strictly Next Monthly Expiry ({expiry_date_str}, {dte} DTE)")
+            st.success(f"✅ **EXPIRY**: Current Week Weekly Expiry ({expiry_date_str}, {dte} DTE)")
             
             c_early_entry = st.checkbox(
                 f"⚡ Allow Early Entry (09:15 - 09:30 AM Opening Window) — {scrip_symbol}",

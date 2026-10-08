@@ -1,7 +1,7 @@
 """
 Multi-Asset F&O Quantitative Intraday Engine - Standalone 24/7 Alert Daemon
 ========================================================================
-Calibrated for RELIANCE and ADANI ENTERPRISES F&O Intraday Trading.
+Calibrated for NIFTY 50 and BSE SENSEX F&O Intraday Trading.
 Runs independently of Streamlit or any web browser.
 Monitors spot and dual ATM options during market hours (09:15 AM - 03:30 PM IST),
 evaluates the 6-vector quantitative confluence model, tracks active trade state,
@@ -180,8 +180,8 @@ class MultiAssetCandleFetcher:
     _last_fetch_15m: Dict[str, float] = {}
 
     @classmethod
-    def get_5m_candles(cls, spot: float, symbol: str = "RELIANCE", max_age_secs: float = 60.0) -> Dict[str, Any]:
-        sym = (symbol or "RELIANCE").upper().strip()
+    def get_5m_candles(cls, spot: float, symbol: str = "NIFTY", max_age_secs: float = 60.0) -> Dict[str, Any]:
+        sym = (symbol or "NIFTY").upper().strip()
         now = time.time()
         df = None
         is_delayed_yfinance = False
@@ -200,7 +200,7 @@ class MultiAssetCandleFetcher:
             except Exception as e:
                 logger.debug(f"Groww charting candle fetch error ({sym}): {e}")
 
-            # 2. Fast local parquet cache (0ms instant load for all 4 desks)
+            # 2. Fast local parquet cache (0ms instant load for both desks)
             if df is None or df.empty or len(df) < 30:
                 cache_file = os.path.join(BASE_DIR, "data_cache", f"{sym.lower()}_5m_cache.parquet")
                 if os.path.exists(cache_file):
@@ -222,12 +222,6 @@ class MultiAssetCandleFetcher:
                     t = yf.Ticker(ticker_str)
                     df_yf = t.history(period="5d", interval="5m")
                     if df_yf is not None and not df_yf.empty and len(df_yf) >= 30:
-                        last_c = float(df_yf['Close'].iloc[-1])
-                        if sym == "RELIANCE" and last_c > 2000 and spot > 0 and (last_c / spot) > 1.7:
-                            df_yf['Close'] = df_yf['Close'] / 2.0
-                            df_yf['Open'] = df_yf['Open'] / 2.0
-                            df_yf['High'] = df_yf['High'] / 2.0
-                            df_yf['Low'] = df_yf['Low'] / 2.0
                         df = df_yf
                         cls._cache_5m[sym] = df
                         cls._last_fetch_5m[sym] = now
@@ -258,8 +252,8 @@ class MultiAssetCandleFetcher:
         }
 
     @classmethod
-    def get_15m_candles(cls, spot: float, symbol: str = "RELIANCE", max_age_secs: float = 120.0) -> Dict[str, Any]:
-        sym = (symbol or "RELIANCE").upper().strip()
+    def get_15m_candles(cls, spot: float, symbol: str = "NIFTY", max_age_secs: float = 120.0) -> Dict[str, Any]:
+        sym = (symbol or "NIFTY").upper().strip()
         now = time.time()
         df = None
         is_delayed_yfinance = False
@@ -334,9 +328,9 @@ class RelianceQuantAlertDaemon:
         self.interval = max(2.0, interval_seconds)
         self.force_run = force_run
         self.require_candle_close = require_candle_close
-        self.symbols = [s.upper() for s in symbols] if symbols else ["RELIANCE", "ADANIENT", "NIFTY", "SENSEX"]
+        self.symbols = [s.upper() for s in symbols] if symbols else ["NIFTY", "SENSEX"]
         self.quant_engines = {s: UltraHighConvictionRelianceEngine(symbol=s) for s in self.symbols}
-        self.quant_engine = self.quant_engines.get("RELIANCE", next(iter(self.quant_engines.values())))
+        self.quant_engine = self.quant_engines.get("NIFTY", next(iter(self.quant_engines.values())))
         self.groww_feed = GrowwMarketFeed.get_instance()
         self.running = True
         self.last_spot: Dict[str, float] = {s: 0.0 for s in self.symbols}
@@ -425,9 +419,9 @@ class RelianceQuantAlertDaemon:
             except Exception as e:
                 logger.debug(f"Periodic git sync error: {e}")
 
-    def run_single_symbol_tick(self, symbol: str = "RELIANCE"):
+    def run_single_symbol_tick(self, symbol: str = "NIFTY"):
         """Executes a single market scan, signal check, and alert evaluation for the specified symbol."""
-        sym = (symbol or "RELIANCE").upper().strip()
+        sym = (symbol or "NIFTY").upper().strip()
         now_dt = datetime.now(IST)
         today_date = now_dt.strftime("%Y-%m-%d")
         time_str = now_dt.strftime("%I:%M:%S %p IST")
@@ -622,14 +616,14 @@ class RelianceQuantAlertDaemon:
 
         # Expiry String
         expiry_info = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=sym)
-        expiry_date = expiry_info.get("selected_expiry", "06-OCT-2026" if sym == "NIFTY" else ("08-OCT-2026" if sym == "SENSEX" else "27-OCT-2026"))
+        expiry_date = expiry_info.get("selected_expiry", "06-OCT-2026" if sym == "NIFTY" else "08-OCT-2026")
 
         # ----------------------------------------------------------------------
         # STATE A: IN-TRADE (Monitoring Target, SL, and Trailing SL)
         # ----------------------------------------------------------------------
         if current_state == SequentialTradeEngine.STATE_IN_TRADE and active_trade:
             trade_num = active_trade.get("trade_num", 1)
-            inst_sym = active_trade.get("instrument", active_trade.get("contract", "RELIANCE"))
+            inst_sym = active_trade.get("instrument", active_trade.get("contract", "NIFTY"))
             act_entry = float(active_trade.get("actual_entry", active_trade.get("planned_entry", spec.default_call_price)))
             target_p = float(active_trade.get("target", act_entry + spec.target_pts))
             initial_sl = float(active_trade.get("sl", max(0.05, act_entry - spec.sl_pts)))
@@ -698,9 +692,6 @@ class RelianceQuantAlertDaemon:
                 }
                 with open(os.path.join(BASE_DIR, f"active_trade_state_{sym}.json"), "w", encoding="utf-8") as f_st:
                     json.dump(active_state_data, f_st, indent=2)
-                if sym == "RELIANCE":
-                    with open(os.path.join(BASE_DIR, "active_trade_state.json"), "w", encoding="utf-8") as f_st:
-                        json.dump(active_state_data, f_st, indent=2)
             except Exception as e:
                 logger.debug(f"Error persisting active state: {e}")
 
@@ -1122,8 +1113,6 @@ class RelianceQuantAlertDaemon:
                 s_state = SequentialTradeEngine.get_state(symbol=s)
                 s_active = (s_state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE)
                 st_files = [os.path.join(BASE_DIR, f"active_trade_state_{s}.json")]
-                if s == "RELIANCE":
-                    st_files.append(os.path.join(BASE_DIR, "active_trade_state.json"))
                 if not s_active:
                     for sf in st_files:
                         if os.path.exists(sf):
@@ -1190,7 +1179,7 @@ class RelianceQuantAlertDaemon:
                     time.sleep(self.interval)
 
                 except KeyboardInterrupt:
-                    print("\n🛑 Shutting down Reliance Quant Alert Daemon gracefully...")
+                    print("\n🛑 Shutting down Quant Alert Daemon gracefully...")
                     self.running = False
                     break
                 except Exception as e:
@@ -1215,7 +1204,7 @@ QuantAlertDaemon = RelianceQuantAlertDaemon
 # CLI ENTRY POINT
 # ==============================================================================
 def main():
-    parser = argparse.ArgumentParser(description="Reliance Quantitative Engine Alert Daemon")
+    parser = argparse.ArgumentParser(description="NIFTY & SENSEX Quantitative Engine Alert Daemon")
     parser.add_argument("--symbol", type=str, default=None, help="Specific symbol to monitor (default: all whitelisted symbols)")
     parser.add_argument("--now", action="store_true", help="Force scan immediately regardless of market hours / weekends")
     parser.add_argument("--interval", type=float, default=5.0, help="Polling interval in seconds (default: 5.0)")

@@ -134,7 +134,7 @@ class SignalTracker:
     @classmethod
     def save_signal(cls, signal: Dict[str, Any]):
         date_str = signal.get("date") or datetime.now(IST).strftime("%Y-%m-%d")
-        symbol = resolve_symbol(signal.get("symbol") or "RELIANCE")
+        symbol = resolve_symbol(signal.get("symbol") or "NIFTY")
         signal["symbol"] = symbol
         key = f"{date_str}_{symbol}"
         signals = cls.get_all_signals()
@@ -301,7 +301,7 @@ class TradeJournalManager:
             sym_canon = resolve_symbol(symbol)
             if starting_cash is None or starting_cash <= 0:
                 starting_cash = get_asset_spec(sym_canon).total_capital
-            sym_clean = "ADANI" if sym_canon == "ADANIENT" else sym_canon
+            sym_clean = sym_canon
             matching = [
                 e for e in raw_entries
                 if sym_clean in str(e.get("trading_symbol", "")).upper()
@@ -441,7 +441,7 @@ class TradeJournalManager:
         Strict rule: ONLY trades executed in Groww broker account are added / updated in the ledger!
         """
         sym_canon = resolve_symbol(symbol_filter)
-        sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
+        sym_kw = sym_canon
         if starting_cash is None or starting_cash <= 0:
             starting_cash = get_asset_spec(sym_canon).total_capital
 
@@ -662,7 +662,7 @@ class TradeJournalManager:
                 if res:
                     entry_sym = res
                     break
-        entry_sym = resolve_symbol(entry_sym or "RELIANCE")
+        entry_sym = resolve_symbol(entry_sym or "NIFTY")
         spec = get_asset_spec(symbol=entry_sym)
         
         starting_capital = starting_cash if (starting_cash is not None and starting_cash > 0) else spec.total_capital
@@ -741,7 +741,7 @@ class ShadowMonitoringEngine:
 
         if symbol:
             sym_canon = resolve_symbol(symbol)
-            sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
+            sym_kw = sym_canon
             return [
                 r for r in records
                 if sym_kw in str(r.get("symbol", "")).upper() or sym_kw in str(r.get("instrument", "")).upper()
@@ -1303,7 +1303,7 @@ class SequentialTradeEngine:
     Rule 3: Active Monitoring (Track active trade until Target or Stop-Loss is hit).
     Rule 4: Running Trade Log Table (Strict column layout).
     Rule 5: Wait for Closure (Only plan next trade after current trade hits Target/SL and is logged).
-    Rule 6: Strictly Whitelisted High-Liquidity Contracts Only (RELIANCE / ADANIENT).
+    Rule 6: Strictly Whitelisted Benchmark Index Desks Only (NIFTY / SENSEX).
     """
 
     STATE_IDLE = "IDLE / SCANNING"
@@ -1314,8 +1314,6 @@ class SequentialTradeEngine:
     @classmethod
     def get_state_file_path(cls, symbol: Optional[str] = None) -> str:
         sym = resolve_symbol(symbol=symbol)
-        if sym == "RELIANCE":
-            return SEQUENTIAL_STATE_FILE
         return os.path.join(BASE_DIR, f"sequential_trade_state_{sym}.json")
 
     @classmethod
@@ -2480,7 +2478,7 @@ class SequentialTradeEngine:
         """
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         sym_canon = resolve_symbol(symbol)
-        sym_kw = "ADANI" if sym_canon == "ADANIENT" else sym_canon
+        sym_kw = sym_canon
         journal = TradeJournalManager.load_journal(symbol=sym_canon)
 
         # Strictly trades for this symbol for today

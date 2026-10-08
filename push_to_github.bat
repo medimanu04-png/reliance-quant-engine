@@ -1,8 +1,8 @@
 @echo off
 cd /d "%~dp0"
-title Reliance Quant Engine — Git Sync (Local Master)
+title Nifty & Sensex Quant Engine — Git Sync (Local Master)
 echo ===========================================================================
-echo   Syncing Reliance Quant Engine with GitHub [Local = Master Copy]
+echo   Syncing Nifty & Sensex Quant Engine with GitHub [Local = Master Copy]
 echo ===========================================================================
 echo.
 

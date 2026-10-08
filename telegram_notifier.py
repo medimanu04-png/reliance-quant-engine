@@ -1,5 +1,5 @@
 """
-Telegram Trade Alert Module for RELIANCE Quantitative Intraday Engine
+Telegram Trade Alert Module for NIFTY & SENSEX Quantitative Intraday Engine
 ======================================================================
 Provides zero-delay instant push notifications to Telegram when
 trade entry triggers are confirmed, targets are hit, or SLs are reached.
@@ -502,7 +502,7 @@ class TelegramNotifier:
         }
 
     @classmethod
-    def send_test_alert(cls, bot_token: str, chat_ids_input: Any, symbol: str = "RELIANCE") -> Tuple[bool, str]:
+    def send_test_alert(cls, bot_token: str, chat_ids_input: Any, symbol: str = "NIFTY") -> Tuple[bool, str]:
         """Sends a clean, beautiful verification test alert to confirm bot configuration across all recipients."""
         chat_ids = cls.parse_chat_ids(chat_ids_input)
         now_str = datetime.now(IST).strftime("%I:%M %p IST • %d-%b-%Y")
@@ -578,7 +578,7 @@ class TelegramNotifier:
         return msg
 
     @classmethod
-    def format_daily_circuit_breaker_alert(cls, reason: str, spot: float = 0.0, symbol: str = "RELIANCE") -> str:
+    def format_daily_circuit_breaker_alert(cls, reason: str, spot: float = 0.0, symbol: str = "NIFTY") -> str:
         """Formats a clean alert when the 1-loss daily circuit breaker activates."""
         spot = cls._resolve_live_spot(spot, symbol=symbol)
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
@@ -921,7 +921,7 @@ class TelegramNotifier:
         chop_val: float = 64.8,
         reason: str = "Fractal Choppiness Index (CHOP 64.8 > 61.8 Threshold)",
         corridor_str: str = "",
-        symbol: str = "RELIANCE",
+        symbol: str = "NIFTY",
         **kwargs
     ) -> str:
         """Formats a clean CHOPPINESS STAND DOWN warning alert for Telegram."""
@@ -945,7 +945,7 @@ class TelegramNotifier:
         capital_preserved: float = 73643.72,
         spot: float = 0.0,
         account_name: str = "Teja",
-        symbol: str = "RELIANCE",
+        symbol: str = "NIFTY",
         **kwargs
     ) -> str:
         """Formats a clean MAX DAILY DRAWDOWN CIRCUIT BREAKER LOCK alert for Telegram."""

@@ -197,7 +197,7 @@ class GitSyncManager:
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔄 Reliance Quant Engine — Git Sync (Local Master)")
+    print("🔄 Nifty & Sensex Quant Engine — Git Sync (Local Master)")
     print("=" * 60)
     res = GitSyncManager.sync_local_to_git()
     print(f"Status  : {'✅ SUCCESS' if res['success'] else '❌ FAILED'}")

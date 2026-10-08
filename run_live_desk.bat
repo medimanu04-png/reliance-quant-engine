@@ -2,7 +2,7 @@
 title Multi-Asset Live Quantitative Trading Desk
 cls
 echo =========================================================================
-echo    RELIANCE & ADANI QUANTITATIVE F&O LIVE DESK (AUTO-APPENDING)
+echo    NIFTY & SENSEX QUANTITATIVE F&O LIVE DESK (AUTO-APPENDING)
 echo =========================================================================
 echo.
 cd /d "%~dp0"

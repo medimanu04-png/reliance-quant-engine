@@ -39,28 +39,31 @@ BACKTEST_RESULTS_FILE = os.path.join(BASE_DIR, "backtest_results_summary.json")
 
 
 class RelianceQuantBacktester:
-    def __init__(self, period: str = "60d"):
+    def __init__(self, symbol: str = "NIFTY", period: str = "60d"):
+        from asset_config import get_asset_spec
+        self.symbol = symbol.upper()
+        self.spec = get_asset_spec(self.symbol)
         self.period = period
-        self.capital = 73643.72
-        self.lot_size = 500
-        self.num_lots = 2
-        self.total_qty = 1000
-        self.target_option_pts = 7.0
-        self.sl_option_pts = 5.0
+        self.capital = self.spec.total_capital
+        self.lot_size = self.spec.lot_size
+        self.num_lots = self.spec.default_lots
+        self.total_qty = self.lot_size * self.num_lots
+        self.target_option_pts = self.spec.target_pts
+        self.sl_option_pts = self.spec.sl_pts
         self.delta_approx = 0.52
-        self.spot_target_pts = round(self.target_option_pts / self.delta_approx, 2)  # ~13.5 pts
-        self.spot_sl_pts = round(self.sl_option_pts / self.delta_approx, 2)          # ~9.6 pts
+        self.spot_target_pts = round(self.target_option_pts / self.delta_approx, 2)
+        self.spot_sl_pts = round(self.sl_option_pts / self.delta_approx, 2)
 
     def run_backtest(self) -> Dict[str, Any]:
         import yfinance as yf
         from fo_quant_engine import UltraHighConvictionRelianceEngine, MultiIndicatorMath
 
-        engine = UltraHighConvictionRelianceEngine()
+        engine = UltraHighConvictionRelianceEngine(symbol=self.symbol)
 
         # Gap 3: Data Caching Layer (Allows building 6-12 month historical buffer over time)
         cache_dir = os.path.join(BASE_DIR, "data_cache")
         os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, "reliance_5m_cache.parquet")
+        cache_file = os.path.join(cache_dir, f"{self.symbol.lower()}_5m_cache.parquet")
 
         df_raw = pd.DataFrame()
         cached_df = pd.DataFrame()
@@ -70,9 +73,9 @@ class RelianceQuantBacktester:
             except Exception:
                 pass
 
-        print("Downloading historical 5m RELIANCE.NS data...")
+        print(f"Downloading historical 5m {self.spec.yf_symbol} data...")
         try:
-            df_new = yf.download("RELIANCE.NS", period=self.period, interval="5m", progress=False)
+            df_new = yf.download(self.spec.yf_symbol, period=self.period, interval="5m", progress=False)
             if isinstance(df_new.columns, pd.MultiIndex):
                 df_new.columns = df_new.columns.get_level_values(0)
             if not df_new.empty:
@@ -536,7 +539,7 @@ class RelianceQuantBacktester:
                 }
 
         results = {
-            "symbol": "RELIANCE.NS",
+            "symbol": self.spec.yf_symbol,
             "period": self.period,
             "total_trading_days": len(unique_dates),
             "total_trades_executed": total_trades,
