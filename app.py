@@ -1645,13 +1645,18 @@ if active_route == "":
 
     # Theta Decay Expiry Shield: Weekly Asset Lock Schedule
     # Monday & Tuesday: SENSEX ONLY (6 Lots) | Wednesday, Thursday, Friday: NIFTY ONLY (4 Lots)
-    from asset_config import get_daily_asset_schedule
+    # Theta Decay Expiry Shield: Weekly Asset Lock Schedule & Post-1:00 PM Gamma Exception
+    # Monday & Tuesday: SENSEX ONLY (6 Lots) | Wednesday, Thursday, Friday: NIFTY ONLY (4 Lots)
+    # Exception: Post-1:00 PM on Tuesday (Nifty Expiry) & Thursday (Sensex Expiry) allows 1 Gamma Blast Call
+    from asset_config import get_daily_asset_schedule, is_asset_tradable_now
     hp_sched = get_daily_asset_schedule(datetime.now(IST))
     hp_active_sym = hp_sched["active_symbol"]
     hp_locked_sym = hp_sched["locked_symbol"]
     hp_weekday = hp_sched["weekday_name"]
-    is_nifty_tradable_today = (hp_active_sym == "NIFTY")
-    is_sensex_tradable_today = (hp_active_sym == "SENSEX")
+    nifty_tradable_info = is_asset_tradable_now("NIFTY", datetime.now(IST))
+    sensex_tradable_info = is_asset_tradable_now("SENSEX", datetime.now(IST))
+    is_nifty_tradable_today = nifty_tradable_info["can_trade"]
+    is_sensex_tradable_today = sensex_tradable_info["can_trade"]
 
     st.html(f"""
     <div style="background: linear-gradient(90deg, rgba(30, 27, 75, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid rgba(129, 140, 248, 0.5); border-radius: 10px; padding: 12px 18px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(0,0,0,0.35);">
@@ -1663,16 +1668,16 @@ if active_route == "":
                         THETA DECAY EXPIRY SHIELD: <span style="color: #818CF8;">{hp_weekday.upper()} MANDATE</span>
                     </span>
                     <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
-                        To eliminate near-expiry theta bleed: <b style="color: #A855F7;">Mon & Tue = SENSEX ONLY (6 Lots)</b> &bull; <b style="color: #10B981;">Wed, Thu & Fri = NIFTY ONLY (4 Lots)</b>
+                        Standard: <b style="color: #A855F7;">Mon & Tue = SENSEX ONLY (6 Lots)</b> &bull; <b style="color: #10B981;">Wed, Thu & Fri = NIFTY ONLY (4 Lots)</b> &bull; <span style="color: #FCD34D;">Post-1:00 PM Expiry Gamma Blast Exception (1 Call Cap)</span>
                     </div>
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="background: {'rgba(16, 185, 129, 0.20)' if is_nifty_tradable_today else 'rgba(100, 116, 139, 0.20)'}; color: {'#34D399' if is_nifty_tradable_today else '#94A3B8'}; border: 1px solid {'rgba(16, 185, 129, 0.40)' if is_nifty_tradable_today else 'rgba(100, 116, 139, 0.35)'}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
-                    {'🟢 NIFTY ACTIVE (4 LOTS)' if is_nifty_tradable_today else '🔒 NIFTY LOCKED TODAY'}
+                <span style="background: {'rgba(16, 185, 129, 0.20)' if is_nifty_tradable_today else ('rgba(245, 158, 11, 0.20)' if nifty_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.20)')}; color: {'#34D399' if is_nifty_tradable_today else ('#FDE68A' if nifty_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '#94A3B8')}; border: 1px solid {'rgba(16, 185, 129, 0.40)' if is_nifty_tradable_today else ('rgba(245, 158, 11, 0.40)' if nifty_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.35)')}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
+                    {nifty_tradable_info['badge_label']}
                 </span>
-                <span style="background: {'rgba(168, 85, 247, 0.20)' if is_sensex_tradable_today else 'rgba(100, 116, 139, 0.20)'}; color: {'#C084FC' if is_sensex_tradable_today else '#94A3B8'}; border: 1px solid {'rgba(168, 85, 247, 0.40)' if is_sensex_tradable_today else 'rgba(100, 116, 139, 0.35)'}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
-                    {'🟢 SENSEX ACTIVE (6 LOTS)' if is_sensex_tradable_today else '🔒 SENSEX LOCKED TODAY'}
+                <span style="background: {'rgba(168, 85, 247, 0.20)' if is_sensex_tradable_today else ('rgba(245, 158, 11, 0.20)' if sensex_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.20)')}; color: {'#C084FC' if is_sensex_tradable_today else ('#FDE68A' if sensex_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '#94A3B8')}; border: 1px solid {'rgba(168, 85, 247, 0.40)' if is_sensex_tradable_today else ('rgba(245, 158, 11, 0.40)' if sensex_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.35)')}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
+                    {sensex_tradable_info['badge_label']}
                 </span>
             </div>
         </div>
@@ -1692,12 +1697,8 @@ if active_route == "":
     ltp_sensex_hp = float(spot_sensex_hp.get("spot_ltp", spec_sensex_hp.default_spot))
 
     # NIFTY Desk Tile
-    nifty_tile_border = "rgba(16, 185, 129, 0.55)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.35)"
-    nifty_status_pill = (
-        '<span style="background: rgba(16, 185, 129, 0.25); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.5); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🟢 ACTIVE TODAY (4 LOTS)</span>'
-        if is_nifty_tradable_today else
-        '<span style="background: rgba(100, 116, 139, 0.20); color: #94A3B8; border: 1px solid rgba(100, 116, 139, 0.4); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🔒 LOCKED (THETA SHIELD)</span>'
-    )
+    nifty_tile_border = "rgba(16, 185, 129, 0.55)" if is_nifty_tradable_today else ("rgba(245, 158, 11, 0.45)" if nifty_tradable_info.get("status") == "EXPIRY_LOCKED_UNTIL_1PM" else "rgba(100, 116, 139, 0.35)")
+    nifty_status_pill = f'<span style="background: {"rgba(16, 185, 129, 0.25)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.20)"}; color: {"#34D399" if is_nifty_tradable_today else "#94A3B8"}; border: 1px solid {"rgba(16, 185, 129, 0.5)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.4)"}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{nifty_tradable_info["badge_label"]}</span>'
 
     with col_idx1:
         st.html(f"""
@@ -1738,12 +1739,8 @@ if active_route == "":
         """)
 
     # SENSEX Desk Tile
-    sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.35)"
-    sensex_status_pill = (
-        '<span style="background: rgba(168, 85, 247, 0.25); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.5); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🟢 ACTIVE TODAY (6 LOTS)</span>'
-        if is_sensex_tradable_today else
-        '<span style="background: rgba(100, 116, 139, 0.20); color: #94A3B8; border: 1px solid rgba(100, 116, 139, 0.4); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🔒 LOCKED (THETA SHIELD)</span>'
-    )
+    sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else ("rgba(245, 158, 11, 0.45)" if sensex_tradable_info.get("status") == "EXPIRY_LOCKED_UNTIL_1PM" else "rgba(100, 116, 139, 0.35)")
+    sensex_status_pill = f'<span style="background: {"rgba(168, 85, 247, 0.25)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.20)"}; color: {"#C084FC" if is_sensex_tradable_today else "#94A3B8"}; border: 1px solid {"rgba(168, 85, 247, 0.5)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.4)"}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{sensex_tradable_info["badge_label"]}</span>'
 
     with col_idx2:
         st.html(f"""
@@ -2042,10 +2039,14 @@ scrip_sl_pts = spec.sl_pts
 scrip_be_pts = spec.be_pts
 scrip_min_gate = spec.min_confluence_gate
 
-# Theta Decay Expiry Protection Schedule
-from asset_config import get_daily_asset_schedule
+# Theta Decay Expiry Protection Schedule & Post-1:00 PM Gamma Exception
+from asset_config import get_daily_asset_schedule, is_asset_tradable_now
 desk_sched = get_daily_asset_schedule(datetime.now(IST))
-is_current_desk_locked = (desk_sched["locked_symbol"] == scrip_symbol)
+seq_state_init = SequentialTradeEngine.get_state(symbol=scrip_symbol)
+exception_call_taken = (int(seq_state_init.get("today_trade_count", 0)) >= 1)
+tradable_decision = is_asset_tradable_now(scrip_symbol, datetime.now(IST), exception_call_used=exception_call_taken)
+is_current_desk_locked = not tradable_decision["can_trade"]
+is_gamma_exception_desk = bool(tradable_decision.get("is_gamma_exception", False) and tradable_decision["can_trade"])
 
 # Dynamically resolve active expiry mandate for currently active ticker (Weekly for NIFTY/SENSEX, Monthly for Equities)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=scrip_symbol)
@@ -2082,18 +2083,33 @@ st.session_state["custom_trigger_override"] = float(st.session_state.get(f"custo
 st.session_state["strike_selection_pref"] = st.session_state.get(f"strike_selection_pref_{scrip_symbol}", "Auto-Detect Best Strike")
 
 # Sidebar Status & Theta Shield Lock Badge
-if is_current_desk_locked:
+if is_gamma_exception_desk:
     st.sidebar.html(f"""
-    <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 1.5px solid #818CF8; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
+    <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.90) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid #10B981; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);">
         <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.3rem;">🔒</span>
+            <span style="font-size: 1.3rem;">⚡</span>
             <div>
-                <div style="font-size: 0.88rem; font-weight: 800; color: #E0E7FF;">THETA SHIELD LOCKED</div>
-                <div style="font-size: 0.68rem; color: #C7D2FE; font-weight: 700;">{desk_sched['weekday_name'].upper()}: {desk_sched['active_symbol']} ONLY</div>
+                <div style="font-size: 0.88rem; font-weight: 800; color: #FFFFFF;">GAMMA RADAR ACTIVE</div>
+                <div style="font-size: 0.68rem; color: #6EE7B7; font-weight: 700;">1/1 EXCEPTION CALL PERMITTED</div>
             </div>
         </div>
         <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); line-height: 1.4;">
-            {scrip_symbol} is locked today to avoid near-expiry theta bleed. Trade <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b> today ({desk_sched['schedule_rule']}).
+            Post-1:00 PM Expiry Window open on {scrip_symbol}. Exactly 1 high-probability Gamma Blast trade call allowed.
+        </div>
+    </div>
+    """)
+elif is_current_desk_locked:
+    st.sidebar.html(f"""
+    <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 1.5px solid #818CF8; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3rem;">{'⏳' if tradable_decision.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '🔒'}</span>
+            <div>
+                <div style="font-size: 0.88rem; font-weight: 800; color: #E0E7FF;">{tradable_decision['badge_label']}</div>
+                <div style="font-size: 0.68rem; color: #C7D2FE; font-weight: 700;">{desk_sched['weekday_name'].upper()}: {desk_sched['active_symbol']} PRIMARY</div>
+            </div>
+        </div>
+        <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); line-height: 1.4;">
+            {tradable_decision['reason']}
         </div>
     </div>
     """)
@@ -6629,19 +6645,41 @@ if df is not None and not df.empty:
         # Reliance Live Spot Hero
         render_reliance_spot_hero()
 
-        # Theta Decay Expiry Protection Alert Banner
-        if is_current_desk_locked:
+        # Theta Decay Expiry Protection Alert Banner / Gamma Exception Banner
+        if is_gamma_exception_desk:
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.90) 0%, rgba(15, 23, 42, 0.95) 100%); border: 2px solid #10B981; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 24px rgba(16, 185, 129, 0.30);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 1.6rem;">⚡</span>
+                        <div>
+                            <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
+                                POST-1:00 PM EXPIRY GAMMA RADAR ACTIVE: {scrip_symbol}
+                            </div>
+                            <div style="font-size: 0.78rem; color: #6EE7B7; margin-top: 3px;">
+                                Weekly Expiry Exception: <b>1 Single High-Conviction Gamma Blast Setup Permitted</b> if institutional breakout criteria clear the gate. Sizing: {num_lots} Lots strictly.
+                            </div>
+                        </div>
+                    </div>
+                    <span style="background: rgba(16, 185, 129, 0.25); color: #34D399; font-weight: 800; font-size: 0.82rem; padding: 6px 14px; border-radius: 6px; border: 1px solid #10B981;">
+                        ⚡ 1/1 CALL CAP ACTIVE
+                    </span>
+                </div>
+            </div>
+            """)
+        elif is_current_desk_locked:
+            lock_header_title = "LOCKED UNTIL 01:00 PM (EXPIRY WATCH)" if tradable_decision.get("status") == "EXPIRY_LOCKED_UNTIL_1PM" else ("1/1 EXPIRY CALL COMPLETED TODAY" if tradable_decision.get("status") == "GAMMA_EXCEPTION_COMPLETED" else f"{scrip_symbol} LOCKED TODAY ({desk_sched['weekday_name'].upper()})")
             st.html(f"""
             <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 2px solid #818CF8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(99, 102, 241, 0.25);">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <div style="display: flex; align-items: center; gap: 12px;">
-                        <span style="font-size: 1.6rem;">🛡️</span>
+                        <span style="font-size: 1.6rem;">{'⏳' if tradable_decision.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '🛡️'}</span>
                         <div>
                             <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
-                                THETA DECAY EXPIRY SHIELD: {scrip_symbol} LOCKED TODAY ({desk_sched['weekday_name'].upper()})
+                                THETA DECAY SHIELD: {lock_header_title}
                             </div>
                             <div style="font-size: 0.78rem; color: #C7D2FE; margin-top: 3px;">
-                                Mandate: Mon & Tue = <b>SENSEX ONLY (6 Lots)</b> &bull; Wed, Thu & Fri = <b>NIFTY ONLY (4 Lots)</b>. Zero trades allowed on {scrip_symbol} today.
+                                {tradable_decision['reason']} Primary active desk today is <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b>.
                             </div>
                         </div>
                     </div>
@@ -7233,28 +7271,73 @@ if df is not None and not df.empty:
 
                 # Dynamic Institutional Classification of Exact Stand Down Cause
                 if is_current_desk_locked:
-                    stand_down_status_title = f"🛡️ TRADE STATUS: {scrip_symbol} LOCKED TODAY &bull; THETA DECAY SHIELD"
-                    stand_down_badge = f"🛡️ THETA EXPIRY SHIELD: {scrip_symbol} LOCKED ON {desk_sched.get('weekday_name', '').upper()}"
-                    stand_down_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.35) 0%, rgba(79, 70, 229, 0.45) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.70); box-shadow: 0 0 12px rgba(99, 102, 241, 0.30);"
-                    stand_down_sub = f"Expiry Proximity Mandate: Trade only {desk_sched['active_symbol']} today ({desk_sched['schedule_rule']}). Zero trades permitted on {scrip_symbol} to prevent fast theta decay."
-                    gate_card_bg = "linear-gradient(135deg, rgba(67, 56, 202, 0.35) 0%, rgba(30, 27, 75, 0.60) 100%)"
-                    gate_card_border = "1.5px solid rgba(129, 140, 248, 0.50)"
-                    gate_card_title = "THETA SHIELD MANDATE"
-                    gate_card_val = f"🛡️ {desk_sched['active_symbol']} Active"
-                    gate_card_sub = f"🛑 {scrip_symbol} Locked Today"
+                    lock_status_code = tradable_decision.get("status", "STRICTLY_LOCKED")
                     other_desk_url = f"./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}"
-                    why_stand_down_html = f"""
-                    <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> To protect options trading capital against aggressive theta decay, trading calls are restricted strictly by weekday expiry:<br>
-                    • <b>Monday & Tuesday:</b> <b style="color: #A855F7;">BSE SENSEX ONLY (6 Lots)</b> &bull; NIFTY 50 Locked.<br>
-                    • <b>Wednesday, Thursday & Friday:</b> <b style="color: #10B981;">NIFTY 50 ONLY (4 Lots)</b> &bull; BSE SENSEX Locked.<br>
-                    <div style="margin-top: 8px;">
-                        👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to view today's active signals.
-                    </div>
-                    """
-                    dot_color = "#818CF8"
-                    cap_badge_title = "🛡️ THETA EXPIRY SHIELD ACTIVE"
-                    cap_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.20) 0%, rgba(79, 70, 229, 0.30) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.50);"
-                    cap_sub_desc = f"🛡️ Capital preserved &bull; Switch to {desk_sched['active_symbol']}"
+                    
+                    if lock_status_code == "EXPIRY_LOCKED_UNTIL_1PM":
+                        stand_down_status_title = f"⏳ TRADE STATUS: {scrip_symbol} LOCKED UNTIL 01:00 PM &bull; EXPIRY GAMMA WATCH"
+                        stand_down_badge = f"⏳ EXPIRY GAMMA RADAR: {scrip_symbol} LOCKED UNTIL 01:00 PM IST"
+                        stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.70); box-shadow: 0 0 12px rgba(245, 158, 11, 0.30);"
+                        stand_down_sub = f"Weekly Expiry Rule: Fast morning theta decay protected. Setup unlocks after 01:00 PM IST if a high-conviction Gamma Blast breakout presents itself (1 call cap). Active desk right now: {desk_sched['active_symbol']}."
+                        gate_card_bg = "linear-gradient(135deg, rgba(180, 83, 9, 0.35) 0%, rgba(69, 26, 3, 0.60) 100%)"
+                        gate_card_border = "1.5px solid rgba(251, 191, 36, 0.50)"
+                        gate_card_title = "EXPIRY GAMMA WATCH"
+                        gate_card_val = "⏳ Unlocks @ 01:00 PM"
+                        gate_card_sub = "⚡ 1/1 Gamma Blast Setup Watch"
+                        why_stand_down_html = f"""
+                        <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked Until 01:00 PM?</b> Today is {scrip_symbol} weekly expiry! Trading in the morning incurs severe theta decay without clear institutional directional bias.<br>
+                        • <b>Morning Window (09:15 AM – 01:00 PM):</b> <b style="color: #F59E0B;">LOCKED</b> to prevent theta bleed. Active desk: <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b>.<br>
+                        • <b>Afternoon Window (01:00 PM – 03:15 PM):</b> Unlocks for <b>1 single High-Conviction Gamma Blast Call</b> if institutional breakout criteria clear the gate.<br>
+                        <div style="margin-top: 8px;">
+                            👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to trade today's primary active asset.
+                        </div>
+                        """
+                        dot_color = "#F59E0B"
+                        cap_badge_title = "⏳ EXPIRY RADAR (UNLOCKS 1 PM)"
+                        cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(217, 119, 6, 0.30) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.50);"
+                        cap_sub_desc = f"⏳ Watch unlocks post-1 PM &bull; Trade {desk_sched['active_symbol']} now"
+                    elif lock_status_code == "GAMMA_EXCEPTION_COMPLETED":
+                        stand_down_status_title = f"🛑 TRADE STATUS: 1/1 EXPIRY GAMMA CALL COMPLETED TODAY &bull; LOCKED"
+                        stand_down_badge = f"🛑 1/1 EXPIRY CALL COMPLETED TODAY: {scrip_symbol}"
+                        stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+                        stand_down_sub = f"Strict 1/1 Expiry Exception Mandate: The single permitted post-1 PM expiry trade call has already been executed for today. Desk is strictly re-locked to protect profits."
+                        gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                        gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                        gate_card_title = "EXPIRY CAP REACHED"
+                        gate_card_val = "🛑 1/1 Call Executed"
+                        gate_card_sub = "Re-locked to Protect Profits"
+                        why_stand_down_html = f"""
+                        <b style="color: #FFFFFF;">1/1 Expiry Exception Call Limit Cleared:</b> The single permitted post-1 PM expiry call for {scrip_symbol} was triggered and completed. To prevent over-trading in zero-DTE late session chop, no further calls will be issued today.
+                        <div style="margin-top: 8px;">
+                            👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to trade today's primary active asset.
+                        </div>
+                        """
+                        dot_color = "#EF4444"
+                        cap_badge_title = "🛑 1/1 EXPIRY CALL COMPLETED"
+                        cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.20) 0%, rgba(185, 28, 28, 0.30) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.50);"
+                        cap_sub_desc = f"🛑 1/1 Exception done &bull; Capital protected"
+                    else:
+                        stand_down_status_title = f"🛡️ TRADE STATUS: {scrip_symbol} LOCKED TODAY &bull; THETA DECAY SHIELD"
+                        stand_down_badge = f"🛡️ THETA EXPIRY SHIELD: {scrip_symbol} LOCKED ON {desk_sched.get('weekday_name', '').upper()}"
+                        stand_down_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.35) 0%, rgba(79, 70, 229, 0.45) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.70); box-shadow: 0 0 12px rgba(99, 102, 241, 0.30);"
+                        stand_down_sub = f"Expiry Proximity Mandate: Trade only {desk_sched['active_symbol']} today ({desk_sched['schedule_rule']}). Zero trades permitted on {scrip_symbol} to prevent fast theta decay."
+                        gate_card_bg = "linear-gradient(135deg, rgba(67, 56, 202, 0.35) 0%, rgba(30, 27, 75, 0.60) 100%)"
+                        gate_card_border = "1.5px solid rgba(129, 140, 248, 0.50)"
+                        gate_card_title = "THETA SHIELD MANDATE"
+                        gate_card_val = f"🛡️ {desk_sched['active_symbol']} Active"
+                        gate_card_sub = f"🛑 {scrip_symbol} Locked Today"
+                        why_stand_down_html = f"""
+                        <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> To protect options trading capital against aggressive theta decay, trading calls are restricted strictly by weekday expiry:<br>
+                        • <b>Monday & Tuesday:</b> <b style="color: #A855F7;">BSE SENSEX ONLY (6 Lots)</b> &bull; NIFTY 50 Locked.<br>
+                        • <b>Wednesday, Thursday & Friday:</b> <b style="color: #10B981;">NIFTY 50 ONLY (4 Lots)</b> &bull; BSE SENSEX Locked.<br>
+                        <div style="margin-top: 8px;">
+                            👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to view today's active signals.
+                        </div>
+                        """
+                        dot_color = "#818CF8"
+                        cap_badge_title = "🛡️ THETA EXPIRY SHIELD ACTIVE"
+                        cap_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.20) 0%, rgba(79, 70, 229, 0.30) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.50);"
+                        cap_sub_desc = f"🛡️ Capital preserved &bull; Switch to {desk_sched['active_symbol']}"
                 elif is_choppy_regime:
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
                     stand_down_badge = f"🛑 CONSOLIDATION CHOP FILTER ACTIVE (CHOP: {chop_val:.1f} &gt; 61.8)"

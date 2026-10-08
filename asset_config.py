@@ -351,20 +351,41 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     if now_dt is None:
         now_dt = datetime.now(IST)
     weekday = now_dt.weekday()  # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+    weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_name = weekday_names[weekday] if 0 <= weekday < 7 else "Weekday"
 
-    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    day_name = day_names[weekday]
+    from datetime import time
+    t_curr = now_dt.time() if hasattr(now_dt, "time") else time(10, 0)
+
+    # Expiry Exception Mapping:
+    # - Tuesday (weekday == 1): NIFTY weekly expiry -> Gamma exception symbol = "NIFTY"
+    # - Thursday (weekday == 3): SENSEX weekly expiry -> Gamma exception symbol = "SENSEX"
+    gamma_exception_symbol = None
+    if weekday == 1:
+        gamma_exception_symbol = "NIFTY"
+    elif weekday == 3:
+        gamma_exception_symbol = "SENSEX"
+
+    # Post-1:00 PM IST Gamma Blast Window (13:00 to 15:15 IST)
+    gamma_window_start = time(13, 0)
+    gamma_window_end = time(15, 15)
+    is_post_1pm_window = (gamma_window_start <= t_curr <= gamma_window_end)
+    is_gamma_exception_active = (gamma_exception_symbol is not None and is_post_1pm_window)
 
     if weekday in (0, 1):
         active_symbol = "SENSEX"
         locked_symbol = "NIFTY"
-        schedule_label = f"{day_name} Expiry-Protection Mandate: BSE SENSEX Trade Calls Only (NIFTY Locked)"
+        schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots)"
+        if weekday == 1:
+            schedule_label += " • NIFTY Expiry Gamma Radar Unlocks Post-1:00 PM"
         active_lots = 6
         locked_lots = 4
     elif weekday in (2, 3, 4):
         active_symbol = "NIFTY"
         locked_symbol = "SENSEX"
-        schedule_label = f"{day_name} Expiry-Protection Mandate: NIFTY 50 Trade Calls Only (SENSEX Locked)"
+        schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots)"
+        if weekday == 3:
+            schedule_label += " • SENSEX Expiry Gamma Radar Unlocks Post-1:00 PM"
         active_lots = 4
         locked_lots = 6
     else:
@@ -374,7 +395,7 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
         active_lots = 6
         locked_lots = 4
 
-    schedule_rule = "Mon & Tue: SENSEX (6 Lots) | Wed, Thu & Fri: NIFTY (4 Lots)"
+    schedule_rule = "Mon & Tue: SENSEX (6 Lots) | Wed, Thu & Fri: NIFTY (4 Lots) • Post-1 PM Expiry Gamma Blast Exception (1 Call Cap)"
 
     return {
         "weekday": weekday,
@@ -388,6 +409,85 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
         "is_nifty_allowed": (active_symbol == "NIFTY"),
         "is_sensex_allowed": (active_symbol == "SENSEX"),
         "active_lots": active_lots,
-        "locked_lots": locked_lots
+        "mandate_lots": active_lots,
+        "locked_lots": locked_lots,
+        "gamma_exception_symbol": gamma_exception_symbol,
+        "is_post_1pm_window": is_post_1pm_window,
+        "is_gamma_exception_active": is_gamma_exception_active
+    }
+
+
+def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_call_used: bool = False) -> Dict[str, Any]:
+    """
+    Evaluates whether an asset is authorized for trade calls right now,
+    incorporating the weekly schedule and the Post-1:00 PM Expiry Gamma Blast Exception.
+    """
+    sched = get_daily_asset_schedule(now_dt)
+    target_sym = str(symbol).upper()
+
+    if target_sym == sched["active_symbol"]:
+        return {
+            "can_trade": True,
+            "tradable": True,
+            "status": "ACTIVE_PRIMARY",
+            "reason": f"Primary active asset today on {sched['weekday_name']}.",
+            "badge_label": f"🟢 ACTIVE TODAY ({sched['active_lots']} LOTS)",
+            "mandate_lots": sched["active_lots"],
+            "is_gamma_exception": False
+        }
+
+    # Locked Asset Evaluation
+    if target_sym == sched["locked_symbol"]:
+        if target_sym == sched["gamma_exception_symbol"]:
+            if sched["is_gamma_exception_active"]:
+                if exception_call_used:
+                    return {
+                        "can_trade": False,
+                        "tradable": False,
+                        "status": "GAMMA_EXCEPTION_COMPLETED",
+                        "reason": f"1/1 Expiry Gamma Blast call already completed for {target_sym} today.",
+                        "badge_label": "🛑 1/1 EXPIRY CALL COMPLETED",
+                        "mandate_lots": sched["locked_lots"],
+                        "is_gamma_exception": True
+                    }
+                else:
+                    return {
+                        "can_trade": True,
+                        "tradable": True,
+                        "status": "GAMMA_EXCEPTION_ACTIVE",
+                        "reason": f"Post-1:00 PM Expiry Gamma Blast window active for {target_sym} (1 exception call permitted).",
+                        "badge_label": "⚡ EXPIRY GAMMA RADAR ACTIVE (1 CALL CAP)",
+                        "mandate_lots": sched["locked_lots"],
+                        "is_gamma_exception": True
+                    }
+            else:
+                return {
+                    "can_trade": False,
+                    "tradable": False,
+                    "status": "EXPIRY_LOCKED_UNTIL_1PM",
+                    "reason": f"{target_sym} is locked until 01:00 PM IST (Expiry Gamma Blast radar unlocks post-1:00 PM).",
+                    "badge_label": "⏳ LOCKED UNTIL 01:00 PM (EXPIRY WATCH)",
+                    "mandate_lots": sched["locked_lots"],
+                    "is_gamma_exception": False
+                }
+        else:
+            return {
+                "can_trade": False,
+                "tradable": False,
+                "status": "STRICTLY_LOCKED",
+                "reason": f"{target_sym} is strictly locked today to avoid near-expiry theta bleed.",
+                "badge_label": "🔒 LOCKED (THETA SHIELD)",
+                "mandate_lots": sched["locked_lots"],
+                "is_gamma_exception": False
+            }
+
+    return {
+        "can_trade": True,
+        "tradable": True,
+        "status": "ACTIVE",
+        "reason": "Standard asset.",
+        "badge_label": "🟢 TRADABLE",
+        "mandate_lots": 4 if target_sym == "NIFTY" else 6,
+        "is_gamma_exception": False
     }
 

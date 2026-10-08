@@ -563,6 +563,9 @@ class TelegramNotifier:
         dir_badge = "🟢 BUY CALL (CE)" if is_call else "🔴 BUY PUT (PE)"
         rr_ratio = round(target_pts / max(0.1, sl_pts), 1)
 
+        is_gamma = kwargs.get("is_gamma_exception", False)
+        header_banner = "⚡ <b>EXPIRY SPECIAL: GAMMA BLAST CALL (1/1 EXCEPTION)</b>\n" if is_gamma else ""
+
         # Groww 09:10 AM Support & Resistance Levels
         sr_line = ""
         try:
@@ -576,7 +579,7 @@ class TelegramNotifier:
         except Exception:
             pass
 
-        msg = f"""<b>{dir_badge} • {scrip_sym}</b>
+        msg = f"""{header_banner}<b>{dir_badge} • {scrip_sym}</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
 📊 <b>Win Probability:</b> <b>{win_prob:.1f}%</b> (A+ Confluence)

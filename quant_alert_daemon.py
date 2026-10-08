@@ -426,14 +426,30 @@ class RelianceQuantAlertDaemon:
         today_date = now_dt.strftime("%Y-%m-%d")
         time_str = now_dt.strftime("%I:%M:%S %p IST")
 
-        # 0. Check Weekly Theta Decay Shield Schedule
-        # Monday & Tuesday: SENSEX ONLY (NIFTY Locked)
-        # Wednesday, Thursday & Friday: NIFTY ONLY (SENSEX Locked)
+        # 0. Check Weekly Theta Decay Shield Schedule & Post-1:00 PM Expiry Gamma Blast Exception
         from asset_config import get_daily_asset_schedule
         sched = get_daily_asset_schedule(now_dt)
+        if not hasattr(self, "_expiry_gamma_calls"):
+            self._expiry_gamma_calls = {}
+
+        is_gamma_exception_tick = False
+        today_exc_key = f"{today_date}_{sym}"
+
         if sym == sched["locked_symbol"] and sched["is_weekday"] and not self.force_run:
-            logger.info(f"[{time_str}] 🔒 [THETA SHIELD] {sym} is locked today ({sched['schedule_desc']}). Zero trade alert evaluation.")
-            return
+            # Check if today is the asset's weekly expiry day and post-1:00 PM
+            if sym == sched["gamma_exception_symbol"] and sched["is_gamma_exception_active"]:
+                if self._expiry_gamma_calls.get(today_exc_key, False):
+                    logger.debug(f"[{time_str}] 🔒 [EXPIRY EXCEPTION] 1/1 Expiry call already delivered today for {sym}. Standing down.")
+                    return
+                # Eligible for exactly 1 high-probability Gamma Blast trade call
+                is_gamma_exception_tick = True
+                logger.info(f"[{time_str}] ⚡ [EXPIRY GAMMA RADAR] Post-1:00 PM Expiry Window active for {sym}. Scanning for 1/1 Gamma Blast setup...")
+            else:
+                if sym == sched["gamma_exception_symbol"] and not sched["is_post_1pm_window"]:
+                    logger.info(f"[{time_str}] ⏳ [THETA SHIELD] {sym} is locked until 01:00 PM IST (Expiry Gamma Blast Window unlocks at 1:00 PM).")
+                else:
+                    logger.info(f"[{time_str}] 🔒 [THETA SHIELD] {sym} is locked today ({sched['schedule_desc']}). Zero trade alert evaluation.")
+                return
 
         # 1. Fetch live spot & option telemetry
         try:
@@ -978,6 +994,7 @@ class RelianceQuantAlertDaemon:
                     except Exception:
                         pass
 
+                    gamma_tag = " • ⚡ EXPIRY SPECIAL: GAMMA BLAST CALL (1/1 EXCEPTION)" if is_gamma_exception_tick else ""
                     entry_msg = TelegramNotifier.format_entry_alert(
                         contract=contract_label,
                         direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
@@ -988,8 +1005,9 @@ class RelianceQuantAlertDaemon:
                         lot_size=active_risk.lot_size,
                         win_prob=win_exp,
                         spot=spot,
+                        is_gamma_exception=is_gamma_exception_tick,
                         rationale=(
-                            f"Dual ATM Breakout confirmed ({tier_str})\n"
+                            f"Dual ATM Breakout confirmed ({tier_str}){gamma_tag}\n"
                             f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
                             f"• Order Type: Stop-Loss Limit (SL-LMT) | Pegged Limit: ₹{confluence_eval.get('pegged_limit_price', active_option_ltp):.2f}\n"
                             f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{active_risk.limit_collar_pts:.2f})\n"
@@ -1007,6 +1025,9 @@ class RelianceQuantAlertDaemon:
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(entry_alert_key)
+                        if is_gamma_exception_tick:
+                            self._expiry_gamma_calls[today_exc_key] = True
+                            logger.info(f"⚡ [EXPIRY EXCEPTION RECORDED] 1/1 Gamma Blast alert delivered for {sym}. Asset re-locked for session.")
                         logger.info(f"🔥 🚀 ENTRY TRIGGER ALERT SENT TO TELEGRAM: {fb}")
 
                 # Save signal in SignalTracker so UI recommendation card is updated with the setup
