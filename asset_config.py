@@ -234,7 +234,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         full_name="Nifty 50 Index (NSE)",
         yf_symbol="^NSEI",
         lot_size=65,
-        default_lots=2,
+        default_lots=4,
         target_pts=50.0,
         target_2_pts=110.0,
         sl_pts=36.0,
@@ -249,13 +249,13 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         default_put_price=125.0,
         groww_company_slug="nifty",
         volume_norm=15000000,
-        daily_sl_cap_rupees=6000.0,
+        daily_sl_cap_rupees=12000.0,
         tape_quantities=(65, 130, 195, 260),
         beta=1.00,
         limit_collar_pts=1.50,
         estimated_tax_per_lot=45.0,
         parent_sector="BENCHMARK INDEX",
-        total_capital=100000.0,
+        total_capital=150000.0,
         breakout_buffer=3.0,
         trail_runner_offset=3.0,
         bsm_sigma=0.135,
@@ -281,7 +281,7 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         full_name="BSE SENSEX 30 Index",
         yf_symbol="^BSESN",
         lot_size=20,
-        default_lots=2,
+        default_lots=6,
         target_pts=120.0,
         target_2_pts=280.0,
         sl_pts=60.0,
@@ -296,13 +296,13 @@ ASSET_SPECS: Dict[str, AssetSpec] = {
         default_put_price=390.0,
         groww_company_slug="sp-bse-sensex",
         volume_norm=8000000,
-        daily_sl_cap_rupees=3000.0,
-        tape_quantities=(20, 40, 60, 80),
+        daily_sl_cap_rupees=9000.0,
+        tape_quantities=(20, 40, 60, 80, 100, 120),
         beta=1.00,
         limit_collar_pts=5.0,
         estimated_tax_per_lot=55.0,
         parent_sector="BENCHMARK INDEX",
-        total_capital=120000.0,
+        total_capital=150000.0,
         breakout_buffer=10.0,
         trail_runner_offset=10.0,
         bsm_sigma=0.132,
@@ -332,3 +332,62 @@ def get_asset_spec(symbol: Optional[str] = None, contract: Optional[str] = None)
     """Returns the immutable AssetSpec configuration for the given symbol or contract."""
     sym = resolve_symbol(symbol, contract)
     return ASSET_SPECS[sym]
+
+
+def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
+    """
+    Weekly Theta Decay Shield Trading Schedule:
+    - Monday & Tuesday: SENSEX ONLY (NIFTY Locked to prevent rapid pre-expiry theta bleed)
+    - Wednesday, Thursday & Friday: NIFTY ONLY (SENSEX Locked to prevent rapid pre-expiry theta bleed)
+    """
+    from datetime import datetime
+    try:
+        import pytz
+        IST = pytz.timezone("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+
+    if now_dt is None:
+        now_dt = datetime.now(IST)
+    weekday = now_dt.weekday()  # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_name = day_names[weekday]
+
+    if weekday in (0, 1):
+        active_symbol = "SENSEX"
+        locked_symbol = "NIFTY"
+        schedule_label = f"{day_name} Expiry-Protection Mandate: BSE SENSEX Trade Calls Only (NIFTY Locked)"
+        active_lots = 6
+        locked_lots = 4
+    elif weekday in (2, 3, 4):
+        active_symbol = "NIFTY"
+        locked_symbol = "SENSEX"
+        schedule_label = f"{day_name} Expiry-Protection Mandate: NIFTY 50 Trade Calls Only (SENSEX Locked)"
+        active_lots = 4
+        locked_lots = 6
+    else:
+        active_symbol = "SENSEX"
+        locked_symbol = "NIFTY"
+        schedule_label = "Weekend Mode: Market Closed (Next Session: Monday BSE SENSEX Mandate)"
+        active_lots = 6
+        locked_lots = 4
+
+    schedule_rule = "Mon & Tue: SENSEX (6 Lots) | Wed, Thu & Fri: NIFTY (4 Lots)"
+
+    return {
+        "weekday": weekday,
+        "weekday_name": day_name,
+        "is_weekday": weekday < 5,
+        "active_symbol": active_symbol,
+        "locked_symbol": locked_symbol,
+        "schedule_label": schedule_label,
+        "schedule_desc": schedule_label,
+        "schedule_rule": schedule_rule,
+        "is_nifty_allowed": (active_symbol == "NIFTY"),
+        "is_sensex_allowed": (active_symbol == "SENSEX"),
+        "active_lots": active_lots,
+        "locked_lots": locked_lots
+    }
+

@@ -426,6 +426,15 @@ class RelianceQuantAlertDaemon:
         today_date = now_dt.strftime("%Y-%m-%d")
         time_str = now_dt.strftime("%I:%M:%S %p IST")
 
+        # 0. Check Weekly Theta Decay Shield Schedule
+        # Monday & Tuesday: SENSEX ONLY (NIFTY Locked)
+        # Wednesday, Thursday & Friday: NIFTY ONLY (SENSEX Locked)
+        from asset_config import get_daily_asset_schedule
+        sched = get_daily_asset_schedule(now_dt)
+        if sym == sched["locked_symbol"] and sched["is_weekday"] and not self.force_run:
+            logger.info(f"[{time_str}] 🔒 [THETA SHIELD] {sym} is locked today ({sched['schedule_desc']}). Zero trade alert evaluation.")
+            return
+
         # 1. Fetch live spot & option telemetry
         try:
             gw_live = self.groww_feed.get_dynamic_spot_tick(symbol=sym)
@@ -958,6 +967,17 @@ class RelianceQuantAlertDaemon:
 
                 if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key):
                     sym_spec = get_asset_spec(sym)
+                    groww_sr_info = ""
+                    try:
+                        sr_data = self.groww_feed.get_groww_daily_support_resistance(symbol=sym)
+                        p_val = sr_data.get("pivot", 0.0)
+                        r1_val = sr_data.get("resistance", {}).get("r1", 0.0)
+                        s1_val = sr_data.get("support", {}).get("s1", 0.0)
+                        if p_val > 0:
+                            groww_sr_info = f"\n• 🎯 Groww 09:10 AM S&R: Pivot ₹{p_val:,.1f} | R1 ₹{r1_val:,.1f} | S1 ₹{s1_val:,.1f}"
+                    except Exception:
+                        pass
+
                     entry_msg = TelegramNotifier.format_entry_alert(
                         contract=contract_label,
                         direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
@@ -973,8 +993,9 @@ class RelianceQuantAlertDaemon:
                             f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
                             f"• Order Type: Stop-Loss Limit (SL-LMT) | Pegged Limit: ₹{confluence_eval.get('pegged_limit_price', active_option_ltp):.2f}\n"
                             f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{active_risk.limit_collar_pts:.2f})\n"
+                            f"• Sizing: {active_risk.num_lots} Lots ({active_risk.num_lots * active_risk.lot_size} Qty) strictly enforced\n"
                             f"• Wick Guard: {'Passed (>=45s)' if wick_guard_passed else 'Immature'} | 2-Tick: Confirmed ({consecutive_ticks} ticks)\n"
-                            f"• Macro & Basis: W-AVWAP ₹{confluence_eval.get('w_avwap', spot):.2f} | Futures Basis {confluence_eval.get('basis_pts', 0.0):+.2f} pts ({confluence_eval.get('basis_regime', 'BALANCED')})\n"
+                            f"• Macro & Basis: W-AVWAP ₹{confluence_eval.get('w_avwap', spot):.2f} | Futures Basis {confluence_eval.get('basis_pts', 0.0):+.2f} pts ({confluence_eval.get('basis_regime', 'BALANCED')}){groww_sr_info}\n"
                             f"• Sizing & Risk: Half-Kelly {confluence_eval.get('half_kelly_pct', 20.0):.1f}% ({confluence_eval.get('kelly_recommended_lots', 1)} Lots) | VaR-99% ₹{confluence_eval.get('var_99_rupees', 0.0):,.0f} | Delta Eqv: {confluence_eval.get('portfolio_delta_shares', 0.0):+.1f} Sh\n"
                             f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', sym_spec.default_strike):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
                             f"• Trend & Efficiency: KAMA @ ₹{confluence_eval.get('kama', spot):.2f} (KER: {confluence_eval.get('kaufman_efficiency_ratio', 0.5):.2f}) | FVG: {confluence_eval.get('fvg_status', 'NEUTRAL')}\n"
@@ -1064,7 +1085,7 @@ class RelianceQuantAlertDaemon:
                         distance_pts=gap_pts,
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
-                        num_lots=1,
+                        num_lots=self.quant_engines.get(sym, self.quant_engine).risk.num_lots,
                         lot_size=self.quant_engines.get(sym, self.quant_engine).risk.lot_size,
                         win_prob=win_exp if 'win_exp' in locals() else 65.0,
                         spot=spot

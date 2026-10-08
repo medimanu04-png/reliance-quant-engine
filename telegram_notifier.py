@@ -563,6 +563,19 @@ class TelegramNotifier:
         dir_badge = "🟢 BUY CALL (CE)" if is_call else "🔴 BUY PUT (PE)"
         rr_ratio = round(target_pts / max(0.1, sl_pts), 1)
 
+        # Groww 09:10 AM Support & Resistance Levels
+        sr_line = ""
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            sr_info = GrowwMarketFeed.get_instance().get_groww_daily_support_resistance(scrip_sym)
+            p_val = sr_info.get("pivot", 0.0)
+            r1_val = sr_info.get("resistance", {}).get("r1", 0.0)
+            s1_val = sr_info.get("support", {}).get("s1", 0.0)
+            if p_val > 0:
+                sr_line = f"\n🎯 <b>Groww 09:10 AM S&R:</b> Pivot ₹{p_val:,.1f} | R1 ₹{r1_val:,.1f} | S1 ₹{s1_val:,.1f}"
+        except Exception:
+            pass
+
         msg = f"""<b>{dir_badge} • {scrip_sym}</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
@@ -571,7 +584,7 @@ class TelegramNotifier:
 💰 <b>Limit Entry:</b> <code>₹{entry_price:.2f}</code>
 🎯 <b>Target:</b> <code>₹{target_price:.2f}</code> (+{target_pts:.1f} pts • +₹{potential_gain:,})
 🛑 <b>Stop Loss:</b> <code>₹{sl_price:.2f}</code> (-{sl_pts:.1f} pts • -₹{potential_loss:,})
-📦 <b>Sizing:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty) • R:R 1:{rr_ratio}
+📦 <b>Sizing:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty) • R:R 1:{rr_ratio}{sr_line}
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 ⚡ <i>Place LIMIT BUY @ ₹{entry_price:.2f} on broker. Set GTT SL & Target.</i>"""
@@ -626,6 +639,19 @@ class TelegramNotifier:
         is_call = ("BULLISH" in direction.upper() or "CE" in direction.upper())
         dir_badge = "CALL (CE)" if is_call else "PUT (PE)"
 
+        # Groww 09:10 AM Support & Resistance Levels
+        sr_line = ""
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            sr_info = GrowwMarketFeed.get_instance().get_groww_daily_support_resistance(scrip_sym)
+            p_val = sr_info.get("pivot", 0.0)
+            r1_val = sr_info.get("resistance", {}).get("r1", 0.0)
+            s1_val = sr_info.get("support", {}).get("s1", 0.0)
+            if p_val > 0:
+                sr_line = f"\n🎯 <b>Groww 09:10 AM S&R:</b> P: ₹{p_val:,.1f} | R1: ₹{r1_val:,.1f} | S1: ₹{s1_val:,.1f}"
+        except Exception:
+            pass
+
         return f"""<b>🟡 SETUP ARMED • {scrip_sym} {dir_badge}</b>
 ────────────────────────
 📌 <b>Watchlist:</b> <code>{contract}</code>
@@ -634,6 +660,7 @@ class TelegramNotifier:
 ⚡ <b>Breakout Trigger:</b> <code>₹{breakout_trigger:.2f}</code>
 💰 <b>Current LTP:</b> ₹{current_ltp:.2f} ({distance_pts:.2f} pts away)
 🎯 <b>Plan Target:</b> +{target_pts:.1f} pts | 🛑 <b>Plan SL:</b> -{sl_pts:.1f} pts
+📦 <b>Sizing Mandate:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({num_lots * lot_size:,} Qty){sr_line}
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 ⏳ <i>DO NOT BUY YET. Keep contract on broker watchlist and await ENTRY alert.</i>"""

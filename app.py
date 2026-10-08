@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict, Any, Tuple
 
 IST = pytz.timezone("Asia/Kolkata")
-from asset_config import get_asset_spec, resolve_symbol
+from asset_config import get_asset_spec, resolve_symbol, get_daily_asset_schedule
 from groww_market_feed import GrowwMarketFeed
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
@@ -1643,6 +1643,42 @@ if active_route == "":
     </div>
     """)
 
+    # Theta Decay Expiry Shield: Weekly Asset Lock Schedule
+    # Monday & Tuesday: SENSEX ONLY (6 Lots) | Wednesday, Thursday, Friday: NIFTY ONLY (4 Lots)
+    from asset_config import get_daily_asset_schedule
+    hp_sched = get_daily_asset_schedule(datetime.now(IST))
+    hp_active_sym = hp_sched["active_symbol"]
+    hp_locked_sym = hp_sched["locked_symbol"]
+    hp_weekday = hp_sched["weekday_name"]
+    is_nifty_tradable_today = (hp_active_sym == "NIFTY")
+    is_sensex_tradable_today = (hp_active_sym == "SENSEX")
+
+    st.html(f"""
+    <div style="background: linear-gradient(90deg, rgba(30, 27, 75, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid rgba(129, 140, 248, 0.5); border-radius: 10px; padding: 12px 18px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(0,0,0,0.35);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.25rem;">🛡️</span>
+                <div>
+                    <span style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.2px;">
+                        THETA DECAY EXPIRY SHIELD: <span style="color: #818CF8;">{hp_weekday.upper()} MANDATE</span>
+                    </span>
+                    <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
+                        To eliminate near-expiry theta bleed: <b style="color: #A855F7;">Mon & Tue = SENSEX ONLY (6 Lots)</b> &bull; <b style="color: #10B981;">Wed, Thu & Fri = NIFTY ONLY (4 Lots)</b>
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="background: {'rgba(16, 185, 129, 0.20)' if is_nifty_tradable_today else 'rgba(100, 116, 139, 0.20)'}; color: {'#34D399' if is_nifty_tradable_today else '#94A3B8'}; border: 1px solid {'rgba(16, 185, 129, 0.40)' if is_nifty_tradable_today else 'rgba(100, 116, 139, 0.35)'}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
+                    {'🟢 NIFTY ACTIVE (4 LOTS)' if is_nifty_tradable_today else '🔒 NIFTY LOCKED TODAY'}
+                </span>
+                <span style="background: {'rgba(168, 85, 247, 0.20)' if is_sensex_tradable_today else 'rgba(100, 116, 139, 0.20)'}; color: {'#C084FC' if is_sensex_tradable_today else '#94A3B8'}; border: 1px solid {'rgba(168, 85, 247, 0.40)' if is_sensex_tradable_today else 'rgba(100, 116, 139, 0.35)'}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
+                    {'🟢 SENSEX ACTIVE (6 LOTS)' if is_sensex_tradable_today else '🔒 SENSEX LOCKED TODAY'}
+                </span>
+            </div>
+        </div>
+    </div>
+    """)
+
     # Row 1: Benchmark Index Quant Desks
     col_idx1, col_idx2 = st.columns(2)
     spec_nifty_hp = get_asset_spec("NIFTY")
@@ -1655,34 +1691,45 @@ if active_route == "":
     ltp_nifty_hp = float(spot_nifty_hp.get("spot_ltp", spec_nifty_hp.default_spot))
     ltp_sensex_hp = float(spot_sensex_hp.get("spot_ltp", spec_sensex_hp.default_spot))
 
+    # NIFTY Desk Tile
+    nifty_tile_border = "rgba(16, 185, 129, 0.55)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.35)"
+    nifty_status_pill = (
+        '<span style="background: rgba(16, 185, 129, 0.25); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.5); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🟢 ACTIVE TODAY (4 LOTS)</span>'
+        if is_nifty_tradable_today else
+        '<span style="background: rgba(100, 116, 139, 0.20); color: #94A3B8; border: 1px solid rgba(100, 116, 139, 0.4); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🔒 LOCKED (THETA SHIELD)</span>'
+    )
+
     with col_idx1:
         st.html(f"""
         <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-            <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid rgba(16, 185, 129, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+            <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid {nifty_tile_border}; border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">📈 NIFTY 50 QUANT DESK <span style="font-size: 0.85rem; color: #34D399; font-weight: 700; margin-left: 6px;">₹{ltp_nifty_hp:,.2f}</span></span>
-                        <span style="background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_nifty_hp.lot_size} QTY/LOT</span>
+                        {nifty_status_pill}
                     </div>
-                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
-                        Institutional Benchmark F&O Engine for <b style="color: #10B981;">NIFTY 50</b>. Calibrated with Multi-Index Confluence, 50-Pt Strike Corridor & Escalator.
+                    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 700; margin-bottom: 8px;">
+                        Mandate: 4 Lots ({spec_nifty_hp.lot_size * 4} Qty) &bull; Lot Size: {spec_nifty_hp.lot_size} &bull; Wed / Thu / Fri Active
+                    </div>
+                    <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.5; margin: 0 0 10px 0; text-align: left;">
+                        Institutional Benchmark Engine. Calibrated with Multi-Index Confluence, 50-Pt Strike Corridor & Escalator.
                     </p>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 6px;">
                     <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_nifty_hp.target_pts:.1f} pts</div>
+                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                        <div style="font-size: 1.00rem; font-weight: 800; color: #10B981;">+{spec_nifty_hp.target_pts:.1f} pts</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_nifty_hp.sl_pts:.1f} pts</div>
+                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                        <div style="font-size: 1.00rem; font-weight: 800; color: #EF4444;">-{spec_nifty_hp.sl_pts:.1f} pts</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_nifty_hp.min_confluence_gate:.0f}%</div>
+                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">SIZING (4 LOTS)</div>
+                        <div style="font-size: 1.00rem; font-weight: 800; color: #38BDF8;">{spec_nifty_hp.lot_size * 4} Qty</div>
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 8px; font-size: 0.74rem; color: #10B981; font-weight: 700;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 6px; font-size: 0.74rem; color: #10B981; font-weight: 700;">
                     <span>Benchmark Execution Terminal</span>
                     <span>Launch Desk →</span>
                 </div>
@@ -1690,34 +1737,45 @@ if active_route == "":
         </a>
         """)
 
+    # SENSEX Desk Tile
+    sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.35)"
+    sensex_status_pill = (
+        '<span style="background: rgba(168, 85, 247, 0.25); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.5); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🟢 ACTIVE TODAY (6 LOTS)</span>'
+        if is_sensex_tradable_today else
+        '<span style="background: rgba(100, 116, 139, 0.20); color: #94A3B8; border: 1px solid rgba(100, 116, 139, 0.4); padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">🔒 LOCKED (THETA SHIELD)</span>'
+    )
+
     with col_idx2:
         st.html(f"""
         <a href="./Sensex?stock=Sensex" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-            <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid rgba(168, 85, 247, 0.45); border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+            <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid {sensex_tile_border}; border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🏛️ BSE SENSEX QUANT DESK <span style="font-size: 0.85rem; color: #C084FC; font-weight: 700; margin-left: 6px;">₹{ltp_sensex_hp:,.2f}</span></span>
-                        <span style="background: rgba(168, 85, 247, 0.15); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.35); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 800;">{spec_sensex_hp.lot_size} QTY/LOT</span>
+                        {sensex_status_pill}
                     </div>
-                    <p style="font-size: 0.82rem; color: #94A3B8; line-height: 1.55; margin: 0 0 14px 0; text-align: left;">
-                        Institutional Benchmark F&O Engine for <b style="color: #C084FC;">BSE SENSEX 30</b>. 100-Pt Strike Intervals with 2:1 Asymmetric Volatility Runner.
+                    <div style="font-size: 0.72rem; color: #D8B4FE; font-weight: 700; margin-bottom: 8px;">
+                        Mandate: 6 Lots ({spec_sensex_hp.lot_size * 6} Qty) &bull; Lot Size: {spec_sensex_hp.lot_size} &bull; Mon / Tue Active
+                    </div>
+                    <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.5; margin: 0 0 10px 0; text-align: left;">
+                        Institutional Benchmark Engine. 100-Pt Strike Intervals with 2:1 Asymmetric Volatility Runner.
                     </p>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 8px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 6px;">
                     <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #10B981;">+{spec_sensex_hp.target_pts:.1f} pts</div>
+                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                        <div style="font-size: 1.00rem; font-weight: 800; color: #10B981;">+{spec_sensex_hp.target_pts:.1f} pts</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #EF4444;">-{spec_sensex_hp.sl_pts:.1f} pts</div>
+                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                        <div style="font-size: 1.00rem; font-weight: 800; color: #EF4444;">-{spec_sensex_hp.sl_pts:.1f} pts</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.68rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">EXECUTION GATE</div>
-                        <div style="font-size: 1.05rem; font-weight: 800; color: #FBBF24;">≥ {spec_sensex_hp.min_confluence_gate:.0f}%</div>
+                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">SIZING (6 LOTS)</div>
+                        <div style="font-size: 1.00rem; font-weight: 800; color: #C084FC;">120 Qty</div>
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 8px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 6px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
                     <span>Benchmark Execution Terminal</span>
                     <span>Launch Desk →</span>
                 </div>
@@ -1971,15 +2029,23 @@ else:
 
 spec = get_asset_spec(symbol=scrip_symbol)
 
+# Strict Institutional Lot Sizing Mandate:
+# Strictly 4 Lots on NIFTY (300 Qty) and 6 Lots on SENSEX (120 Qty) everyday
+strict_mandate_lots = 4 if scrip_symbol == "NIFTY" else 6
+scrip_lots_count = strict_mandate_lots
 scrip_name = spec.display_name
 scrip_yf = spec.yf_symbol
 scrip_lot = spec.lot_size
-scrip_lots_count = spec.default_lots
 scrip_total_qty = scrip_lot * scrip_lots_count
 scrip_target_pts = spec.target_pts
 scrip_sl_pts = spec.sl_pts
 scrip_be_pts = spec.be_pts
 scrip_min_gate = spec.min_confluence_gate
+
+# Theta Decay Expiry Protection Schedule
+from asset_config import get_daily_asset_schedule
+desk_sched = get_daily_asset_schedule(datetime.now(IST))
+is_current_desk_locked = (desk_sched["locked_symbol"] == scrip_symbol)
 
 # Dynamically resolve active expiry mandate for currently active ticker (Weekly for NIFTY/SENSEX, Monthly for Equities)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=scrip_symbol)
@@ -2014,6 +2080,23 @@ if desk_force_rescan:
 st.session_state["live_broker_ltp"] = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
 st.session_state["custom_trigger_override"] = float(st.session_state.get(f"custom_trigger_override_{scrip_symbol}", 0.0))
 st.session_state["strike_selection_pref"] = st.session_state.get(f"strike_selection_pref_{scrip_symbol}", "Auto-Detect Best Strike")
+
+# Sidebar Status & Theta Shield Lock Badge
+if is_current_desk_locked:
+    st.sidebar.html(f"""
+    <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 1.5px solid #818CF8; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3rem;">🔒</span>
+            <div>
+                <div style="font-size: 0.88rem; font-weight: 800; color: #E0E7FF;">THETA SHIELD LOCKED</div>
+                <div style="font-size: 0.68rem; color: #C7D2FE; font-weight: 700;">{desk_sched['weekday_name'].upper()}: {desk_sched['active_symbol']} ONLY</div>
+            </div>
+        </div>
+        <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); line-height: 1.4;">
+            {scrip_symbol} is locked today to avoid near-expiry theta bleed. Trade <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b> today ({desk_sched['schedule_rule']}).
+        </div>
+    </div>
+    """)
 
 st.sidebar.html(f"""
 <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1.5px solid {scrip_color}; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
@@ -2051,7 +2134,7 @@ st.sidebar.html(f"""
 <div style="background: #0B1120; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
     <div style="font-size: 0.74rem; font-weight: 800; color: #CBD5E1; text-transform: uppercase; margin-bottom: 6px;">🛡️ Active Risk Guardrails ({scrip_symbol})</div>
     <div style="font-size: 0.72rem; color: #94A3B8; line-height: 1.6;">
-        • Sizing: <b style="color: #10B981;">{scrip_lots_count} Lots ({scrip_total_qty} Qty)</b><br>
+        • Strict Sizing: <b style="color: #10B981;">{scrip_lots_count} Lots ({scrip_total_qty} Qty)</b><br>
         • Target: <b style="color: #34D399;">+{scrip_target_pts:.1f} pts</b> | SL: <b style="color: #F87171;">-{scrip_sl_pts:.1f} pts</b><br>
         • Breakeven Lock: <b style="color: #38BDF8;">At +{scrip_be_pts:.1f} pts (SL to Cost)</b><br>
         • Execution Window: <b style="color: #FCD34D;">09:15 - 10:45 AM (High-Prob Window)</b>
@@ -2064,7 +2147,8 @@ symbol = scrip_yf
 scrip_choice = st.session_state.get("selected_scrip", "NIFTY 50")
 lot_size = scrip_lot
 st.session_state["lot_size"] = lot_size
-num_lots = int(st.session_state.get(f"num_lots_{scrip_symbol}", scrip_lots_count))
+num_lots = strict_mandate_lots
+st.session_state[f"num_lots_{scrip_symbol}"] = num_lots
 st.session_state["num_lots"] = num_lots
 total_trading_qty = num_lots * lot_size
 target_pts = float(st.session_state.get(f"target_pts_{scrip_symbol}", scrip_target_pts))
@@ -5892,12 +5976,30 @@ if df is not None and not df.empty:
     energy_pct = float(nifty_energy_info.get("pct_change", 0.0))
     nifty_info = benchmarks.get("NIFTY 50", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
     nifty_pct = float(nifty_info.get("pct_change", 0.0))
-    rel_ref_close = float(df['Close'].iloc[0]) if len(df) > 0 else spot
-    reliance_pct = ((spot - rel_ref_close) / rel_ref_close) * 100.0 if rel_ref_close > 0 else 0.0
+    sensex_info = benchmarks.get("BSE SENSEX", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
+    sensex_pct = float(sensex_info.get("pct_change", 0.0))
+
+    # Accurate Intraday Reference: Use today's official previous close or today's opening bar, NOT 5-day cache origin
+    prev_close_ref = float(nse_data.get("prev_close", 0.0)) if nse_data else 0.0
+    if prev_close_ref <= 0:
+        try:
+            today_date = datetime.now(IST).date()
+            if hasattr(df.index, 'date'):
+                today_bars = df[df.index.date == today_date]
+                if len(today_bars) > 0:
+                    prev_close_ref = float(today_bars['Open'].iloc[0])
+                else:
+                    prev_close_ref = float(df['Close'].iloc[-1])
+            else:
+                prev_close_ref = float(df['Close'].iloc[-1])
+        except Exception:
+            prev_close_ref = spot
+    intraday_asset_pct = ((spot - prev_close_ref) / prev_close_ref) * 100.0 if prev_close_ref > 0 else 0.0
+    reliance_pct = intraday_asset_pct
 
     try:
         from fo_quant_engine import MultiIndicatorMath
-        _target_sec_pct = nifty_pct
+        _target_sec_pct = sensex_pct if scrip_symbol == "SENSEX" else nifty_pct
         _target_sec_name = spec.full_name
         sec_score, sec_regime, rs_ratio, beta_coupling, coupling_regime, is_energy_coupled = MultiIndicatorMath.calculate_sectoral_alignment(
             nifty_pct, energy_pct, reliance_pct,
@@ -5912,26 +6014,33 @@ if df is not None and not df.empty:
     macro_bull = 5.0 + sec_score
     macro_bear = -5.0 - sec_score
 
-    # Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry (Upgrade 2)
+    # Correlated Index Beta-Adjusted Lead-Lag Alpha & Drag Asymmetry
+    # Note: Single-stock index drag is only applied to equities, NOT to co-benchmark indices (NIFTY & SENSEX)
     has_index_drag_app = False
     index_drag_regime_app = "INDEX_BETA_ALIGNED"
-    try:
-        from fo_quant_engine import MultiIndicatorMath
-        has_index_drag_app, drag_pen_app, index_drag_regime_app = MultiIndicatorMath.calculate_index_beta_drag(
-            reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=spec.beta,
-            symbol=scrip_symbol
-        )
-        if has_index_drag_app:
-            if "DOWNWARD_DRAG" in index_drag_regime_app:
-                macro_bull = max(0.0, macro_bull - drag_pen_app)
-                macro_bear += 2.5
-            elif "UPWARD_LAG" in index_drag_regime_app:
-                macro_bear = max(0.0, macro_bear - drag_pen_app)
-                macro_bull += 2.5
-            elif "MODERATE_INDEX_DIVERGENCE" in index_drag_regime_app:
-                macro_bull = max(0.0, macro_bull - drag_pen_app)
-    except Exception:
-        pass
+    if scrip_symbol not in ("NIFTY", "SENSEX"):
+        try:
+            from fo_quant_engine import MultiIndicatorMath
+            has_index_drag_app, drag_pen_app, index_drag_regime_app = MultiIndicatorMath.calculate_index_beta_drag(
+                reliance_pct=reliance_pct, nifty_pct=nifty_pct, rolling_beta=spec.beta,
+                symbol=scrip_symbol
+            )
+            if has_index_drag_app:
+                if "DOWNWARD_DRAG" in index_drag_regime_app:
+                    macro_bull = max(0.0, macro_bull - drag_pen_app)
+                    macro_bear += 2.5
+                elif "UPWARD_LAG" in index_drag_regime_app:
+                    macro_bear = max(0.0, macro_bear - drag_pen_app)
+                    macro_bull += 2.5
+                elif "MODERATE_INDEX_DIVERGENCE" in index_drag_regime_app:
+                    macro_bull = max(0.0, macro_bull - drag_pen_app)
+        except Exception:
+            pass
+    else:
+        # Cross-Index Macro Tailwind: When NIFTY and SENSEX move in tandem, boost institutional conviction
+        if (nifty_pct >= 0 and intraday_asset_pct >= 0) or (nifty_pct < 0 and intraday_asset_pct < 0):
+            macro_bull += 2.0 if intraday_asset_pct >= 0 else 0.0
+            macro_bear += 2.0 if intraday_asset_pct < 0 else 0.0
 
     news_modifier = (news_sentiment_score / 10.0) * 5.0
     raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull + news_modifier
@@ -5952,16 +6061,27 @@ if df is not None and not df.empty:
         midday_penalty_active = True
 
     # Calibrated Institutional Sigmoid Mapping (Maps raw confluence edge accurately to statistical win rates)
-    # Recalibrated: s0=40 centers 50% at a realistic "moderate trend" raw score;
-    # k=0.12 sharpens the transition so the model decisively distinguishes strong vs weak setups.
-    # Old (k=0.075, s0=58) required 64+ raw pts to clear 60% gate — mathematically impossible on normal days.
+    # Smooth, balanced calibration (k=0.08, s0=42.0) to prevent artificial saturation at 96%
     def calibrate_prob(score: float) -> float:
-        k = 0.12
-        s0 = 40.0
+        k = 0.08
+        s0 = 42.0
         return round(100.0 / (1.0 + math.exp(-k * (score - s0))), 1)
 
     bullish_score = min(96.0, max(10.0, calibrate_prob(raw_bullish)))
     bearish_score = min(96.0, max(10.0, calibrate_prob(raw_bearish)))
+
+    # Dual-Benchmark Co-Integration Consistency Guard:
+    # Since NIFTY 50 and BSE SENSEX share ~98% macro correlation, if both are in the same direction today,
+    # prevent paradoxical 96% Bull vs 96% Bear divergence between desks.
+    if scrip_symbol in ("NIFTY", "SENSEX"):
+        ref_bench_pct = nifty_pct if scrip_symbol == "SENSEX" else sensex_pct
+        if ref_bench_pct != 0.0:
+            both_green = (intraday_asset_pct >= 0.0 and ref_bench_pct >= 0.0)
+            both_red = (intraday_asset_pct < 0.0 and ref_bench_pct < 0.0)
+            if both_green:
+                bearish_score = min(bearish_score, 45.0)
+            elif both_red:
+                bullish_score = min(bullish_score, 45.0)
 
     # Fractal Choppiness Stand Down Filter: When CHOP > 61.8, clamp both scores below institutional gate
     if is_choppy_regime:
@@ -6050,12 +6170,14 @@ if df is not None and not df.empty:
     else:
         # Operational Regime Trade Gate (Trade if dominant score > MIN_HIT_PERCENTAGE, within time window, and not in Choppiness Stand Down)
         # Suggestion 1 & 2 Institutional Guards: Stand down if Sector Divergence trap or thin book liquidity vacuum
+        # Theta Decay Expiry Guard: Prohibit trade calls on locked asset
         is_tradable = (
             (dominant_score > MIN_HIT_PERCENTAGE)
             and time_gate_allowed
             and not is_choppy_regime
             and not is_sector_divergence_trap
             and not is_liquidity_vacuum
+            and not is_current_desk_locked
         )
 
     # Re-sync Dual ATM Stream, Active Strike & Best Strike with Final Confluent Direction
@@ -6458,9 +6580,9 @@ if df is not None and not df.empty:
             </div>
             <div style="display: flex; align-items: center; gap: 12px;">
                 <div style="text-align: right;">
-                    <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 KELLY SIZING (≤4% CAP)</span>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">1 Lot ({total_trading_qty} Units)</div>
-                    <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">Risk: {actual_risk_pct:.1f}% of Cash (≤4.0% Safe)</div>
+                    <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 MANDATE SIZING</span>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{num_lots} Lots ({total_trading_qty} Units)</div>
+                    <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">Strict Rule: {scrip_symbol} {num_lots} Lots Everyday</div>
                 </div>
             </div>
         </div>
@@ -6506,6 +6628,91 @@ if df is not None and not df.empty:
     with tab_cockpit:
         # Reliance Live Spot Hero
         render_reliance_spot_hero()
+
+        # Theta Decay Expiry Protection Alert Banner
+        if is_current_desk_locked:
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 2px solid #818CF8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(99, 102, 241, 0.25);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 1.6rem;">🛡️</span>
+                        <div>
+                            <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
+                                THETA DECAY EXPIRY SHIELD: {scrip_symbol} LOCKED TODAY ({desk_sched['weekday_name'].upper()})
+                            </div>
+                            <div style="font-size: 0.78rem; color: #C7D2FE; margin-top: 3px;">
+                                Mandate: Mon & Tue = <b>SENSEX ONLY (6 Lots)</b> &bull; Wed, Thu & Fri = <b>NIFTY ONLY (4 Lots)</b>. Zero trades allowed on {scrip_symbol} today.
+                            </div>
+                        </div>
+                    </div>
+                    <a href="./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}" target="_blank" style="text-decoration: none;">
+                        <span style="background: #4F46E5; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
+                            Launch {desk_sched['active_symbol']} Desk (Active Today) →
+                        </span>
+                    </a>
+                </div>
+            </div>
+            """)
+
+        # Groww 09:10 AM Pre-Market Support & Resistance Radar
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            sr_telemetry = GrowwMarketFeed.get_instance().get_groww_daily_support_resistance(scrip_symbol)
+            p_val = float(sr_telemetry.get("pivot", 0.0))
+            r1_val = float(sr_telemetry.get("resistance", {}).get("r1", 0.0))
+            r2_val = float(sr_telemetry.get("resistance", {}).get("r2", 0.0))
+            r3_val = float(sr_telemetry.get("resistance", {}).get("r3", 0.0))
+            s1_val = float(sr_telemetry.get("support", {}).get("s1", 0.0))
+            s2_val = float(sr_telemetry.get("support", {}).get("s2", 0.0))
+            s3_val = float(sr_telemetry.get("support", {}).get("s3", 0.0))
+            cpr_data = sr_telemetry.get("cpr", {})
+            tc_val = float(cpr_data.get("tc", 0.0))
+            bc_val = float(cpr_data.get("bc", 0.0))
+            cpr_regime = cpr_data.get("regime", "MODERATE")
+            cam_data = sr_telemetry.get("camarilla", {})
+            h4_val = float(cam_data.get("h4", 0.0))
+            h3_val = float(cam_data.get("h3", 0.0))
+            l3_val = float(cam_data.get("l3", 0.0))
+            l4_val = float(cam_data.get("l4", 0.0))
+
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.85) 100%); border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.15rem;">🎯</span>
+                        <span style="font-size: 0.90rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">GROWW 09:10 AM PRE-MARKET S&R RADAR</span>
+                        <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); font-size: 0.70rem; font-weight: 800; padding: 2px 7px; border-radius: 4px;">GROWW APP 09:10 AM DISCOVERY</span>
+                    </div>
+                    <div style="font-size: 0.74rem; color: #94A3B8;">
+                        CPR Regime: <b style="color: {'#34D399' if 'NARROW' in cpr_regime else '#FBBF24'};">{cpr_regime}</b> &bull; Spot: ₹{spot:,.1f}
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center;">
+                    <div style="background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px; padding: 8px;">
+                        <div style="font-size: 0.68rem; color: #FCA5A5; font-weight: 700;">RESISTANCE (GROWW)</div>
+                        <div style="font-size: 0.95rem; font-weight: 900; color: #EF4444; margin-top: 2px;">R1 ₹{r1_val:,.1f}</div>
+                        <div style="font-size: 0.70rem; color: #94A3B8;">R2 ₹{r2_val:,.1f} | R3 ₹{r3_val:,.1f}</div>
+                    </div>
+                    <div style="background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 8px;">
+                        <div style="font-size: 0.68rem; color: #7DD3FC; font-weight: 700;">FLOOR PIVOT (P)</div>
+                        <div style="font-size: 0.95rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">₹{p_val:,.1f}</div>
+                        <div style="font-size: 0.70rem; color: #94A3B8;">CPR TC ₹{tc_val:,.1f} • BC ₹{bc_val:,.1f}</div>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.10); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px; padding: 8px;">
+                        <div style="font-size: 0.68rem; color: #6EE7B7; font-weight: 700;">SUPPORT (GROWW)</div>
+                        <div style="font-size: 0.95rem; font-weight: 900; color: #10B981; margin-top: 2px;">S1 ₹{s1_val:,.1f}</div>
+                        <div style="font-size: 0.70rem; color: #94A3B8;">S2 ₹{s2_val:,.1f} | S3 ₹{s3_val:,.1f}</div>
+                    </div>
+                    <div style="background: rgba(168, 85, 247, 0.10); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 6px; padding: 8px;">
+                        <div style="font-size: 0.68rem; color: #D8B4FE; font-weight: 700;">CAMARILLA RANGE</div>
+                        <div style="font-size: 0.95rem; font-weight: 900; color: #C084FC; margin-top: 2px;">H3 ₹{h3_val:,.1f} / L3 ₹{l3_val:,.1f}</div>
+                        <div style="font-size: 0.70rem; color: #94A3B8;">Breakout: H4 ₹{h4_val:,.1f} | L4 ₹{l4_val:,.1f}</div>
+                    </div>
+                </div>
+            </div>
+            """)
+        except Exception as e:
+            logger.debug(f"Groww S&R display error: {e}")
 
         # Gate Warning Banners if active
         if capital_risk_warning:
@@ -7025,7 +7232,30 @@ if df is not None and not df.empty:
                 deficit_val = max(0.0, round(MIN_HIT_PERCENTAGE - dominant_score, 1))
 
                 # Dynamic Institutional Classification of Exact Stand Down Cause
-                if is_choppy_regime:
+                if is_current_desk_locked:
+                    stand_down_status_title = f"🛡️ TRADE STATUS: {scrip_symbol} LOCKED TODAY &bull; THETA DECAY SHIELD"
+                    stand_down_badge = f"🛡️ THETA EXPIRY SHIELD: {scrip_symbol} LOCKED ON {desk_sched.get('weekday_name', '').upper()}"
+                    stand_down_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.35) 0%, rgba(79, 70, 229, 0.45) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.70); box-shadow: 0 0 12px rgba(99, 102, 241, 0.30);"
+                    stand_down_sub = f"Expiry Proximity Mandate: Trade only {desk_sched['active_symbol']} today ({desk_sched['schedule_rule']}). Zero trades permitted on {scrip_symbol} to prevent fast theta decay."
+                    gate_card_bg = "linear-gradient(135deg, rgba(67, 56, 202, 0.35) 0%, rgba(30, 27, 75, 0.60) 100%)"
+                    gate_card_border = "1.5px solid rgba(129, 140, 248, 0.50)"
+                    gate_card_title = "THETA SHIELD MANDATE"
+                    gate_card_val = f"🛡️ {desk_sched['active_symbol']} Active"
+                    gate_card_sub = f"🛑 {scrip_symbol} Locked Today"
+                    other_desk_url = f"./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}"
+                    why_stand_down_html = f"""
+                    <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> To protect options trading capital against aggressive theta decay, trading calls are restricted strictly by weekday expiry:<br>
+                    • <b>Monday & Tuesday:</b> <b style="color: #A855F7;">BSE SENSEX ONLY (6 Lots)</b> &bull; NIFTY 50 Locked.<br>
+                    • <b>Wednesday, Thursday & Friday:</b> <b style="color: #10B981;">NIFTY 50 ONLY (4 Lots)</b> &bull; BSE SENSEX Locked.<br>
+                    <div style="margin-top: 8px;">
+                        👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to view today's active signals.
+                    </div>
+                    """
+                    dot_color = "#818CF8"
+                    cap_badge_title = "🛡️ THETA EXPIRY SHIELD ACTIVE"
+                    cap_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.20) 0%, rgba(79, 70, 229, 0.30) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.50);"
+                    cap_sub_desc = f"🛡️ Capital preserved &bull; Switch to {desk_sched['active_symbol']}"
+                elif is_choppy_regime:
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
                     stand_down_badge = f"🛑 CONSOLIDATION CHOP FILTER ACTIVE (CHOP: {chop_val:.1f} &gt; 61.8)"
                     stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
