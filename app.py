@@ -1225,29 +1225,39 @@ def render_persistent_sticky_header():
     """)
 
 
-@st.fragment(run_every="5s")
-def render_auto_rescan_controller():
+def execute_global_multi_desk_rescan(is_manual: bool = False):
+    """
+    Executes a high-performance synchronized market rescan across both
+    Quantitative Trading Desks (NIFTY 50 and BSE SENSEX) and Homepage benchmarks.
+    """
+    from concurrent.futures import ThreadPoolExecutor
     now = time_mod.time()
-    if "last_auto_rescan_ts" not in st.session_state:
-        st.session_state["last_auto_rescan_ts"] = now
+    now_dt = datetime.now(IST)
+    rescan_time_str = now_dt.strftime('%I:%M:%S %p IST')
+    rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
 
-    col_rb, col_cb = st.columns([1.8, 1.0])
-    with col_rb:
-        rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key="btn_instant_rescan")
-    with col_cb:
-        auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", True), key="cb_auto_rescan_5s")
-        st.session_state["auto_rescan_active"] = auto_active
+    # Anti-thundering-herd guard: if another tab already completed an auto-rescan within 3.5s,
+    # skip redundant network roundtrips and synchronize state instantly.
+    skip_network = False
+    if not is_manual and os.path.exists(rescan_file):
+        try:
+            with open(rescan_file, "r", encoding="utf-8") as rf:
+                prev_ev = json.load(rf)
+            prev_ts = float(prev_ev.get("timestamp", 0))
+            if (now - prev_ts) < 3.5:
+                skip_network = True
+                rescan_time_str = prev_ev.get("time_str", rescan_time_str)
+                now = prev_ts
+        except Exception:
+            pass
 
-    elapsed = now - st.session_state["last_auto_rescan_ts"]
-    should_auto = auto_active and (elapsed >= 4.5)
-
-    if rescan_btn:
-        from concurrent.futures import ThreadPoolExecutor
+    if not skip_network:
+        # 1. Clear external feed memory & in-flight connection caches
         try:
             from groww_market_feed import GrowwMarketFeed
             gw = GrowwMarketFeed.get_instance()
             gw.clear_all_caches()
-            with ThreadPoolExecutor(max_workers=5) as ex:
+            with ThreadPoolExecutor(max_workers=6) as ex:
                 for sym_scan in ("NIFTY", "SENSEX"):
                     ex.submit(gw._fetch_reliance_spot_now, sym_scan)
                     ex.submit(gw._fetch_reliance_chain_now, None, sym_scan)
@@ -1255,11 +1265,18 @@ def render_auto_rescan_controller():
         except Exception:
             pass
 
-        from nse_data_fetcher import NSEIndiaFetcher
-        NSEIndiaFetcher.clear_all_caches()
-        st.cache_data.clear()
+        # 2. Clear NSE official data fetcher caches & warm up quotes
+        try:
+            from nse_data_fetcher import NSEIndiaFetcher
+            NSEIndiaFetcher.clear_all_caches()
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                for sym_scan in ("NIFTY", "SENSEX"):
+                    ex.submit(NSEIndiaFetcher.get_reliance_official_data, force_refresh=True, symbol=sym_scan)
+                ex.submit(NSEIndiaFetcher.get_live_market_benchmarks, force_refresh=True)
+        except Exception:
+            pass
 
-        # Trigger multi-desk alert daemon ticks
+        # 3. Trigger multi-desk alert daemon ticks
         try:
             global _multi_desk_daemon_instance
             if _multi_desk_daemon_instance is not None:
@@ -1268,34 +1285,87 @@ def render_auto_rescan_controller():
         except Exception:
             pass
 
-        now_dt = datetime.now(IST)
-        rescan_time_str = now_dt.strftime('%I:%M:%S %p IST')
+        # 4. Write atomic disk IPC event for cross-tab synchronization
         try:
-            rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
+            os.makedirs(os.path.dirname(rescan_file), exist_ok=True)
             with open(rescan_file, "w", encoding="utf-8") as rf:
                 json.dump({
                     "timestamp": now,
                     "time_str": rescan_time_str,
-                    "manual": True,
+                    "manual": is_manual,
                     "symbols": ["NIFTY", "SENSEX"]
                 }, rf)
         except Exception:
             pass
 
-        st.session_state["last_auto_rescan_ts"] = now
-        st.session_state["just_rescanned"] = True
+    # 5. Clear Streamlit session caches for all desks
+    st.cache_data.clear()
+    for sym_c in ("nifty", "sensex"):
+        st.session_state.pop(f"cached_real_df_{sym_c}", None)
+    if "_APP_INDICATOR_CACHE" in st.session_state:
+        st.session_state["_APP_INDICATOR_CACHE"].clear()
+
+    # 6. Synchronize session state tracking
+    st.session_state["last_auto_rescan_ts"] = now
+    st.session_state["rescan_time"] = rescan_time_str
+    st.session_state["just_rescanned"] = True
+    if is_manual:
         st.session_state["manual_rescan_clicked"] = True
-        st.session_state["rescan_time"] = rescan_time_str
-        st.session_state["desk_rescan_needed"] = {
-            "NIFTY": True,
-            "SENSEX": True
-        }
+    st.session_state["desk_rescan_needed"] = {
+        "NIFTY": True,
+        "SENSEX": True
+    }
+    for sym_c in ("NIFTY", "SENSEX"):
+        st.session_state[f"_desk_last_sync_{sym_c}"] = now
+    st.session_state["_desk_last_synced_event_ts"] = now
+
+
+@st.fragment(run_every="5s")
+def render_auto_rescan_controller():
+    now = time_mod.time()
+    if "last_auto_rescan_ts" not in st.session_state:
+        st.session_state["last_auto_rescan_ts"] = now
+
+    key_suffix = f"_{active_route or 'hp'}"
+    col_rb, col_cb = st.columns([1.8, 1.0])
+    with col_rb:
+        rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key=f"btn_instant_rescan{key_suffix}")
+    with col_cb:
+        auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", True), key=f"cb_auto_rescan_5s{key_suffix}")
+        st.session_state["auto_rescan_active"] = auto_active
+
+    # Check if a global rescan event was dispatched from another tab/window
+    rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
+    external_sync_needed = False
+    if os.path.exists(rescan_file):
+        try:
+            with open(rescan_file, "r", encoding="utf-8") as rf:
+                g_meta = json.load(rf)
+            g_ts = float(g_meta.get("timestamp", 0))
+            last_synced_ts = float(st.session_state.get("_desk_last_synced_event_ts", 0))
+            if g_ts > (last_synced_ts + 0.1):
+                external_sync_needed = True
+                st.session_state["_desk_last_synced_event_ts"] = g_ts
+                st.session_state["rescan_time"] = g_meta.get("time_str", "")
+                st.session_state["last_auto_rescan_ts"] = g_ts
+                for sym_c in ("nifty", "sensex"):
+                    st.session_state.pop(f"cached_real_df_{sym_c}", None)
+                if "_APP_INDICATOR_CACHE" in st.session_state:
+                    st.session_state["_APP_INDICATOR_CACHE"].clear()
+        except Exception:
+            pass
+
+    elapsed = now - st.session_state.get("last_auto_rescan_ts", now)
+    should_auto = auto_active and (elapsed >= 4.5)
+
+    if rescan_btn:
+        execute_global_multi_desk_rescan(is_manual=True)
+        st.rerun(scope="app")
+    elif external_sync_needed:
         st.rerun(scope="app")
     elif should_auto:
-        # Background automatic cycle: Keep data fresh silently inside this fragment.
-        # DO NOT call st.rerun(scope="app") — the fragment already updates local spot tickers
-        # without destroying the outer React DOM tree or dropping WebSocket connections on tab switch!
-        st.session_state["last_auto_rescan_ts"] = now
+        execute_global_multi_desk_rescan(is_manual=False)
+        st.rerun(scope="app")
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     spec_nifty = get_asset_spec("NIFTY")
@@ -1349,25 +1419,37 @@ def render_auto_rescan_controller():
         </div>
         """)
     else:
-        # Desk Mode: display active asset pill
+        # Desk Mode: display active asset pill & quick cross-desk sync bar
         cur_sel_scrip = st.session_state.get("selected_scrip", "NIFTY")
         spec_active = get_asset_spec(symbol=cur_sel_scrip)
         cur_sel_sym = spec_active.yf_symbol
         cur_sel_lot = spec_active.lot_size
         cur_sel_tgt = spec_active.target_pts
         cur_sel_sl = spec_active.sl_pts
+
+        from groww_market_feed import GrowwMarketFeed
+        gw_feed = GrowwMarketFeed.get_instance()
+        spot_active = gw_feed.get_live_spot_data(symbol=spec_active.symbol)
+        ltp_val = float(spot_active.get("spot_ltp", spec_active.default_spot))
+        prev_c = float(spot_active.get("prev_close", ltp_val))
+        chg_val = ltp_val - prev_c
+        chg_sign = "+" if chg_val >= 0 else ""
+        chg_col = "#10B981" if chg_val >= 0 else "#EF4444"
+        other_desk = "Sensex" if (cur_sel_scrip == "NIFTY 50" or cur_sel_scrip == "NIFTY") else "Nifty"
+        other_label = "BSE SENSEX" if other_desk == "Sensex" else "NIFTY 50"
+
         st.html(f"""
-            <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
-                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
-                <span>Last: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
-                <span>⚡ <b style="color: #34D399;">~4ms</b></span>
-            </div>
-            <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot)</span>
-                <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
-                <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
-                <span>🛡️ Risk: <b style="color: #38BDF8;">≤4% Cap</b></span>
-            </div>
+        <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
+            <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
+            <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+            <span>⚡ Multi-Desk Sync: <b style="color: #34D399;">Active & Live</b></span>
+        </div>
+        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+            <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot) • ₹<b style="color: #FFFFFF;">{ltp_val:,.2f}</b> (<b style="color: {chg_col};">{chg_sign}{chg_val:.1f}</b>)</span>
+            <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
+            <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
+            <a href="./{other_desk}?stock={other_desk}" target="_blank" style="text-decoration: none; color: #38BDF8; font-weight: 700;">↗ Open {other_label} Desk</a>
+        </div>
         """)
 
 
@@ -1924,6 +2006,9 @@ if os.path.exists(global_rescan_file):
 
 if desk_force_rescan:
     is_rescan = True
+    st.session_state.pop(f"cached_real_df_{scrip_symbol.lower()}", None)
+    if "_APP_INDICATOR_CACHE" in st.session_state:
+        st.session_state["_APP_INDICATOR_CACHE"].clear()
 
 # Sync active scoped values to active keys so switching scrips never cross-pollinates
 st.session_state["live_broker_ltp"] = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
@@ -1950,7 +2035,7 @@ timeframe = st.sidebar.selectbox("Candle Timeframe", ["5m", "15m"], index=0, key
 st.sidebar.markdown("---")
 st.sidebar.caption("⏱️ **FAST MARKET RESCAN & TIMING**")
 if st_sidebar_button_stretch("🔄 Rescan Market Feed", key="sb_rescan_btn"):
-    st.session_state["manual_rescan_clicked"] = True
+    execute_global_multi_desk_rescan(is_manual=True)
     st.rerun(scope="app")
 
 sb_early_entry = st.sidebar.checkbox(
@@ -6148,6 +6233,15 @@ if df is not None and not df.empty:
 
     # Render Persistent Sticky Top Header
     render_persistent_sticky_header()
+
+    # Fast Rescan Controller & Live Real-Time Quant Desk Clock Watch (Multi-Desk Synchronized)
+    top_ctrl_col, top_clock_col = st.columns([2.3, 1.7])
+    with top_ctrl_col:
+        render_auto_rescan_controller()
+    with top_clock_col:
+        render_quant_desk_clock()
+
+    st.markdown("---")
 
     # Dynamic Prevailing Market Bias Resolution with Institutional Conviction Tier
     active_side_conviction = bearish_score if recommended_contract_type == "PE" else bullish_score
