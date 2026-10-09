@@ -1327,19 +1327,44 @@ def execute_global_multi_desk_rescan(is_manual: bool = False):
     st.session_state["_desk_last_synced_event_ts"] = now
 
 
-@st.fragment(run_every="5s")
+@st.fragment(run_every=1)
 def render_auto_rescan_controller():
     now = time_mod.time()
     if "last_auto_rescan_ts" not in st.session_state:
         st.session_state["last_auto_rescan_ts"] = now
 
     key_suffix = f"_{active_route or 'hp'}"
-    col_rb, col_cb = st.columns([1.8, 1.0])
+    col_rb, col_cb = st.columns([1.6, 1.2])
     with col_rb:
         rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key=f"btn_instant_rescan{key_suffix}")
     with col_cb:
-        auto_active = st.checkbox("⚡ Auto (5s)", value=st.session_state.get("auto_rescan_active", True), key=f"cb_auto_rescan_5s{key_suffix}")
+        interval_options = [
+            "⚡ 2s (Ultra-Fast)",
+            "⚡ 5s (Default)",
+            "⚡ 10s (Relaxed)",
+            "⚡ 30s (Saver)",
+            "⏸️ Off (Manual)"
+        ]
+        interval_map = {
+            "⚡ 2s (Ultra-Fast)": 2.0,
+            "⚡ 5s (Default)": 5.0,
+            "⚡ 10s (Relaxed)": 10.0,
+            "⚡ 30s (Saver)": 30.0,
+            "⏸️ Off (Manual)": 0.0
+        }
+        saved_val = st.session_state.get(f"sb_auto_rescan_interval{key_suffix}", "⚡ 5s (Default)")
+        def_idx = interval_options.index(saved_val) if saved_val in interval_options else 1
+        selected_interval_str = st.selectbox(
+            "Auto Rescan Interval",
+            options=interval_options,
+            index=def_idx,
+            label_visibility="collapsed",
+            key=f"sb_auto_rescan_interval{key_suffix}"
+        )
+        target_interval = interval_map.get(selected_interval_str, 5.0)
+        auto_active = (target_interval > 0.0)
         st.session_state["auto_rescan_active"] = auto_active
+        st.session_state["auto_rescan_interval_sec"] = target_interval
 
     # Check if a global rescan event was dispatched from another tab/window
     rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
@@ -1363,7 +1388,7 @@ def render_auto_rescan_controller():
             pass
 
     elapsed = now - st.session_state.get("last_auto_rescan_ts", now)
-    should_auto = auto_active and (elapsed >= 5.0)
+    should_auto = auto_active and (elapsed >= target_interval)
 
     if rescan_btn:
         execute_global_multi_desk_rescan(is_manual=True)
@@ -1371,10 +1396,20 @@ def render_auto_rescan_controller():
     elif external_sync_needed:
         st.rerun(scope="app")
     elif should_auto:
+        st.session_state["last_auto_rescan_ts"] = now
         execute_global_multi_desk_rescan(is_manual=False)
         # Auto rescan updates data in-place without tearing down the entire app DOM tree
 
-    cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
+    if not auto_active:
+        cycle_label = "⚪ Auto paused (Manual)"
+    elif target_interval == 2.0:
+        cycle_label = "⚡ 2s cycle (Ultra-Fast)"
+    elif target_interval == 5.0:
+        cycle_label = "🟢 5s cycle (Active)"
+    elif target_interval == 10.0:
+        cycle_label = "🟢 10s cycle (Relaxed)"
+    else:
+        cycle_label = f"🟢 {int(target_interval)}s cycle"
     spec_nifty = get_asset_spec("NIFTY")
     spec_sensex = get_asset_spec("SENSEX")
 
