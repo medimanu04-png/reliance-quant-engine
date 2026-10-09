@@ -1120,20 +1120,6 @@ def render_quant_desk_clock():
                 }}
                 sessEl.innerHTML = sHtml;
             }}
-            
-            // Sync to parent top-sticky-clock if present
-            try {{
-                if (window.parent && window.parent.document) {{
-                    var topClock = window.parent.document.getElementById('top-sticky-clock');
-                    if (topClock) {{
-                        var isWeekday = (day >= 1 && day <= 5);
-                        var totalMin2 = h * 60 + m;
-                        var mOpen = isWeekday && (totalMin2 >= 9 * 60 + 15 && totalMin2 <= 15 * 60 + 30);
-                        var stateLabel = mOpen ? 'Market Live' : 'Market Closed';
-                        topClock.innerHTML = '🕒 ' + hStr + ':' + mStr + ':<span style="color:#38BDF8;font-weight:bold;">' + sStr + '</span> ' + ampm + ' IST &bull; ' + stateLabel;
-                    }}
-                }}
-            }} catch(e) {{}}
         }} catch(e) {{
             console.error('Clock error:', e);
         }}
@@ -1142,7 +1128,7 @@ def render_quant_desk_clock():
     // Execute immediately on load
     tick();
     
-    // 250ms interval for sub-second precision and instantaneous second flips
+    // 250ms interval for sub-second precision and smooth second flips
     setInterval(tick, 250);
     
     // Re-synchronize instantly upon tab visibility change or window focus
@@ -1152,21 +1138,6 @@ def render_quant_desk_clock():
     window.addEventListener('focus', function() {{
         tick();
     }});
-    
-    try {{
-        if (window.parent && window.parent !== window) {{
-            window.parent.addEventListener('visibilitychange', function() {{
-                if (window.parent.document && !window.parent.document.hidden) {{
-                    tick();
-                    try {{ window.parent.dispatchEvent(new Event('resize')); }} catch(e) {{}}
-                }}
-            }});
-            window.parent.addEventListener('focus', function() {{
-                tick();
-                try {{ window.parent.dispatchEvent(new Event('resize')); }} catch(e) {{}}
-            }});
-        }}
-    }} catch(e) {{}}
 }})();
 </script>
 </body>
@@ -1398,7 +1369,7 @@ def render_auto_rescan_controller():
             pass
 
     elapsed = now - st.session_state.get("last_auto_rescan_ts", now)
-    should_auto = auto_active and (elapsed >= 4.5)
+    should_auto = auto_active and (elapsed >= 5.0)
 
     if rescan_btn:
         execute_global_multi_desk_rescan(is_manual=True)
@@ -1407,7 +1378,7 @@ def render_auto_rescan_controller():
         st.rerun(scope="app")
     elif should_auto:
         execute_global_multi_desk_rescan(is_manual=False)
-        st.rerun(scope="app")
+        # Auto rescan updates data in-place without tearing down the entire app DOM tree
 
     cycle_label = "🟢 5s cycle (Active)" if auto_active else "⚪ Auto paused"
     spec_nifty = get_asset_spec("NIFTY")
