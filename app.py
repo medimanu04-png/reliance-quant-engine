@@ -6952,17 +6952,21 @@ if df is not None and not df.empty:
             ''')
 
             # In-Trade Actions Bar
+            def _handle_close_target(sym, p, cash):
+                SequentialTradeEngine.close_trade(exit_price=p, status="Target Hit", notes="Target reached in active monitoring", starting_cash=cash, symbol=sym)
+
+            def _handle_close_sl(sym, p, cash):
+                SequentialTradeEngine.close_trade(exit_price=p, status="SL Hit", notes="Stop loss hit in active monitoring", starting_cash=cash, symbol=sym)
+
             it_c1, it_c2, it_c3 = st.columns([1.2, 1.2, 1.6])
             with it_c1:
-                if st.button("🎯 Mark Target Hit & Close", use_container_width=True, help="Record target hit outcome and close trade"):
-                    SequentialTradeEngine.close_trade(exit_price=active_ltp, status="Target Hit", notes="Target reached in active monitoring", starting_cash=account_cash, symbol=scrip_symbol)
+                if st.button("🎯 Mark Target Hit & Close", key=f"btn_close_target_{scrip_symbol}", on_click=_handle_close_target, args=(scrip_symbol, active_ltp, account_cash), use_container_width=True, help="Record target hit outcome and close trade"):
                     st.rerun()
             with it_c2:
-                if st.button("🛑 Mark SL Hit & Close", use_container_width=True, help="Record stop-loss outcome and close trade"):
-                    SequentialTradeEngine.close_trade(exit_price=active_ltp, status="SL Hit", notes="Stop loss hit in active monitoring", starting_cash=account_cash, symbol=scrip_symbol)
+                if st.button("🛑 Mark SL Hit & Close", key=f"btn_close_sl_{scrip_symbol}", on_click=_handle_close_sl, args=(scrip_symbol, active_ltp, account_cash), use_container_width=True, help="Record stop-loss outcome and close trade"):
                     st.rerun()
             with it_c3:
-                if st.button("🔄 Sync with Groww Positions", use_container_width=True):
+                if st.button("🔄 Sync with Groww Positions", key=f"btn_sync_groww_pos_{scrip_symbol}", use_container_width=True):
                     sync_res = SequentialTradeEngine.sync_with_groww_positions(groww_feed=groww_feed, symbol=scrip_symbol, starting_cash=account_cash)
                     if sync_res.get("status") == "SUCCESS":
                         st.toast("✅ Reconciled with live Groww position!")
@@ -7008,19 +7012,19 @@ if df is not None and not df.empty:
             # Interactive Confirmation Controls
             ep_c1, ep_c2, ep_c3, ep_c4 = st.columns([1.3, 1.2, 1.2, 1.4])
             with ep_c1:
-                actual_fill_input = st.number_input("Actual Groww Fill (₹)", value=float(planned_p), step=0.05, format="%.2f", key="groww_actual_fill_p")
+                actual_fill_input = st.number_input("Actual Groww Fill (₹)", value=float(planned_p), step=0.05, format="%.2f", key=f"groww_actual_fill_{scrip_symbol}")
             with ep_c2:
-                if st.button("✅ Yes, Filled on Groww", use_container_width=True, help="Confirm order filled on Groww at this price"):
+                if st.button("✅ Yes, Filled on Groww", key=f"btn_confirm_fill_{scrip_symbol}", use_container_width=True, help="Confirm order filled on Groww at this price"):
                     SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=actual_fill_input, symbol=scrip_symbol)
-                    st.success(f"✅ Trade #{active_trade.get('trade_num', 1)} execution confirmed!")
+                    st.toast(f"✅ Trade #{active_trade.get('trade_num', 1)} execution confirmed!")
                     st.rerun()
             with ep_c3:
-                if st.button("❌ No / Cancel Setup", use_container_width=True, help="Cancel trade setup and return to scanning"):
+                if st.button("❌ No / Cancel Setup", key=f"btn_cancel_fill_{scrip_symbol}", use_container_width=True, help="Cancel trade setup and return to scanning"):
                     SequentialTradeEngine.confirm_groww_fill(confirmed=False, symbol=scrip_symbol)
-                    st.info("ℹ️ Setup cancelled. Returned to scanning.")
+                    st.toast("ℹ️ Setup cancelled. Returned to scanning.")
                     st.rerun()
             with ep_c4:
-                if st.button("🤖 Auto-Verify via Groww", use_container_width=True, help="Check Groww API for executed orders"):
+                if st.button("🤖 Auto-Verify via Groww", key=f"btn_autoverify_fill_{scrip_symbol}", use_container_width=True, help="Check Groww API for executed orders"):
                     if groww_feed.is_connected:
                         gw_tr = groww_feed.get_executed_trades_today(symbol_filter=scrip_symbol)
                         matched = False
@@ -7033,7 +7037,7 @@ if df is not None and not df.empty:
                                     symbol=scrip_symbol
                                 )
                                 matched = True
-                                st.success(f"✅ Found Groww fill @ ₹{x.get('entry_price', planned_p):.2f}!")
+                                st.toast(f"✅ Found Groww fill @ ₹{x.get('entry_price', planned_p):.2f}!")
                                 st.rerun()
                         if not matched:
                             st.info("ℹ️ No fill detected in Groww orders today for this contract.")
@@ -7071,9 +7075,18 @@ if df is not None and not df.empty:
             </div>
             ''')
 
-            if st.button("🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)", use_container_width=True):
-                SequentialTradeEngine.acknowledge_and_reset(symbol=scrip_symbol)
-                st.rerun()
+            def _handle_ack_reset(sym):
+                SequentialTradeEngine.acknowledge_and_reset(symbol=sym)
+                st.session_state[f"seq_acked_{sym}"] = True
+
+            if st.button(
+                "🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)",
+                key=f"btn_ack_scan_next_{scrip_symbol}",
+                on_click=_handle_ack_reset,
+                args=(scrip_symbol,),
+                use_container_width=True
+            ):
+                st.toast(f"✅ Trade acknowledged! {scrip_symbol} desk is now in IDLE / SCANNING.")
                 st.rerun()
 
         else:

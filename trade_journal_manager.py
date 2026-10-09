@@ -2463,6 +2463,9 @@ class SequentialTradeEngine:
         """
         state = cls.get_state(symbol=symbol)
         state["current_state"] = cls.STATE_IDLE
+        if state.get("last_closed_trade"):
+            state["archived_last_closed_trade"] = state["last_closed_trade"]
+            state["last_closed_trade"] = None
         cls.save_state(state, symbol=symbol)
         return {
             "success": True,
