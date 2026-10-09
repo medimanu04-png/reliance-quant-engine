@@ -1120,16 +1120,58 @@ def render_quant_desk_clock():
                 }}
                 sessEl.innerHTML = sHtml;
             }}
+            
+            // Sync to parent top-sticky-clock if present
+            try {{
+                if (window.parent && window.parent.document) {{
+                    var topClock = window.parent.document.getElementById('top-sticky-clock');
+                    if (topClock) {{
+                        var isWeekday = (day >= 1 && day <= 5);
+                        var totalMin2 = h * 60 + m;
+                        var mOpen = isWeekday && (totalMin2 >= 9 * 60 + 15 && totalMin2 <= 15 * 60 + 30);
+                        var stateLabel = mOpen ? 'Market Live' : 'Market Closed';
+                        topClock.innerHTML = '🕒 ' + hStr + ':' + mStr + ':<span style="color:#38BDF8;font-weight:bold;">' + sStr + '</span> ' + ampm + ' IST &bull; ' + stateLabel;
+                    }}
+                }}
+            }} catch(e) {{}}
         }} catch(e) {{
             console.error('Clock error:', e);
         }}
     }}
-    setInterval(tick, 1000);
+    
+    // Execute immediately on load
+    tick();
+    
+    // 250ms interval for sub-second precision and instantaneous second flips
+    setInterval(tick, 250);
+    
+    // Re-synchronize instantly upon tab visibility change or window focus
+    document.addEventListener('visibilitychange', function() {{
+        if (!document.hidden) tick();
+    }});
+    window.addEventListener('focus', function() {{
+        tick();
+    }});
+    
+    try {{
+        if (window.parent && window.parent !== window) {{
+            window.parent.addEventListener('visibilitychange', function() {{
+                if (window.parent.document && !window.parent.document.hidden) {{
+                    tick();
+                    try {{ window.parent.dispatchEvent(new Event('resize')); }} catch(e) {{}}
+                }}
+            }});
+            window.parent.addEventListener('focus', function() {{
+                tick();
+                try {{ window.parent.dispatchEvent(new Event('resize')); }} catch(e) {{}}
+            }});
+        }}
+    }} catch(e) {{}}
 }})();
 </script>
 </body>
 </html>"""
-    st.html(html_code)
+    components.html(html_code, height=138, scrolling=False)
 
 # Active Groww Account Profile (Mandatory Link)
 prof = groww_feed.user_profile or {}
@@ -1218,7 +1260,7 @@ def render_persistent_sticky_header():
             <span class="header-pill {pnl_class}">📈 Today's Net P&L: {pnl_sign}₹{day_pnl:,.2f}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <span class="header-pill pill-clock">🕒 {clock_label}</span>
+            <span id="top-sticky-clock" class="header-pill pill-clock">🕒 {clock_label}</span>
             <span class="header-pill pill-telegram">📲 Telegram: {tg_str}</span>
         </div>
     </div>
@@ -1600,6 +1642,7 @@ def render_live_macro_benchmarks_strip():
 # HOMEPAGE EXECUTIVE ROUTING GATE (Limited ONLY to General Market Telemetry)
 # ==============================================================================
 if active_route == "":
+    render_persistent_sticky_header()
     render_live_macro_benchmarks_strip()
 
     st.markdown("---")
