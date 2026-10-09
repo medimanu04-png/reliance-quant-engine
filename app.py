@@ -1328,183 +1328,192 @@ def execute_global_multi_desk_rescan(is_manual: bool = False):
     st.session_state["_my_last_rescan_event_ts"] = now
 
 
-@st.fragment(run_every="2s")
-def render_auto_rescan_controller():
-    now = time_mod.time()
-    if "last_auto_rescan_ts" not in st.session_state:
-        st.session_state["last_auto_rescan_ts"] = now
+RESCAN_INTERVAL_OPTIONS = [
+    "⚡ 2s (Ultra-Fast)",
+    "⚡ 5s (Default)",
+    "⚡ 10s (Relaxed)",
+    "⚡ 30s (Saver)",
+    "⏸️ Off (Manual)"
+]
+RESCAN_INTERVAL_SECONDS_MAP = {
+    "⚡ 2s (Ultra-Fast)": 2.0,
+    "⚡ 5s (Default)": 5.0,
+    "⚡ 10s (Relaxed)": 10.0,
+    "⚡ 30s (Saver)": 30.0,
+    "⏸️ Off (Manual)": None
+}
 
-    key_suffix = f"_{active_route or 'hp'}"
+USER_PREFS_FILE = os.path.join(os.path.dirname(__file__), "data_cache", "user_preferences.json")
+
+def _load_persisted_rescan_pref() -> str:
+    try:
+        if os.path.exists(USER_PREFS_FILE):
+            with open(USER_PREFS_FILE, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                val = d.get("rescan_interval")
+                if val in RESCAN_INTERVAL_OPTIONS:
+                    return val
+    except Exception:
+        pass
+    return "⚡ 5s (Default)"
+
+def _save_persisted_rescan_pref(val: str):
+    try:
+        os.makedirs(os.path.dirname(USER_PREFS_FILE), exist_ok=True)
+        with open(USER_PREFS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"rescan_interval": val}, f)
+    except Exception:
+        pass
+
+def resolve_rescan_cadence():
+    """Returns (run_every_str, cycle_label, is_active) synchronized globally across all 3 desks."""
+    if "global_rescan_interval_pref" not in st.session_state:
+        st.session_state["global_rescan_interval_pref"] = _load_persisted_rescan_pref()
+    selected = st.session_state.get("global_rescan_interval_pref", "⚡ 5s (Default)")
+    target_sec = RESCAN_INTERVAL_SECONDS_MAP.get(selected, 5.0)
+    is_active = (target_sec is not None)
+    
+    if not is_active:
+        run_every_str = None
+        cycle_label = "⚪ Auto paused (Manual)"
+    elif target_sec == 2.0:
+        run_every_str = "2s"
+        cycle_label = "⚡ 2s cycle (Ultra-Fast)"
+    elif target_sec == 5.0:
+        run_every_str = "5s"
+        cycle_label = "🟢 5s cycle (Default)"
+    elif target_sec == 10.0:
+        run_every_str = "10s"
+        cycle_label = "🟢 10s cycle (Relaxed)"
+    else:
+        run_every_str = "30s"
+        cycle_label = "🟢 30s cycle (Saver)"
+    
+    st.session_state["auto_rescan_active"] = is_active
+    st.session_state["auto_rescan_interval_sec"] = target_sec or 0.0
+    return run_every_str, cycle_label, is_active
+
+
+def render_auto_rescan_controller():
+    # 1. Action Bar: Rendered directly outside any fragment so button & selectbox NEVER clear or blink
     col_rb, col_cb = st.columns([1.6, 1.2])
     with col_rb:
+        key_suffix = f"_{active_route or 'hp'}"
         rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key=f"btn_instant_rescan{key_suffix}")
     with col_cb:
-        interval_options = [
-            "⚡ 2s (Ultra-Fast)",
-            "⚡ 5s (Default)",
-            "⚡ 10s (Relaxed)",
-            "⚡ 30s (Saver)",
-            "⏸️ Off (Manual)"
-        ]
-        interval_map = {
-            "⚡ 2s (Ultra-Fast)": 2.0,
-            "⚡ 5s (Default)": 5.0,
-            "⚡ 10s (Relaxed)": 10.0,
-            "⚡ 30s (Saver)": 30.0,
-            "⏸️ Off (Manual)": 0.0
-        }
-        sb_key = f"sb_auto_rescan_interval{key_suffix}"
-        if sb_key not in st.session_state:
-            st.session_state[sb_key] = "⚡ 5s (Default)"
-        selected_interval_str = st.selectbox(
+        if "global_rescan_interval_pref" not in st.session_state:
+            st.session_state["global_rescan_interval_pref"] = _load_persisted_rescan_pref()
+        
+        def _on_interval_change():
+            new_val = st.session_state.get("global_rescan_interval_pref")
+            _save_persisted_rescan_pref(new_val)
+
+        st.selectbox(
             "Auto Rescan Interval",
-            options=interval_options,
+            options=RESCAN_INTERVAL_OPTIONS,
             label_visibility="collapsed",
-            key=sb_key
+            key="global_rescan_interval_pref",
+            on_change=_on_interval_change
         )
-        target_interval = interval_map.get(selected_interval_str, 5.0)
-        auto_active = (target_interval > 0.0)
-        st.session_state["auto_rescan_active"] = auto_active
-        st.session_state["auto_rescan_interval_sec"] = target_interval
 
-    # Check if an external manual rescan event was dispatched from another tab/window
-    rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
-    external_sync_needed = False
-    if os.path.exists(rescan_file):
-        try:
-            with open(rescan_file, "r", encoding="utf-8") as rf:
-                g_meta = json.load(rf)
-            g_ts = float(g_meta.get("timestamp", 0))
-            is_manual_sync = bool(g_meta.get("manual", False))
-            my_last_written = float(st.session_state.get("_my_last_rescan_event_ts", 0))
-
-            if "_desk_last_synced_event_ts" not in st.session_state:
-                # Fresh session initialization: align timestamps without an abortive early rerun
-                st.session_state["_desk_last_synced_event_ts"] = g_ts
-                last_synced_ts = g_ts
-            else:
-                last_synced_ts = float(st.session_state.get("_desk_last_synced_event_ts", 0))
-
-            # Only trigger full app rerun if this event was NOT written by this tab AND was a manual rescan
-            if (g_ts > (last_synced_ts + 0.5)) and (abs(g_ts - my_last_written) > 0.5):
-                st.session_state["_desk_last_synced_event_ts"] = g_ts
-                st.session_state["rescan_time"] = g_meta.get("time_str", "")
-                st.session_state["last_auto_rescan_ts"] = g_ts
-                for sym_c in ("nifty", "sensex"):
-                    st.session_state.pop(f"cached_real_df_{sym_c}", None)
-                if "_APP_INDICATOR_CACHE" in st.session_state:
-                    st.session_state["_APP_INDICATOR_CACHE"].clear()
-                if is_manual_sync:
-                    external_sync_needed = True
-        except Exception:
-            pass
-
-    elapsed = now - st.session_state.get("last_auto_rescan_ts", now)
-    should_auto = auto_active and (elapsed >= target_interval)
+    run_every_cadence, cycle_label, auto_active = resolve_rescan_cadence()
 
     if rescan_btn:
         execute_global_multi_desk_rescan(is_manual=True)
         st.rerun(scope="app")
-    elif external_sync_needed:
-        st.rerun(scope="app")
-    elif should_auto:
-        st.session_state["last_auto_rescan_ts"] = now
-        execute_global_multi_desk_rescan(is_manual=False)
-        # Auto rescan updates data in-place without tearing down the entire app DOM tree
+
+    def _render_desk_pills_banner():
+        spec_nifty = get_asset_spec("NIFTY")
+        spec_sensex = get_asset_spec("SENSEX")
+
+        if active_route == "":
+            # Homepage Mode: display Benchmark desks with live refreshed spot prices and target parameters
+            from groww_market_feed import GrowwMarketFeed
+            gw_feed = GrowwMarketFeed.get_instance()
+            spot_nifty = gw_feed.get_live_spot_data(symbol="NIFTY")
+            spot_sensex = gw_feed.get_live_spot_data(symbol="SENSEX")
+
+            def _fmt_desk(s_dict, spec_obj):
+                ltp = float(s_dict.get("spot_ltp", spec_obj.default_spot))
+                prev_c = float(s_dict.get("prev_close", ltp))
+                chg = ltp - prev_c
+                sign = "+" if chg >= 0 else ""
+                color = "#10B981" if chg >= 0 else "#EF4444"
+                return ltp, chg, sign, color
+
+            n_ltp, n_chg, n_sign, n_col = _fmt_desk(spot_nifty, spec_nifty)
+            s_ltp, s_chg, s_sign, s_col = _fmt_desk(spot_sensex, spec_sensex)
+
+            st.html(f"""
+            <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
+                <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+                <span>⚡ Multi-Desk Engine: <b style="color: #34D399;">Benchmark Desks Live</b></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                            <span>📈 <b style="color: #10B981;">{spec_nifty.yf_symbol}</b> ({spec_nifty.lot_size}/L)</span>
+                            <span>₹<b style="color: #FFFFFF;">{n_ltp:,.2f}</b> (<b style="color: {n_col};">{n_sign}{n_chg:.1f}</b>)</span>
+                            <span>🎯 <b style="color: #34D399;">+{spec_nifty.target_pts:.0f}</b></span>
+                            <span>🛑 <b style="color: #F87171;">-{spec_nifty.sl_pts:.0f}</b></span>
+                            <span>🚦 <b style="color: #FCD34D;">≥{spec_nifty.min_confluence_gate:.0f}%</b></span>
+                        </div>
+                    </a>
+                    <a href="./Sensex?stock=Sensex" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                            <span>🏛️ <b style="color: #A855F7;">{spec_sensex.yf_symbol}</b> ({spec_sensex.lot_size}/L)</span>
+                            <span>₹<b style="color: #FFFFFF;">{s_ltp:,.2f}</b> (<b style="color: {s_col};">{s_sign}{s_chg:.1f}</b>)</span>
+                            <span>🎯 <b style="color: #34D399;">+{spec_sensex.target_pts:.0f}</b></span>
+                            <span>🛑 <b style="color: #F87171;">-{spec_sensex.sl_pts:.0f}</b></span>
+                            <span>🚦 <b style="color: #FCD34D;">≥{spec_sensex.min_confluence_gate:.0f}%</b></span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+            """)
+        else:
+            # Desk Mode: display active asset pill & quick cross-desk sync bar
+            cur_sel_scrip = st.session_state.get("selected_scrip", "NIFTY")
+            spec_active = get_asset_spec(symbol=cur_sel_scrip)
+            cur_sel_sym = spec_active.yf_symbol
+            cur_sel_lot = spec_active.lot_size
+            cur_sel_tgt = spec_active.target_pts
+            cur_sel_sl = spec_active.sl_pts
+
+            from groww_market_feed import GrowwMarketFeed
+            gw_feed = GrowwMarketFeed.get_instance()
+            spot_active = gw_feed.get_live_spot_data(symbol=spec_active.symbol)
+            ltp_val = float(spot_active.get("spot_ltp", spec_active.default_spot))
+            prev_c = float(spot_active.get("prev_close", ltp_val))
+            chg_val = ltp_val - prev_c
+            chg_sign = "+" if chg_val >= 0 else ""
+            chg_col = "#10B981" if chg_val >= 0 else "#EF4444"
+            other_desk = "Sensex" if (cur_sel_scrip == "NIFTY 50" or cur_sel_scrip == "NIFTY") else "Nifty"
+            other_label = "BSE SENSEX" if other_desk == "Sensex" else "NIFTY 50"
+
+            st.html(f"""
+            <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
+                <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+                <span>⚡ Multi-Desk Sync: <b style="color: #34D399;">Active & Live</b></span>
+            </div>
+            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot) • ₹<b style="color: #FFFFFF;">{ltp_val:,.2f}</b> (<b style="color: {chg_col};">{chg_sign}{chg_val:.1f}</b>)</span>
+                <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
+                <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
+                <a href="./{other_desk}?stock={other_desk}" target="_blank" style="text-decoration: none; color: #38BDF8; font-weight: 700;">↗ Open {other_label} Desk</a>
+            </div>
+            """)
 
     if not auto_active:
-        cycle_label = "⚪ Auto paused (Manual)"
-    elif target_interval == 2.0:
-        cycle_label = "⚡ 2s cycle (Ultra-Fast)"
-    elif target_interval == 5.0:
-        cycle_label = "🟢 5s cycle (Active)"
-    elif target_interval == 10.0:
-        cycle_label = "🟢 10s cycle (Relaxed)"
+        _render_desk_pills_banner()
     else:
-        cycle_label = f"🟢 {int(target_interval)}s cycle"
-    spec_nifty = get_asset_spec("NIFTY")
-    spec_sensex = get_asset_spec("SENSEX")
-
-    if active_route == "":
-        # Homepage Mode: display Benchmark desks with live refreshed spot prices and target parameters
-        from groww_market_feed import GrowwMarketFeed
-        gw_feed = GrowwMarketFeed.get_instance()
-        spot_nifty = gw_feed.get_live_spot_data(symbol="NIFTY")
-        spot_sensex = gw_feed.get_live_spot_data(symbol="SENSEX")
-
-        def _fmt_desk(s_dict, spec_obj):
-            ltp = float(s_dict.get("spot_ltp", spec_obj.default_spot))
-            prev_c = float(s_dict.get("prev_close", ltp))
-            chg = ltp - prev_c
-            sign = "+" if chg >= 0 else ""
-            color = "#10B981" if chg >= 0 else "#EF4444"
-            return ltp, chg, sign, color
-
-        n_ltp, n_chg, n_sign, n_col = _fmt_desk(spot_nifty, spec_nifty)
-        s_ltp, s_chg, s_sign, s_col = _fmt_desk(spot_sensex, spec_sensex)
-
-        st.html(f"""
-        <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
-            <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
-            <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
-            <span>⚡ Multi-Desk Engine: <b style="color: #34D399;">Benchmark Desks Live</b></span>
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                        <span>📈 <b style="color: #10B981;">{spec_nifty.yf_symbol}</b> ({spec_nifty.lot_size}/L)</span>
-                        <span>₹<b style="color: #FFFFFF;">{n_ltp:,.2f}</b> (<b style="color: {n_col};">{n_sign}{n_chg:.1f}</b>)</span>
-                        <span>🎯 <b style="color: #34D399;">+{spec_nifty.target_pts:.0f}</b></span>
-                        <span>🛑 <b style="color: #F87171;">-{spec_nifty.sl_pts:.0f}</b></span>
-                        <span>🚦 <b style="color: #FCD34D;">≥{spec_nifty.min_confluence_gate:.0f}%</b></span>
-                    </div>
-                </a>
-                <a href="./Sensex?stock=Sensex" target="_blank" style="text-decoration: none; color: inherit; display: block;">
-                    <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                        <span>🏛️ <b style="color: #A855F7;">{spec_sensex.yf_symbol}</b> ({spec_sensex.lot_size}/L)</span>
-                        <span>₹<b style="color: #FFFFFF;">{s_ltp:,.2f}</b> (<b style="color: {s_col};">{s_sign}{s_chg:.1f}</b>)</span>
-                        <span>🎯 <b style="color: #34D399;">+{spec_sensex.target_pts:.0f}</b></span>
-                        <span>🛑 <b style="color: #F87171;">-{spec_sensex.sl_pts:.0f}</b></span>
-                        <span>🚦 <b style="color: #FCD34D;">≥{spec_sensex.min_confluence_gate:.0f}%</b></span>
-                    </div>
-                </a>
-            </div>
-        </div>
-        """)
-    else:
-        # Desk Mode: display active asset pill & quick cross-desk sync bar
-        cur_sel_scrip = st.session_state.get("selected_scrip", "NIFTY")
-        spec_active = get_asset_spec(symbol=cur_sel_scrip)
-        cur_sel_sym = spec_active.yf_symbol
-        cur_sel_lot = spec_active.lot_size
-        cur_sel_tgt = spec_active.target_pts
-        cur_sel_sl = spec_active.sl_pts
-
-        from groww_market_feed import GrowwMarketFeed
-        gw_feed = GrowwMarketFeed.get_instance()
-        spot_active = gw_feed.get_live_spot_data(symbol=spec_active.symbol)
-        ltp_val = float(spot_active.get("spot_ltp", spec_active.default_spot))
-        prev_c = float(spot_active.get("prev_close", ltp_val))
-        chg_val = ltp_val - prev_c
-        chg_sign = "+" if chg_val >= 0 else ""
-        chg_col = "#10B981" if chg_val >= 0 else "#EF4444"
-        other_desk = "Sensex" if (cur_sel_scrip == "NIFTY 50" or cur_sel_scrip == "NIFTY") else "Nifty"
-        other_label = "BSE SENSEX" if other_desk == "Sensex" else "NIFTY 50"
-
-        st.html(f"""
-        <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
-            <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
-            <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
-            <span>⚡ Multi-Desk Sync: <b style="color: #34D399;">Active & Live</b></span>
-        </div>
-        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-            <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot) • ₹<b style="color: #FFFFFF;">{ltp_val:,.2f}</b> (<b style="color: {chg_col};">{chg_sign}{chg_val:.1f}</b>)</span>
-            <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
-            <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
-            <a href="./{other_desk}?stock={other_desk}" target="_blank" style="text-decoration: none; color: #38BDF8; font-weight: 700;">↗ Open {other_label} Desk</a>
-        </div>
-        """)
+        @st.fragment(run_every=run_every_cadence)
+        def _stream_desk_pills_banner_frag():
+            _render_desk_pills_banner()
+        _stream_desk_pills_banner_frag()
 
 
 
@@ -1539,8 +1548,7 @@ elif manual_rescan and active_route != "":
 st.session_state["just_rescanned"] = False
 
 # 6 Sleek Live Market Cards with Dynamic Streaming Fragment
-@st.fragment(run_every="6s")
-def render_live_macro_benchmarks_strip():
+def _render_live_macro_benchmarks_strip_body():
     tick_payload = NSEIndiaFetcher.get_dynamic_market_ticks()
     benchmarks = tick_payload["benchmarks"]
     feed_time = tick_payload["timestamp"]
@@ -1650,21 +1658,34 @@ def render_live_macro_benchmarks_strip():
     </div>
     """)
 
+
+def render_live_macro_benchmarks_strip():
+    run_cadence, _, auto_active = resolve_rescan_cadence()
+    if not auto_active:
+        # Zero fragment, zero background timers, completely static & blink-free in Off state!
+        _render_live_macro_benchmarks_strip_body()
+    else:
+        @st.fragment(run_every=run_cadence)
+        def _stream_live_macro_benchmarks_frag():
+            _render_live_macro_benchmarks_strip_body()
+        _stream_live_macro_benchmarks_frag()
+
 # ==============================================================================
 # HOMEPAGE EXECUTIVE ROUTING GATE (Limited ONLY to General Market Telemetry)
 # ==============================================================================
 if active_route == "":
     render_persistent_sticky_header()
-    render_live_macro_benchmarks_strip()
 
-    st.markdown("---")
-
-    # Fast Rescan Controller & Live Real-Time Quant Desk Clock Watch
+    # Fast Rescan Controller & Live Real-Time Quant Desk Clock Watch (Multi-Desk Synchronized)
     top_ctrl_col, top_clock_col = st.columns([2.3, 1.7])
     with top_ctrl_col:
         render_auto_rescan_controller()
     with top_clock_col:
         render_quant_desk_clock()
+
+    st.markdown("---")
+
+    render_live_macro_benchmarks_strip()
 
     st.markdown("---")
 
@@ -5005,8 +5026,7 @@ def render_atm_call_put_content(spot: float, broker_call_ltp: float, stock_volum
                 """)
 
 
-@st.fragment(run_every="6s")
-def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
+def _render_dynamic_1s_atm_feed_body(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None, is_streaming: bool = True):
     # Dynamically pull current real-time spot from live feed on each tick
     _feed_sym = resolve_symbol(st.session_state.get("selected_scrip", "NIFTY"))
     try:
@@ -5016,7 +5036,19 @@ def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume
         live_spot = gw_spot_val if gw_spot_val > 0 else spot
     except Exception:
         live_spot = spot
-    render_atm_call_put_content(live_spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, is_streaming=True, trade_plan=trade_plan)
+    render_atm_call_put_content(live_spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, is_streaming=is_streaming, trade_plan=trade_plan)
+
+
+def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
+    run_atm_cadence, _, auto_active = resolve_rescan_cadence()
+    if not auto_active:
+        # Zero fragment, zero timers, zero WebSocket re-renders in Off state!
+        _render_dynamic_1s_atm_feed_body(spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, trade_plan=trade_plan, is_streaming=False)
+    else:
+        @st.fragment(run_every=run_atm_cadence)
+        def _stream_dynamic_1s_atm_feed_frag():
+            _render_dynamic_1s_atm_feed_body(spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, trade_plan=trade_plan, is_streaming=True)
+        _stream_dynamic_1s_atm_feed_frag()
 
 # ==============================================================================
 if df is not None and not df.empty:
@@ -6463,8 +6495,9 @@ if df is not None and not df.empty:
         bias_badge_label = f"⚪ Neutral / Mild {active_side_name} Lean ({active_side_conviction:.1f}%)"
         bias_narrative = "Sub-threshold directional drift"
 
-    @st.fragment(run_every="6s")
-    def render_reliance_spot_hero():
+    desk_cadence, _, auto_active_desk = resolve_rescan_cadence()
+
+    def _render_reliance_spot_hero_body():
         hero_sym = scrip_symbol
         from groww_market_feed import GrowwMarketFeed
         try:
@@ -6542,8 +6575,17 @@ if df is not None and not df.empty:
             </div>
             """)
 
-    @st.fragment(run_every="6s")
-    def render_quant_radar_kpis():
+    def render_reliance_spot_hero():
+        if not auto_active_desk:
+            # Zero fragment, zero timers, zero WebSocket re-renders in Off state!
+            _render_reliance_spot_hero_body()
+        else:
+            @st.fragment(run_every=desk_cadence)
+            def _stream_reliance_spot_hero_frag():
+                _render_reliance_spot_hero_body()
+            _stream_reliance_spot_hero_frag()
+
+    def _render_quant_radar_kpis_body():
         radar_sym = scrip_symbol
         try:
             from groww_market_feed import GrowwMarketFeed
@@ -6667,6 +6709,16 @@ if df is not None and not df.empty:
             </div>
         </div>
         """)
+
+    def render_quant_radar_kpis():
+        if not auto_active_desk:
+            # Zero fragment, zero timers, zero WebSocket re-renders in Off state!
+            _render_quant_radar_kpis_body()
+        else:
+            @st.fragment(run_every=desk_cadence)
+            def _stream_quant_radar_kpis_frag():
+                _render_quant_radar_kpis_body()
+            _stream_quant_radar_kpis_frag()
 
     # Clean Stock Name Heading for Dedicated Desk Mode
     st.html(f"""
