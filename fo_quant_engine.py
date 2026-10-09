@@ -361,6 +361,8 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_tr(highs: List[float], lows: List[float], closes: List[float]) -> List[float]:
+        if not highs or not lows or not closes:
+            return []
         tr = [highs[0] - lows[0]]
         for i in range(1, len(closes)):
             hl = highs[i] - lows[i]
@@ -413,6 +415,8 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_supertrend(highs: List[float], lows: List[float], closes: List[float], period: int = 10, multiplier: float = 3.0):
+        if not highs or not lows or not closes:
+            return [], []
         atr = MultiIndicatorMath.calculate_atr(highs, lows, closes, period)
         upper_band, lower_band = [], []
         for i in range(len(closes)):
@@ -524,6 +528,8 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_stochastic(highs: List[float], lows: List[float], closes: List[float], period: int = 14, smooth_k: int = 3):
+        if not highs or not lows or not closes:
+            return 50.0
         k_vals = []
         for i in range(len(closes)):
             start = max(0, i - period + 1)
@@ -533,7 +539,7 @@ class MultiIndicatorMath:
             k = ((closes[i] - lowest_l) / denom * 100.0) if denom > 0 else 50.0
             k_vals.append(k)
         smoothed_k = MultiIndicatorMath.calculate_ema(k_vals, smooth_k)
-        return round(smoothed_k[-1], 1)
+        return round(smoothed_k[-1], 1) if smoothed_k else 50.0
 
     @staticmethod
     def calculate_rvol_zscore(volumes: List[float], period: int = 20) -> Tuple[float, float, str]:
@@ -4872,6 +4878,10 @@ class UltraHighConvictionRelianceEngine:
             }
 
         spot = c5m["close"][-1]
+
+        # Guard: If c15m is empty or missing, safely fallback to c5m to prevent unhandled IndexError
+        if not c15m or not c15m.get("close") or len(c15m["close"]) == 0:
+            c15m = c5m
 
         # VECTOR 1: Multi-Timeframe Trend & ORB-15 Structure (20 pts)
         ema9 = MultiIndicatorMath.calculate_ema(c5m["close"], 9)[-1]
