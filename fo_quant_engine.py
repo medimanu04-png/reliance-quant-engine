@@ -868,30 +868,45 @@ class MultiIndicatorMath:
         return is_nr7, is_inside_bar, pattern
 
     @staticmethod
+    def get_dynamic_risk_free_rate(now_dt: Optional[datetime] = None) -> float:
+        """
+        Dynamically resolves institutional risk-free interest rate (r) for option Greeks & Cost-of-Carry (Improvement 4).
+        Benchmark: Calibrated against RBI Repo Rate (6.50%) + 91-day T-Bill spread (~25 bps) = 6.75%.
+        Can be dynamically adjusted or overridden via live macroeconomic telemetry.
+        """
+        try:
+            if "RISK_FREE_RATE" in os.environ:
+                return float(os.environ["RISK_FREE_RATE"])
+        except Exception:
+            pass
+        return 0.0675
+
+    @staticmethod
     def calculate_theta_decay_velocity(
         spot: float,
         strike: float,
         iv: float,
         dte: float,
         contract_type: str = "CE",
-        r: float = 0.0675
+        r: Optional[float] = None
     ) -> Tuple[float, float, str]:
         """
-        Black-Scholes-Merton Theta Decay Velocity & Charm.
+        Black-Scholes-Merton Theta Decay Velocity & Charm with Dynamic Risk-Free Rate (Improvement 4).
         Returns: (theta_per_day, theta_per_hour, decay_severity)
         - theta_per_hour: Expected option premium loss purely from time passage per 60 minutes.
         """
         try:
+            eff_r = r if r is not None else MultiIndicatorMath.get_dynamic_risk_free_rate()
             T = max(0.5, dte) / 365.0
             sigma = max(0.08, iv if iv < 1.0 else iv / 100.0)
             
-            d1 = (math.log(spot / strike) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+            d1 = (math.log(spot / strike) + (eff_r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
             d2 = d1 - sigma * math.sqrt(T)
 
             phi_d1 = math.exp(-0.5 * d1 ** 2) / math.sqrt(2.0 * math.pi)
 
             # BSM Theta for Call
-            theta_call_annual = -(spot * phi_d1 * sigma) / (2.0 * math.sqrt(T)) - r * strike * math.exp(-r * T) * (0.5 * (1.0 + math.erf(d2 / math.sqrt(2.0))))
+            theta_call_annual = -(spot * phi_d1 * sigma) / (2.0 * math.sqrt(T)) - eff_r * strike * math.exp(-eff_r * T) * (0.5 * (1.0 + math.erf(d2 / math.sqrt(2.0))))
             theta_per_day = round(abs(theta_call_annual / 365.0), 2)
             theta_per_hour = round(theta_per_day / 6.25, 2)
 
@@ -3100,10 +3115,10 @@ class MultiIndicatorMath:
         strike: float,
         iv: float,
         dte: int,
-        r_rate: float = 0.0675
+        r_rate: Optional[float] = None
     ) -> Tuple[float, float, str]:
         """
-        Second-Order Greeks: Vanna (dDelta/dVol) and Volga (dVega/dVol).
+        Second-Order Greeks: Vanna (dDelta/dVol) and Volga (dVega/dVol) with Dynamic Risk-Free Rate (Improvement 4).
         
         Institutional Rationale (IV Surface Gap):
         - Vanna: How delta shifts with IV changes — critical for intraday gamma scalping.
@@ -3113,13 +3128,14 @@ class MultiIndicatorMath:
         
         Returns: (vanna_value, volga_value, greek_regime)
         """
+        eff_r = r_rate if r_rate is not None else MultiIndicatorMath.get_dynamic_risk_free_rate()
         T = max(1, dte) / 365.0
         if iv <= 0 or T <= 0 or spot <= 0:
             return 0.0, 0.0, "INSUFFICIENT_DATA"
         
         iv_dec = iv if iv < 1.0 else iv / 100.0
         sqrt_T = math.sqrt(T)
-        d1 = (math.log(spot / max(1.0, strike)) + (r_rate + 0.5 * iv_dec ** 2) * T) / (iv_dec * sqrt_T)
+        d1 = (math.log(spot / max(1.0, strike)) + (eff_r + 0.5 * iv_dec ** 2) * T) / (iv_dec * sqrt_T)
         d2 = d1 - iv_dec * sqrt_T
         
         # N'(d1) = standard normal PDF at d1
@@ -3146,11 +3162,11 @@ class MultiIndicatorMath:
     def calculate_dynamic_cost_of_carry_basis(
         spot: float,
         dte: int,
-        risk_free_rate: float = 0.0675,
+        risk_free_rate: Optional[float] = None,
         dividend_yield: float = 0.008
     ) -> float:
         """
-        Dynamic Cost-of-Carry Basis Estimator (GAP 3 Fix).
+        Dynamic Cost-of-Carry Basis Estimator with Dynamic Risk-Free Rate (Improvement 4).
         
         Instead of using a fixed 0.42% synthetic proxy, calculates the theoretical
         fair futures price using cost-of-carry model that accounts for DTE.
@@ -3160,8 +3176,9 @@ class MultiIndicatorMath:
         Near expiry: basis compresses to 0-10 bps
         Far from expiry (30 DTE): basis can be 50-80 bps
         """
+        eff_r = risk_free_rate if risk_free_rate is not None else MultiIndicatorMath.get_dynamic_risk_free_rate()
         T = max(0, dte) / 365.0
-        fair_futures = round(spot * math.exp((risk_free_rate - dividend_yield) * T), 2)
+        fair_futures = round(spot * math.exp((eff_r - dividend_yield) * T), 2)
         return fair_futures
 
     @staticmethod
@@ -3753,10 +3770,11 @@ class MultiIndicatorMath:
     def calculate_kalman_trend(
         closes: List[float],
         process_noise: float = 0.01,
-        measurement_noise: float = 1.0
+        measurement_noise: float = 1.0,
+        atr: Optional[float] = None
     ) -> Tuple[float, float, float, str]:
         """
-        Linear Kalman Filter for Real-Time Trend State Estimation.
+        Linear Kalman Filter for Real-Time Trend State Estimation with Dynamic ATR Noise Scaling (Improvement 2).
         Reference: Kalman (1960) / Harvey (1989) Structural Time Series Models.
 
         Models price as a latent state [level, slope] with Gaussian noise:
@@ -3764,11 +3782,9 @@ class MultiIndicatorMath:
           Observation: z_t = H * x_t + v_t         (v ~ N(0, R))
           F = [[1, 1], [0, 1]],  H = [1, 0]
 
-        Advantages over EMA stack:
-          - Adapts smoothing dynamically based on measurement noise ratio
-          - Provides uncertainty bounds (Kalman gain → confidence)
-          - Detects trend changes 3-7 bars faster than EMA crossovers
-          - Outputs slope directly (no derivative approximation)
+        Dynamic ATR Noise Scaling:
+          - High volatility / wide candles (large ATR): R expands to filter single-candle outlier wicks.
+          - Tight consolidation (low ATR): R tightens to capture micro-breakouts with zero lag.
 
         Returns: (filtered_price, trend_slope, kalman_gain, regime)
         """
@@ -3784,7 +3800,13 @@ class MultiIndicatorMath:
         p_ss = 100.0  # slope variance
         q_l = process_noise
         q_s = process_noise * 0.5
-        r = max(0.01, measurement_noise)
+
+        # Dynamic ATR Noise Scaling (Improvement 2)
+        if atr is not None and atr > 0:
+            atr_norm = max(0.5, min(4.0, atr / 15.0))
+            r = max(0.01, measurement_noise * (atr_norm ** 2))
+        else:
+            r = max(0.01, measurement_noise)
 
         kg = 0.5  # Kalman gain (last)
 
@@ -5067,10 +5089,10 @@ class UltraHighConvictionRelianceEngine:
                 v1_bear = max(0.0, v1_bear - 2.0)
                 v1_bull += 1.5
 
-        # Kalman Filter Real-Time Trend Estimation (Gap 6: 3-7 bars faster than EMA crossovers)
+        # Kalman Filter Real-Time Trend Estimation with Dynamic ATR Noise Scaling (Improvement 2)
         # Reference: Kalman (1960) / Harvey (1989) Structural Time Series Models
         kalman_price, kalman_slope, kalman_gain, kalman_regime = MultiIndicatorMath.calculate_kalman_trend(
-            c5m["close"], process_noise=0.01, measurement_noise=1.0
+            c5m["close"], process_noise=0.01, measurement_noise=1.0, atr=orb_atr_5m
         )
         if kalman_regime == "KALMAN_STRONG_UPTREND":
             v1_bull += 2.5  # Kalman slope confirms strong bullish momentum (leading signal)

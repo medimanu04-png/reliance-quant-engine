@@ -2763,12 +2763,16 @@ def fetch_scrip_candles(scrip: str = "NIFTY", interval: str = "5m", force_key: s
     except Exception:
         base_p = last_hist_close
 
-    # Resilient Real Data Session Cache
+    # Resilient Real Data Session Cache with Memory Capping (Improvement 3)
     is_synthetic_feed = False
     sess_cache_key = f"cached_real_df_{cur_spec.symbol.lower()}"
     if df is not None and not df.empty and len(df) >= 30:
         try:
-            st.session_state[sess_cache_key] = df.copy()
+            # Improvement 3: Cap session state candle memory to recent 375 bars (5 trading days)
+            # Prevents unbounded RAM growth and browser sluggishness over extended sessions
+            capped_df = df.iloc[-375:].copy() if len(df) > 375 else df.copy()
+            st.session_state[sess_cache_key] = capped_df
+            df = capped_df
         except Exception:
             pass
     elif sess_cache_key in st.session_state and not st.session_state[sess_cache_key].empty:
@@ -5335,10 +5339,10 @@ if df is not None and not df.empty:
     elif spot <= donch_low_val:
         v1_bear += 2.5
 
-    # Kalman Filter Real-Time Trend State Estimation (Gap 6: 3-7 bars faster than EMA crossovers)
+    # Kalman Filter Real-Time Trend State Estimation with Dynamic ATR Noise Scaling (Improvement 2)
     # Reference: Kalman (1960) / Harvey (1989) Structural Time Series Models
     kalman_price, kalman_slope, kalman_gain, kalman_regime = MultiIndicatorMath.calculate_kalman_trend(
-        df['Close'].tolist(), process_noise=0.01, measurement_noise=1.0
+        df['Close'].tolist(), process_noise=0.01, measurement_noise=1.0, atr=float(latest.get('ATR_14', 15.0))
     )
     if kalman_regime == "KALMAN_STRONG_UPTREND":
         v1_bull += 2.5  # Kalman slope confirms strong bullish momentum (leading signal)

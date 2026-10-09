@@ -21,6 +21,7 @@ import json
 import logging
 import argparse
 import threading
+import concurrent.futures
 from datetime import datetime, time as dt_time, timedelta
 from typing import Dict, Any, Optional, Tuple, List
 
@@ -340,6 +341,8 @@ class RelianceQuantAlertDaemon:
         self.last_chop_alert_sent: Dict[str, bool] = {s: False for s in self.symbols}
         self.last_git_sync_ts = time.time()
         self.breakout_tick_counts: Dict[str, int] = {}
+        # Improvement 1: Dedicated Multi-Desk ThreadPool for concurrent evaluation
+        self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(2, len(self.symbols)), thread_name_prefix="QuantDeskPoller")
         # Pre-Market Warmup & Kalman Seeding (Suggestion 4)
         self._premarket_preload_and_seed_kalman()
 
@@ -384,10 +387,12 @@ class RelianceQuantAlertDaemon:
         return True, "MARKET_OPEN"
 
     def run_single_tick(self):
-        """Executes multi-asset market scan and alert evaluation across all monitored assets."""
-        for sym in self.symbols:
+        """Executes multi-asset market scan and alert evaluation concurrently via ThreadPool (Improvement 1)."""
+        futures = {self._pool.submit(self.run_single_symbol_tick, sym): sym for sym in self.symbols}
+        for future in concurrent.futures.as_completed(futures):
+            sym = futures[future]
             try:
-                self.run_single_symbol_tick(symbol=sym)
+                future.result()
             except Exception as e:
                 logger.error(f"Error evaluating alerts for {sym}: {e}", exc_info=True)
 
@@ -1517,6 +1522,10 @@ class RelianceQuantAlertDaemon:
                     logger.error(f"Tick cycle error: {e}", exc_info=True)
                     time.sleep(self.interval * 2)
         finally:
+            try:
+                self._pool.shutdown(wait=False)
+            except Exception:
+                pass
             try:
                 if os.path.exists(DAEMON_LOCK_FILE):
                     with open(DAEMON_LOCK_FILE, "r", encoding="utf-8") as f:
