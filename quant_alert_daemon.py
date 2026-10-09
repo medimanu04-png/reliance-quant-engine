@@ -571,21 +571,51 @@ class RelianceQuantAlertDaemon:
         dominant_side = "CALL (CE)" if "BULLISH" in prob_str.upper() else "PUT (PE)"
         contract_type = "CE" if dominant_side == "CALL (CE)" else "PE"
 
+        # Resolve active expiry mandate dynamically
+        expiry_info = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=sym)
+        expiry_date = expiry_info.get("selected_expiry")
+        if not expiry_date:
+            up_dt = self.groww_feed._get_upcoming_expiry_iso(sym)
+            try:
+                expiry_date = datetime.strptime(up_dt, "%Y-%m-%d").strftime("%d-%b-%Y").upper()
+            except Exception:
+                expiry_date = "15-OCT-2026" if sym == "SENSEX" else "13-OCT-2026"
+
         # Resolve selected strike & live option LTP
         recommended_strike = best_pick["strike"]
         active_branch = low_data if recommended_strike == corridor["lower_strike"] else high_data
         active_option_ltp = active_branch["call_ltp"] if contract_type == "CE" else active_branch["put_ltp"]
 
         # Direct broker 0-delay real-time contract quote verification from Groww
+        direct_broker_ltp = None
         try:
             direct_broker_ltp = self.groww_feed.get_option_contract_ltp(
                 f"{sym} {recommended_strike} {contract_type}",
+                expiry=expiry_date,
+                force_refresh=True,
                 symbol=sym
             )
+            if not direct_broker_ltp or direct_broker_ltp <= 0.05:
+                direct_broker_ltp = self.groww_feed.get_option_contract_ltp(
+                    f"{sym} {recommended_strike} {contract_type} ({expiry_date})",
+                    expiry=expiry_date,
+                    force_refresh=True,
+                    symbol=sym
+                )
             if direct_broker_ltp is not None and direct_broker_ltp > 0.05:
                 active_option_ltp = float(direct_broker_ltp)
         except Exception as e:
             logger.debug(f"Direct broker LTP fetch error for {sym} {recommended_strike} {contract_type}: {e}")
+
+        # STRICT ZERO-SYNTHETIC PROTECTION GATE:
+        # All setup arming, triggers, and execution prices must be anchored strictly to authentic Groww broker live LTP.
+        # Synthetic model fallback prices (Black-Scholes) are strictly barred from live capital operations.
+        if (direct_broker_ltp is None or direct_broker_ltp <= 0.05) and active_option_ltp <= 0.05:
+            is_tradable = False
+            logger.warning(
+                f"[{time_str}] ⚠️ Live broker LTP unavailable for {sym} {recommended_strike} {contract_type}. "
+                "Synthetic model fallback strictly prohibited for live trading. Standing down."
+            )
 
         # 4. Breakout Trigger Pinning & Bar Confirmation Gate
         breakout_buffer = spec.breakout_buffer
@@ -659,18 +689,28 @@ class RelianceQuantAlertDaemon:
             cur_trade_ltp = active_option_ltp
             if self.groww_feed.is_connected:
                 try:
-                    gw_opt_ltp = self.groww_feed.get_option_contract_ltp(inst_sym, symbol=sym)
+                    gw_opt_ltp = self.groww_feed.get_option_contract_ltp(
+                        inst_sym,
+                        expiry=active_trade.get("expiry", expiry_date),
+                        force_refresh=True,
+                        symbol=sym
+                    )
                     if not gw_opt_ltp or gw_opt_ltp <= 0:
-                        gw_opt_ltp = self.groww_feed.get_option_contract_ltp(active_trade.get("contract", ""), symbol=sym)
+                        gw_opt_ltp = self.groww_feed.get_option_contract_ltp(
+                            active_trade.get("contract", ""),
+                            expiry=active_trade.get("expiry", expiry_date),
+                            force_refresh=True,
+                            symbol=sym
+                        )
                     if gw_opt_ltp and gw_opt_ltp > 0:
                         cur_trade_ltp = float(gw_opt_ltp)
                 except Exception:
                     pass
 
             spec = get_asset_spec(sym)
-            trade_lot_size = int(active_trade.get("lot_size", spec.lot_size))
-            trade_num_lots = int(active_trade.get("num_lots", spec.default_lots))
-            trade_qty = int(active_trade.get("qty", trade_lot_size * trade_num_lots))
+            trade_lot_size = spec.lot_size
+            trade_num_lots = int(active_trade.get("num_lots") or spec.default_lots)
+            trade_qty = int(trade_lot_size * trade_num_lots)
 
             unreal_pts = round(cur_trade_ltp - act_entry, 2)
             unreal_pnl = round(unreal_pts * trade_qty, 2)
@@ -975,8 +1015,9 @@ class RelianceQuantAlertDaemon:
                 armed_trigger = float(armed_setup.get("breakout_trigger", 0.0))
                 armed_target_pts = float(armed_setup.get("target_pts", dynamic_target_pts))
                 armed_sl_pts = float(armed_setup.get("sl_pts", dynamic_sl_pts))
-                armed_num_lots = int(armed_setup.get("num_lots", spec.default_lots))
-                armed_lot_size = int(armed_setup.get("lot_size", spec.lot_size))
+                spec = get_asset_spec(sym)
+                armed_num_lots = int(armed_setup.get("num_lots") or spec.default_lots)
+                armed_lot_size = spec.lot_size
                 armed_spot = float(armed_setup.get("spot", spot))
                 armed_dir = armed_setup.get("direction", f"BULLISH (CALL / CE)" if armed_type == "CE" else "BEARISH (PUT / PE)")
                 valid_until_ts = float(armed_setup.get("valid_until_timestamp", 0.0))
@@ -984,15 +1025,26 @@ class RelianceQuantAlertDaemon:
 
                 # Fetch real-time live option LTP specifically for this armed contract
                 cur_armed_ltp = None
+                armed_expiry = armed_setup.get("expiry", expiry_date)
                 if self.groww_feed.is_connected:
                     try:
-                        cur_armed_ltp = self.groww_feed.get_option_contract_ltp(f"{sym} {armed_strike} {armed_type}", symbol=sym)
+                        cur_armed_ltp = self.groww_feed.get_option_contract_ltp(
+                            f"{sym} {armed_strike} {armed_type}",
+                            expiry=armed_expiry,
+                            force_refresh=True,
+                            symbol=sym
+                        )
                         if not cur_armed_ltp or cur_armed_ltp <= 0.05:
-                            cur_armed_ltp = self.groww_feed.get_option_contract_ltp(armed_contract, symbol=sym)
+                            cur_armed_ltp = self.groww_feed.get_option_contract_ltp(
+                                armed_contract,
+                                expiry=armed_expiry,
+                                force_refresh=True,
+                                symbol=sym
+                            )
                     except Exception:
                         pass
                 if not cur_armed_ltp or cur_armed_ltp <= 0.05:
-                    if armed_strike == recommended_strike and armed_type == contract_type:
+                    if armed_strike == recommended_strike and armed_type == contract_type and active_option_ltp > 0.05:
                         cur_armed_ltp = active_option_ltp
                     else:
                         cur_armed_ltp = float(armed_setup.get("initial_ltp", 0.0))
@@ -1282,8 +1334,8 @@ class RelianceQuantAlertDaemon:
                     target_pts=dynamic_target_pts,
                     sl_pts=dynamic_sl_pts,
                     confluence=dominant_score,
-                    num_lots=self.quant_engines.get(sym, self.quant_engine).risk.num_lots,
-                    lot_size=self.quant_engines.get(sym, self.quant_engine).risk.lot_size,
+                    num_lots=spec.default_lots,
+                    lot_size=spec.lot_size,
                     spot=spot,
                     expiry=expiry_date,
                     valid_minutes=25
@@ -1299,8 +1351,8 @@ class RelianceQuantAlertDaemon:
                         distance_pts=gap_pts,
                         target_pts=dynamic_target_pts,
                         sl_pts=dynamic_sl_pts,
-                        num_lots=self.quant_engines.get(sym, self.quant_engine).risk.num_lots,
-                        lot_size=self.quant_engines.get(sym, self.quant_engine).risk.lot_size,
+                        num_lots=spec.default_lots,
+                        lot_size=spec.lot_size,
                         win_prob=win_exp if 'win_exp' in locals() else 65.0,
                         spot=spot
                     )

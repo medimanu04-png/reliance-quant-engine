@@ -13,7 +13,7 @@ import time
 import logging
 import threading
 from typing import Dict, Any, Optional, List, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 try:
     from curl_cffi import requests
@@ -93,11 +93,13 @@ class GrowwMarketFeed:
             cls._instance._cached_reliance_spot = cls._instance._get_fallback_reliance_spot()
             cls._instance._cached_reliance_chain = cls._instance._get_fallback_reliance_chain()
             cls._instance._cached_chains_by_expiry = {"2026-10-27": cls._instance._cached_reliance_chain}
+            nifty_exp = cls._instance._get_upcoming_expiry_iso("NIFTY")
+            sensex_exp = cls._instance._get_upcoming_expiry_iso("SENSEX")
             cls._instance._cached_chains_by_key = {
                 "reliance-industries-ltd_2026-10-27": cls._instance._cached_reliance_chain,
                 "adani-enterprises-ltd_2026-10-27": cls._instance._get_fallback_adani_chain(),
-                "nifty_2026-10-06": cls._instance._get_fallback_chain("NIFTY", "2026-10-06"),
-                "sp-bse-sensex_2026-10-08": cls._instance._get_fallback_chain("SENSEX", "2026-10-08")
+                f"nifty_{nifty_exp}": cls._instance._get_fallback_chain("NIFTY", nifty_exp),
+                f"sp-bse-sensex_{sensex_exp}": cls._instance._get_fallback_chain("SENSEX", sensex_exp)
             }
             cls._instance._last_chain_ts_by_slug = {}
             cls._instance._cached_spots_by_symbol = {
@@ -1000,7 +1002,50 @@ class GrowwMarketFeed:
         return spec.groww_company_slug, canon_sym
 
     @staticmethod
-    def _resolve_official_expiry(symbol: str) -> str:
+    def _get_upcoming_expiry_iso(symbol: str = "NIFTY") -> str:
+        """
+        Dynamically computes upcoming live option expiry in ISO YYYY-MM-DD.
+        Eliminates stale hardcoded dates permanently:
+        - NIFTY weekly expiry: Tuesday
+        - SENSEX weekly expiry: Thursday
+        - Equities: Monthly Tuesday
+        """
+        try:
+            from nse_data_fetcher import NSEIndiaFetcher
+            mandate = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=symbol)
+            if mandate and mandate.get("selected_dt"):
+                return mandate["selected_dt"].strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+        now = datetime.now(IST)
+        canon = resolve_symbol(symbol=symbol)
+        target_wd = 1 if canon == "NIFTY" else (3 if canon == "SENSEX" else 1)
+        days_ahead = (target_wd - now.weekday()) % 7
+        if days_ahead == 0 and (now.hour > 15 or (now.hour == 15 and now.minute >= 30)):
+            days_ahead = 7
+        exp_dt = now + timedelta(days=days_ahead)
+        return exp_dt.strftime("%Y-%m-%d")
+
+    @classmethod
+    def _normalize_expiry_iso(cls, expiry_str: Optional[str], symbol: str = "NIFTY") -> str:
+        """Normalizes any expiry format ('15-OCT-2026', '2026-10-15', '15OCT2026') to ISO YYYY-MM-DD."""
+        if not expiry_str:
+            return cls._get_upcoming_expiry_iso(symbol)
+        import re
+        s = str(expiry_str).strip()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+            return s
+        for fmt in ("%d-%b-%Y", "%d%b%Y", "%d-%B-%Y", "%Y%m%d"):
+            try:
+                dt = datetime.strptime(s.upper(), fmt)
+                return dt.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        return cls._get_upcoming_expiry_iso(symbol)
+
+    @classmethod
+    def _resolve_official_expiry(cls, symbol: str) -> str:
         try:
             from nse_data_fetcher import NSEIndiaFetcher
             mandate = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=symbol)
@@ -1008,12 +1053,12 @@ class GrowwMarketFeed:
                 return str(mandate["selected_expiry"])
         except Exception:
             pass
-        canon = resolve_symbol(symbol=symbol)
-        if canon == "NIFTY":
-            return "06-OCT-2026"
-        elif canon == "SENSEX":
-            return "08-OCT-2026"
-        return "27-OCT-2026"
+        iso_exp = cls._get_upcoming_expiry_iso(symbol)
+        try:
+            dt = datetime.strptime(iso_exp, "%Y-%m-%d")
+            return dt.strftime("%d-%b-%Y").upper()
+        except Exception:
+            return iso_exp
 
     def _get_fallback_spot(self, underlying: str = "NIFTY") -> Dict[str, Any]:
         canon_sym = resolve_symbol(symbol=underlying)
@@ -1651,7 +1696,9 @@ class GrowwMarketFeed:
                 from nse_data_fetcher import NSEIndiaFetcher
                 expiry_iso = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=underlying)["selected_dt"].strftime("%Y-%m-%d")
             except Exception:
-                expiry_iso = "2026-10-06" if underlying == "NIFTY" else ("2026-10-08" if underlying == "SENSEX" else "2026-10-27")
+                expiry_iso = self._get_upcoming_expiry_iso(underlying)
+        else:
+            expiry_iso = self._normalize_expiry_iso(expiry_iso, symbol=underlying)
 
         cache_key = f"{slug}_{expiry_iso}"
         now_ts = time.time()
@@ -1963,7 +2010,9 @@ class GrowwMarketFeed:
                 from nse_data_fetcher import NSEIndiaFetcher
                 expiry = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=underlying)["selected_dt"].strftime("%Y-%m-%d")
             except Exception:
-                expiry = "2026-10-08" if underlying == "NIFTY" else ("2026-10-09" if underlying == "SENSEX" else "2026-10-27")
+                expiry = self._get_upcoming_expiry_iso(underlying)
+        else:
+            expiry = self._normalize_expiry_iso(expiry, symbol=underlying)
 
         cache_key = f"{slug}_{expiry}"
         now = time.time()
@@ -1978,9 +2027,9 @@ class GrowwMarketFeed:
             if underlying == "RELIANCE" and not last_ts:
                 last_ts = self._last_reliance_chain_ts
 
-        # Non-blocking async background fetch if stale
-        if chain and len(chain) > 0:
-            if (force_refresh or (now - last_ts > 3.0)) and not getattr(self, f"_chain_fetching_{underlying}", False):
+        # If cache exists with real live data (> 10 strikes) and not forced refresh:
+        if chain and len(chain) > 10 and not force_refresh:
+            if (now - last_ts > 3.0) and not getattr(self, f"_chain_fetching_{underlying}", False):
                 setattr(self, f"_chain_fetching_{underlying}", True)
                 def _async_chain(sym=underlying, exp=expiry):
                     try:
@@ -1990,10 +2039,13 @@ class GrowwMarketFeed:
                 threading.Thread(target=_async_chain, daemon=True, name=f"GrowwChainAsync_{underlying}").start()
             return [dict(x) for x in chain]
 
-        # If cache is missing, fetch synchronously
+        # If force_refresh or cache only has fallback placeholder (<= 10 strikes), fetch synchronously
         res = self._fetch_chain_now(expiry_iso=expiry, symbol=underlying)
         if res and len(res) > 0:
             return [dict(x) for x in res]
+
+        if chain and len(chain) > 0:
+            return [dict(x) for x in chain]
 
         fallback = self._get_fallback_chain(underlying, expiry)
         return [dict(x) for x in fallback]
@@ -2029,28 +2081,41 @@ class GrowwMarketFeed:
         else:
             resolved_sym = "NIFTY"
 
+        import re
+
+        # Extract parenthesized or inline expiry date if present in contract_symbol
+        if not expiry:
+            m_exp = re.search(r"\(?(\d{1,2}-[A-Za-z]{3}-\d{4}|\d{4}-\d{2}-\d{2})\)?", contract_symbol)
+            if m_exp:
+                expiry = self._normalize_expiry_iso(m_exp.group(1), symbol=resolved_sym)
+            else:
+                expiry = self._get_upcoming_expiry_iso(resolved_sym)
+        else:
+            expiry = self._normalize_expiry_iso(expiry, symbol=resolved_sym)
+
         chain = self.get_live_option_chain(symbol=resolved_sym, expiry=expiry, force_refresh=force_refresh)
         if not chain:
             return None
 
-        import re
-        norm = contract_symbol.upper().replace(" ", "").replace("-", "")
+        # Clean symbol by stripping parenthesized dates (e.g. '(15-OCT-2026)') to prevent date numbers from masquerading as strikes
+        clean_symbol = re.sub(r"\(.*?\)", "", contract_symbol).strip()
+        norm = clean_symbol.upper().replace(" ", "").replace("-", "")
         is_pe = "PE" in norm or "PUT" in norm
 
-        # 1. Match known strikes from the actual option chain to avoid spurious regex digit matches
+        # 1. Primary Strike Resolution via clean regex token (4 to 6 digits, excluding years)
         target_strike = None
-        for item in chain:
-            stk_int = int(item.get("strike", 0))
-            if str(stk_int) in norm:
-                target_strike = float(stk_int)
+        candidates = re.findall(r"\b(\d{4,6})\b", clean_symbol)
+        for cand in candidates:
+            if cand not in ("2024", "2025", "2026", "2027"):
+                target_strike = float(cand)
                 break
 
-        # 2. Fallback to regex strike search if not found in chain iterations
+        # 2. Fallback: match known strikes from the actual option chain
         if target_strike is None:
-            m_candidates = re.findall(r"\b(\d{4,6})\b", contract_symbol)
-            for cand in m_candidates:
-                if cand not in ("2024", "2025", "2026", "2027"):
-                    target_strike = float(cand)
+            for item in chain:
+                stk_int = int(item.get("strike", 0))
+                if str(stk_int) in norm:
+                    target_strike = float(stk_int)
                     break
 
         if target_strike is not None:
@@ -2060,7 +2125,17 @@ class GrowwMarketFeed:
                     if ltp > 0.0:
                         return ltp
 
-        # 3. Match exact full Groww contract trading symbols only (must be exact match or length >= 12)
+        # 3. If strike found but LTP is 0 or missing from cached chain, perform an immediate force refresh
+        if not force_refresh:
+            fresh_chain = self.get_live_option_chain(symbol=resolved_sym, expiry=expiry, force_refresh=True)
+            if fresh_chain and target_strike is not None:
+                for item in fresh_chain:
+                    if abs(item.get("strike", 0.0) - target_strike) < 0.5:
+                        ltp = float(item.get("put_ltp", 0.0) if is_pe else item.get("call_ltp", 0.0))
+                        if ltp > 0.0:
+                            return ltp
+
+        # 4. Match exact full Groww contract trading symbols only (must be exact match or length >= 12)
         if len(norm) >= 12:
             for item in chain:
                 ce_id = str(item.get("groww_contract_ce", "")).upper()
@@ -2650,12 +2725,9 @@ class GrowwMarketFeed:
         except Exception as e:
             logger.debug(f"Groww REST get_expiries error for {slug}: {e}")
 
-        # 2. Authentic fallbacks verified directly against live Groww production feed
-        defaults = {
-            "nifty": ["2026-10-06", "2026-10-13", "2026-10-19", "2026-10-27"],
-            "sp-bse-sensex": ["2026-10-08", "2026-10-15", "2026-10-22", "2026-10-29"],
-        }
-        res_fallback = defaults.get(slug, ["2026-10-06" if resolved_underlying == "NIFTY" else "2026-10-08"])
+        # 2. Dynamic upcoming expiries verified directly against live calendar / Groww feed
+        up_exp = self._get_upcoming_expiry_iso(resolved_underlying)
+        res_fallback = [up_exp]
         self._cached_official_expiries[slug] = (res_fallback, now_ts)
         return res_fallback
 

@@ -964,6 +964,16 @@ class NSEIndiaFetcher:
                             gw_high_delta_c = float(row["call_delta"])
                         if row.get("put_delta"):
                             gw_high_delta_p = float(row["put_delta"])
+
+                # Targeted individual strike verification if chain missed any
+                if gw_low_ce <= 0.0:
+                    gw_low_ce = float(groww_feed.get_option_contract_ltp(f"{sym} {s_low} CE", expiry=selected_iso, force_refresh=True) or 0.0)
+                if gw_low_pe <= 0.0:
+                    gw_low_pe = float(groww_feed.get_option_contract_ltp(f"{sym} {s_low} PE", expiry=selected_iso, force_refresh=True) or 0.0)
+                if gw_high_ce <= 0.0:
+                    gw_high_ce = float(groww_feed.get_option_contract_ltp(f"{sym} {s_high} CE", expiry=selected_iso, force_refresh=True) or 0.0)
+                if gw_high_pe <= 0.0:
+                    gw_high_pe = float(groww_feed.get_option_contract_ltp(f"{sym} {s_high} PE", expiry=selected_iso, force_refresh=True) or 0.0)
         except Exception:
             pass
 

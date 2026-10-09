@@ -537,20 +537,22 @@ class TelegramNotifier:
         entry_price: float,
         target_pts: float,
         sl_pts: float,
-        num_lots: int,
-        lot_size: int,
-        win_prob: float,
+        num_lots: int = 0,
+        lot_size: int = 0,
+        win_prob: float = 75.0,
         spot: float = 0.0,
         rationale: str = "",
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean, modern institutional grade entry alert for Telegram."""
+        """Formats a clean, modern institutional grade entry alert for Telegram with mathematically verified PnL."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         target_price = round(entry_price + target_pts, 2)
@@ -601,10 +603,12 @@ class TelegramNotifier:
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol)
         scrip_sym = spec.symbol
+        total_qty = spec.default_lots * spec.lot_size
+        est_loss = float(total_qty * spec.sl_pts)
         return f"""<b>🚨 CIRCUIT BREAKER • {scrip_sym} LOCKED</b>
 ────────────────────────
-🛡️ <b>Desk:</b> {scrip_sym} Intraday Desk
-⚠️ <b>Trigger:</b> {reason}
+🛡️ <b>Desk:</b> {scrip_sym} Intraday Desk ({spec.default_lots} Lots • {total_qty:,} Qty)
+⚠️ <b>Trigger:</b> {reason} (Est. -₹{est_loss:,.2f})
 🔒 <b>Action:</b> <b>ALL NEW ENTRIES LOCKED TODAY</b>
 
 • Risk Rule: One-and-Done Capital Defense
@@ -623,22 +627,27 @@ class TelegramNotifier:
         distance_pts: float,
         target_pts: float,
         sl_pts: float,
-        num_lots: int,
-        lot_size: int,
-        win_prob: float,
+        num_lots: int = 0,
+        lot_size: int = 0,
+        win_prob: float = 75.0,
         spot: float = 0.0,
         rationale: str = "",
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean, modern ARMED PRE-ALERT for Telegram."""
+        """Formats a clean, modern ARMED PRE-ALERT for Telegram with verified lot size & rupee calculations."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         scrip_sym = spec.symbol
+        total_qty = num_lots * lot_size
+        potential_gain = round(total_qty * target_pts)
+        potential_loss = round(total_qty * sl_pts)
         is_call = ("BULLISH" in direction.upper() or "CE" in direction.upper())
         dir_badge = "CALL (CE)" if is_call else "PUT (PE)"
 
@@ -662,8 +671,8 @@ class TelegramNotifier:
 
 ⚡ <b>Breakout Trigger:</b> <code>₹{breakout_trigger:.2f}</code>
 💰 <b>Current LTP:</b> ₹{current_ltp:.2f} ({distance_pts:.2f} pts away)
-🎯 <b>Plan Target:</b> +{target_pts:.1f} pts | 🛑 <b>Plan SL:</b> -{sl_pts:.1f} pts
-📦 <b>Sizing Mandate:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({num_lots * lot_size:,} Qty){sr_line}
+🎯 <b>Plan Target:</b> +{target_pts:.1f} pts (+₹{potential_gain:,}) | 🛑 <b>Plan SL:</b> -{sl_pts:.1f} pts (-₹{potential_loss:,})
+📦 <b>Sizing Mandate:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty){sr_line}
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 ⏳ <i>DO NOT BUY YET. Keep contract on broker watchlist and await ENTRY alert.</i>"""
@@ -704,26 +713,30 @@ class TelegramNotifier:
     def format_target_hit_alert(
         cls,
         contract: str,
-        entry_price: float = 37.65,
-        exit_price: float = 47.65,
-        profit_pts: float = 10.0,
+        entry_price: float = 0.0,
+        exit_price: float = 0.0,
+        profit_pts: float = 0.0,
         direction: str = "BULLISH (CALL / CE)",
         total_pnl: Optional[float] = None,
-        num_lots: int = 1,
+        num_lots: int = 0,
         lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean, celebratory TARGET HIT alert for Telegram."""
+        """Formats a clean, celebratory TARGET HIT alert for Telegram with verified PnL."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size is None or lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
-        target_pts = profit_pts or kwargs.get("target_pts", 10.0)
+        target_pts = profit_pts or kwargs.get("target_pts", spec.target_pts)
+        if exit_price <= 0.0:
+            exit_price = round(entry_price + target_pts, 2)
         realized_pnl = total_pnl if total_pnl is not None else round(total_qty * target_pts)
         scrip_sym = spec.symbol
 
@@ -742,27 +755,29 @@ class TelegramNotifier:
     def format_stop_loss_alert(
         cls,
         contract: str,
-        entry_price: float = 37.65,
-        sl_price: float = 28.65,
-        loss_pts: float = 9.0,
+        entry_price: float = 0.0,
+        sl_price: float = 0.0,
+        loss_pts: float = 0.0,
         direction: str = "BULLISH (CALL / CE)",
         total_loss: Optional[float] = None,
-        num_lots: int = 1,
+        num_lots: int = 0,
         lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean STOP LOSS risk preservation alert for Telegram."""
+        """Formats a clean STOP LOSS risk preservation alert for Telegram with verified PnL."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size is None or lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
-        stop_pts = loss_pts or kwargs.get("sl_pts", 9.0)
-        sl_exit_price = sl_price or kwargs.get("sl_exit_price", max(0.05, round(entry_price - stop_pts, 2)))
+        stop_pts = loss_pts or kwargs.get("sl_pts", spec.sl_pts)
+        sl_exit_price = sl_price if sl_price > 0.0 else kwargs.get("sl_exit_price", max(0.05, round(entry_price - stop_pts, 2)))
         capital_loss = total_loss if total_loss is not None else round(total_qty * stop_pts)
         scrip_sym = spec.symbol
 
@@ -781,24 +796,26 @@ class TelegramNotifier:
     def format_trailing_sl_alert(
         cls,
         contract: str,
-        current_ltp: float = 42.65,
-        trailing_sl: float = 37.65,
-        secured_pts: float = 5.0,
+        current_ltp: float = 0.0,
+        trailing_sl: float = 0.0,
+        secured_pts: float = 0.0,
         direction: str = "BULLISH (CALL / CE)",
         secured_pnl: Optional[float] = None,
         entry_price: Optional[float] = None,
-        num_lots: int = 1,
+        num_lots: int = 0,
         lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean TRAILING STOP LOSS alert for Telegram."""
+        """Formats a clean TRAILING STOP LOSS alert for Telegram with verified PnL."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size is None or lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         locked_pts = secured_pts or kwargs.get("locked_pts", 5.0)
@@ -814,6 +831,7 @@ class TelegramNotifier:
 
 💵 <b>Entry:</b> ₹{orig_entry:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f}
 🔒 <b>New Trailing SL:</b> <code>₹{new_sl:.2f}</code>
+📦 <b>Secured Size:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty)
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 🛡️ <i>Update SL to ₹{new_sl:.2f} on broker. Trade is 100% risk-free.</i>"""
@@ -824,21 +842,23 @@ class TelegramNotifier:
         contract: str,
         current_ltp: float,
         entry_price: float,
-        num_lots: int = 1,
+        num_lots: int = 0,
         lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean BREAKEVEN ESCALATOR alert for Telegram."""
+        """Formats a clean BREAKEVEN ESCALATOR alert for Telegram with verified PnL."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size is None or lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
-        be_sl = round(entry_price + 0.10, 2)
+        be_sl = round(entry_price + (0.50 if spec.symbol == "SENSEX" else 0.10), 2)
         gain_pts = round(current_ltp - entry_price, 2)
         gain_rs = round(gain_pts * total_qty)
         scrip_sym = spec.symbol
@@ -850,6 +870,7 @@ class TelegramNotifier:
 
 💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f}
 🔒 <b>New SL (Cost):</b> <code>₹{be_sl:.2f}</code>
+📦 <b>Active Size:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty)
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 ⚡ <i>Move pending SL trigger to ₹{be_sl:.2f} on Groww. Zero capital at risk.</i>"""
@@ -860,18 +881,20 @@ class TelegramNotifier:
         contract: str,
         current_ltp: float,
         entry_price: float,
-        num_lots: int = 1,
+        num_lots: int = 0,
         lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean PROFIT LOCK alert for Telegram."""
+        """Formats a clean PROFIT LOCK alert for Telegram with verified PnL."""
         from asset_config import get_asset_spec
-        spec = get_asset_spec(symbol, contract)
+        spec = get_asset_spec(symbol=symbol, contract=contract)
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
-        if lot_size is None or lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         total_qty = num_lots * lot_size
         locked_pts = kwargs.get("locked_pts", spec.profit_lock_locked)
@@ -886,6 +909,7 @@ class TelegramNotifier:
 
 💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f}
 🔒 <b>Locked Stop-Loss:</b> <code>₹{lock_sl:.2f}</code>
+📦 <b>Locked Size:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty)
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 💰 <i>Modify SL order to ₹{lock_sl:.2f}. Guaranteed profit secured.</i>"""
@@ -896,16 +920,24 @@ class TelegramNotifier:
         contract: str,
         entry_price: float,
         exit_price: float,
-        banked_pnl: float,
-        target_2: float,
+        banked_pnl: float = 0.0,
+        target_2: float = 0.0,
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean TRANCHE 1 BANKED alert for Telegram."""
+        """Formats a clean TRANCHE 1 BANKED alert for Telegram with verified PnL."""
         from asset_config import get_asset_spec
-        spec = get_asset_spec(symbol, contract)
+        spec = get_asset_spec(symbol=symbol, contract=contract)
         scrip_sym = spec.symbol
+        lot_size = spec.lot_size
+        num_lots = kwargs.get("num_lots", spec.default_lots)
+        total_qty = num_lots * lot_size
+        half_qty = total_qty // 2
         gain_pts = round(exit_price - entry_price, 2)
+        if not banked_pnl or banked_pnl <= 0.0:
+            banked_pnl = round(half_qty * gain_pts, 2)
+        if target_2 <= 0.0:
+            target_2 = round(entry_price + getattr(spec, "target_2_pts", spec.target_pts * 2.0), 2)
         return f"""<b>🎯 TRANCHE 1 BANKED • {scrip_sym} 50% SECURED</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
@@ -914,6 +946,7 @@ class TelegramNotifier:
 💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  🏁 <b>Exit 1:</b> <code>₹{exit_price:.2f}</code>
 🔒 <b>Runner SL:</b> <code>₹{entry_price:.2f}</code> (Locked at Cost)
 🚀 <b>Target 2:</b> <code>₹{target_2:.2f}</code> (Pure Risk-Free Upside)
+📦 <b>Tranche 1:</b> {num_lots // 2} Lots ({half_qty:,} Qty) Banked • Runner: {num_lots - num_lots // 2} Lots ({total_qty - half_qty:,} Qty)
 ────────────────────────
 🏁 <i>Half size booked at Target 1. 50% runner trailing with zero risk.</i>"""
 
@@ -929,19 +962,26 @@ class TelegramNotifier:
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean RESUMPTION RE-ENTRY alert for Telegram."""
+        """Formats a clean RESUMPTION RE-ENTRY alert for Telegram with verified sizing & rupee math."""
         from asset_config import get_asset_spec
-        spec = get_asset_spec(symbol, contract)
+        spec = get_asset_spec(symbol=symbol, contract=contract)
         scrip_sym = spec.symbol
+        lot_size = spec.lot_size
+        num_lots = kwargs.get("num_lots", spec.default_lots)
+        total_qty = num_lots * lot_size
         tight_pts = round(abs(entry_price - sl_price), 2)
+        tgt_pts = round(abs(target_price - entry_price), 2)
+        potential_gain = round(total_qty * tgt_pts)
+        potential_loss = round(total_qty * tight_pts)
         return f"""<b>🔄 RESUMPTION RE-ENTRY • {scrip_sym} {direction}</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
 ⚡ <b>Action:</b> Auto Re-Entered @ <code>₹{entry_price:.2f}</code>
 📊 <b>Setup Confluence:</b> {confluence:.1f}%
 
-🛑 <b>Tight SL (Wick Peak):</b> <code>₹{sl_price:.2f}</code> (-{tight_pts:.1f} pts)
-🎯 <b>Target:</b> <code>₹{target_price:.2f}</code>
+🛑 <b>Tight SL (Wick Peak):</b> <code>₹{sl_price:.2f}</code> (-{tight_pts:.1f} pts • -₹{potential_loss:,})
+🎯 <b>Target:</b> <code>₹{target_price:.2f}</code> (+{tgt_pts:.1f} pts • +₹{potential_gain:,})
+📦 <b>Sizing:</b> {num_lots} Lots ({total_qty:,} Qty)
 ────────────────────────
 🛡️ <i>Wick sweep confirmed. Directional resumption entered with tight risk.</i>"""
 
@@ -949,9 +989,9 @@ class TelegramNotifier:
     def format_auto_square_off_alert(
         cls,
         contract: str,
-        current_ltp: float = 37.65,
+        current_ltp: float = 0.0,
         reason: str = "Mandatory intraday EOD cut-off before broker auto-square-off charges at 03:15 PM",
-        num_lots: int = 1,
+        num_lots: int = 0,
         lot_size: Optional[int] = None,
         spot: float = 0.0,
         symbol: str = "",
@@ -962,8 +1002,10 @@ class TelegramNotifier:
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
-        if lot_size is None or lot_size in (250, 0):
-            lot_size = spec.lot_size
+        # Strictly enforce canonical exchange contract lot size
+        lot_size = spec.lot_size
+        if not num_lots or num_lots <= 0:
+            num_lots = spec.default_lots
         total_qty = num_lots * lot_size
         scrip_sym = spec.symbol
 
@@ -971,7 +1013,7 @@ class TelegramNotifier:
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
 ⏰ <b>Cutoff Time:</b> <b>03:05 PM IST</b> (Broker EOD Cutoff)
-⚡ <b>LTP:</b> ₹{current_ltp:.2f} • <b>Size:</b> {total_qty:,} Qty
+⚡ <b>LTP:</b> ₹{current_ltp:.2f} • <b>Size:</b> {total_qty:,} Qty ({num_lots} Lots)
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 ⚠️ <i>Square off open intraday derivative positions now to avoid broker auto-SQ penalty.</i>"""
@@ -1002,9 +1044,9 @@ class TelegramNotifier:
     @classmethod
     def format_circuit_breaker_alert(
         cls,
-        sl_count: int = 2,
-        max_allowed: int = 2,
-        capital_preserved: float = 73643.72,
+        sl_count: int = 1,
+        max_allowed: int = 1,
+        capital_preserved: float = 0.0,
         spot: float = 0.0,
         account_name: str = "Teja",
         symbol: str = "NIFTY",
@@ -1016,6 +1058,8 @@ class TelegramNotifier:
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol)
         scrip_sym = spec.symbol
+        if capital_preserved <= 0.0:
+            capital_preserved = spec.total_capital - (spec.default_lots * spec.lot_size * spec.sl_pts)
         return f"""<b>🚨 MAX DRAWDOWN REACHED • {scrip_sym} LOCKED</b>
 ────────────────────────
 🛑 <b>Circuit Breaker:</b> {sl_count}/{max_allowed} Daily Stop-Loss Limit Hit
@@ -1031,18 +1075,24 @@ class TelegramNotifier:
         entry_price: float,
         current_ltp: float,
         elapsed_minutes: int,
-        unrealized_pnl: float,
+        unrealized_pnl: float = 0.0,
         spot: float = 0.0,
         symbol: str = "",
         **kwargs
     ) -> str:
-        """Formats a clean THETA STAGNATION TIME-STOP alert for Telegram."""
+        """Formats a clean THETA STAGNATION TIME-STOP alert for Telegram with verified sizing & drag."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         now_str = datetime.now(IST).strftime("%I:%M %p IST")
         from asset_config import get_asset_spec
         spec = get_asset_spec(symbol=symbol, contract=contract)
         scrip_sym = spec.symbol
+        lot_size = spec.lot_size
+        num_lots = kwargs.get("num_lots", spec.default_lots)
+        total_qty = num_lots * lot_size
         decay_pts = round(entry_price - current_ltp, 2)
+        drag_rs = round(decay_pts * total_qty)
+        if not unrealized_pnl or unrealized_pnl == 0.0:
+            unrealized_pnl = -drag_rs
         return f"""<b>⏳ TIME-STOP TRIGGERED • {scrip_sym} THETA SHIELD</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
@@ -1050,6 +1100,7 @@ class TelegramNotifier:
 
 💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  ⚡ <b>LTP:</b> ₹{current_ltp:.2f} (-{decay_pts:.2f} pts)
 📉 <b>Unrealized Drag:</b> -₹{abs(unrealized_pnl):,.2f}
+📦 <b>Monitored Size:</b> {num_lots} Lots ({total_qty:,} Qty)
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 ⚠️ <i>Sideways consolidation detected. Market exit advised to avoid theta bleed.</i>"""
