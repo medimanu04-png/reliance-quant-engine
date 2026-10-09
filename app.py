@@ -1325,9 +1325,10 @@ def execute_global_multi_desk_rescan(is_manual: bool = False):
     for sym_c in ("NIFTY", "SENSEX"):
         st.session_state[f"_desk_last_sync_{sym_c}"] = now
     st.session_state["_desk_last_synced_event_ts"] = now
+    st.session_state["_my_last_rescan_event_ts"] = now
 
 
-@st.fragment(run_every=1)
+@st.fragment(run_every="2s")
 def render_auto_rescan_controller():
     now = time_mod.time()
     if "last_auto_rescan_ts" not in st.session_state:
@@ -1352,21 +1353,21 @@ def render_auto_rescan_controller():
             "⚡ 30s (Saver)": 30.0,
             "⏸️ Off (Manual)": 0.0
         }
-        saved_val = st.session_state.get(f"sb_auto_rescan_interval{key_suffix}", "⚡ 5s (Default)")
-        def_idx = interval_options.index(saved_val) if saved_val in interval_options else 1
+        sb_key = f"sb_auto_rescan_interval{key_suffix}"
+        if sb_key not in st.session_state:
+            st.session_state[sb_key] = "⚡ 5s (Default)"
         selected_interval_str = st.selectbox(
             "Auto Rescan Interval",
             options=interval_options,
-            index=def_idx,
             label_visibility="collapsed",
-            key=f"sb_auto_rescan_interval{key_suffix}"
+            key=sb_key
         )
         target_interval = interval_map.get(selected_interval_str, 5.0)
         auto_active = (target_interval > 0.0)
         st.session_state["auto_rescan_active"] = auto_active
         st.session_state["auto_rescan_interval_sec"] = target_interval
 
-    # Check if a global rescan event was dispatched from another tab/window
+    # Check if an external manual rescan event was dispatched from another tab/window
     rescan_file = os.path.join(os.path.dirname(__file__), "data_cache", "global_rescan_event.json")
     external_sync_needed = False
     if os.path.exists(rescan_file):
@@ -1374,9 +1375,18 @@ def render_auto_rescan_controller():
             with open(rescan_file, "r", encoding="utf-8") as rf:
                 g_meta = json.load(rf)
             g_ts = float(g_meta.get("timestamp", 0))
-            last_synced_ts = float(st.session_state.get("_desk_last_synced_event_ts", 0))
-            if g_ts > (last_synced_ts + 0.1):
-                external_sync_needed = True
+            is_manual_sync = bool(g_meta.get("manual", False))
+            my_last_written = float(st.session_state.get("_my_last_rescan_event_ts", 0))
+
+            if "_desk_last_synced_event_ts" not in st.session_state:
+                # Fresh session initialization: align timestamps without an abortive early rerun
+                st.session_state["_desk_last_synced_event_ts"] = g_ts
+                last_synced_ts = g_ts
+            else:
+                last_synced_ts = float(st.session_state.get("_desk_last_synced_event_ts", 0))
+
+            # Only trigger full app rerun if this event was NOT written by this tab AND was a manual rescan
+            if (g_ts > (last_synced_ts + 0.5)) and (abs(g_ts - my_last_written) > 0.5):
                 st.session_state["_desk_last_synced_event_ts"] = g_ts
                 st.session_state["rescan_time"] = g_meta.get("time_str", "")
                 st.session_state["last_auto_rescan_ts"] = g_ts
@@ -1384,6 +1394,8 @@ def render_auto_rescan_controller():
                     st.session_state.pop(f"cached_real_df_{sym_c}", None)
                 if "_APP_INDICATOR_CACHE" in st.session_state:
                     st.session_state["_APP_INDICATOR_CACHE"].clear()
+                if is_manual_sync:
+                    external_sync_needed = True
         except Exception:
             pass
 
@@ -1876,12 +1888,14 @@ if active_route == "":
         selected_view = suite_views[0]
 
     if selected_view == "🟢 Live Trade Forward Desk (Oct 05, 2026 Onwards)":
-        # Trigger generator if available to guarantee freshest state
-        try:
-            import live_dashboard_generator
-            live_dashboard_generator.generate_live_dashboard()
-        except Exception:
-            pass
+        live_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "live_trade_dashboard.html")
+        # Trigger generator only when file is missing or on explicit rescan
+        if not os.path.exists(live_file_path) or is_rescan:
+            try:
+                import live_dashboard_generator
+                live_dashboard_generator.generate_live_dashboard()
+            except Exception:
+                pass
 
         live_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "live_trade_dashboard.html")
         if os.path.exists(live_file_path):
@@ -2033,12 +2047,12 @@ if st.sidebar.button("🏠 ← Return to Market Hub (Homepage)", use_container_w
     st.switch_page(p_home)
 
 scrip_options = ["NIFTY 50", "BSE SENSEX"]
-scrip_idx = scrip_options.index(forced_choice) if forced_choice in scrip_options else 0
+if "sb_scrip_selector" not in st.session_state:
+    st.session_state["sb_scrip_selector"] = forced_choice
 
 scrip_choice = st.sidebar.selectbox(
     "🎯 Active Trading Scrip",
     scrip_options,
-    index=scrip_idx,
     key="sb_scrip_selector"
 )
 
@@ -2106,11 +2120,14 @@ if os.path.exists(global_rescan_file):
     try:
         with open(global_rescan_file, "r", encoding="utf-8") as rf:
             g_meta = json.load(rf)
-        g_ts = g_meta.get("timestamp", 0)
-        last_sync = st.session_state.get(f"_desk_last_sync_{scrip_symbol}", 0)
-        if g_ts > last_sync:
+        g_ts = float(g_meta.get("timestamp", 0))
+        desk_sync_key = f"_desk_last_sync_{scrip_symbol}"
+        if desk_sync_key not in st.session_state:
+            st.session_state[desk_sync_key] = g_ts
+        last_sync = float(st.session_state.get(desk_sync_key, 0))
+        if (g_ts > (last_sync + 0.5)) and bool(g_meta.get("manual", False)):
             desk_force_rescan = True
-            st.session_state[f"_desk_last_sync_{scrip_symbol}"] = g_ts
+            st.session_state[desk_sync_key] = g_ts
     except Exception:
         pass
 
