@@ -1529,6 +1529,8 @@ class RelianceQuantAlertDaemon:
 
 # Universal multi-asset daemon alias
 QuantAlertDaemon = RelianceQuantAlertDaemon
+BenchmarkQuantAlertDaemon = RelianceQuantAlertDaemon
+MultiAssetQuantAlertDaemon = RelianceQuantAlertDaemon
 
 
 # ==============================================================================

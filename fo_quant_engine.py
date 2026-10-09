@@ -6441,7 +6441,7 @@ class UltraHighConvictionRelianceEngine:
         elif is_midday_lull and not midday_cleared:
             status_text = "MIDDAY LIQUIDITY LULL / STAND DOWN (11:15 AM - 01:30 PM | Capital Preserved Against Low-Volume Chop)"
         elif is_sector_divergence_trap and dominant_score < 68.0:
-            status_text = f"STAND DOWN — SECTOR DIVERGENCE TRAP (NIFTY Energy {energy_pct:+.2f}% vs Reliance {reliance_pct:+.2f}% | False Breakout Risk)"
+            status_text = f"STAND DOWN — SECTOR DIVERGENCE TRAP ({active_spec.parent_sector} {effective_sec_pct:+.2f}% vs {active_sym} {reliance_pct:+.2f}% | False Breakout Risk)"
         elif is_target_blocked_by_virgin_vwap:
             status_text = f"STAND DOWN — TARGET BLOCKED BY VIRGIN VWAP ({virgin_vwap_desc})"
         elif is_high_market_impact and dominant_score < 68.0:
@@ -7011,6 +7011,8 @@ def main(symbol: str = "NIFTY"):
 
 # Universal multi-asset engine alias
 UltraHighConvictionQuantEngine = UltraHighConvictionRelianceEngine
+UltraHighConvictionEngine = UltraHighConvictionRelianceEngine
+BenchmarkQuantEngine = UltraHighConvictionRelianceEngine
 
 
 if __name__ == "__main__":

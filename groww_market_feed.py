@@ -276,15 +276,15 @@ class GrowwMarketFeed:
             time.sleep(5.0)
 
     def _spot_poller_loop(self):
-        """Dedicated high-frequency spot quote poller (every 1.0s). Zero delay on all 4 desks (RELIANCE, ADANIENT, NIFTY, SENSEX)."""
-        for sym in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+        """Dedicated high-frequency spot quote poller (every 1.0s). Zero delay on active benchmark desks (NIFTY, SENSEX)."""
+        for sym in ("NIFTY", "SENSEX"):
             try:
                 self._fetch_reliance_spot_now(symbol=sym)
             except Exception as e:
                 logger.debug(f"Initial spot fetch error for {sym}: {e}")
 
         while self._bg_active:
-            for sym in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+            for sym in ("NIFTY", "SENSEX"):
                 try:
                     self._fetch_reliance_spot_now(symbol=sym)
                 except Exception as e:
@@ -292,15 +292,15 @@ class GrowwMarketFeed:
             time.sleep(1.0)
 
     def _option_chain_poller_loop(self):
-        """Dedicated high-frequency option chain poller (every 2.0s). Zero delay on CE/PE prices across all 4 desks."""
-        for sym in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+        """Dedicated high-frequency option chain poller (every 2.0s). Zero delay on CE/PE prices across active benchmark desks (NIFTY, SENSEX)."""
+        for sym in ("NIFTY", "SENSEX"):
             try:
                 self._fetch_reliance_chain_now(symbol=sym)
             except Exception as e:
                 logger.debug(f"Initial option chain fetch error for {sym}: {e}")
 
         while self._bg_active:
-            for sym in ("RELIANCE", "ADANIENT", "NIFTY", "SENSEX"):
+            for sym in ("NIFTY", "SENSEX"):
                 try:
                     self._fetch_reliance_chain_now(symbol=sym)
                 except Exception as e:
@@ -1470,7 +1470,7 @@ class GrowwMarketFeed:
         return self._fetch_spot_now(symbol=symbol)
 
     def get_live_spot_data(self, symbol: Optional[str] = None, force_refresh: bool = False) -> Dict[str, Any]:
-        """Returns real-time 0-delay live market spot data for Reliance or Adani."""
+        """Returns real-time 0-delay live market spot data for benchmark indices (NIFTY / SENSEX)."""
         slug, underlying = self._resolve_groww_slug(symbol)
         now = time.time()
         with self._cache_lock:
@@ -2011,7 +2011,7 @@ class GrowwMarketFeed:
         force_refresh: bool = False
     ) -> List[Dict[str, Any]]:
         """
-        Fetches the live option chain for the specified symbol (RELIANCE or ADANIENT)
+        Fetches the live option chain for the specified symbol (NIFTY or SENSEX)
         and expiry directly from Groww.
         Always returns real-time live prices with zero delay.
         """

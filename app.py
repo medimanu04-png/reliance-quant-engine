@@ -89,12 +89,12 @@ def _start_background_multi_desk_daemon():
         if os.environ.get("STREAMLIT_SHARING_MODE") or os.environ.get("IS_STREAMLIT_CLOUD") or os.path.exists("/mount/src") or os.path.exists("/app"):
             return
         try:
-            from quant_alert_daemon import RelianceQuantAlertDaemon, is_daemon_running
+            from quant_alert_daemon import BenchmarkQuantAlertDaemon, is_daemon_running
             running, running_pid = is_daemon_running()
             if running and running_pid != os.getpid():
                 # External standalone daemon worker is already active and handling alerts
                 return
-            _multi_desk_daemon_instance = RelianceQuantAlertDaemon(
+            _multi_desk_daemon_instance = BenchmarkQuantAlertDaemon(
                 interval_seconds=5.0,
                 force_run=False,
                 symbols=["NIFTY", "SENSEX"]
@@ -552,14 +552,6 @@ st.markdown("""
     }
     .quant-desk-tile:hover {
         transform: translateY(-4px) !important;
-    }
-    .tile-reliance:hover {
-        border-color: #38BDF8 !important;
-        box-shadow: 0 10px 30px rgba(56, 189, 248, 0.28) !important;
-    }
-    .tile-adani:hover {
-        border-color: #FBBF24 !important;
-        box-shadow: 0 10px 30px rgba(245, 158, 11, 0.28) !important;
     }
     .tile-nifty:hover {
         border-color: #10B981 !important;

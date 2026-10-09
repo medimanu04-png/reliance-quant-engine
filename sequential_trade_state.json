@@ -1,19 +1,22 @@
 {
   "current_state": "IDLE / SCANNING",
+  "symbol": "NIFTY",
   "active_trade": null,
-  "last_closed_trade": {
-    "trade_num": 1,
-    "instrument": "RELIANCE 1200 PE (27-OCT-2026)",
-    "planned_entry": 29.25,
-    "actual_entry": 29.38,
+  "last_closed_trade": null,
+  "today_trade_count": 5,
+  "updated_at": "2026-10-09 05:34:25 AM IST",
+  "re_entry_armed": null,
+  "archived_last_closed_trade": {
+    "trade_num": 5,
+    "instrument": "NIFTY 22450 PE (06-OCT-2026)",
+    "planned_entry": 57.8,
+    "actual_entry": 57.8,
     "executed": "Yes",
-    "sl": 24.75,
-    "target": 39.25,
-    "status": "Target Hit",
-    "exit_price": 35.75,
-    "exit_time": "09:37:20 AM IST",
-    "pnl": "+\u20b96,375.00 (+6.38 pts)"
-  },
-  "today_trade_count": 1,
-  "updated_at": "2026-09-29 09:37:20 AM IST"
+    "sl": 21.8,
+    "target": 107.8,
+    "status": "SL Hit",
+    "exit_price": 48.2,
+    "exit_time": "02:29:25 PM IST",
+    "pnl": "₹-1,248.00 (-9.60 pts)"
+  }
 }

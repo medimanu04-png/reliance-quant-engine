@@ -115,7 +115,7 @@ class TelegramNotifier:
         Supports:
           - Individual users: e.g. "1227818587"
           - Groups / Supergroups: e.g. "-100123456789", "-456789123"
-          - Public Channels: e.g. "@reliance_trade_alerts"
+          - Public Channels: e.g. "@quant_trade_alerts"
         """
         if not chat_ids_input:
             return []

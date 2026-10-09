@@ -47,8 +47,8 @@ def main():
     
     # Import and run daemon directly
     try:
-        from quant_alert_daemon import RelianceQuantAlertDaemon
-        daemon = RelianceQuantAlertDaemon(
+        from quant_alert_daemon import BenchmarkQuantAlertDaemon
+        daemon = BenchmarkQuantAlertDaemon(
             interval_seconds=5.0,
             force_run="--now" in sys.argv,
             symbols=["NIFTY", "SENSEX"]
