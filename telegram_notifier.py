@@ -669,6 +669,38 @@ class TelegramNotifier:
 ⏳ <i>DO NOT BUY YET. Keep contract on broker watchlist and await ENTRY alert.</i>"""
 
     @classmethod
+    def format_setup_cancelled_alert(
+        cls,
+        contract: str,
+        reason: str,
+        breakout_trigger: float,
+        last_ltp: float,
+        spot: float = 0.0,
+        symbol: str = "",
+        direction: str = "BULLISH (CALL / CE)"
+    ) -> str:
+        """Formats an explicit closure notification when an armed setup is cancelled before breakout."""
+        spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
+        from asset_config import get_asset_spec
+        spec = get_asset_spec(symbol=symbol, contract=contract)
+        scrip_sym = spec.symbol
+        now_str = datetime.now(IST).strftime("%I:%M %p IST")
+        is_call = ("BULLISH" in direction.upper() or "CE" in direction.upper())
+        dir_badge = "CALL (CE)" if is_call else "PUT (PE)"
+
+        return f"""<b>⚪ SETUP CANCELLED • {scrip_sym} {dir_badge}</b>
+────────────────────────
+📌 <b>Watchlist:</b> <code>{contract}</code>
+⚡ <b>Breakout Trigger:</b> ₹{breakout_trigger:.2f} (Last LTP: ₹{last_ltp:.2f})
+
+❌ <b>Closure / Invalidation Reason:</b>
+{reason}
+
+📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+🛡️ <i>Stand Down executed. Zero capital lost. Resuming market scan for fresh setups.</i>"""
+
+    @classmethod
     def format_target_hit_alert(
         cls,
         contract: str,

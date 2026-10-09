@@ -1307,6 +1307,7 @@ class SequentialTradeEngine:
     """
 
     STATE_IDLE = "IDLE / SCANNING"
+    STATE_SETUP_ARMED = "SETUP ARMED / WATCHING TRIGGER"
     STATE_ENTRY_PENDING = "ENTRY PENDING"
     STATE_IN_TRADE = "IN-TRADE (ACTIVE MONITORING)"
     STATE_TRADE_CLOSED = "TRADE CLOSED & AUDITED"
@@ -1414,6 +1415,89 @@ class SequentialTradeEngine:
                 json.dump(state, f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to persist sequential state to {state_file}: {e}")
+
+    @classmethod
+    def get_armed_setup(cls, symbol: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Returns the currently armed setup if active and unexpired, else None."""
+        state = cls.get_state(symbol=symbol)
+        armed = state.get("armed_setup")
+        if armed and isinstance(armed, dict) and armed.get("armed"):
+            return armed
+        return None
+
+    @classmethod
+    def arm_setup(
+        cls,
+        contract: str,
+        instrument: str,
+        symbol: str,
+        strike: int,
+        contract_type: str,
+        breakout_trigger: float,
+        initial_ltp: float,
+        target_pts: float,
+        sl_pts: float,
+        confluence: float,
+        num_lots: int,
+        lot_size: int,
+        spot: float,
+        expiry: str,
+        valid_minutes: int = 25
+    ) -> Dict[str, Any]:
+        """
+        Locks the engine to concentrate solely on this specific contract until
+        breakout trigger is crossed or the setup is formally cancelled with an audited explanation.
+        """
+        sym_kw = resolve_symbol(symbol=symbol)
+        state = cls.get_state(symbol=sym_kw)
+        now_dt = datetime.now(IST)
+        armed_data = {
+            "armed": True,
+            "contract": contract,
+            "instrument": instrument,
+            "symbol": sym_kw,
+            "strike": int(strike),
+            "contract_type": contract_type,
+            "direction": "BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
+            "breakout_trigger": round(float(breakout_trigger), 2),
+            "initial_ltp": round(float(initial_ltp), 2),
+            "target_pts": round(float(target_pts), 1),
+            "sl_pts": round(float(sl_pts), 1),
+            "confluence": round(float(confluence), 1),
+            "num_lots": int(num_lots),
+            "lot_size": int(lot_size),
+            "spot": round(float(spot), 2),
+            "expiry": expiry,
+            "armed_at": now_dt.strftime("%I:%M:%S %p IST"),
+            "armed_timestamp": now_dt.timestamp(),
+            "valid_until_timestamp": now_dt.timestamp() + (valid_minutes * 60)
+        }
+        state["current_state"] = cls.STATE_SETUP_ARMED
+        state["armed_setup"] = armed_data
+        cls.save_state(state, symbol=sym_kw)
+        logger.info(f"🎯 [SequentialTradeEngine] Single-Trade Concentration ARMED for {sym_kw}: {instrument} @ Trigger ₹{breakout_trigger:.2f}")
+        return armed_data
+
+    @classmethod
+    def cancel_armed_setup(cls, symbol: Optional[str] = None, reason: str = "") -> Optional[Dict[str, Any]]:
+        """
+        Audits and closes an armed setup when invalidated, returning the cancelled setup metadata.
+        Resets engine back to IDLE / SCANNING so fresh setups can be scanned.
+        """
+        sym_kw = resolve_symbol(symbol=symbol)
+        state = cls.get_state(symbol=sym_kw)
+        cancelled = state.get("armed_setup")
+        state["armed_setup"] = None
+        if state.get("current_state") == cls.STATE_SETUP_ARMED:
+            state["current_state"] = cls.STATE_IDLE
+        state["last_cancelled_setup"] = {
+            "setup": cancelled,
+            "reason": reason,
+            "cancelled_at": datetime.now(IST).strftime("%I:%M:%S %p IST")
+        }
+        cls.save_state(state, symbol=sym_kw)
+        logger.info(f"⚪ [SequentialTradeEngine] Armed setup cancelled for {sym_kw}: {reason}")
+        return cancelled
 
     @classmethod
     def has_daily_loss_occurred_today(cls, symbol: Optional[str] = None) -> Tuple[bool, str]:

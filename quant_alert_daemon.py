@@ -966,6 +966,180 @@ class RelianceQuantAlertDaemon:
                                 TelegramNotifier.record_alert_sent(re_key)
                     return
 
+            # Solution 4: Single-Trade Concentration Mode (Focus Exclusively on ARMED Setup Until Closure)
+            armed_setup = SequentialTradeEngine.get_armed_setup(symbol=sym)
+            if armed_setup and armed_setup.get("armed"):
+                armed_contract = armed_setup.get("contract")
+                armed_strike = int(armed_setup.get("strike", 0))
+                armed_type = str(armed_setup.get("contract_type", "CE"))
+                armed_trigger = float(armed_setup.get("breakout_trigger", 0.0))
+                armed_target_pts = float(armed_setup.get("target_pts", dynamic_target_pts))
+                armed_sl_pts = float(armed_setup.get("sl_pts", dynamic_sl_pts))
+                armed_num_lots = int(armed_setup.get("num_lots", spec.default_lots))
+                armed_lot_size = int(armed_setup.get("lot_size", spec.lot_size))
+                armed_spot = float(armed_setup.get("spot", spot))
+                armed_dir = armed_setup.get("direction", f"BULLISH (CALL / CE)" if armed_type == "CE" else "BEARISH (PUT / PE)")
+                valid_until_ts = float(armed_setup.get("valid_until_timestamp", 0.0))
+                armed_confluence = float(armed_setup.get("confluence", dominant_score))
+
+                # Fetch real-time live option LTP specifically for this armed contract
+                cur_armed_ltp = None
+                if self.groww_feed.is_connected:
+                    try:
+                        cur_armed_ltp = self.groww_feed.get_option_contract_ltp(f"{sym} {armed_strike} {armed_type}", symbol=sym)
+                        if not cur_armed_ltp or cur_armed_ltp <= 0.05:
+                            cur_armed_ltp = self.groww_feed.get_option_contract_ltp(armed_contract, symbol=sym)
+                    except Exception:
+                        pass
+                if not cur_armed_ltp or cur_armed_ltp <= 0.05:
+                    if armed_strike == recommended_strike and armed_type == contract_type:
+                        cur_armed_ltp = active_option_ltp
+                    else:
+                        cur_armed_ltp = float(armed_setup.get("initial_ltp", 0.0))
+
+                now_ts = now_dt.timestamp()
+                gap_pts = round(armed_trigger - cur_armed_ltp, 2)
+
+                # 4A. BREAKOUT ENTRY TRIGGER CONFIRMED! (Price touched or broke through trigger)
+                if cur_armed_ltp >= armed_trigger and armed_trigger > 0.05:
+                    logger.info(
+                        f"[{time_str}] 🔥 🚀 BREAKOUT CONFIRMED FOR ARMED SETUP: {armed_contract} | "
+                        f"LTP ₹{cur_armed_ltp:.2f} >= Trigger ₹{armed_trigger:.2f} (Gap breached: {abs(gap_pts):.2f} pts)!"
+                    )
+                    entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{armed_strike}_{armed_type}"
+                    active_risk = self.quant_engines.get(sym, self.quant_engine).risk
+                    limit_cap = round(cur_armed_ltp + active_risk.limit_collar_pts, 2)
+                    win_exp = float(confluence_eval.get("win_expectancy_pct", 65.0))
+                    tier_str = str(confluence_eval.get("tier_rating", "TIER 1 (A+ INSTITUTIONAL BREAKOUT)"))
+
+                    if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key):
+                        sym_spec = get_asset_spec(sym)
+                        groww_sr_info = ""
+                        try:
+                            sr_data = self.groww_feed.get_groww_daily_support_resistance(symbol=sym)
+                            p_val = sr_data.get("pivot", 0.0)
+                            r1_val = sr_data.get("resistance", {}).get("r1", 0.0)
+                            s1_val = sr_data.get("support", {}).get("s1", 0.0)
+                            if p_val > 0:
+                                groww_sr_info = f"\n• 🎯 Groww 09:10 AM S&R: Pivot ₹{p_val:,.1f} | R1 ₹{r1_val:,.1f} | S1 ₹{s1_val:,.1f}"
+                        except Exception:
+                            pass
+
+                        entry_msg = TelegramNotifier.format_entry_alert(
+                            contract=armed_contract,
+                            direction=armed_dir,
+                            entry_price=cur_armed_ltp,
+                            target_pts=armed_target_pts,
+                            sl_pts=armed_sl_pts,
+                            num_lots=armed_num_lots,
+                            lot_size=armed_lot_size,
+                            win_prob=win_exp,
+                            spot=spot,
+                            rationale=(
+                                f"Armed Setup Breakout Confirmed ({tier_str})\n"
+                                f"• Breakout Trigger Level: ₹{armed_trigger:.2f} | Execution Price: ₹{cur_armed_ltp:.2f}\n"
+                                f"• Confluence: {armed_confluence:.1f}% | Win Expectancy: {win_exp}%\n"
+                                f"• Order Type: Stop-Loss Limit (SL-LMT) | Limit Cap: ₹{limit_cap:.2f}\n"
+                                f"• Target: +{armed_target_pts:.1f} pts (₹{cur_armed_ltp + armed_target_pts:.2f}) | SL: -{armed_sl_pts:.1f} pts (₹{max(0.05, cur_armed_ltp - armed_sl_pts):.2f})\n"
+                                f"• Sizing: {armed_num_lots} Lots ({armed_num_lots * armed_lot_size} Qty) strictly enforced{groww_sr_info}"
+                            )
+                        )
+                        buttons = TelegramNotifier.get_entry_ce_buttons(f"{sym} {armed_strike} CE", symbol=sym) if armed_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"{sym} {armed_strike} PE", symbol=sym)
+                        ok, fb = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
+                        if ok:
+                            TelegramNotifier.record_alert_sent(entry_alert_key)
+                            logger.info(f"🔥 🚀 ENTRY TRIGGER ALERT SENT TO TELEGRAM: {fb}")
+
+                    # Transition SequentialTradeEngine into active trade
+                    try:
+                        exp_clean = expiry_date.replace("-", "").upper()
+                        SequentialTradeEngine.enter_trade_direct(
+                            contract=f"{sym}{exp_clean}{armed_strike}{armed_type}",
+                            instrument=armed_contract,
+                            entry_price=cur_armed_ltp,
+                            sl=round(max(0.05, cur_armed_ltp - armed_sl_pts), 2),
+                            target=round(cur_armed_ltp + armed_target_pts, 2),
+                            direction=f"BUY {armed_type}",
+                            expiry=expiry_date,
+                            confluence=armed_confluence,
+                            qty=armed_lot_size * armed_num_lots,
+                            num_lots=armed_num_lots,
+                            symbol=sym
+                        )
+                    except Exception as e:
+                        logger.debug(f"SequentialTradeEngine enter error: {e}")
+
+                    # Log to SignalTracker & ShadowMonitoringEngine
+                    try:
+                        exp_clean = expiry_date.replace("-", "").upper()
+                        SignalTracker.save_signal({
+                            "date": today_date,
+                            "trade_given_time": time_str,
+                            "full_contract": armed_contract,
+                            "symbol": f"{sym}{exp_clean}{armed_strike}{armed_type}",
+                            "contract_type": armed_type,
+                            "strike": armed_strike,
+                            "expiry": expiry_date,
+                            "suggested_entry": cur_armed_ltp,
+                            "limit_entry": limit_cap,
+                            "suggested_exit": round(cur_armed_ltp + armed_target_pts, 2),
+                            "suggested_sl": round(max(0.05, cur_armed_ltp - armed_sl_pts), 2),
+                            "confluence_score": armed_confluence,
+                            "win_expectancy_pct": win_exp,
+                            "tier_rating": tier_str
+                        })
+                    except Exception as e:
+                        logger.debug(f"SignalTracker save error: {e}")
+
+                    return
+
+                # 4B. INVALIDATION & FORMAL CLOSURE (Timeout / Spot Reversal / EOD Cutoff)
+                is_timed_out = (valid_until_ts > 0 and now_ts > valid_until_ts)
+                now_min = now_dt.hour * 60 + now_dt.minute
+                is_eod = (now_min >= 15 * 60 + 10)
+                reversal_thresh = 110.0 if sym == "SENSEX" else 45.0
+                is_spot_reversed = (
+                    (armed_type == "CE" and spot <= (armed_spot - reversal_thresh)) or
+                    (armed_type == "PE" and spot >= (armed_spot + reversal_thresh))
+                )
+
+                if is_timed_out or is_spot_reversed or is_eod:
+                    if is_spot_reversed:
+                        rev_dir = "below support" if armed_type == "CE" else "above resistance"
+                        cancel_reason = f"Spot reversed from ₹{armed_spot:,.2f} to ₹{spot:,.2f} ({rev_dir} by >{reversal_thresh:.0f} pts). Breakout thesis invalidated."
+                    elif is_timed_out:
+                        cancel_reason = f"Breakout trigger ₹{armed_trigger:.2f} was not breached within 25-minute setup window (Current LTP ₹{cur_armed_ltp:.2f}, {gap_pts:.2f} pts away). Setup timed out."
+                    else:
+                        cancel_reason = "Intraday EOD cutoff reached (03:10 PM IST). Unfilled setup closed."
+
+                    logger.info(f"[{time_str}] ⚪ SETUP CANCELLED FOR {sym}: {armed_contract} — {cancel_reason}")
+
+                    cancel_alert_key = f"tg_sent_cancel_{today_date}_{sym}_{armed_strike}_{armed_type}"
+                    if tg_enabled and not TelegramNotifier.is_alert_sent(cancel_alert_key):
+                        cancel_msg = TelegramNotifier.format_setup_cancelled_alert(
+                            contract=armed_contract,
+                            reason=cancel_reason,
+                            breakout_trigger=armed_trigger,
+                            last_ltp=cur_armed_ltp,
+                            spot=spot,
+                            symbol=sym,
+                            direction=armed_dir
+                        )
+                        TelegramNotifier.send_message(bot_token, chat_id, cancel_msg)
+                        TelegramNotifier.record_alert_sent(cancel_alert_key)
+
+                    # Formally cancel in SequentialTradeEngine and reset back to IDLE
+                    SequentialTradeEngine.cancel_armed_setup(symbol=sym, reason=cancel_reason)
+                    return
+
+                # 4C. Awaiting Breakout — Dedicated Concentration Mode Active (Zero distractions!)
+                logger.info(
+                    f"[{time_str}] 🎯 CONCENTRATING ON ARMED SETUP ({sym}): {armed_contract} | "
+                    f"Option LTP: ₹{cur_armed_ltp:.2f} | Trigger: ₹{armed_trigger:.2f} (Gap: {gap_pts:+.2f} pts) | "
+                    f"Spot: ₹{spot:,.2f} | Window: {max(0, int((valid_until_ts - now_ts) / 60))}m left"
+                )
+                return
+
             contract_label = f"{sym} {recommended_strike} {contract_type} ({expiry_date})"
 
             # B1. Confirmed Breakout Entry
@@ -1096,6 +1270,25 @@ class RelianceQuantAlertDaemon:
 
             # B2. Setup Armed Pre-Alert
             elif is_tradable and gap_pts > 0:
+                # 1. Lock the single-trade concentration in SequentialTradeEngine
+                SequentialTradeEngine.arm_setup(
+                    contract=contract_label,
+                    instrument=contract_label,
+                    symbol=sym,
+                    strike=recommended_strike,
+                    contract_type=contract_type,
+                    breakout_trigger=breakout_level,
+                    initial_ltp=active_option_ltp,
+                    target_pts=dynamic_target_pts,
+                    sl_pts=dynamic_sl_pts,
+                    confluence=dominant_score,
+                    num_lots=self.quant_engines.get(sym, self.quant_engine).risk.num_lots,
+                    lot_size=self.quant_engines.get(sym, self.quant_engine).risk.lot_size,
+                    spot=spot,
+                    expiry=expiry_date,
+                    valid_minutes=25
+                )
+
                 armed_alert_key = f"tg_sent_armed_{today_date}_{sym}_{recommended_strike}_{contract_type}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(armed_alert_key):
                     armed_msg = TelegramNotifier.format_armed_alert(
@@ -1118,7 +1311,7 @@ class RelianceQuantAlertDaemon:
                         logger.info(f"🛡️ 📲 SETUP ARMED PRE-ALERT SENT TO TELEGRAM: {fb}")
 
                 logger.info(
-                    f"[{time_str}] 🛡️ ARMED: {contract_label} | Option LTP: ₹{active_option_ltp:.2f} | "
+                    f"[{time_str}] 🎯 ARMED & LOCKED FOR CONCENTRATION: {contract_label} | Option LTP: ₹{active_option_ltp:.2f} | "
                     f"Trigger: ₹{breakout_level:.2f} (Gap: {gap_pts:+.2f} pts) | Spot: ₹{spot:.2f}"
                 )
 

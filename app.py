@@ -7087,6 +7087,107 @@ if df is not None and not df.empty:
                     else:
                         st.warning("Groww API disconnected.")
 
+        elif (current_seq_state == SequentialTradeEngine.STATE_SETUP_ARMED or seq_state.get("armed_setup")) and seq_state.get("armed_setup", {}).get("armed"):
+            armed = seq_state.get("armed_setup", {})
+            armed_inst = armed.get("instrument", armed.get("contract", f"{scrip_symbol} Contract"))
+            armed_trig = float(armed.get("breakout_trigger", 0.0))
+            armed_t_pts = float(armed.get("target_pts", 0.0))
+            armed_sl_pts = float(armed.get("sl_pts", 0.0))
+            armed_conf = float(armed.get("confluence", 90.0))
+            armed_strike = int(armed.get("strike", 0))
+            armed_type = str(armed.get("contract_type", "CE"))
+            armed_time = armed.get("armed_at", "")
+            
+            # Fetch live option LTP
+            live_armed_ltp = 0.0
+            if groww_feed.is_connected:
+                try:
+                    live_armed_ltp = float(groww_feed.get_option_contract_ltp(f"{scrip_symbol} {armed_strike} {armed_type}", symbol=scrip_symbol) or 0.0)
+                    if live_armed_ltp <= 0.05:
+                        live_armed_ltp = float(groww_feed.get_option_contract_ltp(armed_inst, symbol=scrip_symbol) or 0.0)
+                except Exception:
+                    pass
+            if live_armed_ltp <= 0.05:
+                live_armed_ltp = float(armed.get("initial_ltp", 0.0))
+
+            gap_pts = round(armed_trig - live_armed_ltp, 2)
+
+            st.html(f'''
+            <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%); border: 2px solid #818CF8; border-radius: 12px; padding: 18px 22px; margin-bottom: 14px; box-shadow: 0 0 25px rgba(129, 140, 248, 0.25);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.35rem;">🎯</span>
+                        <div>
+                            <span style="font-size: 1.15rem; font-weight: 900; color: #A5B4FC; letter-spacing: 0.4px;">
+                                SINGLE-TRADE CONCENTRATION: SETUP ARMED
+                            </span>
+                            <div style="font-size: 0.78rem; color: #C7D2FE; margin-top: 2px;">
+                                Engine is strictly focused on this single contract. Monitoring live option ticks for breakout trigger breach.
+                            </div>
+                        </div>
+                    </div>
+                    <span style="background: rgba(99, 102, 241, 0.25); color: #C7D2FE; font-size: 0.76rem; font-weight: 800; padding: 4px 14px; border-radius: 6px; border: 1px solid #818CF8;">
+                        CONFLUENCE {armed_conf:.1f}% • ARMED AT {armed_time}
+                    </span>
+                </div>
+
+                <div style="background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 8px; padding: 14px 18px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+                        <div>
+                            <span style="font-size: 0.75rem; color: #94A3B8; text-transform: uppercase;">Watchlist Contract</span>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF;">{armed_inst}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <span style="font-size: 0.75rem; color: #94A3B8; text-transform: uppercase;">Breakout Trigger</span>
+                            <div style="font-size: 1.35rem; font-weight: 900; color: #FBBF24;">₹{armed_trig:.2f}</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: #CBD5E1;">
+                        <span>Current Option LTP: <b style="color: #38BDF8; font-size: 0.95rem;">₹{live_armed_ltp:.2f}</b></span>
+                        <span>Distance: <b style="color: {'#34D399' if gap_pts <= 0 else '#FBBF24'};">{gap_pts:+.2f} pts</b> ({'TRIGGER BREACHED!' if gap_pts <= 0 else 'Approaching Breakout'})</span>
+                        <span>Target: <b style="color: #34D399;">+{armed_t_pts:.1f} pts</b> | SL: <b style="color: #F87171;">-{armed_sl_pts:.1f} pts</b></span>
+                    </div>
+                </div>
+            </div>
+            ''')
+
+            col_arm_b1, col_arm_b2 = st.columns([1.5, 1.0])
+            with col_arm_b1:
+                if st.button("🔥 Confirm Breakout & Enter Trade Now", key=f"btn_force_armed_entry_{scrip_symbol}", use_container_width=True):
+                    SequentialTradeEngine.enter_trade_direct(
+                        contract=armed.get("contract", ""),
+                        instrument=armed_inst,
+                        entry_price=live_armed_ltp,
+                        sl=round(max(0.05, live_armed_ltp - armed_sl_pts), 2),
+                        target=round(live_armed_ltp + armed_t_pts, 2),
+                        direction=f"BUY {armed_type}",
+                        expiry=armed.get("expiry", ""),
+                        confluence=armed_conf,
+                        qty=int(armed.get("lot_size", 10) * armed.get("num_lots", 1)),
+                        num_lots=int(armed.get("num_lots", 1)),
+                        symbol=scrip_symbol
+                    )
+                    st.toast("✅ Entered trade on armed setup!")
+                    st.rerun()
+            with col_arm_b2:
+                if st.button("❌ Cancel Setup & Resume Scan", key=f"btn_cancel_armed_{scrip_symbol}", use_container_width=True):
+                    user_reason = "Manual cancellation via trading desk UI."
+                    tg_cfg = TelegramNotifier.load_config()
+                    if tg_cfg.get("enabled", True):
+                        c_msg = TelegramNotifier.format_setup_cancelled_alert(
+                            contract=armed_inst,
+                            reason=user_reason,
+                            breakout_trigger=armed_trig,
+                            last_ltp=live_armed_ltp,
+                            spot=spot if 'spot' in locals() else 0.0,
+                            symbol=scrip_symbol,
+                            direction=armed.get("direction", "BULLISH (CALL / CE)")
+                        )
+                        TelegramNotifier.send_message(tg_cfg.get("bot_token"), tg_cfg.get("chat_id"), c_msg)
+                    SequentialTradeEngine.cancel_armed_setup(symbol=scrip_symbol, reason=user_reason)
+                    st.toast("⚪ Setup cancelled & reason sent to Telegram. Scanning resumed.")
+                    st.rerun()
+
         elif current_seq_state == SequentialTradeEngine.STATE_TRADE_CLOSED and last_closed:
             # TRADE CLOSED & AUDITED: Wait for user acknowledgement
             st_color = "#10B981" if "Hit" in last_closed.get("status", "") and "SL" not in last_closed.get("status", "") else "#EF4444"
