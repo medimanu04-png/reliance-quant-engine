@@ -1411,8 +1411,10 @@ class SequentialTradeEngine:
             sym = resolve_symbol(sym_str)
         state_file = cls.get_state_file_path(sym)
         try:
-            with open(state_file, "w", encoding="utf-8") as f:
+            temp_path = f"{state_file}.tmp.{os.getpid()}"
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
+            os.replace(temp_path, state_file)
         except Exception as e:
             logger.warning(f"Failed to persist sequential state to {state_file}: {e}")
 

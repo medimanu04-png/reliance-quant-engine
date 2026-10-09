@@ -185,8 +185,10 @@ class BreakoutTriggerManager:
     @classmethod
     def _save_records(cls, records: dict):
         try:
-            with open(cls.TRIGGER_FILE, "w", encoding="utf-8") as f:
+            temp_path = f"{cls.TRIGGER_FILE}.tmp.{os.getpid()}"
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(records, f, indent=2)
+            os.replace(temp_path, cls.TRIGGER_FILE)
         except Exception:
             pass
 

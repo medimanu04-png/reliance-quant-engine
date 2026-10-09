@@ -131,8 +131,10 @@ class StandaloneBreakoutManager:
     @classmethod
     def _save_records(cls, records: dict):
         try:
-            with open(cls.TRIGGER_FILE, "w", encoding="utf-8") as f:
+            temp_path = f"{cls.TRIGGER_FILE}.tmp.{os.getpid()}"
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(records, f, indent=2)
+            os.replace(temp_path, cls.TRIGGER_FILE)
         except Exception as e:
             logger.debug(f"Error saving breakout records: {e}")
 
@@ -1430,6 +1432,37 @@ class RelianceQuantAlertDaemon:
             )
             return
 
+    def check_and_send_morning_preflight(self):
+        """Dispatches an automated 09:10 AM IST Pre-Flight Readiness Ping to Telegram once per trading day."""
+        now_dt = datetime.now(IST)
+        today_date = now_dt.strftime("%Y-%m-%d")
+        cur_t = now_dt.time()
+        preflight_key = f"tg_sent_preflight_{today_date}"
+
+        # Dispatch during 09:05 - 15:30 IST window (or on first boot if force_run)
+        if (dt_time(9, 5) <= cur_t <= dt_time(15, 30) or self.force_run) and not TelegramNotifier.is_alert_sent(preflight_key, cooldown_seconds=86400):
+            tg_config = TelegramNotifier.load_config()
+            if tg_config.get("enabled", True):
+                bot_token = tg_config.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
+                chat_id = tg_config.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
+                pre_msg = TelegramNotifier.format_preflight_alert(
+                    groww_connected=self.groww_feed.is_connected,
+                    symbols=self.symbols
+                )
+                buttons = {
+                    "inline_keyboard": [
+                        [
+                            {"text": "⚡ OPEN GROWW F&O TERMINAL", "url": "https://groww.in/options"}
+                        ]
+                    ]
+                }
+                ok, fb = TelegramNotifier.send_message(bot_token, chat_id, pre_msg, reply_markup=buttons)
+                if ok:
+                    TelegramNotifier.record_alert_sent(preflight_key)
+                    logger.info(f"🟢 Morning Pre-Flight Readiness Ping sent to Telegram: {fb}")
+
+    def run(self):
+        """Main 24/7 autonomous loop."""
         try:
             with open(DAEMON_LOCK_FILE, "w", encoding="utf-8") as f:
                 json.dump({"pid": os.getpid(), "start_time": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")}, f)
@@ -1442,7 +1475,7 @@ class RelianceQuantAlertDaemon:
         print("=" * 75)
         print("Mode           : Autonomous Background Worker (Zero-Browser Dependency)")
         print("Trading Hours  : 09:15 AM - 03:30 PM IST (Mon-Fri)")
-        print(f"Polling Rate   : Every {self.interval:.1f} seconds")
+        print(f"Polling Rate   : Adaptive ({self.interval:.1f}s scanning / 1.5s fast-breakout mode)")
         print(f"Override Mode  : {'ACTIVE (--now)' if self.force_run else 'OFF (Standard Market Hours)'}")
 
         tg_cfg = TelegramNotifier.load_config()
@@ -1455,6 +1488,8 @@ class RelianceQuantAlertDaemon:
         try:
             while self.running:
                 try:
+                    self.check_and_send_morning_preflight()
+
                     is_open, reason = self.is_market_hours()
                     if not is_open:
                         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
@@ -1463,7 +1498,16 @@ class RelianceQuantAlertDaemon:
                         continue
 
                     self.run_single_tick()
-                    time.sleep(self.interval)
+
+                    # Suggestion 1: Adaptive Fast-Tick Mode (1.5s when ARMED or IN-TRADE, else normal interval)
+                    has_active = False
+                    for sym in self.symbols:
+                        st = SequentialTradeEngine.get_state(symbol=sym)
+                        if st.get("current_state") in (SequentialTradeEngine.STATE_SETUP_ARMED, SequentialTradeEngine.STATE_IN_TRADE):
+                            has_active = True
+                            break
+                    dynamic_interval = 1.5 if has_active else self.interval
+                    time.sleep(dynamic_interval)
 
                 except KeyboardInterrupt:
                     print("\n🛑 Shutting down Quant Alert Daemon gracefully...")

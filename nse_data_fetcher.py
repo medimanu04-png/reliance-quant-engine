@@ -253,7 +253,8 @@ class NSEIndiaFetcher:
         is_index = sym in ("NIFTY", "SENSEX")
 
         if is_index:
-            target_weekday = 3 if sym == "NIFTY" else 4
+            # Both NIFTY (NSE) and SENSEX (BSE) weekly options contracts expire on Thursday (weekday 3)
+            target_weekday = 3
             exp_curr = cls.get_nearest_weekly_expiry(today_dt, target_weekday=target_weekday, fo_holidays=fo_holidays)
             exp_next = cls.get_nearest_weekly_expiry(exp_curr + timedelta(days=7), target_weekday=target_weekday, fo_holidays=fo_holidays)
             cand_prev = exp_curr - timedelta(days=7)

@@ -4849,11 +4849,29 @@ class UltraHighConvictionRelianceEngine:
 
         time_allowed = market_open <= current_time <= market_close and current_time <= cutoff
         auto_sq_active = current_time >= auto_sq
-        spot = c5m["close"][-1]
         active_spec = get_asset_spec(symbol or getattr(self, "symbol", "NIFTY"))
         active_sym = active_spec.symbol
         active_risk = RelianceRiskBudget.for_symbol(active_sym)
         is_adani = False
+
+        # Guard: Ensure candle data is populated to prevent unhandled IndexError
+        if not c5m or not c5m.get("close") or len(c5m["close"]) == 0:
+            return {
+                "1. SETUP CONVICTION": "STAND DOWN (INSUFFICIENT CANDLE DATA)",
+                "2. TRADE STATUS": "NON-TRADABLE: INSUFFICIENT CANDLE DATA",
+                "3. CONFLUENCE SCORE": "0.0% (Waiting for live market feed)",
+                "dominant_score": 0.0,
+                "tier_rating": "NON-TRADABLE",
+                "win_expectancy_pct": 0.0,
+                "target_pts": active_spec.target_pts,
+                "sl_pts": active_spec.sl_pts,
+                "is_synthetic_feed": True,
+                "spread_stand_down": False,
+                "is_midday_lull": False,
+                "wick_guard_passed": False
+            }
+
+        spot = c5m["close"][-1]
 
         # VECTOR 1: Multi-Timeframe Trend & ORB-15 Structure (20 pts)
         ema9 = MultiIndicatorMath.calculate_ema(c5m["close"], 9)[-1]

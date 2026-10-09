@@ -1480,8 +1480,9 @@ class GrowwMarketFeed:
             cached = cached_item[0] if cached_item else (self._cached_reliance_spot if underlying == "RELIANCE" else None)
             last_ts = cached_item[1] if cached_item else (self._last_reliance_spot_ts if underlying == "RELIANCE" else 0.0)
 
-        if cached:
-            if (force_refresh or (now - last_ts > 2.0)) and not getattr(self, f"_spot_fetching_{underlying}", False):
+        # Fast non-blocking async background fetch if cached and not forced
+        if cached and not force_refresh:
+            if (now - last_ts > 2.0) and not getattr(self, f"_spot_fetching_{underlying}", False):
                 setattr(self, f"_spot_fetching_{underlying}", True)
                 def _async_spot(sym=underlying):
                     try:
@@ -1491,10 +1492,12 @@ class GrowwMarketFeed:
                 threading.Thread(target=_async_spot, daemon=True, name=f"GrowwSpotAsync_{underlying}").start()
             return cached.copy()
 
-        # If absolutely no cache exists yet, fetch with fallback
+        # If force_refresh=True or cache is missing, fetch synchronously
         res = self._fetch_spot_now(symbol=underlying)
         if res and res.get("spot_ltp", 0) > 0:
             return res
+        if cached:
+            return cached.copy()
         return self._get_fallback_spot(underlying)
 
     def get_reliance_historical_candles(self, interval: str = "5m", days: int = 5, symbol: Optional[str] = None) -> Optional[Any]:
@@ -1611,12 +1614,22 @@ class GrowwMarketFeed:
                             "Volume": vol
                         })
                     df = pd.DataFrame(records).set_index("Date")
-                    with self._cache_lock:
-                        self._cached_candles[cache_key] = (df.copy(), now_ts)
+                    self._store_candle_cache(cache_key, df, now_ts)
                     return df
         except Exception as e:
             logger.debug(f"Groww charting candle fetch error for {underlying}: {e}")
         return None
+
+    def _store_candle_cache(self, cache_key: str, df: Any, now_ts: float) -> None:
+        """Stores candles in cache with an LRU ceiling to prevent unbounded memory growth."""
+        with self._cache_lock:
+            if not hasattr(self, "_cached_candles"):
+                self._cached_candles = {}
+            if len(self._cached_candles) > 60:
+                oldest_keys = sorted(self._cached_candles.keys(), key=lambda k: self._cached_candles[k][1])[:20]
+                for ok in oldest_keys:
+                    self._cached_candles.pop(ok, None)
+            self._cached_candles[cache_key] = (df.copy(), now_ts)
 
     def get_historical_candles(self, symbol: Optional[str] = None, interval: str = "5m", days: int = 5) -> Optional[Any]:
         """Class alias for historical candles across all supported assets."""
@@ -1666,8 +1679,7 @@ class GrowwMarketFeed:
                             "Volume": float(c[5]) if len(c) > 5 and c[5] is not None else 100000.0
                         })
                     df = pd.DataFrame(records).set_index("Date")
-                    with self._cache_lock:
-                        self._cached_candles[cache_key] = (df.copy(), now_ts)
+                    self._store_candle_cache(cache_key, df, now_ts)
                     return df
 
             # 2. Secondary Fallback: yfinance (^NSEI for NIFTY 50)
@@ -1678,8 +1690,7 @@ class GrowwMarketFeed:
                 df_yf = t.history(period=f"{days}d", interval=interval)
                 if df_yf is not None and not df_yf.empty and len(df_yf) >= 15:
                     df = df_yf[["Open", "High", "Low", "Close", "Volume"]].copy()
-                    with self._cache_lock:
-                        self._cached_candles[cache_key] = (df.copy(), now_ts)
+                    self._store_candle_cache(cache_key, df, now_ts)
                     return df
             except Exception:
                 pass

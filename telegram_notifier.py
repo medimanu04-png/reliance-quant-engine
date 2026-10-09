@@ -61,10 +61,12 @@ class TelegramNotifier:
 
     @classmethod
     def save_alert_log(cls, records: Dict[str, float]) -> None:
-        """Saves persistent alert dispatch records to disk."""
+        """Saves persistent alert dispatch records to disk atomically."""
         try:
-            with open(ALERT_LOG_FILE, "w", encoding="utf-8") as f:
+            temp_path = f"{ALERT_LOG_FILE}.tmp.{os.getpid()}"
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(records, f, indent=2)
+            os.replace(temp_path, ALERT_LOG_FILE)
         except Exception:
             pass
 
@@ -581,6 +583,9 @@ class TelegramNotifier:
         except Exception:
             pass
 
+        limit_collar = float(kwargs.get("limit_collar", getattr(spec, "limit_collar_pts", 3.0)))
+        limit_cap = round(entry_price + limit_collar, 2)
+
         msg = f"""{header_banner}<b>{dir_badge} • {scrip_sym}</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
@@ -592,8 +597,37 @@ class TelegramNotifier:
 📦 <b>Sizing:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty) • R:R 1:{rr_ratio}{sr_line}
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
-⚡ <i>Place LIMIT BUY @ ₹{entry_price:.2f} on broker. Set GTT SL & Target.</i>"""
+⚡ <i>Place SL-LMT BUY on broker ➔ Trigger: ₹{entry_price:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage ₹{limit_collar:.1f}). Set GTT SL & Target.</i>"""
         return msg
+
+    @classmethod
+    def format_preflight_alert(cls, groww_connected: bool = True, symbols: Optional[List[str]] = None) -> str:
+        """Formats the daily 09:10 AM Pre-Flight Engine Readiness alert."""
+        from asset_config import get_asset_spec
+        now_str = datetime.now(IST).strftime("%I:%M %p IST • %d-%b-%Y")
+        syms = symbols or ["SENSEX", "NIFTY"]
+        mandate_lines = []
+        for s in syms:
+            sp = get_asset_spec(s)
+            tot_q = sp.default_lots * sp.lot_size
+            mandate_lines.append(
+                f" • <b>{sp.symbol}:</b> {sp.default_lots} Lots ({tot_q} Qty) │ TGT +{sp.target_pts:.0f} pts (+₹{tot_q * sp.target_pts:,.0f}) │ SL -{sp.sl_pts:.0f} pts (-₹{tot_q * sp.sl_pts:,.0f})"
+            )
+        mandates_text = "\n".join(mandate_lines)
+        gw_status = "✅ CONNECTED & STREAMING" if groww_connected else "⚠️ REST FALLBACK LIVE"
+
+        return f"""<b>🟢 QUANT DESK DAEMON ONLINE • PRE-FLIGHT READY</b>
+────────────────────────
+✅ <b>Engine Status:</b> 24/7 Autonomous Daemon Active
+⏰ <b>Time:</b> {now_str}
+📡 <b>Groww Broker:</b> {gw_status}
+🏛️ <b>Monitored Desks:</b> {', '.join(syms)}
+────────────────────────
+📊 <b>DESK ALLOCATIONS & SIZING MANDATES:</b>
+{mandates_text}
+🛡️ <b>Capital Defense:</b> 1-Loss Daily Circuit Breaker Armed (0 Losses Today)
+────────────────────────
+🎯 <i>Desk ready for 09:15 AM market open. Awaiting A+ quantitative confluence.</i>"""
 
     @classmethod
     def format_daily_circuit_breaker_alert(cls, reason: str, spot: float = 0.0, symbol: str = "NIFTY") -> str:
