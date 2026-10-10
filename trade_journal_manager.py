@@ -284,10 +284,10 @@ class TradeJournalManager:
                 data = json.load(f)
             if isinstance(data, list):
                 return data
-            cls.save_journal([])
+            logger.warning(f"Journal file {JOURNAL_FILE} format invalid (expected list). Returning empty list without overwriting.")
             return []
-        except Exception:
-            cls.save_journal([])
+        except Exception as e:
+            logger.error(f"Error reading journal file {JOURNAL_FILE}: {e}. Preserving disk data without overwriting.")
             return []
 
     @classmethod
@@ -319,8 +319,11 @@ class TradeJournalManager:
     @classmethod
     def save_journal(cls, entries: List[Dict[str, Any]]):
         """Saves journal records to JSON file."""
-        with open(JOURNAL_FILE, "w", encoding="utf-8") as f:
-            json.dump(entries, f, indent=2)
+        try:
+            with open(JOURNAL_FILE, "w", encoding="utf-8") as f:
+                json.dump(entries, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to persist trade journal to {JOURNAL_FILE}: {e}")
 
     @classmethod
     def add_or_update_entry(cls, new_entry: Dict[str, Any], starting_cash: float = None) -> List[Dict[str, Any]]:
@@ -1330,7 +1333,32 @@ class SequentialTradeEngine:
                     if isinstance(state, dict) and "current_state" in state:
                         if "symbol" not in state:
                             state["symbol"] = sym_kw
-                        # If active_trade is already active, return state immediately
+
+                        # Calendar Day Rollover Guard: Reconcile trade counts when a new day starts
+                        updated_at_str = str(state.get("updated_at", "")).strip()
+                        state_date = updated_at_str[:10]  # "YYYY-MM-DD"
+                        if state_date and state_date != today_str:
+                            journal = TradeJournalManager.load_journal(symbol=sym_kw)
+                            today_trades = [
+                                t for t in journal 
+                                if t.get("date") == today_str and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
+                            ]
+                            state["today_trade_count"] = len(today_trades)
+                            state["re_entry_armed"] = None
+                            state["armed_setup"] = None
+
+                            # Stale overnight trade guard: Intraday F&O trades cannot carry over across days
+                            if state.get("active_trade") and state.get("current_state") == cls.STATE_IN_TRADE:
+                                act_t = state["active_trade"]
+                                act_entry_t = str(act_t.get("actual_entry_time", ""))
+                                if not act_entry_t.startswith(today_str):
+                                    state["last_closed_trade"] = act_t
+                                    state["active_trade"] = None
+                                    state["current_state"] = cls.STATE_IDLE
+
+                            state["updated_at"] = datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
+                            cls.save_state(state, symbol=sym_kw)
+
                         return state
             except Exception as e:
                 logger.debug(f"Error reading sequential state ({state_file}): {e}")
@@ -1411,12 +1439,18 @@ class SequentialTradeEngine:
             sym = resolve_symbol(sym_str)
         state_file = cls.get_state_file_path(sym)
         try:
-            temp_path = f"{state_file}.tmp.{os.getpid()}"
-            with open(temp_path, "w", encoding="utf-8") as f:
+            with open(state_file, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
-            os.replace(temp_path, state_file)
         except Exception as e:
-            logger.warning(f"Failed to persist sequential state to {state_file}: {e}")
+            try:
+                temp_path = f"{state_file}.tmp.{os.getpid()}"
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(state, f, indent=2)
+                if os.path.exists(state_file):
+                    os.remove(state_file)
+                os.replace(temp_path, state_file)
+            except Exception as e2:
+                logger.warning(f"Failed to persist sequential state to {state_file}: {e2}")
 
     @classmethod
     def get_armed_setup(cls, symbol: Optional[str] = None) -> Optional[Dict[str, Any]]:

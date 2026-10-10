@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict, Any, Tuple
 
 IST = pytz.timezone("Asia/Kolkata")
-from asset_config import get_asset_spec, resolve_symbol, get_daily_asset_schedule
+from asset_config import get_asset_spec, resolve_symbol, get_daily_asset_schedule, build_contract_symbol, format_contract_code
 from groww_market_feed import GrowwMarketFeed
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
@@ -2529,7 +2529,16 @@ is_post_market = (current_time > m_close)
 is_orb_cooldown_window = (m_open <= current_time < orb_window_end)
 is_eod_squareoff = (current_time >= sq_off and current_time <= m_close)
 
-if is_pre_market or is_post_market:
+is_weekend_today = bool(desk_sched.get("is_weekend", False))
+is_holiday_today = bool(desk_sched.get("is_trading_holiday", False)) and not is_weekend_today
+
+if is_weekend_today:
+    time_gate_msg = f"Weekend Market Closure ({desk_sched.get('weekday_name', 'Weekend')})"
+    time_gate_pass = False
+elif is_holiday_today:
+    time_gate_msg = f"NSE Trading Holiday ({desk_sched.get('holiday_name', 'Exchange Holiday')})"
+    time_gate_pass = False
+elif is_pre_market or is_post_market:
     time_gate_msg = "Market Closed (09:15 AM - 03:30 PM IST Only)"
     time_gate_pass = False
 elif is_orb_cooldown_window:
@@ -7240,7 +7249,7 @@ if df is not None and not df.empty:
         last_closed = seq_state.get("last_closed_trade")
 
         # Target symbol for matching
-        target_contract_sym = f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}" if (atm_strike and recommended_contract_type) else ""
+        target_contract_sym = build_contract_symbol(scrip_symbol, expiry_date_str, atm_strike, recommended_contract_type) if (atm_strike and recommended_contract_type) else ""
 
         # Auto-verify active or pending trade with Groww broker feed if connected
         if groww_feed.is_connected:
@@ -7772,14 +7781,9 @@ if df is not None and not df.empty:
                     st.caption(f"Strict Sequential Mode: Clicking will propose Trade #{next_t_num} and request Groww execution verification.")
                 with prop_c2:
                     if st.button(f"🚀 Arm & Propose Trade #{next_t_num}", use_container_width=True):
-                        try:
-                            clean_exp = str(expiry_date_str).split()[0].replace("-", " ")
-                            dt_exp = datetime.strptime(clean_exp, "%d %b %Y")
-                            exp_code = dt_exp.strftime("%y%b").upper()
-                        except Exception:
-                            exp_code = "26OCT"
+                        contract_full = build_contract_symbol(scrip_symbol, expiry_date_str, atm_strike, recommended_contract_type)
                         SequentialTradeEngine.propose_trade(
-                            contract=f"{scrip_symbol}{exp_code}{atm_strike}{recommended_contract_type}",
+                            contract=contract_full,
                             instrument=rec_instrument,
                             planned_entry=float(estimated_premium),
                             sl=float(sl_premium),
@@ -9298,7 +9302,7 @@ if df is not None and not df.empty:
                     "date": datetime.now(IST).strftime("%Y-%m-%d"),
                     "trade_given_time": datetime.now(IST).strftime("%I:%M:%S %p IST"),
                     "full_contract": rec_instrument,
-                    "symbol": f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}",
+                    "symbol": build_contract_symbol(scrip_symbol, expiry_date_str, atm_strike, recommended_contract_type),
                     "contract_type": recommended_contract_type,
                     "action": f"BUY {recommended_contract_type}",
                     "strike": atm_strike,
@@ -10273,7 +10277,7 @@ if df is not None and not df.empty:
                 with st.form("manual_trade_form", clear_on_submit=False):
                     mf_c1, mf_c2, mf_c3 = st.columns(3)
                     m_date = mf_c1.date_input("Trade Date", value=datetime.strptime(today_str, "%Y-%m-%d"))
-                    m_sym = mf_c2.text_input("Trading Symbol", value=rec_instrument if is_tradable else f"{scrip_symbol}26OCT{atm_strike}{recommended_contract_type}")
+                    m_sym = mf_c2.text_input("Trading Symbol", value=rec_instrument if is_tradable else build_contract_symbol(scrip_symbol, expiry_date_str, atm_strike, recommended_contract_type))
                     m_status = mf_c3.selectbox("Trade Status", ["HIT", "FAIL", "OPEN", "STAND DOWN"], index=0)
 
                     spec_manual = get_asset_spec(symbol=scrip_symbol)

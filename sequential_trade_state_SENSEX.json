@@ -3,8 +3,8 @@
   "symbol": "SENSEX",
   "active_trade": null,
   "last_closed_trade": null,
-  "today_trade_count": 2,
-  "updated_at": "2026-10-09 05:34:25 AM IST",
+  "today_trade_count": 0,
+  "updated_at": "2026-10-10 10:33:28 AM IST",
   "re_entry_armed": null,
   "archived_last_closed_trade": {
     "trade_num": 2,
@@ -18,5 +18,6 @@
     "exit_price": 605.4,
     "exit_time": "02:23:01 PM IST",
     "pnl": "+\u20b9130,673.00 (+3266.82 pts)"
-  }
+  },
+  "armed_setup": null
 }

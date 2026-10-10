@@ -61,14 +61,20 @@ class TelegramNotifier:
 
     @classmethod
     def save_alert_log(cls, records: Dict[str, float]) -> None:
-        """Saves persistent alert dispatch records to disk atomically."""
+        """Saves persistent alert dispatch records to disk reliably on Windows / OneDrive."""
         try:
-            temp_path = f"{ALERT_LOG_FILE}.tmp.{os.getpid()}"
-            with open(temp_path, "w", encoding="utf-8") as f:
+            with open(ALERT_LOG_FILE, "w", encoding="utf-8") as f:
                 json.dump(records, f, indent=2)
-            os.replace(temp_path, ALERT_LOG_FILE)
         except Exception:
-            pass
+            try:
+                temp_path = f"{ALERT_LOG_FILE}.tmp.{os.getpid()}"
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(records, f, indent=2)
+                if os.path.exists(ALERT_LOG_FILE):
+                    os.remove(ALERT_LOG_FILE)
+                os.replace(temp_path, ALERT_LOG_FILE)
+            except Exception:
+                pass
 
     @classmethod
     def is_alert_sent(cls, alert_key: str, cooldown_seconds: int = 14400) -> bool:

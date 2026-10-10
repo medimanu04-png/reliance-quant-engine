@@ -42,5 +42,6 @@ scratch_*
 scratch/
 data_cache/
 *.pid
+*.tmp*
 
 

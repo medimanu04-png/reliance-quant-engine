@@ -334,6 +334,56 @@ def get_asset_spec(symbol: Optional[str] = None, contract: Optional[str] = None)
     return ASSET_SPECS[sym]
 
 
+def format_contract_code(expiry_date_str: Optional[str] = None, ref_dt: Optional[Any] = None) -> str:
+    """
+    Parses any valid expiry date string or falls back to ref_dt/current IST time,
+    returning a standardized 5-character contract month code (e.g. '26OCT', '26NOV').
+    Eliminates brittle hardcoded month codes across the application.
+    """
+    from datetime import datetime
+    try:
+        import pytz
+        IST = pytz.timezone("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+
+    if expiry_date_str:
+        cleaned = str(expiry_date_str).strip().split()[0].replace("/", "-").replace(" ", "-")
+        for fmt in ("%d-%b-%Y", "%d-%B-%Y", "%Y-%m-%d", "%d-%m-%Y", "%d%b%Y", "%b-%d-%Y", "%d%B%Y"):
+            for val in (cleaned, cleaned.title(), cleaned.upper()):
+                try:
+                    dt = datetime.strptime(val, fmt)
+                    return dt.strftime("%y%b").upper()
+                except Exception:
+                    pass
+    if ref_dt is not None:
+        try:
+            return ref_dt.strftime("%y%b").upper()
+        except Exception:
+            pass
+    return datetime.now(IST).strftime("%y%b").upper()
+
+
+def build_contract_symbol(
+    symbol: str,
+    expiry_date_str: Optional[str] = None,
+    strike: Optional[Any] = None,
+    contract_type: Optional[str] = None
+) -> str:
+    """
+    Constructs a standardized trading contract symbol (e.g. NIFTY26OCT25000CE or SENSEX26OCT72000PE).
+    Safely eliminates brittle hardcoding of month/year codes.
+    """
+    sym = resolve_symbol(symbol)
+    exp_code = format_contract_code(expiry_date_str)
+    stk_str = str(strike).strip() if strike else ""
+    ctype = str(contract_type).strip().upper() if contract_type else ""
+    if stk_str and ctype:
+        return f"{sym}{exp_code}{stk_str}{ctype}"
+    return f"{sym}{exp_code}"
+
+
 def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     """
     Weekly Theta Decay Shield & Day 1 Premium Shield Trading Schedule:

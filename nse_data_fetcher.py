@@ -261,8 +261,8 @@ class NSEIndiaFetcher:
         is_index = sym in ("NIFTY", "SENSEX")
 
         if is_index:
-            # NIFTY (NSE) weekly options expire on Thursday (3), SENSEX (BSE) on Friday (4)
-            target_weekday = 4 if sym == "SENSEX" else 3
+            # Mandate Schedule: NIFTY weekly options on Tuesday (1), SENSEX on Thursday (3)
+            target_weekday = 3 if sym == "SENSEX" else 1
             shift_audit = nse_calendar.get_weekly_expiry(today_dt, target_weekday=target_weekday, symbol=sym)
             exp_curr = shift_audit["actual_dt"]
             is_expiry_shifted = shift_audit["is_shifted"]
