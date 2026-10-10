@@ -896,10 +896,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# GROWW BROKER AUTHENTICATION (AUTOMATED — NON-BLOCKING)
+# GROWW BROKER & NSE OFFICIAL CALENDAR LINK
 # ==============================================================================
 from groww_market_feed import GrowwMarketFeed
 groww_feed = GrowwMarketFeed.get_instance()
+from nse_calendar import nse_calendar, NSECalendar
 
 # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate()
@@ -913,10 +914,18 @@ def render_quant_desk_clock():
     ampm_init = now.strftime("%p")
     date_init = now.strftime("%a, %d %b %Y")
     
-    # Pre-render initial session HTML so frame 0 has zero empty flash
+    # Official NSE Calendar Market Status Resolution
+    mkt_status = nse_calendar.is_market_open_today(now)
+    next_hol = nse_calendar.get_next_holiday(now)
+    next_hol_str = f"{next_hol['tradingDate']} ({next_hol['description']}) in {next_hol['days_left']}d" if next_hol else "None Scheduled"
+
     weekday = now.weekday()
     total_min = now.hour * 60 + now.minute
-    if weekday >= 5:
+    
+    if mkt_status.get("is_holiday"):
+        h_name = mkt_status.get("holiday_name", "Trading Holiday")
+        init_sess_html = f'<span style="background: rgba(239, 68, 68, 0.22); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.45); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>TRADING HOLIDAY</b> &bull; CLOSED <span style="color: #CBD5E1; font-weight: normal; margin-left: 3px;">{h_name}</span></span>'
+    elif weekday >= 5:
         init_sess_html = '<span style="background: rgba(239, 68, 68, 0.18); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>WEEKEND</b> &bull; CLOSED <span style="color: #94A3B8; font-weight: normal; margin-left: 3px;">Simulation Active</span></span>'
     elif total_min < 9 * 60:
         init_sess_html = '<span style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #94A3B8; display: inline-block;"></span> <b>PRE-DAWN</b> &bull; OPENS 09:15 AM</span>'
@@ -928,6 +937,9 @@ def render_quant_desk_clock():
         init_sess_html = '<span style="background: rgba(249, 115, 22, 0.2); color: #FB923C; border: 1px solid rgba(249, 115, 22, 0.4); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FB923C; display: inline-block;"></span> <b>CLOSING SQUEEZE</b> &bull; AUTO-SQ</span>'
     else:
         init_sess_html = '<span style="background: rgba(148, 163, 184, 0.18); color: #94A3B8; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #64748B; display: inline-block;"></span> <b>POST-MARKET</b> &bull; CLOSED</span>'
+
+    # Build JSON map for real-time JavaScript clock checking
+    holidays_map_js = json.dumps({h['date_iso']: h['description'] for h in nse_calendar.get_all_holidays()})
 
     html_code = f"""<!DOCTYPE html>
 <html>
@@ -1052,14 +1064,16 @@ def render_quant_desk_clock():
     <div id="quant-clock-date" class="date-text">📅 {date_init}</div>
     <div id="quant-clock-session" class="session-area">{init_sess_html}</div>
     <div class="footer-row">
-        <span>⚡ FEED: <b style="color: #38BDF8;">DIRECT GROWW API (MANDATORY)</b></span>
-        <span>📶 LATENCY: <b style="color: #34D399;">~4ms</b></span>
-        <span>🛡️ DECAY: <b style="color: #FBBF24;">10D RULE</b></span>
+        <span>📅 NSE CALENDAR: <b style="color: #38BDF8;">LINKED & LIVE</b></span>
+        <span>🏖️ NEXT: <b style="color: #FCD34D;">{next_hol_str}</b></span>
+        <span>🛡️ DECAY: <b style="color: #10B981;">10D RULE</b></span>
     </div>
 </div>
 
 <script>
 (function() {{
+    var holidaysMap = {holidays_map_js};
+
     function tick() {{
         try {{
             var now = new Date();
@@ -1097,9 +1111,14 @@ def render_quant_desk_clock():
             
             var sessEl = document.getElementById('quant-clock-session');
             if (sessEl) {{
+                var mIdx = month + 1;
+                var isoKey = year + '-' + (mIdx < 10 ? '0' : '') + mIdx + '-' + (date < 10 ? '0' : '') + date;
                 var totalMin = h * 60 + m;
                 var sHtml = '';
-                if (day === 0 || day === 6) {{
+                
+                if (holidaysMap && holidaysMap[isoKey]) {{
+                    sHtml = '<span style="background: rgba(239, 68, 68, 0.22); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.45); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>TRADING HOLIDAY</b> &bull; CLOSED <span style="color: #CBD5E1; font-weight: normal; margin-left: 3px;">' + holidaysMap[isoKey] + '</span></span>';
+                }} else if (day === 0 || day === 6) {{
                     sHtml = '<span style="background: rgba(239, 68, 68, 0.18); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #EF4444; display: inline-block;"></span> <b>WEEKEND</b> &bull; CLOSED <span style="color: #94A3B8; font-weight: normal; margin-left: 3px;">Simulation Active</span></span>';
                 }} else if (totalMin < 9 * 60) {{
                     sHtml = '<span style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; font-size: 0.65rem; font-weight: 700;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #94A3B8; display: inline-block;"></span> <b>PRE-DAWN</b> &bull; OPENS 09:15 AM</span>';
@@ -1137,6 +1156,196 @@ def render_quant_desk_clock():
 </body>
 </html>"""
     components.html(html_code, height=138, scrolling=False)
+
+
+def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
+    """
+    Renders the Official NSE Holiday Calendar & Expiry Shift Intelligence Hub.
+    Provides live connection telemetry, today's market status, expiry shift radars,
+    and official holiday master schedules.
+    """
+    now = datetime.now(IST)
+    telemetry = nse_calendar.get_calendar_status_telemetry()
+    mkt = telemetry["market_status"]
+    next_h = telemetry["next_holiday"]
+    cur_sym = resolve_symbol(active_symbol)
+
+    # Header Bar with Live Sync Button
+    c_head1, c_head2 = st.columns([3.2, 0.8])
+    with c_head1:
+        st.html(f"""
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span style="font-size: 1.4rem;">📅</span>
+            <div>
+                <span style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.3px;">
+                    NSE OFFICIAL HOLIDAY & EXPIRY SHIFT CALENDAR
+                </span>
+                <div style="font-size: 0.72rem; color: #94A3B8;">
+                    Live Synchronized with <b style="color: #38BDF8;">NSE India Master Portal</b> (api/holiday-master) &bull; Source: <span style="color: #34D399; font-weight: 700;">{telemetry['sync_source']}</span> &bull; {telemetry['total_holidays']} Holidays Indexed
+                </div>
+            </div>
+        </div>
+        """)
+    with c_head2:
+        if st.button("🔄 Sync NSE API", use_container_width=True, key="btn_sync_nse_cal"):
+            with st.spinner("Connecting to NSE India official API..."):
+                res = nse_calendar.sync_with_nse(force=True)
+                if res.get("success"):
+                    st.toast(f"✅ NSE Calendar Synced: {res.get('holiday_count')} holidays updated!")
+                else:
+                    st.toast(f"⚠️ NSE API notice: {res.get('message')}")
+                st.rerun()
+
+    # 4 Quick Metrics Tiles
+    t1, t2, t3, t4 = st.columns(4)
+    with t1:
+        st.html(f"""
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">TODAY'S MARKET SESSION</div>
+            <div style="font-size: 0.95rem; font-weight: 800; color: {mkt['badge_color']}; margin-top: 3px;">{mkt['status_label']}</div>
+            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px;">{telemetry['today_str']} ({telemetry['today_weekday']})</div>
+        </div>
+        """)
+    with t2:
+        next_title = next_h['tradingDate'] if next_h else "None"
+        next_sub = f"{next_h['description']} (in {next_h['days_left']}d)" if next_h else "No upcoming holidays"
+        st.html(f"""
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">NEXT EXCHANGE HOLIDAY</div>
+            <div style="font-size: 0.95rem; font-weight: 800; color: #FCD34D; margin-top: 3px;">{next_title}</div>
+            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{next_sub}</div>
+        </div>
+        """)
+    with t3:
+        act_nifty = telemetry["active_nifty_expiry"]
+        n_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_nifty['is_shifted'] else '<span style="color: #34D399; font-weight: 800;">STANDARD THU</span>'
+        st.html(f"""
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">NIFTY 50 EXPIRY</div>
+            <div style="font-size: 0.95rem; font-weight: 800; color: #38BDF8; margin-top: 3px;">{act_nifty['actual_str']}</div>
+            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px;">{act_nifty['actual_weekday']} &bull; {n_shift_badge}</div>
+        </div>
+        """)
+    with t4:
+        act_sensex = telemetry["active_sensex_expiry"]
+        s_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_sensex['is_shifted'] else '<span style="color: #C084FC; font-weight: 800;">STANDARD FRI</span>'
+        st.html(f"""
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">BSE SENSEX EXPIRY</div>
+            <div style="font-size: 0.95rem; font-weight: 800; color: #C084FC; margin-top: 3px;">{act_sensex['actual_str']}</div>
+            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px;">{act_sensex['actual_weekday']} &bull; {s_shift_badge}</div>
+        </div>
+        """)
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    # Expiry Shift Radar & Collision Audit Section
+    st.html("""
+    <div style="background: linear-gradient(90deg, rgba(30, 27, 75, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.1rem;">⚡</span>
+                <span style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF;">
+                    EXPIRY SHIFT RADAR (SEBI / NSE MANDATE COLLISION AUDIT)
+                </span>
+            </div>
+            <span style="font-size: 0.70rem; color: #94A3B8;">
+                Rules: When an expiry falls on an exchange holiday, contracts <b style="color: #FCD34D;">automatically prepone</b> to the preceding trading day.
+            </span>
+        </div>
+    </div>
+    """)
+
+    year_shifts = nse_calendar.scan_all_expiry_shifts_for_year(now.year)
+    shift_col1, shift_col2 = st.columns(2)
+    with shift_col1:
+        st.markdown(f"**⚡ NIFTY 50 Weekly Expiry Shifts ({len(year_shifts['NIFTY_WEEKLY_SHIFTS'])})**")
+        for s in year_shifts["NIFTY_WEEKLY_SHIFTS"]:
+            st.html(f"""
+            <div style="background: #0F172A; border-left: 3px solid #F59E0B; border-top: 1px solid #1E293B; border-right: 1px solid #1E293B; border-bottom: 1px solid #1E293B; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.78rem; font-weight: 800; color: #38BDF8;">
+                        Nominal: <del style="color: #94A3B8;">{s['nominal_str']} ({s['nominal_weekday']})</del>
+                    </span>
+                    <span style="background: rgba(245, 158, 11, 0.2); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">
+                        PREPONED &bull; {s['actual_str']} ({s['actual_weekday']})
+                    </span>
+                </div>
+                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 3px;">
+                    Reason: <b>{', '.join(s['holiday_triggers'])}</b>
+                </div>
+            </div>
+            """)
+
+    with shift_col2:
+        st.markdown(f"**⚡ BSE SENSEX Weekly Expiry Shifts ({len(year_shifts['SENSEX_WEEKLY_SHIFTS'])})**")
+        for s in year_shifts["SENSEX_WEEKLY_SHIFTS"]:
+            st.html(f"""
+            <div style="background: #0F172A; border-left: 3px solid #A855F7; border-top: 1px solid #1E293B; border-right: 1px solid #1E293B; border-bottom: 1px solid #1E293B; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.78rem; font-weight: 800; color: #C084FC;">
+                        Nominal: <del style="color: #94A3B8;">{s['nominal_str']} ({s['nominal_weekday']})</del>
+                    </span>
+                    <span style="background: rgba(168, 85, 247, 0.2); color: #D8B4FE; border: 1px solid rgba(168, 85, 247, 0.4); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">
+                        PREPONED &bull; {s['actual_str']} ({s['actual_weekday']})
+                    </span>
+                </div>
+                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 3px;">
+                    Reason: <b>{', '.join(s['holiday_triggers'])}</b>
+                </div>
+            </div>
+            """)
+
+    if year_shifts.get("MONTHLY_STOCK_SHIFTS"):
+        st.markdown(f"**⚡ Equity Stock Monthly Expiry Shifts ({len(year_shifts['MONTHLY_STOCK_SHIFTS'])}) (Last Tuesday Mandate)**")
+        for s in year_shifts["MONTHLY_STOCK_SHIFTS"]:
+            st.html(f"""
+            <div style="background: #0F172A; border-left: 3px solid #10B981; border-top: 1px solid #1E293B; border-right: 1px solid #1E293B; border-bottom: 1px solid #1E293B; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.78rem; font-weight: 800; color: #34D399;">
+                        Nominal: <del style="color: #94A3B8;">{s['nominal_str']} ({s['nominal_weekday']})</del>
+                    </span>
+                    <span style="background: rgba(16, 185, 129, 0.2); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">
+                        PREPONED &bull; {s['actual_str']} ({s['actual_weekday']})
+                    </span>
+                </div>
+                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 3px;">
+                    Reason: <b>{', '.join(s['holiday_triggers'])}</b>
+                </div>
+            </div>
+            """)
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    # Master NSE Trading Holidays Table
+    st.markdown(f"### 📋 Official NSE Trading Holidays Schedule")
+    hol_year_filter = st.radio("Select Calendar Year:", ["2026 (Active)", "2025", "2024", "All Indexed Years"], horizontal=True, key="sel_cal_year_filter")
+    y_target = 2026 if "2026" in hol_year_filter else (2025 if "2025" in hol_year_filter else (2024 if "2024" in hol_year_filter else None))
+    holidays_display = nse_calendar.get_all_holidays(year=y_target)
+
+    import pandas as pd
+    rows = []
+    today_d = now.date()
+    for h in holidays_display:
+        h_d = h["date"]
+        diff = (h_d - today_d).days
+        if diff == 0:
+            status_tag = "🔴 TODAY (MARKET CLOSED)"
+        elif diff > 0:
+            status_tag = f"⏳ In {diff} days"
+        else:
+            status_tag = f"Completed ({abs(diff)}d ago)"
+        
+        rows.append({
+            "Trading Date": h["tradingDate"],
+            "Weekday": h["weekDay"],
+            "Holiday Description": h["description"],
+            "Status": status_tag
+        })
+
+    df_hol = pd.DataFrame(rows)
+    st.dataframe(df_hol, use_container_width=True, hide_index=True)
+
 
 # Active Groww Account Profile (Mandatory Link)
 prof = groww_feed.user_profile or {}
@@ -1759,6 +1968,9 @@ if active_route == "":
         </div>
     </div>
     """)
+
+    with st.expander("📅 NSE Official Holiday Calendar & Expiry Shift Radar (Live Exchange Link)", expanded=False):
+        render_nse_calendar_hub(active_symbol="NIFTY")
 
     # Row 1: Benchmark Index Quant Desks
     col_idx1, col_idx2 = st.columns(2)
@@ -6748,11 +6960,12 @@ if df is not None and not df.empty:
     </div>
     """)
 
-    # 5 Institutional Sub-Pages / Tabs
-    tab_cockpit, tab_radar, tab_corridor, tab_ledger, tab_settings = st.tabs([
+    # 6 Institutional Sub-Pages / Tabs
+    tab_cockpit, tab_radar, tab_corridor, tab_calendar, tab_ledger, tab_settings = st.tabs([
         "🚀 Live Cockpit",
         "🧠 Quant Radar & Confluence",
         "📊 Options Corridor & Smart Money",
+        "📅 NSE Calendar & Expiry Radar",
         "📒 Trade Journal & Shadow Ledger",
         "⚙️ Risk Policy, Config & Simulator"
     ])
@@ -6760,6 +6973,30 @@ if df is not None and not df.empty:
     with tab_cockpit:
         # Reliance Live Spot Hero
         render_reliance_spot_hero()
+
+        # Official NSE Expiry Shift Alert Banner
+        if expiry_plan.get("is_expiry_shifted"):
+            shift_reason_txt = expiry_plan.get("shift_reason", "Preponed due to official exchange holiday.")
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(120, 53, 15, 0.90) 0%, rgba(30, 27, 75, 0.95) 100%); border: 2px solid #F59E0B; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 1.6rem;">⚠️</span>
+                        <div>
+                            <div style="font-size: 1.02rem; font-weight: 900; color: #FFFFFF;">
+                                OFFICIAL NSE EXPIRY SHIFT: {scrip_symbol} PREPONED TO {expiry_plan.get('curr_expiry_str', '')}
+                            </div>
+                            <div style="font-size: 0.76rem; color: #FDE68A; margin-top: 3px;">
+                                {shift_reason_txt} Intraday gamma and theta acceleration adjusted to shifted schedule.
+                            </div>
+                        </div>
+                    </div>
+                    <span style="background: rgba(245, 158, 11, 0.25); color: #FCD34D; font-weight: 800; font-size: 0.82rem; padding: 6px 14px; border-radius: 6px; border: 1px solid #F59E0B;">
+                        📅 PREPONED CONTRACT
+                    </span>
+                </div>
+            </div>
+            """)
 
         # Theta Decay Expiry Protection Alert Banner / Gamma Exception Banner
         if is_gamma_exception_desk:
@@ -9000,6 +9237,9 @@ if df is not None and not df.empty:
             render_atm_call_put_content(spot, live_broker_ltp, active_day_vol, rel_vol, user_strike_choice, is_streaming=False, trade_plan=trade_plan)
 
         # ==============================================================================
+
+    with tab_calendar:
+        render_nse_calendar_hub(active_symbol=scrip_symbol)
 
     with tab_ledger:
         st.subheader("📒 Trade Journal, Shadow Ledger & Audit History")

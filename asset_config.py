@@ -357,6 +357,32 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     from datetime import time
     t_curr = now_dt.time() if hasattr(now_dt, "time") else time(10, 0)
 
+    # Check Official NSE Holiday Calendar First
+    from nse_calendar import nse_calendar
+    holiday_info = nse_calendar.get_holiday_details(now_dt)
+    if holiday_info is not None:
+        h_name = holiday_info.get("description", "Exchange Holiday")
+        return {
+            "weekday": weekday,
+            "weekday_name": day_name,
+            "is_weekday": weekday < 5,
+            "is_trading_holiday": True,
+            "holiday_name": h_name,
+            "active_symbol": "MARKET_CLOSED",
+            "locked_symbol": "MARKET_CLOSED",
+            "schedule_label": f"🔴 NSE Trading Holiday: {h_name} (Market Closed)",
+            "schedule_desc": f"Official NSE Trading Holiday ({h_name}). Cash & F&O segments closed today.",
+            "schedule_rule": f"NSE Calendar Mandate: All trading desks suspended for {h_name}.",
+            "is_nifty_allowed": False,
+            "is_sensex_allowed": False,
+            "active_lots": 0,
+            "mandate_lots": 0,
+            "locked_lots": 0,
+            "gamma_exception_symbol": None,
+            "is_post_1pm_window": False,
+            "is_gamma_exception_active": False
+        }
+
     # Expiry Exception Mapping:
     # - Tuesday (weekday == 1): NIFTY weekly expiry -> Gamma exception symbol = "NIFTY"
     # - Thursday (weekday == 3): SENSEX weekly expiry -> Gamma exception symbol = "SENSEX"
@@ -424,6 +450,18 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
     """
     sched = get_daily_asset_schedule(now_dt)
     target_sym = str(symbol).upper()
+
+    if sched.get("is_trading_holiday"):
+        h_name = sched.get("holiday_name", "Exchange Holiday")
+        return {
+            "can_trade": False,
+            "tradable": False,
+            "status": "MARKET_HOLIDAY_CLOSED",
+            "reason": f"Official NSE Trading Holiday ({h_name}). Cash & F&O derivatives desks are closed today.",
+            "badge_label": f"🔴 HOLIDAY CLOSED ({h_name.upper()})",
+            "mandate_lots": 0,
+            "is_gamma_exception": False
+        }
 
     if target_sym == sched["active_symbol"]:
         return {

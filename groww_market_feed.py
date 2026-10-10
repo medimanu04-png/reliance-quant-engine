@@ -25,6 +25,7 @@ import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
 from asset_config import get_asset_spec, resolve_symbol
+from nse_calendar import nse_calendar
 
 try:
     from growwapi.groww.exceptions import GrowwAPIAuthenticationException, GrowwAPIException
@@ -1079,7 +1080,7 @@ class GrowwMarketFeed:
             "turnover_lakhs": round((vol * spot_p) / 100000.0, 2),
             "official_expiry": self._resolve_official_expiry(canon_sym),
             "expiry_cycle": "Weekly Derivatives",
-            "fo_holidays": [],
+            "fo_holidays": nse_calendar.get_fo_holiday_strings(),
             "raw_quote": None
         }
 
@@ -1133,7 +1134,7 @@ class GrowwMarketFeed:
             "turnover_lakhs": 40012.30,
             "official_expiry": self._resolve_official_expiry("ADANIENT"),
             "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
-            "fo_holidays": [],
+            "fo_holidays": nse_calendar.get_fo_holiday_strings(),
             "raw_quote": None
         }
 
@@ -1163,7 +1164,7 @@ class GrowwMarketFeed:
             "turnover_lakhs": 160350.38,
             "official_expiry": self._resolve_official_expiry("RELIANCE"),
             "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
-            "fo_holidays": [],
+            "fo_holidays": nse_calendar.get_fo_holiday_strings(),
             "raw_quote": None
         }
 
@@ -1324,7 +1325,7 @@ class GrowwMarketFeed:
                         "turnover_lakhs": round((vol * ltp) / 100000.0, 2),
                         "official_expiry": self._resolve_official_expiry(underlying),
                         "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
-                        "fo_holidays": [],
+                        "fo_holidays": nse_calendar.get_fo_holiday_strings(),
                         "raw_quote": q
                     }
                     with self._cache_lock:
@@ -1385,7 +1386,7 @@ class GrowwMarketFeed:
                         "turnover_lakhs": round((spec_item.volume_norm * ltp) / 100000.0, 2),
                         "official_expiry": self._resolve_official_expiry(idx_sym),
                         "expiry_cycle": "Weekly Derivatives (NSE/BSE Mandate)",
-                        "fo_holidays": [],
+                        "fo_holidays": nse_calendar.get_fo_holiday_strings(),
                         "raw_quote": pdata.get("raw")
                     }
                     with self._cache_lock:
@@ -1445,7 +1446,7 @@ class GrowwMarketFeed:
                     "turnover_lakhs": round((volume * ltp) / 100000.0, 2),
                     "official_expiry": self._resolve_official_expiry(underlying),
                     "expiry_cycle": "Last Tuesday of Month (NSE Mandate)",
-                    "fo_holidays": [],
+                    "fo_holidays": nse_calendar.get_fo_holiday_strings(),
                     "raw_quote": d
                 }
                 with self._cache_lock:

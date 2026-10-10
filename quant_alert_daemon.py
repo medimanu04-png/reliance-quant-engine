@@ -375,6 +375,12 @@ class RelianceQuantAlertDaemon:
         if now_ist.weekday() >= 5:
             return False, f"Weekend ({now_ist.strftime('%A')})"
 
+        # Official NSE Trading Holiday check
+        from nse_calendar import nse_calendar
+        holiday_info = nse_calendar.get_holiday_details(now_ist)
+        if holiday_info is not None:
+            return False, f"NSE Trading Holiday: {holiday_info.get('description', 'Exchange Holiday')}"
+
         curr_time = now_ist.time()
         market_open = dt_time(9, 15)
         market_close = dt_time(15, 30)

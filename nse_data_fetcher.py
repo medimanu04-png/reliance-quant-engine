@@ -15,6 +15,7 @@ import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
 from asset_config import get_asset_spec, resolve_symbol
+from nse_calendar import nse_calendar, NSECalendar
 
 try:
     import requests
@@ -130,7 +131,8 @@ class NSEIndiaFetcher:
             "turnover_lakhs": round((spec.volume_norm * spec.default_spot) / 100000.0, 2),
             "official_expiry": cls.compute_official_expiry([], symbol=sym),
             "expiry_cycle": "Weekly Derivatives" if sym in ("NIFTY", "SENSEX") else "Monthly Derivatives (NSE Mandate)",
-            "fo_holidays": [],
+            "fo_holidays": nse_calendar.get_fo_holiday_strings(),
+            "calendar_linked": True,
             "raw_quote": None
         }
 
@@ -144,8 +146,8 @@ class NSEIndiaFetcher:
         Determines the official NSE Monthly Stock Derivatives Expiry date for a given year & month.
         NSE Mandate: Last Tuesday of the contract month (rolled back if holiday).
         """
-        if fo_holidays is None:
-            fo_holidays = []
+        if not fo_holidays:
+            fo_holidays = nse_calendar.get_fo_holiday_strings()
         last_d = calendar.monthrange(year, month)[1]
         tuesdays = [
             datetime(year, month, d)
@@ -167,8 +169,8 @@ class NSEIndiaFetcher:
     @classmethod
     def get_trading_days_between(cls, start_dt: datetime, end_dt: datetime, fo_holidays: List[str] = None) -> Tuple[int, List[datetime]]:
         """Calculates exact count of active trading days (excluding weekends & holidays)."""
-        if fo_holidays is None:
-            fo_holidays = []
+        if not fo_holidays:
+            fo_holidays = nse_calendar.get_fo_holiday_strings()
         if getattr(start_dt, "tzinfo", None) is not None:
             start_dt = start_dt.replace(tzinfo=None)
         if getattr(end_dt, "tzinfo", None) is not None:
@@ -197,8 +199,8 @@ class NSEIndiaFetcher:
         - If the calculated expiry is an exchange holiday, it automatically shifts
           backwards to the preceding active trading day (e.g. Thursday -> Wednesday).
         """
-        if fo_holidays is None:
-            fo_holidays = []
+        if not fo_holidays:
+            fo_holidays = nse_calendar.get_fo_holiday_strings()
         from datetime import time as dtime
         cur_weekday = today_dt.weekday()
         if cur_weekday < target_weekday:
@@ -234,7 +236,13 @@ class NSEIndiaFetcher:
             symbol = today_dt
             today_dt = None
         now_ts = time.time()
-        sym = resolve_symbol(symbol=symbol)
+        raw_sym = (symbol or "NIFTY").strip().upper()
+        if raw_sym in ("SENSEX", "BSESN") or "SENSEX" in raw_sym:
+            sym = "SENSEX"
+        elif raw_sym in ("NIFTY", "NIFTY 50"):
+            sym = "NIFTY"
+        else:
+            sym = raw_sym
         cache_attr = f"_cached_expiry_mandate_{sym}"
         time_attr = f"_last_expiry_calc_time_{sym}"
 
@@ -247,64 +255,78 @@ class NSEIndiaFetcher:
             today_dt = datetime.now(IST)
         if getattr(today_dt, "tzinfo", None) is not None:
             today_dt = today_dt.astimezone(IST).replace(tzinfo=None)
-        if fo_holidays is None:
-            fo_holidays = []
+        if not fo_holidays:
+            fo_holidays = nse_calendar.get_fo_holiday_strings()
 
         is_index = sym in ("NIFTY", "SENSEX")
 
         if is_index:
-            # Both NIFTY (NSE) and SENSEX (BSE) weekly options contracts expire on Thursday (weekday 3)
-            target_weekday = 3
-            exp_curr = cls.get_nearest_weekly_expiry(today_dt, target_weekday=target_weekday, fo_holidays=fo_holidays)
-            exp_next = cls.get_nearest_weekly_expiry(exp_curr + timedelta(days=7), target_weekday=target_weekday, fo_holidays=fo_holidays)
+            # NIFTY (NSE) weekly options expire on Thursday (3), SENSEX (BSE) on Friday (4)
+            target_weekday = 4 if sym == "SENSEX" else 3
+            shift_audit = nse_calendar.get_weekly_expiry(today_dt, target_weekday=target_weekday, symbol=sym)
+            exp_curr = shift_audit["actual_dt"]
+            is_expiry_shifted = shift_audit["is_shifted"]
+            nominal_expiry_str = shift_audit["nominal_str"]
+            shift_reason = shift_audit["shift_reason"]
+
+            exp_next_res = nse_calendar.get_weekly_expiry(exp_curr + timedelta(days=7), target_weekday=target_weekday, symbol=sym)
+            exp_next = exp_next_res["actual_dt"]
             cand_prev = exp_curr - timedelta(days=7)
             while cand_prev.strftime("%d-%b-%Y") in fo_holidays or cand_prev.strftime("%Y-%m-%d") in fo_holidays or cand_prev.weekday() in (5, 6):
                 cand_prev -= timedelta(days=1)
             exp_prev = cand_prev
         else:
             y, m = today_dt.year, today_dt.month
-            exp_curr = cls.get_last_tuesday_of_month(y, m, fo_holidays)
+            shift_audit = nse_calendar.get_monthly_stock_expiry(y, m, symbol=sym)
+            exp_curr = shift_audit["actual_dt"]
+            is_expiry_shifted = shift_audit["is_shifted"]
+            nominal_expiry_str = shift_audit["nominal_str"]
+            shift_reason = shift_audit["shift_reason"]
 
             if today_dt.date() <= exp_curr.date():
-                # In the cycle leading up to exp_curr
                 prev_m = m - 1 if m > 1 else 12
                 prev_y = y if m > 1 else y - 1
-                exp_prev = cls.get_last_tuesday_of_month(prev_y, prev_m, fo_holidays)
+                exp_prev = nse_calendar.get_monthly_stock_expiry(prev_y, prev_m, symbol=sym)["actual_dt"]
 
                 next_m = m + 1 if m < 12 else 1
                 next_y = y if m < 12 else y + 1
-                exp_next = cls.get_last_tuesday_of_month(next_y, next_m, fo_holidays)
+                exp_next = nse_calendar.get_monthly_stock_expiry(next_y, next_m, symbol=sym)["actual_dt"]
             else:
-                # Past current month's expiry date; new cycle leading up to next month
                 exp_prev = exp_curr
                 next_m = m + 1 if m < 12 else 1
                 next_y = y if m < 12 else y + 1
-                exp_curr = cls.get_last_tuesday_of_month(next_y, next_m, fo_holidays)
+                shift_curr = nse_calendar.get_monthly_stock_expiry(next_y, next_m, symbol=sym)
+                exp_curr = shift_curr["actual_dt"]
+                is_expiry_shifted = shift_curr["is_shifted"]
+                nominal_expiry_str = shift_curr["nominal_str"]
+                shift_reason = shift_curr["shift_reason"]
 
                 far_m = next_m + 1 if next_m < 12 else 1
                 far_y = next_y if next_m < 12 else next_y + 1
-                exp_next = cls.get_last_tuesday_of_month(far_y, far_m, fo_holidays)
+                exp_next = nse_calendar.get_monthly_stock_expiry(far_y, far_m, symbol=sym)["actual_dt"]
 
-        # Seamlessly align with Groww Official Broker API listed expiries when connected
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            gw_exp = GrowwMarketFeed.get_instance().get_official_expiries(sym)
-            if gw_exp:
-                fut_exp = []
-                for es in gw_exp:
-                    try:
-                        ed = datetime.strptime(es.strip(), "%Y-%m-%d")
-                        if ed.date() >= today_dt.date():
-                            fut_exp.append(ed)
-                    except Exception:
-                        pass
-                fut_exp.sort()
-                if fut_exp:
-                    exp_curr = fut_exp[0]
-                    if len(fut_exp) >= 2:
-                        exp_next = fut_exp[1]
-        except Exception:
-            pass
+        # Seamlessly align with Groww Official Broker API listed expiries when connected for live sessions
+        is_live_current = abs((today_dt.date() - datetime.now(IST).date()).days) <= 7
+        if is_live_current:
+            try:
+                from groww_market_feed import GrowwMarketFeed
+                gw_exp = GrowwMarketFeed.get_instance().get_official_expiries(sym)
+                if gw_exp:
+                    fut_exp = []
+                    for es in gw_exp:
+                        try:
+                            ed = datetime.strptime(es.strip(), "%Y-%m-%d")
+                            if ed.date() >= today_dt.date():
+                                fut_exp.append(ed)
+                        except Exception:
+                            pass
+                    fut_exp.sort()
+                    if fut_exp and (fut_exp[0].date() - today_dt.date()).days <= 10:
+                        exp_curr = fut_exp[0]
+                        if len(fut_exp) >= 2:
+                            exp_next = fut_exp[1]
+            except Exception:
+                pass
 
         cycle_start = exp_prev + timedelta(days=1)
         elapsed_trading_days, _ = cls.get_trading_days_between(cycle_start, today_dt, fo_holidays)
@@ -315,7 +337,13 @@ class NSEIndiaFetcher:
         curr_str = exp_curr.strftime("%d-%b-%Y").upper()
         next_str = exp_next.strftime("%d-%b-%Y").upper()
 
-        if is_index:
+        if is_expiry_shifted:
+            active_expiry = exp_curr
+            phase = "SHIFTED_EXPIRY_MANDATE"
+            is_rollover = False
+            rule_badge = f"⚠️ Preponed Expiry ({curr_str}) • Holiday Shift"
+            rule_desc = f"{sym} Expiry Shifted from {nominal_expiry_str} to {curr_str}: {shift_reason}"
+        elif is_index:
             active_expiry = exp_curr
             phase = "CURRENT_WEEK_WEEKLY_MANDATE"
             is_rollover = False
@@ -353,6 +381,11 @@ class NSEIndiaFetcher:
             "is_rollover": is_rollover,
             "rule_badge": rule_badge,
             "rule_desc": rule_desc,
+            "is_expiry_shifted": is_expiry_shifted,
+            "nominal_expiry_str": nominal_expiry_str,
+            "shift_reason": shift_reason,
+            "holiday_triggers": shift_audit.get("holiday_triggers", []),
+            "calendar_linked": True,
             "dte": max(0, (active_expiry.date() - today_dt.date()).days)
         }
         setattr(cls, cache_attr, result)
