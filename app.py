@@ -2349,6 +2349,12 @@ tradable_decision = is_asset_tradable_now(scrip_symbol, datetime.now(IST), excep
 is_current_desk_locked = not tradable_decision["can_trade"]
 is_gamma_exception_desk = bool(tradable_decision.get("is_gamma_exception", False) and tradable_decision["can_trade"])
 
+# Vice Versa Cross-Desk Routing: NIFTY page links to SENSEX desk, SENSEX page links to NIFTY desk
+alt_desk_symbol = "SENSEX" if scrip_symbol in ("NIFTY", "NIFTY 50") else "NIFTY"
+alt_desk_label = "BSE SENSEX" if alt_desk_symbol == "SENSEX" else "NIFTY 50"
+alt_desk_lots = 6 if alt_desk_symbol == "SENSEX" else 4
+alt_desk_url = f"./{alt_desk_symbol.capitalize()}?stock={alt_desk_symbol.capitalize()}"
+
 # Dynamically resolve active expiry mandate for currently active ticker (Weekly for NIFTY/SENSEX, Monthly for Equities)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=scrip_symbol)
 active_mandate_expiry = expiry_plan["selected_expiry"]
@@ -2403,17 +2409,25 @@ if is_gamma_exception_desk:
     </div>
     """)
 elif is_current_desk_locked:
+    sb_active_sub = (
+        "WEEKEND CLOSED" if desk_sched.get("is_weekend")
+        else ("HOLIDAY CLOSED" if desk_sched.get("is_trading_holiday")
+        else f"{alt_desk_label.upper()} PRIMARY")
+    )
     st.sidebar.html(f"""
     <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 1.5px solid #818CF8; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
         <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 1.3rem;">{'⏳' if tradable_decision.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '🔒'}</span>
             <div>
                 <div style="font-size: 0.88rem; font-weight: 800; color: #E0E7FF;">{tradable_decision['badge_label']}</div>
-                <div style="font-size: 0.68rem; color: #C7D2FE; font-weight: 700;">{desk_sched['weekday_name'].upper()}: {desk_sched['active_symbol']} PRIMARY</div>
+                <div style="font-size: 0.68rem; color: #C7D2FE; font-weight: 700;">{desk_sched['weekday_name'].upper()}: {sb_active_sub}</div>
             </div>
         </div>
         <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); line-height: 1.4;">
             {tradable_decision['reason']}
+        </div>
+        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08);">
+            <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-size: 0.73rem; font-weight: 700; text-decoration: none;">↗ Switch to {alt_desk_label} Desk</a>
         </div>
     </div>
     """)
@@ -7047,11 +7061,18 @@ if df is not None and not df.empty:
                                 </div>
                             </div>
                         </div>
-                        <a href="./" style="text-decoration: none;">
-                            <span style="background: #334155; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
-                                🏠 Return to Command Center →
-                            </span>
-                        </a>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <a href="{alt_desk_url}" style="text-decoration: none;">
+                                <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); font-weight: 700; font-size: 0.80rem; padding: 7px 13px; border-radius: 6px; display: inline-block;">
+                                    ↗ View {alt_desk_label} Desk
+                                </span>
+                            </a>
+                            <a href="./" style="text-decoration: none;">
+                                <span style="background: #334155; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 7px 14px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
+                                    🏠 Command Center →
+                                </span>
+                            </a>
+                        </div>
                     </div>
                 </div>
                 """)
@@ -7070,11 +7091,18 @@ if df is not None and not df.empty:
                                 </div>
                             </div>
                         </div>
-                        <a href="./" style="text-decoration: none;">
-                            <span style="background: #7F1D1D; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
-                                🏠 Return to Command Center →
-                            </span>
-                        </a>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <a href="{alt_desk_url}" style="text-decoration: none;">
+                                <span style="background: rgba(239, 68, 68, 0.15); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); font-weight: 700; font-size: 0.80rem; padding: 7px 13px; border-radius: 6px; display: inline-block;">
+                                    ↗ View {alt_desk_label} Desk
+                                </span>
+                            </a>
+                            <a href="./" style="text-decoration: none;">
+                                <span style="background: #7F1D1D; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 7px 14px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
+                                    🏠 Command Center →
+                                </span>
+                            </a>
+                        </div>
                     </div>
                 </div>
                 """)
@@ -7090,13 +7118,13 @@ if df is not None and not df.empty:
                                     THETA DECAY SHIELD: {lock_header_title}
                                 </div>
                                 <div style="font-size: 0.78rem; color: #C7D2FE; margin-top: 3px;">
-                                    {tradable_decision['reason']} Primary active desk today is <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b>.
+                                    {tradable_decision['reason']} Primary active desk today is <b style="color: #38BDF8;">{alt_desk_label}</b>.
                                 </div>
                             </div>
                         </div>
-                        <a href="./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}" target="_blank" style="text-decoration: none;">
+                        <a href="{alt_desk_url}" target="_blank" style="text-decoration: none;">
                             <span style="background: #4F46E5; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
-                                Launch {desk_sched['active_symbol']} Desk (Active Today) →
+                                Launch {alt_desk_label} Desk (Active Today) →
                             </span>
                         </a>
                     </div>
@@ -7797,7 +7825,7 @@ if df is not None and not df.empty:
                 # Dynamic Institutional Classification of Exact Stand Down Cause
                 if is_current_desk_locked:
                     lock_status_code = tradable_decision.get("status", "STRICTLY_LOCKED")
-                    other_desk_url = f"./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}"
+                    other_desk_url = alt_desk_url
                     
                     if lock_status_code in ("WEEKEND_CLOSED", "WEEKEND_STANDBY", "WEEKEND_LOCKED") or desk_sched.get("is_weekend"):
                         stand_down_status_title = f"🛑 TRADE STATUS: WEEKEND MARKET CLOSURE &bull; {desk_sched.get('weekday_name', 'WEEKEND').upper()} CLOSED"
@@ -7813,14 +7841,15 @@ if df is not None and not df.empty:
                         <b style="color: #FFFFFF;">Why is the Desk Closed Today?</b> Today is {desk_sched.get('weekday_name', 'the weekend')}! Both Indian stock exchanges (NSE and BSE) are closed on Saturday and Sunday.<br>
                         • <b>Next Trading Session:</b> <b style="color: #38BDF8;">Monday at 09:15 AM IST</b> &bull; Active asset: <b style="color: #10B981;">NIFTY 50 (4 Lots)</b>.<br>
                         • <b>Weekly Schedule:</b> <b style="color: #10B981;">Mon, Thu & Fri = NIFTY 50 (4 Lots)</b> &bull; <b style="color: #A855F7;">Tue & Wed = BSE SENSEX (6 Lots)</b>.<br>
-                        <div style="margin-top: 8px;">
-                            👉 <a href="./" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Return to Command Center Overview →</a>
+                        <div style="margin-top: 8px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+                            👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a>
+                            &bull; <a href="./" style="color: #94A3B8; font-weight: 700; text-decoration: underline;">🏠 Command Center</a>
                         </div>
                         """
                         dot_color = "#94A3B8"
                         cap_badge_title = "🛑 WEEKEND CLOSED"
                         cap_badge_style = "background: rgba(100, 116, 139, 0.20); color: #E2E8F0; border: 1.5px solid rgba(148, 163, 184, 0.50);"
-                        cap_sub_desc = "🛑 Market closed &bull; Resumes Monday 09:15 AM IST"
+                        cap_sub_desc = f"🛑 Market closed &bull; Resumes Monday 09:15 AM IST"
                     elif lock_status_code == "MARKET_HOLIDAY_CLOSED" or desk_sched.get("is_trading_holiday"):
                         h_name = desk_sched.get("holiday_name", "Exchange Holiday")
                         stand_down_status_title = f"🔴 TRADE STATUS: NSE TRADING HOLIDAY &bull; {h_name.upper()} CLOSED"
@@ -7836,8 +7865,9 @@ if df is not None and not df.empty:
                         <b style="color: #FFFFFF;">Official Exchange Trading Holiday:</b> Today is {h_name}. Indian stock markets (NSE & BSE) are closed.<br>
                         • <b>Cash & F&O Desks:</b> Suspended for the entire trading day.<br>
                         • <b>Resume:</b> Regular market trading resumes next active trading day at 09:15 AM IST.<br>
-                        <div style="margin-top: 8px;">
-                            👉 <a href="./" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Return to Command Center Overview →</a>
+                        <div style="margin-top: 8px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+                            👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a>
+                            &bull; <a href="./" style="color: #94A3B8; font-weight: 700; text-decoration: underline;">🏠 Command Center</a>
                         </div>
                         """
                         dot_color = "#EF4444"
@@ -7848,7 +7878,7 @@ if df is not None and not df.empty:
                         stand_down_status_title = f"⏳ TRADE STATUS: {scrip_symbol} LOCKED UNTIL 01:00 PM &bull; EXPIRY GAMMA WATCH"
                         stand_down_badge = f"⏳ EXPIRY GAMMA RADAR: {scrip_symbol} LOCKED UNTIL 01:00 PM IST"
                         stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.70); box-shadow: 0 0 12px rgba(245, 158, 11, 0.30);"
-                        stand_down_sub = f"Weekly Expiry Rule: Fast morning theta decay protected. Setup unlocks after 01:00 PM IST if a high-conviction Gamma Blast breakout presents itself (1 call cap). Active desk right now: {desk_sched['active_symbol']}."
+                        stand_down_sub = f"Weekly Expiry Rule: Fast morning theta decay protected. Setup unlocks after 01:00 PM IST if a high-conviction Gamma Blast breakout presents itself (1 call cap). Active desk right now: {alt_desk_label}."
                         gate_card_bg = "linear-gradient(135deg, rgba(180, 83, 9, 0.35) 0%, rgba(69, 26, 3, 0.60) 100%)"
                         gate_card_border = "1.5px solid rgba(251, 191, 36, 0.50)"
                         gate_card_title = "EXPIRY GAMMA WATCH"
@@ -7856,16 +7886,16 @@ if df is not None and not df.empty:
                         gate_card_sub = "⚡ 1/1 Gamma Blast Setup Watch"
                         why_stand_down_html = f"""
                         <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked Until 01:00 PM?</b> Today is {scrip_symbol} weekly expiry! Trading in the morning incurs severe theta decay without clear institutional directional bias.<br>
-                        • <b>Morning Window (09:15 AM – 01:00 PM):</b> <b style="color: #F59E0B;">LOCKED</b> to prevent theta bleed. Active desk: <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b>.<br>
+                        • <b>Morning Window (09:15 AM – 01:00 PM):</b> <b style="color: #F59E0B;">LOCKED</b> to prevent theta bleed. Active desk: <b style="color: #38BDF8;">{alt_desk_label}</b>.<br>
                         • <b>Afternoon Window (01:00 PM – 03:15 PM):</b> Unlocks for <b>1 single High-Conviction Gamma Blast Call</b> if institutional breakout criteria clear the gate.<br>
                         <div style="margin-top: 8px;">
-                            👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to trade today's primary active asset.
+                            👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to trade today's primary active asset.
                         </div>
                         """
                         dot_color = "#F59E0B"
                         cap_badge_title = "⏳ EXPIRY RADAR (UNLOCKS 1 PM)"
                         cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(217, 119, 6, 0.30) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.50);"
-                        cap_sub_desc = f"⏳ Watch unlocks post-1 PM &bull; Trade {desk_sched['active_symbol']} now"
+                        cap_sub_desc = f"⏳ Watch unlocks post-1 PM &bull; Trade {alt_desk_label} now"
                     elif lock_status_code == "GAMMA_EXCEPTION_COMPLETED":
                         stand_down_status_title = f"🛑 TRADE STATUS: 1/1 EXPIRY GAMMA CALL COMPLETED TODAY &bull; LOCKED"
                         stand_down_badge = f"🛑 1/1 EXPIRY CALL COMPLETED TODAY: {scrip_symbol}"
@@ -7879,7 +7909,7 @@ if df is not None and not df.empty:
                         why_stand_down_html = f"""
                         <b style="color: #FFFFFF;">1/1 Expiry Exception Call Limit Cleared:</b> The single permitted post-1 PM expiry call for {scrip_symbol} was triggered and completed. To prevent over-trading in zero-DTE late session chop, no further calls will be issued today.
                         <div style="margin-top: 8px;">
-                            👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to trade today's primary active asset.
+                            👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to trade today's primary active asset.
                         </div>
                         """
                         dot_color = "#EF4444"
@@ -7890,24 +7920,24 @@ if df is not None and not df.empty:
                         stand_down_status_title = f"🛡️ TRADE STATUS: {scrip_symbol} LOCKED TODAY &bull; THETA DECAY SHIELD"
                         stand_down_badge = f"🛡️ THETA EXPIRY SHIELD: {scrip_symbol} LOCKED ON {desk_sched.get('weekday_name', '').upper()}"
                         stand_down_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.35) 0%, rgba(79, 70, 229, 0.45) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.70); box-shadow: 0 0 12px rgba(99, 102, 241, 0.30);"
-                        stand_down_sub = f"Expiry Proximity Mandate: Trade only {desk_sched['active_symbol']} today ({desk_sched['schedule_rule']}). Zero trades permitted on {scrip_symbol} to prevent fast theta decay."
+                        stand_down_sub = f"Expiry Proximity Mandate: Trade only {alt_desk_label} today ({desk_sched['schedule_rule']}). Zero trades permitted on {scrip_symbol} to prevent fast theta decay."
                         gate_card_bg = "linear-gradient(135deg, rgba(67, 56, 202, 0.35) 0%, rgba(30, 27, 75, 0.60) 100%)"
                         gate_card_border = "1.5px solid rgba(129, 140, 248, 0.50)"
                         gate_card_title = "THETA SHIELD MANDATE"
-                        gate_card_val = f"🛡️ {desk_sched['active_symbol']} Active"
+                        gate_card_val = f"🛡️ {alt_desk_symbol} Active"
                         gate_card_sub = f"🛑 {scrip_symbol} Locked Today"
                         why_stand_down_html = f"""
                         <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> To protect options trading capital against aggressive theta decay and Day 1 premium inflation, trading calls are restricted strictly by weekday schedule:<br>
                         • <b>Tuesday & Wednesday:</b> <b style="color: #A855F7;">BSE SENSEX ONLY (6 Lots)</b> &bull; NIFTY 50 Locked (Wed Day 1 Premium Shield).<br>
                         • <b>Monday, Thursday & Friday:</b> <b style="color: #10B981;">NIFTY 50 ONLY (4 Lots)</b> &bull; BSE SENSEX Locked.<br>
                         <div style="margin-top: 8px;">
-                            👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to view today's active signals.
+                            👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to view today's active signals.
                         </div>
                         """
                         dot_color = "#818CF8"
                         cap_badge_title = "🛡️ THETA EXPIRY SHIELD ACTIVE"
                         cap_badge_style = "background: linear-gradient(135deg, rgba(99, 102, 241, 0.20) 0%, rgba(79, 70, 229, 0.30) 100%); color: #E0E7FF; border: 1.5px solid rgba(129, 140, 248, 0.50);"
-                        cap_sub_desc = f"🛡️ Capital preserved &bull; Switch to {desk_sched['active_symbol']}"
+                        cap_sub_desc = f"🛡️ Capital preserved &bull; Switch to {alt_desk_label}"
                 elif is_choppy_regime:
                     stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
                     stand_down_badge = f"🛑 CONSOLIDATION CHOP FILTER ACTIVE (CHOP: {chop_val:.1f} &gt; 61.8)"
