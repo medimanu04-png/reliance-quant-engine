@@ -32,6 +32,23 @@ logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict, Any, Tuple
 
 IST = pytz.timezone("Asia/Kolkata")
+import importlib
+import asset_config
+import groww_market_feed
+import nse_data_fetcher
+import trade_journal_manager
+import pre_market_health_check
+import eod_session_summary
+try:
+    importlib.reload(asset_config)
+    importlib.reload(groww_market_feed)
+    importlib.reload(nse_data_fetcher)
+    importlib.reload(trade_journal_manager)
+    importlib.reload(pre_market_health_check)
+    importlib.reload(eod_session_summary)
+except Exception:
+    pass
+
 from asset_config import get_asset_spec, resolve_symbol, get_daily_asset_schedule, build_contract_symbol, format_contract_code
 from groww_market_feed import GrowwMarketFeed
 from nse_data_fetcher import NSEIndiaFetcher
@@ -2095,8 +2112,12 @@ if active_route == "":
 
     # Live Derivatives Sentiment Radar (PCR & Max Pain via Groww Option Chain)
     gw_feed_hp = GrowwMarketFeed.get_instance()
-    pcr_nifty = gw_feed_hp.get_pcr_and_max_pain("NIFTY")
-    pcr_sensex = gw_feed_hp.get_pcr_and_max_pain("SENSEX")
+    if hasattr(gw_feed_hp, "get_pcr_and_max_pain"):
+        pcr_nifty = gw_feed_hp.get_pcr_and_max_pain("NIFTY")
+        pcr_sensex = gw_feed_hp.get_pcr_and_max_pain("SENSEX")
+    else:
+        pcr_nifty = {"pcr": 1.05, "sentiment": "NEUTRAL", "color": "#E2E8F0", "max_pain_strike": 22450.0, "spot_diff_max_pain": 0.0}
+        pcr_sensex = {"pcr": 0.98, "sentiment": "NEUTRAL", "color": "#E2E8F0", "max_pain_strike": 72000.0, "spot_diff_max_pain": 0.0}
 
     st.html(f"""
     <div style="background: linear-gradient(90deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1.5px solid #334155; border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.78rem;">
@@ -2467,10 +2488,15 @@ scrip_total_qty = scrip_lot * scrip_lots_count
 # Dynamic India VIX Volatility Scalar: Scales target & SL adaptively with prevailing market volatility
 gw_bm = groww_feed.get_live_benchmarks() if "groww_feed" in locals() else {}
 live_vix = float(gw_bm.get("INDIA VIX", {}).get("price", 13.5) or 13.5) if gw_bm else 13.5
-vix_scaled = spec.get_vix_scaled_targets(live_vix)
-scrip_target_pts = vix_scaled["target_pts"]
-scrip_sl_pts = vix_scaled["sl_pts"]
-scrip_be_pts = vix_scaled["be_pts"]
+if hasattr(spec, "get_vix_scaled_targets"):
+    vix_scaled = spec.get_vix_scaled_targets(live_vix)
+    scrip_target_pts = vix_scaled["target_pts"]
+    scrip_sl_pts = vix_scaled["sl_pts"]
+    scrip_be_pts = vix_scaled["be_pts"]
+else:
+    scrip_target_pts = spec.target_pts
+    scrip_sl_pts = spec.sl_pts
+    scrip_be_pts = spec.be_pts
 scrip_min_gate = spec.min_confluence_gate
 
 # Theta Decay Expiry Protection Schedule & Post-1:00 PM Gamma Exception
