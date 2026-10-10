@@ -2104,36 +2104,7 @@ if active_route == "":
     </div>
     """)
 
-    PreMarketHealthCheckEngine.render_diagnostic_card(key_prefix="hp")
-    EODSessionSummaryEngine.render_eod_card(key_prefix="hp")
-
-    with st.expander("📅 NSE Official Holiday Calendar & Expiry Shift Radar (Live Exchange Link)", expanded=False):
-        render_nse_calendar_hub(active_symbol="NIFTY")
-
-    # Live Derivatives Sentiment Radar (PCR & Max Pain via Groww Option Chain)
-    gw_feed_hp = GrowwMarketFeed.get_instance()
-    if hasattr(gw_feed_hp, "get_pcr_and_max_pain"):
-        pcr_nifty = gw_feed_hp.get_pcr_and_max_pain("NIFTY")
-        pcr_sensex = gw_feed_hp.get_pcr_and_max_pain("SENSEX")
-    else:
-        pcr_nifty = {"pcr": 1.05, "sentiment": "NEUTRAL", "color": "#E2E8F0", "max_pain_strike": 22450.0, "spot_diff_max_pain": 0.0}
-        pcr_sensex = {"pcr": 0.98, "sentiment": "NEUTRAL", "color": "#E2E8F0", "max_pain_strike": 72000.0, "spot_diff_max_pain": 0.0}
-
-    st.html(f"""
-    <div style="background: linear-gradient(90deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1.5px solid #334155; border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.78rem;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.1rem;">📊</span>
-            <span style="font-weight: 800; color: #E2E8F0; text-transform: uppercase; letter-spacing: 0.5px;">DERIVATIVES SENTIMENT RADAR (LIVE OPTION CHAIN)</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-            <span>📈 NIFTY PCR: <b style="color: {pcr_nifty['color']};">{pcr_nifty['pcr']:.2f}</b> <span style="color: #94A3B8;">({pcr_nifty['sentiment']})</span> &bull; Max Pain: <b style="color: #38BDF8;">₹{pcr_nifty['max_pain_strike']:,.0f}</b> <span style="color: #CBD5E1;">({pcr_nifty['spot_diff_max_pain']:+.1f} pts)</span></span>
-            <span style="color: #475569;">|</span>
-            <span>🏛️ SENSEX PCR: <b style="color: {pcr_sensex['color']};">{pcr_sensex['pcr']:.2f}</b> <span style="color: #94A3B8;">({pcr_sensex['sentiment']})</span> &bull; Max Pain: <b style="color: #C084FC;">₹{pcr_sensex['max_pain_strike']:,.0f}</b> <span style="color: #CBD5E1;">({pcr_sensex['spot_diff_max_pain']:+.1f} pts)</span></span>
-        </div>
-    </div>
-    """)
-
-    # Row 1: Benchmark Index Quant Desks
+    # Row 1: Benchmark Index Quant Desks (Elevated directly after Market Closure / Mandate Banner)
     col_idx1, col_idx2 = st.columns(2)
     spec_nifty_hp = get_asset_spec("NIFTY")
     spec_sensex_hp = get_asset_spec("SENSEX")
@@ -2228,6 +2199,34 @@ if active_route == "":
             </div>
         </a>
         """)
+
+    # Live Derivatives Sentiment Radar (PCR & Max Pain via Groww Option Chain)
+    if hasattr(gw_feed_hp, "get_pcr_and_max_pain"):
+        pcr_nifty = gw_feed_hp.get_pcr_and_max_pain("NIFTY")
+        pcr_sensex = gw_feed_hp.get_pcr_and_max_pain("SENSEX")
+    else:
+        pcr_nifty = {"pcr": 1.05, "sentiment": "NEUTRAL", "color": "#E2E8F0", "max_pain_strike": 22450.0, "spot_diff_max_pain": 0.0}
+        pcr_sensex = {"pcr": 0.98, "sentiment": "NEUTRAL", "color": "#E2E8F0", "max_pain_strike": 72000.0, "spot_diff_max_pain": 0.0}
+
+    st.html(f"""
+    <div style="background: linear-gradient(90deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1.5px solid #334155; border-radius: 10px; padding: 10px 16px; margin-top: 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.78rem;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.1rem;">📊</span>
+            <span style="font-weight: 800; color: #E2E8F0; text-transform: uppercase; letter-spacing: 0.5px;">DERIVATIVES SENTIMENT RADAR (LIVE OPTION CHAIN)</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+            <span>📈 NIFTY PCR: <b style="color: {pcr_nifty['color']};">{pcr_nifty['pcr']:.2f}</b> <span style="color: #94A3B8;">({pcr_nifty['sentiment']})</span> &bull; Max Pain: <b style="color: #38BDF8;">₹{pcr_nifty['max_pain_strike']:,.0f}</b> <span style="color: #CBD5E1;">({pcr_nifty['spot_diff_max_pain']:+.1f} pts)</span></span>
+            <span style="color: #475569;">|</span>
+            <span>🏛️ SENSEX PCR: <b style="color: {pcr_sensex['color']};">{pcr_sensex['pcr']:.2f}</b> <span style="color: #94A3B8;">({pcr_sensex['sentiment']})</span> &bull; Max Pain: <b style="color: #C084FC;">₹{pcr_sensex['max_pain_strike']:,.0f}</b> <span style="color: #CBD5E1;">({pcr_sensex['spot_diff_max_pain']:+.1f} pts)</span></span>
+        </div>
+    </div>
+    """)
+
+    PreMarketHealthCheckEngine.render_diagnostic_card(key_prefix="hp")
+    EODSessionSummaryEngine.render_eod_card(key_prefix="hp")
+
+    with st.expander("📅 NSE Official Holiday Calendar & Expiry Shift Radar (Live Exchange Link)", expanded=False):
+        render_nse_calendar_hub(active_symbol="NIFTY")
     # --------------------------------------------------------------------------
     # INSTITUTIONAL PERFORMANCE & LIVE FORWARD TRADE DESK SUITE
     # --------------------------------------------------------------------------
