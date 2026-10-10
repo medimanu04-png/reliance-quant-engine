@@ -90,6 +90,7 @@ class RelianceRiskBudget:
     estimated_tax_per_lot: float = 45.0  # Estimated statutory charges
     daily_sl_cap_rupees: float = 6000.0  # Strict 1-and-Done Cap for 2 lots
     max_daily_sl_trades: int = 1  # 1-and-Done Rule (ceases immediately if 1 SL is hit)
+    min_confluence_gate: float = 80.0  # Institutional Confluence Gate Threshold (> 80%)
 
     @classmethod
     def for_symbol(cls, symbol: str = "NIFTY", spot: float = 0.0) -> "RelianceRiskBudget":
@@ -105,6 +106,7 @@ class RelianceRiskBudget:
         rb.estimated_tax_per_lot = spec.estimated_tax_per_lot
         rb.daily_sl_cap_rupees = spec.daily_sl_cap_rupees
         rb.max_daily_sl_trades = 1
+        rb.min_confluence_gate = getattr(spec, "min_confluence_gate", 80.0)
         return rb
 
     def check_daily_sl_cap(self, daily_realized_loss: float = 0.0, daily_sl_count: int = 0) -> Tuple[bool, str]:
@@ -4484,7 +4486,7 @@ class MultiIndicatorMath:
         kyle_regime: str,
         is_synthetic_feed: bool,
         copula_lambda_L: float,
-        required_threshold: float = 72.0,
+        required_threshold: float = 80.0,
         tri_index_trap: bool = False,
         gamma_pinned: bool = False,
         is_midday_theta_trap: bool = False,
@@ -4894,8 +4896,8 @@ class QuantConfig:
     win_exp_max: float = 66.0
     win_exp_slope: float = 0.35
     
-    # Execution Gate (Calibrated Institutional Selectivity Gate ~68-72% empirical probability)
-    trade_regime_threshold: float = 68.0
+    # Execution Gate (Calibrated Institutional Selectivity Gate ~80% empirical probability)
+    trade_regime_threshold: float = 80.0
     atr_compression_limit: float = 0.65
     opening_volume_share_min: float = 14.0
     
@@ -4957,7 +4959,7 @@ class UltraHighConvictionRelianceEngine:
         # Rolling Sharpe Ratio Feedback of Intraday Equity Curve (Lo 2002)
         # Reads recent trades for this symbol from daily_trade_journal.json to dynamically modulate threshold
         self.rolling_sharpe = self._compute_rolling_trade_sharpe(lookback=10, symbol=self.symbol)
-        base_thresh = self.config.trade_regime_threshold
+        base_thresh = getattr(self.risk, "min_confluence_gate", None) or self.config.trade_regime_threshold
         if self.rolling_sharpe < 0.50:
             # Regime not cooperating: slightly raise selectivity threshold (+2 pts)
             self.trade_regime_threshold = round(base_thresh + 2.0, 1)
@@ -6611,13 +6613,13 @@ class UltraHighConvictionRelianceEngine:
                 min_prob_required = max(min_prob_required, 85.0)
                 midday_lot_multiplier = 0.50  # Cap sizing to 50% lots
             else:
-                min_prob_required = max(min_prob_required, 78.0)
+                min_prob_required = max(min_prob_required, 80.0)
                 midday_lot_multiplier = 1.0   # Hawkes 95th percentile cascade clears standard size
         elif time(10, 45) < current_time < time(13, 30):
-            min_prob_required = max(min_prob_required, 78.0)
+            min_prob_required = max(min_prob_required, 80.0)
             midday_lot_multiplier = 1.0
         elif current_time >= time(13, 30):
-            min_prob_required = max(min_prob_required, 72.0)
+            min_prob_required = max(min_prob_required, 80.0)
             midday_lot_multiplier = 1.0
         else:
             midday_lot_multiplier = 1.0

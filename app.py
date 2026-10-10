@@ -2665,7 +2665,9 @@ target_pts = float(st.session_state.get(f"target_pts_{scrip_symbol}", scrip_targ
 st.session_state["target_pts"] = target_pts
 sl_pts = float(st.session_state.get(f"sl_pts_{scrip_symbol}", scrip_sl_pts))
 st.session_state["sl_pts"] = sl_pts
-scrip_min_gate = float(getattr(spec, "min_confluence_gate", 69.0))
+scrip_min_gate = float(getattr(spec, "min_confluence_gate", 80.0))
+if f"min_hit_{scrip_symbol}" not in st.session_state or float(st.session_state.get(f"min_hit_{scrip_symbol}", 0.0)) < scrip_min_gate:
+    st.session_state[f"min_hit_{scrip_symbol}"] = scrip_min_gate
 MIN_HIT_PERCENTAGE = float(st.session_state.get(f"min_hit_{scrip_symbol}", scrip_min_gate))
 st.session_state["MIN_HIT_PERCENTAGE"] = MIN_HIT_PERCENTAGE
 max_daily_sl_allowed = int(st.session_state.get(f"max_daily_sl_allowed_{scrip_symbol}", 1))
@@ -3577,8 +3579,8 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     plan_qty = tp.get("total_trading_qty", plan_lot_size * plan_num_lots)
     gw_slug = spec_plan.groww_company_slug
     plan_expiry = tp.get("expiry_date_str") or NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=active_sym)["selected_expiry"]
-    plan_score = tp.get("dominant_score", 75.0)
-    plan_gate = tp.get("min_hit_percentage", 75.0)
+    plan_score = tp.get("dominant_score", 80.0)
+    plan_gate = tp.get("min_hit_percentage", 80.0)
     plan_dir = tp.get("dominant_side", "BULLISH (CALL / CE)")
     sim_entry = tp.get("simulate_entry", False)
     sim_armed = tp.get("simulate_armed", False)
@@ -10765,8 +10767,8 @@ if df is not None and not df.empty:
 
             c_gate = st.slider(
                 f"Directional Gate Threshold (%) — {scrip_symbol}",
-                min_value=50.0,
-                max_value=85.0,
+                min_value=60.0,
+                max_value=95.0,
                 value=float(st.session_state.get(f"min_hit_{scrip_symbol}", scrip_min_gate)),
                 step=0.5,
                 key=f"ui_min_hit_{scrip_symbol}"

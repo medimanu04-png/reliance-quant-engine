@@ -535,8 +535,8 @@ class RelianceQuantAlertDaemon:
         spread_stand_down = bool(confluence_eval.get("spread_stand_down", False))
         opening_cooldown_active = False  # Enabled from 09:15 AM market open
         is_midday_lull = bool(confluence_eval.get("is_midday_lull", False))
-        base_gate = float(getattr(spec, "min_confluence_gate", 68.0))
-        min_confluence_gate = max(base_gate + 8.0, 78.0) if is_midday_lull else base_gate
+        base_gate = float(getattr(spec, "min_confluence_gate", 80.0))
+        min_confluence_gate = max(base_gate + 8.0, 85.0) if is_midday_lull else base_gate
         engine_min_prob = float(confluence_eval.get("midday_theta_gate", {}).get("min_prob_required", min_confluence_gate))
         min_confluence_gate = max(min_confluence_gate, engine_min_prob)
 
