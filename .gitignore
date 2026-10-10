@@ -33,6 +33,7 @@ telegram_config.json
 
 # Runtime persistent log files
 *_log.json
+pre_market_health_check_state.json
 !shadow_signals_log.json
 !daily_signals_log.json
 

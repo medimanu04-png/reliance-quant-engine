@@ -1443,6 +1443,23 @@ class RelianceQuantAlertDaemon:
             )
             return
 
+    def check_and_send_0900_health_check(self):
+        """
+        Automated 09:00 AM IST Pre-Market System Health Check:
+        1. Groww API token validity & available cash margin
+        2. Telegram bot handshake (getMe silent verification)
+        3. Today's active index assignment (NIFTY vs SENSEX) and holiday calendar
+        Dispatches executive Telegram briefing once daily at 09:00 AM on trading days.
+        """
+        try:
+            from pre_market_health_check import PreMarketHealthCheckEngine
+            now_dt = datetime.now(IST)
+            cur_t = now_dt.time()
+            if cur_t >= dt_time(9, 0) or self.force_run:
+                PreMarketHealthCheckEngine.run_diagnostics(force=False)
+        except Exception as e:
+            logger.debug(f"Pre-market 09:00 AM health check check error: {e}")
+
     def check_and_send_morning_preflight(self):
         """Dispatches an automated 09:10 AM IST Pre-Flight Readiness Ping to Telegram once per trading day."""
         now_dt = datetime.now(IST)
@@ -1499,6 +1516,7 @@ class RelianceQuantAlertDaemon:
         try:
             while self.running:
                 try:
+                    self.check_and_send_0900_health_check()
                     self.check_and_send_morning_preflight()
 
                     is_open, reason = self.is_market_hours()
@@ -1557,8 +1575,16 @@ def main():
     parser.add_argument("--now", action="store_true", help="Force scan immediately regardless of market hours / weekends")
     parser.add_argument("--interval", type=float, default=5.0, help="Polling interval in seconds (default: 5.0)")
     parser.add_argument("--test-tg", action="store_true", help="Send a test notification to Telegram and exit")
+    parser.add_argument("--health-check", action="store_true", help="Run 09:00 AM Pre-Market System Health Check and exit")
+    parser.add_argument("--send-tg", action="store_true", help="Dispatch diagnostic briefing to Telegram when running --health-check")
     parser.add_argument("--require-candle-close", action="store_true", help="Require 5-minute candle close confirmation before triggering entry")
     args = parser.parse_args()
+
+    if args.health_check:
+        from pre_market_health_check import PreMarketHealthCheckEngine
+        diag = PreMarketHealthCheckEngine.run_diagnostics(force=True, send_telegram=args.send_tg)
+        print("\n" + PreMarketHealthCheckEngine.format_telegram_briefing(diag) + "\n")
+        return
 
     if args.test_tg:
         cfg = TelegramNotifier.load_config()

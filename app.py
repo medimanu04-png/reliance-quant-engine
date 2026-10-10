@@ -13,6 +13,9 @@ if sys.platform == "win32":
         pass
 
 import streamlit as st
+import warnings
+warnings.filterwarnings("ignore", message=r".*use_container_width.*")
+warnings.filterwarnings("ignore", message=r".*components\.v1\.html.*")
 import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
@@ -34,6 +37,7 @@ from groww_market_feed import GrowwMarketFeed
 from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
 from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR, SequentialTradeEngine, ShadowMonitoringEngine
+from pre_market_health_check import PreMarketHealthCheckEngine
 
 # ==============================================================================
 # MULTI-PAGE NAVIGATION ROUTER (Clean URLs: / | /Nifty | /Sensex)
@@ -291,30 +295,35 @@ class BreakoutTriggerManager:
 
 # Universal Streamlit Width Helpers (Cleanly supports Streamlit 1.60+ width='stretch' with fallback)
 def st_button_stretch(label: str, **kwargs) -> bool:
+    kwargs.pop("use_container_width", None)
     try:
         return st.button(label, width="stretch", **kwargs)
     except TypeError:
         return st.button(label, use_container_width=True, **kwargs)
 
 def st_sidebar_button_stretch(label: str, **kwargs) -> bool:
+    kwargs.pop("use_container_width", None)
     try:
         return st.sidebar.button(label, width="stretch", **kwargs)
     except TypeError:
         return st.sidebar.button(label, use_container_width=True, **kwargs)
 
 def st_download_button_stretch(label: str, data, **kwargs):
+    kwargs.pop("use_container_width", None)
     try:
         return st.download_button(label, data, width="stretch", **kwargs)
     except TypeError:
         return st.download_button(label, data, use_container_width=True, **kwargs)
 
 def st_form_submit_button_stretch(label: str, **kwargs):
+    kwargs.pop("use_container_width", None)
     try:
         return st.form_submit_button(label, width="stretch", **kwargs)
     except TypeError:
         return st.form_submit_button(label, use_container_width=True, **kwargs)
 
 def st_dataframe_stretch(df, **kwargs):
+    kwargs.pop("use_container_width", None)
     try:
         return st.dataframe(df, width="stretch", **kwargs)
     except TypeError:
@@ -1980,6 +1989,8 @@ if active_route == "":
     </div>
     """)
 
+    PreMarketHealthCheckEngine.render_diagnostic_card(key_prefix="hp")
+
     with st.expander("📅 NSE Official Holiday Calendar & Expiry Shift Radar (Live Exchange Link)", expanded=False):
         render_nse_calendar_hub(active_symbol="NIFTY")
 
@@ -2475,6 +2486,9 @@ st.sidebar.html(f"""
     </div>
 </div>
 """)
+
+with st.sidebar.expander("🩺 09:00 AM Pre-Market Diagnostic", expanded=False):
+    PreMarketHealthCheckEngine.render_diagnostic_card(compact=True, key_prefix=f"sb_{scrip_symbol.lower()}")
 
 # Resolve parameters for engine computation
 symbol = scrip_yf
@@ -7408,13 +7422,13 @@ if df is not None and not df.empty:
 
             it_c1, it_c2, it_c3 = st.columns([1.2, 1.2, 1.6])
             with it_c1:
-                if st.button("🎯 Mark Target Hit & Close", key=f"btn_close_target_{scrip_symbol}", on_click=_handle_close_target, args=(scrip_symbol, active_ltp, account_cash), use_container_width=True, help="Record target hit outcome and close trade"):
+                if st_button_stretch("🎯 Mark Target Hit & Close", key=f"btn_close_target_{scrip_symbol}", on_click=_handle_close_target, args=(scrip_symbol, active_ltp, account_cash), help="Record target hit outcome and close trade"):
                     st.rerun()
             with it_c2:
-                if st.button("🛑 Mark SL Hit & Close", key=f"btn_close_sl_{scrip_symbol}", on_click=_handle_close_sl, args=(scrip_symbol, active_ltp, account_cash), use_container_width=True, help="Record stop-loss outcome and close trade"):
+                if st_button_stretch("🛑 Mark SL Hit & Close", key=f"btn_close_sl_{scrip_symbol}", on_click=_handle_close_sl, args=(scrip_symbol, active_ltp, account_cash), help="Record stop-loss outcome and close trade"):
                     st.rerun()
             with it_c3:
-                if st.button("🔄 Sync with Groww Positions", key=f"btn_sync_groww_pos_{scrip_symbol}", use_container_width=True):
+                if st_button_stretch("🔄 Sync with Groww Positions", key=f"btn_sync_groww_pos_{scrip_symbol}"):
                     sync_res = SequentialTradeEngine.sync_with_groww_positions(groww_feed=groww_feed, symbol=scrip_symbol, starting_cash=account_cash)
                     if sync_res.get("status") == "SUCCESS":
                         st.toast("✅ Reconciled with live Groww position!")
@@ -7462,17 +7476,17 @@ if df is not None and not df.empty:
             with ep_c1:
                 actual_fill_input = st.number_input("Actual Groww Fill (₹)", value=float(planned_p), step=0.05, format="%.2f", key=f"groww_actual_fill_{scrip_symbol}")
             with ep_c2:
-                if st.button("✅ Yes, Filled on Groww", key=f"btn_confirm_fill_{scrip_symbol}", use_container_width=True, help="Confirm order filled on Groww at this price"):
+                if st_button_stretch("✅ Yes, Filled on Groww", key=f"btn_confirm_fill_{scrip_symbol}", help="Confirm order filled on Groww at this price"):
                     SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=actual_fill_input, symbol=scrip_symbol)
                     st.toast(f"✅ Trade #{active_trade.get('trade_num', 1)} execution confirmed!")
                     st.rerun()
             with ep_c3:
-                if st.button("❌ No / Cancel Setup", key=f"btn_cancel_fill_{scrip_symbol}", use_container_width=True, help="Cancel trade setup and return to scanning"):
+                if st_button_stretch("❌ No / Cancel Setup", key=f"btn_cancel_fill_{scrip_symbol}", help="Cancel trade setup and return to scanning"):
                     SequentialTradeEngine.confirm_groww_fill(confirmed=False, symbol=scrip_symbol)
                     st.toast("ℹ️ Setup cancelled. Returned to scanning.")
                     st.rerun()
             with ep_c4:
-                if st.button("🤖 Auto-Verify via Groww", key=f"btn_autoverify_fill_{scrip_symbol}", use_container_width=True, help="Check Groww API for executed orders"):
+                if st_button_stretch("🤖 Auto-Verify via Groww", key=f"btn_autoverify_fill_{scrip_symbol}", help="Check Groww API for executed orders"):
                     if groww_feed.is_connected:
                         gw_tr = groww_feed.get_executed_trades_today(symbol_filter=scrip_symbol)
                         matched = False
@@ -7558,7 +7572,7 @@ if df is not None and not df.empty:
 
             col_arm_b1, col_arm_b2 = st.columns([1.5, 1.0])
             with col_arm_b1:
-                if st.button("🔥 Confirm Breakout & Enter Trade Now", key=f"btn_force_armed_entry_{scrip_symbol}", use_container_width=True):
+                if st_button_stretch("🔥 Confirm Breakout & Enter Trade Now", key=f"btn_force_armed_entry_{scrip_symbol}"):
                     SequentialTradeEngine.enter_trade_direct(
                         contract=armed.get("contract", ""),
                         instrument=armed_inst,
@@ -7575,7 +7589,7 @@ if df is not None and not df.empty:
                     st.toast("✅ Entered trade on armed setup!")
                     st.rerun()
             with col_arm_b2:
-                if st.button("❌ Cancel Setup & Resume Scan", key=f"btn_cancel_armed_{scrip_symbol}", use_container_width=True):
+                if st_button_stretch("❌ Cancel Setup & Resume Scan", key=f"btn_cancel_armed_{scrip_symbol}"):
                     user_reason = "Manual cancellation via trading desk UI."
                     tg_cfg = TelegramNotifier.load_config()
                     if tg_cfg.get("enabled", True):
@@ -7628,12 +7642,11 @@ if df is not None and not df.empty:
                 SequentialTradeEngine.acknowledge_and_reset(symbol=sym)
                 st.session_state[f"seq_acked_{sym}"] = True
 
-            if st.button(
+            if st_button_stretch(
                 "🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)",
                 key=f"btn_ack_scan_next_{scrip_symbol}",
                 on_click=_handle_ack_reset,
-                args=(scrip_symbol,),
-                use_container_width=True
+                args=(scrip_symbol,)
             ):
                 st.toast(f"✅ Trade acknowledged! {scrip_symbol} desk is now in IDLE / SCANNING.")
                 st.rerun()
@@ -7780,7 +7793,7 @@ if df is not None and not df.empty:
                 with prop_c1:
                     st.caption(f"Strict Sequential Mode: Clicking will propose Trade #{next_t_num} and request Groww execution verification.")
                 with prop_c2:
-                    if st.button(f"🚀 Arm & Propose Trade #{next_t_num}", use_container_width=True):
+                    if st_button_stretch(f"🚀 Arm & Propose Trade #{next_t_num}"):
                         contract_full = build_contract_symbol(scrip_symbol, expiry_date_str, atm_strike, recommended_contract_type)
                         SequentialTradeEngine.propose_trade(
                             contract=contract_full,
@@ -9526,7 +9539,7 @@ if df is not None and not df.empty:
             st.write("") # spacing
             sb_c1, sb_c2 = st.columns(2)
             with sb_c1:
-                if st.button("🤖 Sync Groww", use_container_width=True, help=f"Cross-verifies today's {scrip_symbol} orders & positions from Groww API against model recommendations"):
+                if st_button_stretch("🤖 Sync Groww", help=f"Cross-verifies today's {scrip_symbol} orders & positions from Groww API against model recommendations"):
                     with st.spinner(f"Connecting to Groww broker API & extracting {scrip_symbol} fills..."):
                         gw_trades = groww_feed.get_executed_trades_today(symbol_filter=scrip_symbol, force_refresh=True)
                         if gw_trades:
@@ -9541,7 +9554,7 @@ if df is not None and not df.empty:
                         else:
                             st.info(f"ℹ️ No executed {scrip_symbol} trades found today in Groww account.")
             with sb_c2:
-                if st.button("🔄 Poll Shadow", use_container_width=True, help="Queries live Groww option contract ticks and updates price extremes & outcomes"):
+                if st_button_stretch("🔄 Poll Shadow", help="Queries live Groww option contract ticks and updates price extremes & outcomes"):
                     with st.spinner("Updating shadow ticks from Groww API..."):
                         ShadowMonitoringEngine.update_shadow_monitoring(groww_feed=groww_feed)
                         st.success("✅ Shadow telemetry updated!")
@@ -9588,13 +9601,15 @@ if df is not None and not df.empty:
         with cal_col3:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             qb_1, qb_2 = st.columns(2)
-            if qb_1.button("📅 Today", use_container_width=True, help="Jump to today's active signals"):
-                st.session_state["cal_nav_date"] = today_str
-                st.session_state["cal_nav_all"] = False
-                st.rerun()
-            if qb_2.button("📜 All Dates", use_container_width=True, help="Show all historical recommendations"):
-                st.session_state["cal_nav_all"] = True
-                st.rerun()
+            with qb_1:
+                if st_button_stretch("📅 Today", help="Jump to today's active signals"):
+                    st.session_state["cal_nav_date"] = today_str
+                    st.session_state["cal_nav_all"] = False
+                    st.rerun()
+            with qb_2:
+                if st_button_stretch("📜 All Dates", help="Show all historical recommendations"):
+                    st.session_state["cal_nav_all"] = True
+                    st.rerun()
 
         with cal_col4:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -9697,7 +9712,7 @@ if df is not None and not df.empty:
                 st.caption(f"Fetch genuine completed fills from your Groww account and automatically log them into today's Sequential Trade Log ({scrip_symbol}).")
                 c_sync_btn, c_sync_status = st.columns([1.2, 2.8])
                 with c_sync_btn:
-                    if st.button("🔄 Sync from Groww Now", key="sync_groww_trades_btn", use_container_width=True):
+                    if st_button_stretch("🔄 Sync from Groww Now", key="sync_groww_trades_btn"):
                         try:
                             feed = st.session_state.get("groww_feed")
                             synced_count = TradeJournalManager.sync_with_groww_executed_trades(feed, starting_cash=STARTING_CAPITAL, symbol_filter=scrip_symbol)
@@ -9732,7 +9747,7 @@ if df is not None and not df.empty:
                     with col_m5:
                         m_notes = st.text_area("Trade Notes / Rationale", value="Manual entry verified against Groww contract note.", height=78)
 
-                    submit_manual = st.form_submit_button("💾 Save Trade to Sequential Log", use_container_width=True)
+                    submit_manual = st_form_submit_button_stretch("💾 Save Trade to Sequential Log")
                     if submit_manual:
                         qty_calc = int(m_lots * lot_size)
                         pts = round(m_exit_price - m_actual_entry, 2) if m_status != "Open" else 0.0
@@ -9986,17 +10001,16 @@ if df is not None and not df.empty:
                                 """, unsafe_allow_html=True)
                                 gal_c1, gal_c2 = st.columns([1.5, 1.2])
                                 with gal_c1:
-                                    if st.button(f"🔍 Open / Enlarge Screenshot ({s_sym})", key=f"open_modal_tab1_{s_id}_{idx}", use_container_width=True):
+                                    if st_button_stretch(f"🔍 Open / Enlarge Screenshot ({s_sym})", key=f"open_modal_tab1_{s_id}_{idx}"):
                                         show_screenshot_modal(f"Trade Execution Proof: {s_sym}", img_src, img_bytes, f"trade_proof_{s_sym}.jpeg")
                                 with gal_c2:
                                     if img_bytes:
-                                        st.download_button(
+                                        st_download_button_stretch(
                                             label=f"📥 Download Screenshot",
                                             data=img_bytes,
                                             file_name=f"trade_proof_{s_sym}.jpeg",
                                             mime="image/jpeg",
-                                            key=f"dl_tab1_{s_id}_{idx}",
-                                            use_container_width=True
+                                            key=f"dl_tab1_{s_id}_{idx}"
                                         )
             else:
                 st.info(f"ℹ️ No signals recorded for {date_label} matching the filter.")
@@ -10166,17 +10180,16 @@ if df is not None and not df.empty:
                                     st.image(card_img_src, caption=f"Verified Trade Proof: {entry.get('trading_symbol')}", use_container_width=True)
                                     btn_c1, btn_c2 = st.columns(2)
                                     with btn_c1:
-                                        if st.button(f"🔍 Open in Full Modal", key=f"open_modal_tab2_{trade_id}_{idx}", use_container_width=True):
+                                        if st_button_stretch(f"🔍 Open in Full Modal", key=f"open_modal_tab2_{trade_id}_{idx}"):
                                             show_screenshot_modal(f"Verified Trade Proof: {entry.get('trading_symbol')}", card_img_src, card_img_bytes, f"trade_proof_{entry.get('trading_symbol')}.jpeg")
                                     with btn_c2:
                                         if card_img_bytes:
-                                            st.download_button(
+                                            st_download_button_stretch(
                                                 label="📥 Download Screenshot",
                                                 data=card_img_bytes,
                                                 file_name=f"trade_proof_{entry.get('trading_symbol')}.jpeg",
                                                 mime="image/jpeg",
-                                                key=f"dl_tab2_{trade_id}_{idx}",
-                                                use_container_width=True
+                                                key=f"dl_tab2_{trade_id}_{idx}"
                                             )
                                 else:
                                     st.info("📷 No screenshot attached yet for this executed trade.")

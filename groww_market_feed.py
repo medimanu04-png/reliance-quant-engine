@@ -257,11 +257,35 @@ class GrowwMarketFeed:
         # 3. Dedicated benchmark poller (3.0s) - Real-time NIFTY, BANK NIFTY, VIX, CRUDE
         self._bench_thread = _launch_worker(self._benchmark_poller_loop, "GrowwBenchmarkPoller")
 
-        # 4. Dedicated broker wallet, positions & trade sync poller (5.0s) - Real-time balance/fills
+        # 4. Dedicated broker wallet, positions & trade sync poller (5.0s / 30.0s) - Real-time balance/fills
         self._wallet_thread = _launch_worker(self._wallet_poller_loop, "GrowwWalletPoller")
 
+    @classmethod
+    def is_market_active_now(cls) -> bool:
+        """
+        Determines whether Indian equity markets are actively trading right now.
+        Incorporates NSE holiday calendar, weekends, and trading hours (09:00 - 15:30 IST).
+        Returns False during weekends, exchange holidays, and outside market hours.
+        """
+        try:
+            from nse_calendar import nse_calendar
+            m_stat = nse_calendar.is_market_open_today()
+            return bool(m_stat.get("is_open", False)) or m_stat.get("status") == "PRE_MARKET"
+        except Exception:
+            try:
+                from datetime import datetime, time
+                import pytz
+                IST_tz = pytz.timezone("Asia/Kolkata")
+                now = datetime.now(IST_tz)
+                if now.weekday() in (5, 6):
+                    return False
+                t = now.time()
+                return time(9, 0) <= t <= time(15, 30)
+            except Exception:
+                return True
+
     def _wallet_poller_loop(self):
-        """Dedicated background poller for broker wallet balance, positions, and trades (every 5.0s)."""
+        """Dedicated background poller for broker wallet balance, positions, and trades (every 5.0s in-market, 30.0s off-market)."""
         # Immediate fetch at boot
         try:
             self._fetch_live_wallet_and_positions()
@@ -274,10 +298,10 @@ class GrowwMarketFeed:
                     self._fetch_live_wallet_and_positions()
             except Exception as e:
                 logger.debug(f"Wallet poller loop error: {e}")
-            time.sleep(5.0)
+            time.sleep(5.0 if self.is_market_active_now() else 30.0)
 
     def _spot_poller_loop(self):
-        """Dedicated high-frequency spot quote poller (every 1.0s). Zero delay on active benchmark desks (NIFTY, SENSEX)."""
+        """Dedicated high-frequency spot quote poller (1.0s in-market, 20.0s off-market). Zero delay on active benchmark desks (NIFTY, SENSEX)."""
         for sym in ("NIFTY", "SENSEX"):
             try:
                 self._fetch_reliance_spot_now(symbol=sym)
@@ -290,10 +314,10 @@ class GrowwMarketFeed:
                     self._fetch_reliance_spot_now(symbol=sym)
                 except Exception as e:
                     logger.debug(f"Spot poller loop error for {sym}: {e}")
-            time.sleep(1.0)
+            time.sleep(1.0 if self.is_market_active_now() else 20.0)
 
     def _option_chain_poller_loop(self):
-        """Dedicated high-frequency option chain poller (every 2.0s). Zero delay on CE/PE prices across active benchmark desks (NIFTY, SENSEX)."""
+        """Dedicated high-frequency option chain poller (2.0s in-market, 25.0s off-market). Zero delay on CE/PE prices across active benchmark desks (NIFTY, SENSEX)."""
         for sym in ("NIFTY", "SENSEX"):
             try:
                 self._fetch_reliance_chain_now(symbol=sym)
@@ -306,10 +330,10 @@ class GrowwMarketFeed:
                     self._fetch_reliance_chain_now(symbol=sym)
                 except Exception as e:
                     logger.debug(f"Option chain poller loop error for {sym}: {e}")
-            time.sleep(2.0)
+            time.sleep(2.0 if self.is_market_active_now() else 25.0)
 
     def _benchmark_poller_loop(self):
-        """Dedicated benchmark poller (every 3.0s). Zero delay on NIFTY, BANK NIFTY, VIX, CRUDE."""
+        """Dedicated benchmark poller (3.0s in-market, 30.0s off-market). Zero delay on NIFTY, BANK NIFTY, VIX, CRUDE."""
         # Immediate benchmark fetch at boot
         try:
             self._execute_live_benchmark_fetch()
@@ -321,7 +345,7 @@ class GrowwMarketFeed:
                 self._execute_live_benchmark_fetch()
             except Exception as e:
                 logger.debug(f"Benchmark poller loop error: {e}")
-            time.sleep(3.0)
+            time.sleep(3.0 if self.is_market_active_now() else 30.0)
 
     def _validate_and_initialize(self, access_token: str) -> Dict[str, Any]:
         """
@@ -1089,35 +1113,6 @@ class GrowwMarketFeed:
         if canon_sym == "SENSEX":
             return self._get_fallback_sensex_chain(expiry_iso)
         return self._get_fallback_nifty_chain(expiry_iso)
-        spec = get_asset_spec(symbol=canon_sym)
-        step = spec.strike_step
-        base_spot = spec.default_spot
-        atm_k = int(round(base_spot / step) * step)
-        chain = []
-        for i in range(-3, 4):
-            k = float(atm_k + i * step)
-            c_ltp = max(0.50, round(spec.default_call_price - (i * step * 0.45), 2))
-            p_ltp = max(0.50, round(spec.default_put_price + (i * step * 0.45), 2))
-            c_oi = max(100, int(spec.fallback_call_oi // spec.lot_size - abs(i) * 50))
-            p_oi = max(100, int(spec.fallback_put_oi // spec.lot_size - abs(i) * 50))
-            chain.append({
-                "strike": k,
-                "call_ltp": c_ltp,
-                "call_oi": c_oi,
-                "call_change": 0.0,
-                "call_close": c_ltp,
-                "call_volume": int(c_oi * 1.5),
-                "call_delta": round(0.50 - (i * 0.08), 2),
-                "put_ltp": p_ltp,
-                "put_oi": p_oi,
-                "put_change": 0.0,
-                "put_close": p_ltp,
-                "put_volume": int(p_oi * 1.5),
-                "put_delta": round(-0.50 - (i * 0.08), 2),
-                "market_lot": spec.lot_size,
-                "expiry": expiry_iso or "2026-10-27"
-            })
-        return chain
 
     def _get_fallback_adani_spot(self) -> Dict[str, Any]:
         return {

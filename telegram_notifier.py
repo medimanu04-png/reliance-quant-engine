@@ -510,6 +510,25 @@ class TelegramNotifier:
         }
 
     @classmethod
+    def test_bot_handshake(cls, bot_token: str) -> Tuple[bool, str]:
+        """Validates bot token against Telegram getMe API without sending a test message to user chats."""
+        import urllib.request
+        import json
+        if not bot_token or ":" not in bot_token:
+            return False, "Invalid bot token format"
+        url = f"https://api.telegram.org/bot{bot_token.strip()}/getMe"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "ManojQuantEngine/1.0"})
+            with urllib.request.urlopen(req, timeout=4) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                if data.get("ok"):
+                    bot_user = data.get("result", {}).get("username", "Bot")
+                    return True, f"@{bot_user}"
+                return False, data.get("description", "Handshake failed")
+        except Exception as e:
+            return False, str(e)
+
+    @classmethod
     def send_test_alert(cls, bot_token: str, chat_ids_input: Any, symbol: str = "NIFTY") -> Tuple[bool, str]:
         """Sends a clean, beautiful verification test alert to confirm bot configuration across all recipients."""
         chat_ids = cls.parse_chat_ids(chat_ids_input)
