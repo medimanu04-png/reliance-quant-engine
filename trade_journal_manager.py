@@ -270,6 +270,66 @@ def recalculate_journal(entries: List[Dict[str, Any]], starting_cash: float = No
 
 
 # ==============================================================================
+# 2.5 STATUTORY TRANSACTION COST & TAX ENGINE (INDIAN F&O)
+# ==============================================================================
+class IndianFOTransactionCostEngine:
+    """
+    Institutional Transaction Cost & Statutory Tax Engine for Indian F&O.
+    Accurately computes post-tax net PnL, points drag, and statutory deductions:
+    - Brokerage: ₹20/order flat (Zerodha / Groww / AngelOne) = ₹40 round-trip
+    - STT (Securities Transaction Tax): 0.10% on option sell premium turnover (Budget 2024 revised)
+    - Exchange Turnover Charges: 0.050% on total premium turnover (NSE)
+    - SEBI Turnover Charges: ₹10 per crore (0.000001) on total turnover
+    - Stamp Duty: 0.003% on buy premium turnover
+    - GST: 18% on (Brokerage + Exchange turnover charges + SEBI charges)
+    """
+    BROKERAGE_PER_ORDER = 20.0
+    EXCHANGE_TURNOVER_PCT = 0.00050   # 0.05% on option premium turnover
+    SEBI_CHARGES_PCT = 0.000001       # ₹10 per crore
+    STAMP_DUTY_BUY_PCT = 0.00003      # 0.003% on buy turnover
+    STT_SELL_PCT = 0.00100            # 0.10% on sell turnover (Budget 2024)
+    GST_PCT = 0.18                    # 18% on brokerage & exchange fees
+
+    @classmethod
+    def calculate_round_trip(cls, buy_premium: float, sell_premium: float, qty: int) -> dict:
+        qty = max(1, int(qty))
+        buy_turnover = float(buy_premium) * qty
+        sell_turnover = float(sell_premium) * qty
+        total_turnover = buy_turnover + sell_turnover
+
+        brokerage = cls.BROKERAGE_PER_ORDER * 2.0
+        exchange_charges = total_turnover * cls.EXCHANGE_TURNOVER_PCT
+        sebi_charges = total_turnover * cls.SEBI_CHARGES_PCT
+        stamp_duty = buy_turnover * cls.STAMP_DUTY_BUY_PCT
+        stt = sell_turnover * cls.STT_SELL_PCT
+        gst = (brokerage + exchange_charges + sebi_charges) * cls.GST_PCT
+
+        total_taxes_and_charges = brokerage + exchange_charges + sebi_charges + stamp_duty + stt + gst
+        gross_pnl = sell_turnover - buy_turnover
+        net_pnl = gross_pnl - total_taxes_and_charges
+        pts_drag = total_taxes_and_charges / qty if qty > 0 else 0.0
+        gross_pts = (sell_premium - buy_premium)
+        net_pts = gross_pts - pts_drag
+
+        return {
+            "gross_pnl": round(gross_pnl, 2),
+            "net_pnl": round(net_pnl, 2),
+            "total_charges": round(total_taxes_and_charges, 2),
+            "points_drag": round(pts_drag, 2),
+            "gross_pts": round(gross_pts, 2),
+            "net_pts": round(net_pts, 2),
+            "stt": round(stt, 2),
+            "exchange_charges": round(exchange_charges, 2),
+            "brokerage": round(brokerage, 2),
+            "gst": round(gst, 2),
+            "stamp_duty": round(stamp_duty, 2),
+            "buy_turnover": round(buy_turnover, 2),
+            "sell_turnover": round(sell_turnover, 2),
+            "total_turnover": round(total_turnover, 2)
+        }
+
+
+# ==============================================================================
 # 3. TRADE JOURNAL & CROSS-VERIFICATION MANAGER
 # ==============================================================================
 class TradeJournalManager:
@@ -703,6 +763,152 @@ class TradeJournalManager:
             "stand_downs": len(stand_down_days),
             "avg_entry_slippage_pts": avg_entry_slippage,
             "total_slippage_drag_rupees": total_slippage_drag
+        }
+
+    @classmethod
+    def generate_tax_audit_report(
+        cls,
+        symbol_filter: Optional[str] = None,
+        date_filter: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Generates an official CA / Tax-Ready Audit Statement for Indian F&O Trading.
+        Itemizes every round-trip trade with Buy/Sell Turnovers, Brokerage, STT,
+        Exchange Fees, SEBI Charges, Stamp Duty, GST, and Net Post-Tax PnL.
+        """
+        raw_entries = cls._load_raw_entries()
+        audit_rows = []
+
+        for e in raw_entries:
+            sym_raw = e.get("trading_symbol") or e.get("instrument") or e.get("symbol") or "NIFTY"
+            sym = resolve_symbol(sym_raw)
+            date_val = str(e.get("date", ""))
+
+            if symbol_filter and resolve_symbol(symbol_filter) != sym:
+                continue
+            if date_filter and date_filter != date_val:
+                continue
+
+            qty = int(e.get("qty", e.get("quantity", 0)) or 0)
+            if qty <= 0:
+                lots = int(e.get("lots", e.get("num_lots", 2)) or 2)
+                lot_size = get_asset_spec(sym).lot_size
+                qty = lots * lot_size
+
+            ep = float(e.get("entry_price", e.get("actual_entry_price", 0.0)) or 0.0)
+            xp = float(e.get("exit_price", e.get("actual_exit_price", 0.0)) or 0.0)
+            is_closed = bool(e.get("is_closed", False) or xp > 0.0)
+
+            costs = IndianFOTransactionCostEngine.calculate_round_trip(
+                buy_premium=ep,
+                sell_premium=xp if is_closed else ep,
+                qty=qty
+            )
+
+            status = str(e.get("status", "CLOSED"))
+            audit_rows.append({
+                "trade_id": e.get("id", f"TRD_{date_val}_{sym}"),
+                "date": date_val,
+                "asset": sym,
+                "contract": str(e.get("trading_symbol", e.get("instrument", ""))),
+                "direction": str(e.get("direction", "BUY")),
+                "lots": int(e.get("lots", e.get("num_lots", 2)) or 2),
+                "quantity": qty,
+                "entry_time": str(e.get("entry_time", e.get("actual_entry_time", ""))),
+                "entry_price": ep,
+                "exit_time": str(e.get("exit_time", e.get("actual_exit_time", ""))),
+                "exit_price": xp,
+                "status": status,
+                "buy_turnover": costs["buy_turnover"],
+                "sell_turnover": costs["sell_turnover"] if is_closed else 0.0,
+                "total_turnover": (costs["buy_turnover"] + costs["sell_turnover"]) if is_closed else costs["buy_turnover"],
+                "gross_pnl": costs["gross_pnl"] if is_closed else 0.0,
+                "brokerage": costs["brokerage"],
+                "stt_sell": costs["stt"] if is_closed else 0.0,
+                "exchange_turnover_fee": costs["exchange_charges"],
+                "sebi_turnover_fee": costs["sebi_charges"],
+                "stamp_duty": costs["stamp_duty"],
+                "gst_18pct": costs["gst"],
+                "total_statutory_charges": costs["total_charges"],
+                "points_drag": costs["points_drag"],
+                "net_post_tax_pnl": costs["net_pnl"] if is_closed else 0.0,
+                "account_cash_closing": float(e.get("total_cash", STARTING_CAPITAL))
+            })
+
+        return audit_rows
+
+    @classmethod
+    def backup_trading_data(cls, backup_dir: str = "backups") -> Dict[str, Any]:
+        """
+        Creates an immutable, timestamped JSON snapshot of all active trading databases
+        (trade journal, sequential state, breakout triggers, and daily signals).
+        Prunes archives beyond 30 files to prevent disk bloat.
+        """
+        abs_backup_dir = os.path.join(BASE_DIR, backup_dir)
+        try:
+            os.makedirs(abs_backup_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        now_dt = datetime.now(IST)
+        ts_str = now_dt.strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"journal_backup_{ts_str}.json"
+        backup_path = os.path.join(abs_backup_dir, backup_filename)
+
+        snapshot_data = {
+            "backup_timestamp": now_dt.strftime("%Y-%m-%d %I:%M:%S %p IST"),
+            "daily_trade_journal": cls._load_raw_entries(),
+            "signals": SignalTracker.get_all_signals(),
+        }
+
+        # Include breakout triggers if present
+        bt_file = os.path.join(BASE_DIR, "breakout_triggers_log.json")
+        if os.path.exists(bt_file):
+            try:
+                with open(bt_file, "r", encoding="utf-8") as f:
+                    snapshot_data["breakout_triggers"] = json.load(f)
+            except Exception:
+                pass
+
+        # Include sequential trade state if present
+        seq_file = os.path.join(BASE_DIR, "sequential_trade_state.json")
+        if os.path.exists(seq_file):
+            try:
+                with open(seq_file, "r", encoding="utf-8") as f:
+                    snapshot_data["sequential_trade_state"] = json.load(f)
+            except Exception:
+                pass
+
+        try:
+            with open(backup_path, "w", encoding="utf-8") as f:
+                json.dump(snapshot_data, f, indent=2)
+            file_size_kb = round(os.path.getsize(backup_path) / 1024.0, 2)
+        except Exception as e:
+            logger.error(f"Failed to write backup snapshot: {e}")
+            return {"status": "ERROR", "message": str(e)}
+
+        # Prune old backups older than 30 files
+        try:
+            backups = sorted(
+                [os.path.join(abs_backup_dir, f) for f in os.listdir(abs_backup_dir) if f.startswith("journal_backup_") and f.endswith(".json")],
+                key=os.path.getmtime
+            )
+            while len(backups) > 30:
+                oldest = backups.pop(0)
+                try:
+                    os.remove(oldest)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return {
+            "status": "SUCCESS",
+            "backup_file": backup_filename,
+            "backup_path": backup_path,
+            "timestamp": now_dt.strftime("%Y-%m-%d %I:%M:%S %p IST"),
+            "file_size_kb": file_size_kb,
+            "records_count": len(snapshot_data.get("daily_trade_journal", []))
         }
 
 

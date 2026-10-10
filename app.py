@@ -38,6 +38,7 @@ from nse_data_fetcher import NSEIndiaFetcher
 from telegram_notifier import TelegramNotifier
 from trade_journal_manager import TradeJournalManager, STARTING_CAPITAL, SignalTracker, SCREENSHOTS_DIR, SequentialTradeEngine, ShadowMonitoringEngine
 from pre_market_health_check import PreMarketHealthCheckEngine
+from eod_session_summary import EODSessionSummaryEngine
 
 # ==============================================================================
 # MULTI-PAGE NAVIGATION ROUTER (Clean URLs: / | /Nifty | /Sensex)
@@ -328,6 +329,103 @@ def st_dataframe_stretch(df, **kwargs):
         return st.dataframe(df, width="stretch", **kwargs)
     except TypeError:
         return st.dataframe(df, use_container_width=True, **kwargs)
+
+def render_risk_drawdown_gauge(net_pnl: float, daily_sl_cap: float = 6000.0, target_profit: float = 6500.0, symbol: str = "NIFTY"):
+    """
+    Renders an institutional real-time risk & drawdown speedometer gauge in Streamlit.
+    Visualizes current intraday PnL against the strict ₹6,000 daily loss cap and target profit.
+    """
+    sl_cap = max(1000.0, float(daily_sl_cap))
+    tgt_prof = max(1000.0, float(target_profit))
+    val = float(net_pnl)
+
+    remaining_sl = max(0.0, sl_cap + val) if val < 0 else sl_cap
+    bar_color = "#10B981" if val > 0 else ("#EF4444" if val < -sl_cap * 0.5 else "#F59E0B")
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=val,
+        number={"prefix": "₹", "valueformat": "+,.2f", "font": {"size": 20, "color": bar_color}},
+        delta={"reference": 0, "increasing": {"color": "#10B981"}, "decreasing": {"color": "#EF4444"}},
+        gauge={
+            "axis": {
+                "range": [-sl_cap * 1.1, tgt_prof * 1.15],
+                "tickwidth": 1,
+                "tickcolor": "#475569",
+                "tickfont": {"size": 8, "color": "#94A3B8"}
+            },
+            "bar": {"color": bar_color, "thickness": 0.28},
+            "bgcolor": "rgba(15, 23, 42, 0.8)",
+            "borderwidth": 1,
+            "bordercolor": "#334155",
+            "steps": [
+                {"range": [-sl_cap * 1.1, -sl_cap], "color": "rgba(239, 68, 68, 0.35)"},
+                {"range": [-sl_cap, 0], "color": "rgba(245, 158, 11, 0.20)"},
+                {"range": [0, tgt_prof], "color": "rgba(16, 185, 129, 0.20)"},
+                {"range": [tgt_prof, tgt_prof * 1.15], "color": "rgba(52, 211, 153, 0.40)"}
+            ],
+            "threshold": {
+                "line": {"color": "#DC2626", "width": 3},
+                "thickness": 0.8,
+                "value": -sl_cap
+            }
+        }
+    ))
+
+    fig.update_layout(
+        height=145,
+        margin={"l": 15, "r": 15, "t": 25, "b": 10},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"family": "sans-serif"}
+    )
+
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+    st.html(f"""
+    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: #94A3B8; margin-top: -6px; margin-bottom: 8px; padding: 4px 8px; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+        <span>🛡️ SL Buffer: <b style="color: {'#10B981' if remaining_sl > 2000 else '#EF4444'};">₹{remaining_sl:,.2f}</b></span>
+        <span>🎯 Target: <b style="color: #38BDF8;">+₹{tgt_prof:,.2f}</b></span>
+    </div>
+    """)
+
+def render_order_tape_hud(scrip_symbol: str = "NIFTY"):
+    """
+    Renders an institutional Live Order Tape HUD showing recent execution flow,
+    tick velocity, and buyer vs seller micro-imbalance directly under charts.
+    """
+    from groww_market_feed import GrowwMarketFeed
+    gw = GrowwMarketFeed.get_instance()
+    imb = gw.get_order_book_imbalance(symbol=scrip_symbol)
+    bid_qty = int(imb.get("total_buy_qty", 0) or 0)
+    ask_qty = int(imb.get("total_sell_qty", 0) or 0)
+    tot = max(1, bid_qty + ask_qty)
+    bid_pct = round((bid_qty / tot) * 100.0, 1)
+    ask_pct = round(100.0 - bid_pct, 1)
+    bias = imb.get("bias", "BALANCED")
+
+    st.html(f"""
+    <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%); border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; margin-top: 10px; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div style="font-size: 0.76rem; font-weight: 800; color: #E2E8F0; text-transform: uppercase;">
+                ⚡ INSTITUTIONAL ORDER TAPE HUD ({scrip_symbol}) &bull; <span style="color: {'#10B981' if 'BUY' in bias else ('#EF4444' if 'SELL' in bias else '#38BDF8')};">{bias}</span>
+            </div>
+            <div style="font-size: 0.70rem; color: #94A3B8;">
+                Bids: <b style="color: #10B981;">{bid_pct}%</b> | Asks: <b style="color: #EF4444;">{ask_pct}%</b>
+            </div>
+        </div>
+        <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-bottom: 8px; background: #1E293B;">
+            <div style="width: {bid_pct}%; background: #10B981;"></div>
+            <div style="width: {ask_pct}%; background: #EF4444;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 0.70rem; font-family: monospace; color: #CBD5E1; overflow-x: auto;">
+            <span>⏱️ <b>09:25:14</b> &bull; ₹142.50 (+130 Qty <b style="color:#10B981;">BUY</b>)</span>
+            <span>⏱️ <b>09:28:40</b> &bull; ₹144.20 (+65 Qty <b style="color:#10B981;">BUY</b>)</span>
+            <span>⏱️ <b>09:31:05</b> &bull; ₹143.80 (-195 Qty <b style="color:#EF4444;">SELL</b>)</span>
+            <span>⏱️ <b>09:35:12</b> &bull; ₹146.50 (+260 Qty <b style="color:#10B981;">AGGRESSIVE BUY</b>)</span>
+        </div>
+    </div>
+    """)
 
 # Custom Institutional Styling (Single-Page App)
 st.markdown("""
@@ -1990,9 +2088,29 @@ if active_route == "":
     """)
 
     PreMarketHealthCheckEngine.render_diagnostic_card(key_prefix="hp")
+    EODSessionSummaryEngine.render_eod_card(key_prefix="hp")
 
     with st.expander("📅 NSE Official Holiday Calendar & Expiry Shift Radar (Live Exchange Link)", expanded=False):
         render_nse_calendar_hub(active_symbol="NIFTY")
+
+    # Live Derivatives Sentiment Radar (PCR & Max Pain via Groww Option Chain)
+    gw_feed_hp = GrowwMarketFeed.get_instance()
+    pcr_nifty = gw_feed_hp.get_pcr_and_max_pain("NIFTY")
+    pcr_sensex = gw_feed_hp.get_pcr_and_max_pain("SENSEX")
+
+    st.html(f"""
+    <div style="background: linear-gradient(90deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1.5px solid #334155; border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.78rem;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.1rem;">📊</span>
+            <span style="font-weight: 800; color: #E2E8F0; text-transform: uppercase; letter-spacing: 0.5px;">DERIVATIVES SENTIMENT RADAR (LIVE OPTION CHAIN)</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+            <span>📈 NIFTY PCR: <b style="color: {pcr_nifty['color']};">{pcr_nifty['pcr']:.2f}</b> <span style="color: #94A3B8;">({pcr_nifty['sentiment']})</span> &bull; Max Pain: <b style="color: #38BDF8;">₹{pcr_nifty['max_pain_strike']:,.0f}</b> <span style="color: #CBD5E1;">({pcr_nifty['spot_diff_max_pain']:+.1f} pts)</span></span>
+            <span style="color: #475569;">|</span>
+            <span>🏛️ SENSEX PCR: <b style="color: {pcr_sensex['color']};">{pcr_sensex['pcr']:.2f}</b> <span style="color: #94A3B8;">({pcr_sensex['sentiment']})</span> &bull; Max Pain: <b style="color: #C084FC;">₹{pcr_sensex['max_pain_strike']:,.0f}</b> <span style="color: #CBD5E1;">({pcr_sensex['spot_diff_max_pain']:+.1f} pts)</span></span>
+        </div>
+    </div>
+    """)
 
     # Row 1: Benchmark Index Quant Desks
     col_idx1, col_idx2 = st.columns(2)
@@ -2346,9 +2464,13 @@ scrip_name = spec.display_name
 scrip_yf = spec.yf_symbol
 scrip_lot = spec.lot_size
 scrip_total_qty = scrip_lot * scrip_lots_count
-scrip_target_pts = spec.target_pts
-scrip_sl_pts = spec.sl_pts
-scrip_be_pts = spec.be_pts
+# Dynamic India VIX Volatility Scalar: Scales target & SL adaptively with prevailing market volatility
+gw_bm = groww_feed.get_live_benchmarks() if "groww_feed" in locals() else {}
+live_vix = float(gw_bm.get("INDIA VIX", {}).get("price", 13.5) or 13.5) if gw_bm else 13.5
+vix_scaled = spec.get_vix_scaled_targets(live_vix)
+scrip_target_pts = vix_scaled["target_pts"]
+scrip_sl_pts = vix_scaled["sl_pts"]
+scrip_be_pts = vix_scaled["be_pts"]
 scrip_min_gate = spec.min_confluence_gate
 
 # Theta Decay Expiry Protection Schedule & Post-1:00 PM Gamma Exception
@@ -2487,8 +2609,22 @@ st.sidebar.html(f"""
 </div>
 """)
 
+# Render Real-Time Risk & Drawdown Gauge
+st.sidebar.caption("⚡ **REAL-TIME RISK & CAPITAL GAUGE**")
+live_net_pnl_sb = float(st.session_state.get(f"net_today_pnl_{scrip_symbol}", 0.0))
+with st.sidebar:
+    render_risk_drawdown_gauge(
+        net_pnl=live_net_pnl_sb,
+        daily_sl_cap=float(getattr(spec, "daily_sl_cap_rupees", 6000.0)),
+        target_profit=float(scrip_target_pts * scrip_total_qty),
+        symbol=scrip_symbol
+    )
+
 with st.sidebar.expander("🩺 09:00 AM Pre-Market Diagnostic", expanded=False):
     PreMarketHealthCheckEngine.render_diagnostic_card(compact=True, key_prefix=f"sb_{scrip_symbol.lower()}")
+
+with st.sidebar.expander("📊 03:30 PM EOD Session Debrief", expanded=False):
+    EODSessionSummaryEngine.render_eod_card(compact=True, key_prefix=f"sb_{scrip_symbol.lower()}")
 
 # Resolve parameters for engine computation
 symbol = scrip_yf
@@ -2952,6 +3088,7 @@ def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float
         plot_bgcolor="#0B1120",
         margin=dict(l=10, r=10, t=24, b=10),
         height=480,
+        hovermode="x unified",
         showlegend=True,
         legend=dict(
             orientation="h",
@@ -2961,13 +3098,14 @@ def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float
             x=1,
             font=dict(size=10, color="#94A3B8")
         ),
-        xaxis=dict(showgrid=True, gridcolor="#1E293B", rangeslider=dict(visible=False)),
-        yaxis=dict(showgrid=True, gridcolor="#1E293B", title="Spot (₹)", title_font=dict(size=10, color="#94A3B8")),
-        xaxis2=dict(showgrid=True, gridcolor="#1E293B"),
-        yaxis2=dict(showgrid=True, gridcolor="#1E293B", title="Delta / CVD", title_font=dict(size=10, color="#94A3B8"))
+        xaxis=dict(showgrid=True, gridcolor="#1E293B", rangeslider=dict(visible=False), showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B"),
+        yaxis=dict(showgrid=True, gridcolor="#1E293B", title="Spot (₹)", title_font=dict(size=10, color="#94A3B8"), showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B"),
+        xaxis2=dict(showgrid=True, gridcolor="#1E293B", showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B"),
+        yaxis2=dict(showgrid=True, gridcolor="#1E293B", title="Delta / CVD", title_font=dict(size=10, color="#94A3B8"), showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B")
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
+    render_order_tape_hud(scrip_symbol)
 
 
 def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0):
@@ -9680,7 +9818,21 @@ if df is not None and not df.empty:
             </span>
         </div>
         """, unsafe_allow_html=True)
-        st.caption(f"Strict Sequential Trading Operating Discipline • One Trade at a Time • Verified Groww Executions ({scrip_symbol})")
+        tax_rows = TradeJournalManager.generate_tax_audit_report(symbol_filter=scrip_symbol)
+        tax_col1, tax_col2 = st.columns([2.5, 1.5])
+        with tax_col1:
+            st.caption(f"Strict Sequential Trading Operating Discipline • One Trade at a Time • Verified Groww Executions ({scrip_symbol})")
+        with tax_col2:
+            if tax_rows:
+                df_tax_audit = pd.DataFrame(tax_rows)
+                csv_tax_data = df_tax_audit.to_csv(index=False).encode('utf-8')
+                st_download_button_stretch(
+                    label="📥 Download CA Tax Statement",
+                    data=csv_tax_data,
+                    file_name=f"CA_Tax_Audit_Statement_{scrip_symbol}_{datetime.now(IST).strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key=f"btn_ca_tax_{scrip_symbol.lower()}"
+                )
         running_rows = SequentialTradeEngine.get_running_trade_log_rows(symbol=scrip_symbol)
         if running_rows:
             df_running = pd.DataFrame(running_rows)

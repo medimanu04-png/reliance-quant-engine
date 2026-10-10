@@ -126,6 +126,35 @@ class AssetSpec:
         calculated_lots = int(max_risk_rupees // per_lot_risk)
         return max(1, calculated_lots)
 
+    def get_vix_scaled_targets(self, india_vix: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Dynamic India VIX Volatility Scalar for Target & Stop-Loss Boundaries.
+        Baseline Indian market volatility benchmark: VIX = 13.5.
+        Scalar = sqrt(clamp(VIX, 9.0, 28.0) / 13.5), bounded in [0.80, 1.35].
+        - High Volatility (VIX > 16.5): Expands Target & SL distances (+15% to +35%)
+          to prevent premature stopouts during wide volatility swings.
+        - Low Volatility (VIX < 11.5): Tightens Target & SL distances (-10% to -20%)
+          to avoid unrealistic targets during compressed regimes.
+        """
+        import math
+        vix = float(india_vix) if india_vix and india_vix > 0 else 13.5
+        vix_clamped = max(9.0, min(28.0, vix))
+        vix_scalar = max(0.80, min(1.35, math.sqrt(vix_clamped / 13.5)))
+
+        return {
+            "vix": round(vix, 2),
+            "vix_scalar": round(vix_scalar, 3),
+            "regime": "HIGH_VOLATILITY" if vix >= 16.5 else ("LOW_VOLATILITY" if vix <= 11.5 else "NORMAL_VOLATILITY"),
+            "regime_badge": "⚡ HIGH VOLATILITY" if vix >= 16.5 else ("🧊 LOW VOLATILITY" if vix <= 11.5 else "⚖️ NORMAL VOLATILITY"),
+            "target_pts": round(self.target_pts * vix_scalar, 1),
+            "target_2_pts": round(self.target_2_pts * vix_scalar, 1),
+            "sl_pts": round(self.sl_pts * vix_scalar, 1),
+            "be_pts": round(self.be_pts * vix_scalar, 1),
+            "breakout_buffer": round(self.breakout_buffer * vix_scalar, 2),
+            "profit_lock_trigger": round(self.profit_lock_trigger * vix_scalar, 1),
+            "profit_lock_locked": round(self.profit_lock_locked * vix_scalar, 1)
+        }
+
     def calculate_daily_sr_zones(
         self,
         spot: Optional[float] = None,

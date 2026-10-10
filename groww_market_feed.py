@@ -2633,9 +2633,112 @@ class GrowwMarketFeed:
             "summary": f"{adv} Adv / {dec} Dec (Ratio: {ratio:.2f} | 20-EMA: {pct_above_20ema}%)"
         }
 
+    def get_pcr_and_max_pain(self, symbol: Optional[str] = "NIFTY") -> Dict[str, Any]:
+        """
+        Computes real-time Put-Call Ratio (PCR) and Max Pain Strike for the active benchmark.
+        Derived from live Groww option chain open interest and volume ticks:
+        - PCR >= 1.30: 🟢 Strong Put Writing Support (Bullish Floor)
+        - 0.85 < PCR < 1.30: ⚪ Balanced Range Corridor (Neutral)
+        - PCR <= 0.85: 🔴 Heavy Call Writing Overhead (Bearish Ceiling)
+        Max Pain Strike: The strike where option writers suffer minimal payout at expiry.
+        """
+        slug, underlying = self._resolve_groww_slug(symbol)
+        chain = self.get_live_option_chain(symbol=underlying)
 
+        spot_data = self.get_live_spot_data(symbol=underlying)
+        spot_ltp = float(spot_data.get("spot_ltp", 0.0))
 
+        if not chain or len(chain) == 0:
+            return {
+                "symbol": underlying,
+                "pcr": 1.05,
+                "vol_pcr": 1.00,
+                "sentiment": "BALANCED_CORRIDOR",
+                "sentiment_label": "⚪ Neutral / Balanced Corridor",
+                "sentiment_badge": "BALANCED (1.05)",
+                "color": "#94A3B8",
+                "max_pain_strike": spot_ltp,
+                "spot_diff_max_pain": 0.0,
+                "total_call_oi": 0,
+                "total_put_oi": 0,
+                "total_call_vol": 0,
+                "total_put_vol": 0,
+                "message": "Awaiting option chain feed"
+            }
 
+        total_call_oi = 0
+        total_put_oi = 0
+        total_call_vol = 0
+        total_put_vol = 0
+
+        strikes = []
+        for row in chain:
+            k = float(row.get("strike", 0.0))
+            if k <= 0:
+                continue
+            c_oi = int(row.get("call_oi", 0) or 0)
+            p_oi = int(row.get("put_oi", 0) or 0)
+            c_vol = int(row.get("call_volume", 0) or 0)
+            p_vol = int(row.get("put_volume", 0) or 0)
+
+            total_call_oi += c_oi
+            total_put_oi += p_oi
+            total_call_vol += c_vol
+            total_put_vol += p_vol
+            strikes.append((k, c_oi, p_oi))
+
+        pcr = round(total_put_oi / max(1, total_call_oi), 2)
+        vol_pcr = round(total_put_vol / max(1, total_call_vol), 2)
+
+        # Compute Max Pain Strike
+        min_loss = float("inf")
+        max_pain_strike = spot_ltp if spot_ltp > 0 else (strikes[len(strikes)//2][0] if strikes else 0.0)
+
+        for candidate_k, _, _ in strikes:
+            total_loss = 0.0
+            for k, c_oi, p_oi in strikes:
+                if candidate_k > k:
+                    total_loss += (candidate_k - k) * c_oi
+                elif candidate_k < k:
+                    total_loss += (k - candidate_k) * p_oi
+            if total_loss < min_loss:
+                min_loss = total_loss
+                max_pain_strike = candidate_k
+
+        if pcr >= 1.30:
+            sentiment = "BULLISH_SUPPORT"
+            sentiment_label = "🟢 Strong Put Writing Support (Bullish Floor)"
+            sentiment_badge = f"BULLISH PCR {pcr:.2f}"
+            color = "#10B981"
+        elif pcr <= 0.85:
+            sentiment = "BEARISH_OVERHEAD"
+            sentiment_label = "🔴 Heavy Call Writing Overhead (Bearish Ceiling)"
+            sentiment_badge = f"BEARISH PCR {pcr:.2f}"
+            color = "#EF4444"
+        else:
+            sentiment = "BALANCED_CORRIDOR"
+            sentiment_label = "⚪ Balanced Range Corridor (Neutral)"
+            sentiment_badge = f"BALANCED PCR {pcr:.2f}"
+            color = "#94A3B8"
+
+        spot_diff = round(spot_ltp - max_pain_strike, 2) if spot_ltp > 0 else 0.0
+
+        return {
+            "symbol": underlying,
+            "pcr": pcr,
+            "vol_pcr": vol_pcr,
+            "sentiment": sentiment,
+            "sentiment_label": sentiment_label,
+            "sentiment_badge": sentiment_badge,
+            "color": color,
+            "max_pain_strike": max_pain_strike,
+            "spot_diff_max_pain": spot_diff,
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
+            "total_call_vol": total_call_vol,
+            "total_put_vol": total_put_vol,
+            "message": f"PCR: {pcr:.2f} ({sentiment}) • Max Pain: {max_pain_strike:,.0f} (Diff: {spot_diff:+.1f} pts)"
+        }
 
     # =========================================================================
     # OFFICIAL GROWW SDK NATIVE METHODS (GREEKS & BATCH LTP)
