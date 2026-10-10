@@ -632,12 +632,12 @@ class NSECalendar:
     def get_weekly_expiry(
         self,
         today_dt: Optional[datetime] = None,
-        target_weekday: int = 3,
+        target_weekday: int = 1,
         symbol: str = "NIFTY"
     ) -> Dict[str, Any]:
         """
         Determines current week's expiry date for index derivatives:
-        - target_weekday: 3 for Thursday (NIFTY 50), 4 for Friday (BSE SENSEX).
+        - target_weekday: 1 for Tuesday (NIFTY 50), 3 for Thursday (BSE SENSEX).
         - If today is past 15:30 on expiry day, rolls to next week.
         - Checks against NSE Calendar and prepones if holiday!
         """

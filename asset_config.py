@@ -415,16 +415,18 @@ def build_contract_symbol(
 
 def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     """
-    Weekly Theta Decay Shield & Day 1 Premium Shield Trading Schedule:
-    - Tuesday & Wednesday: BSE SENSEX ONLY (6 Lots)
-      * Tuesday (NIFTY 0DTE Expiry): SENSEX active to shield morning capital from brutal 0DTE NIFTY theta decay.
-        (NIFTY Expiry Gamma Radar unlocks post-1:00 PM for 1 high-probability Gamma Blast setup).
-      * Wednesday: SENSEX active (DTE 1 before Thursday expiry) while NIFTY is locked to shield against Day 1 premium inflation.
-    - Monday, Thursday & Friday: NIFTY 50 ONLY (4 Lots)
-      * Monday: NIFTY active (DTE 1 before Tuesday expiry — affordable premiums, high directional gamma).
-      * Thursday (SENSEX 0DTE Expiry): NIFTY active to shield morning capital from brutal 0DTE SENSEX theta decay.
-        (SENSEX Expiry Gamma Radar unlocks post-1:00 PM for 1 high-probability Gamma Blast setup).
-      * Friday: NIFTY active (clean weekend momentum; shields from Day 1 SENSEX post-expiry premium inflation).
+    Weekly Dynamic Theta Decay Shield & Day 1 Premium Shield Trading Schedule:
+    - Calendar-Aware Expiry Rotation:
+      * When NIFTY is on 0DTE Expiry (Tuesday, or preponed Monday if Tuesday is holiday):
+        Trade BSE SENSEX ONLY (6 Lots) in the morning to protect capital from 0DTE NIFTY theta decay.
+        Post-1:00 PM: NIFTY Expiry Gamma Radar unlocks (1 high-conviction Gamma Blast setup).
+      * When SENSEX is on 0DTE Expiry (Thursday, or preponed Wednesday if Thursday is holiday):
+        Trade NIFTY 50 ONLY (4 Lots) in the morning to protect capital from 0DTE SENSEX theta decay.
+        Post-1:00 PM: SENSEX Expiry Gamma Radar unlocks (1 high-conviction Gamma Blast setup).
+      * Non-Expiry Days:
+        - Monday (when not Nifty expiry): NIFTY 50 (4 Lots) • DTE 1 pre-expiry gamma.
+        - Wednesday (when not Sensex expiry): BSE SENSEX (6 Lots) • Day 1 NIFTY shield & SENSEX DTE 1.
+        - Friday: NIFTY 50 (4 Lots) • Clean weekend momentum & Day 1 SENSEX shield.
     """
     from datetime import datetime
     try:
@@ -497,50 +499,76 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
             "is_gamma_exception_active": False
         }
 
-    # Expiry Exception Mapping:
-    # - Tuesday (weekday == 1): NIFTY weekly expiry -> Gamma exception symbol = "NIFTY"
-    # - Thursday (weekday == 3): SENSEX weekly expiry -> Gamma exception symbol = "SENSEX"
-    gamma_exception_symbol = None
-    if weekday == 1:
-        gamma_exception_symbol = "NIFTY"
-    elif weekday == 3:
-        gamma_exception_symbol = "SENSEX"
+    # Dynamic Calendar-Aware Expiry Resolution:
+    # Determines if today is an actual weekly expiry day (accounting for holiday preponements).
+    dt_today = now_dt.date() if hasattr(now_dt, "date") else now_dt
+
+    nifty_exp_info = nse_calendar.get_weekly_expiry(now_dt, target_weekday=1, symbol="NIFTY")
+    n_act_dt = nifty_exp_info["actual_dt"].date() if hasattr(nifty_exp_info["actual_dt"], "date") else nifty_exp_info["actual_dt"]
+    is_nifty_expiry_today = (n_act_dt == dt_today)
+    is_nifty_expiry_preponed = is_nifty_expiry_today and nifty_exp_info.get("is_shifted", False)
+
+    sensex_exp_info = nse_calendar.get_weekly_expiry(now_dt, target_weekday=3, symbol="SENSEX")
+    s_act_dt = sensex_exp_info["actual_dt"].date() if hasattr(sensex_exp_info["actual_dt"], "date") else sensex_exp_info["actual_dt"]
+    is_sensex_expiry_today = (s_act_dt == dt_today)
+    is_sensex_expiry_preponed = is_sensex_expiry_today and sensex_exp_info.get("is_shifted", False)
 
     # Post-1:00 PM IST Gamma Blast Window (13:00 to 15:15 IST)
     gamma_window_start = time(13, 0)
     gamma_window_end = time(15, 15)
     is_post_1pm_window = (gamma_window_start <= t_curr <= gamma_window_end)
-    is_gamma_exception_active = (gamma_exception_symbol is not None and is_post_1pm_window)
 
-    if weekday in (1, 2):
+    # Dynamic Desk Allocation under the Theta Shield:
+    if is_nifty_expiry_today:
+        # Today is NIFTY 0DTE Expiry: Morning trades SENSEX to shield from NIFTY 0DTE theta crush.
         active_symbol = "SENSEX"
         locked_symbol = "NIFTY"
-        schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots)"
-        if weekday == 1:
-            schedule_label += " • NIFTY 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks Post-1:00 PM)"
-        elif weekday == 2:
-            schedule_label += " • Day 1 NIFTY Premium Shield & SENSEX DTE 1 Pre-Expiry Gamma"
         active_lots = 6
         locked_lots = 4
-    elif weekday in (0, 3, 4):
+        gamma_exception_symbol = "NIFTY"
+        if is_nifty_expiry_preponed:
+            schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots) • NIFTY Preponed 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks Post-1:00 PM)"
+        else:
+            schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots) • NIFTY 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks Post-1:00 PM)"
+    elif is_sensex_expiry_today:
+        # Today is SENSEX 0DTE Expiry: Morning trades NIFTY to shield from SENSEX 0DTE theta crush.
         active_symbol = "NIFTY"
         locked_symbol = "SENSEX"
-        schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots)"
-        if weekday == 0:
-            schedule_label += " • NIFTY DTE 1 Pre-Expiry Prime Gamma & Affordable Premiums"
-        elif weekday == 3:
-            schedule_label += " • SENSEX 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks Post-1:00 PM)"
-        elif weekday == 4:
-            schedule_label += " • Clean Weekend Momentum & SENSEX Day 1 Premium Shield"
         active_lots = 4
         locked_lots = 6
+        gamma_exception_symbol = "SENSEX"
+        if is_sensex_expiry_preponed:
+            schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • SENSEX Preponed 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks Post-1:00 PM)"
+        else:
+            schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • SENSEX 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks Post-1:00 PM)"
     else:
-        active_symbol = "NIFTY"
-        locked_symbol = "SENSEX"
-        schedule_label = "Weekend Mode: Market Closed (Next Session: Monday NIFTY 50 Mandate)"
-        active_lots = 4
-        locked_lots = 6
+        # Standard Non-Expiry Intraday Rotation:
+        gamma_exception_symbol = None
+        if weekday in (1, 2):
+            active_symbol = "SENSEX"
+            locked_symbol = "NIFTY"
+            active_lots = 6
+            locked_lots = 4
+            schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots) • Day 1 NIFTY Premium Shield & SENSEX DTE 1 Pre-Expiry Gamma"
+        elif weekday in (0, 3, 4):
+            active_symbol = "NIFTY"
+            locked_symbol = "SENSEX"
+            active_lots = 4
+            locked_lots = 6
+            if weekday == 0:
+                schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • NIFTY DTE 1 Pre-Expiry Prime Gamma & Affordable Premiums"
+            elif weekday == 4:
+                schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • Clean Weekend Momentum & SENSEX Day 1 Premium Shield"
+            else:
+                schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • Standard Intraday Setup"
+        else:
+            active_symbol = "NIFTY"
+            locked_symbol = "SENSEX"
+            schedule_label = "Weekend Mode: Market Closed (Next Session: Monday NIFTY 50 Mandate)"
+            active_lots = 4
+            locked_lots = 6
 
+    is_gamma_exception_active = (gamma_exception_symbol is not None and is_post_1pm_window)
     schedule_rule = "Tue & Wed: SENSEX (6 Lots) | Mon, Thu & Fri: NIFTY (4 Lots) • Post-1 PM Expiry Gamma Blast Exception (1 Call Cap)"
 
     return {
@@ -559,7 +587,10 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
         "locked_lots": locked_lots,
         "gamma_exception_symbol": gamma_exception_symbol,
         "is_post_1pm_window": is_post_1pm_window,
-        "is_gamma_exception_active": is_gamma_exception_active
+        "is_gamma_exception_active": is_gamma_exception_active,
+        "is_nifty_expiry_today": is_nifty_expiry_today,
+        "is_sensex_expiry_today": is_sensex_expiry_today,
+        "is_expiry_shifted": (is_nifty_expiry_preponed or is_sensex_expiry_preponed)
     }
 
 
