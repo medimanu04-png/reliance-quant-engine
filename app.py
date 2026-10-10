@@ -1941,17 +1941,30 @@ if active_route == "":
     is_nifty_tradable_today = nifty_tradable_info["can_trade"]
     is_sensex_tradable_today = sensex_tradable_info["can_trade"]
 
+    if hp_sched.get("is_weekend"):
+        hp_banner_icon = "🛑"
+        hp_banner_title = f"WEEKEND MARKET CLOSURE: <span style='color: #F87171;'>{hp_weekday.upper()} • CLOSED</span>"
+        hp_banner_sub = f"Standard Weekend Market Closure: Both NSE & BSE cash & derivatives segments are closed. Next Session: <b style='color: #38BDF8;'>Monday 09:15 AM IST (NIFTY 50 • 4 Lots)</b>."
+    elif hp_sched.get("is_trading_holiday"):
+        hp_banner_icon = "🔴"
+        hp_banner_title = f"NSE TRADING HOLIDAY: <span style='color: #F87171;'>{hp_sched.get('holiday_name', 'EXCHANGE HOLIDAY').upper()} • CLOSED</span>"
+        hp_banner_sub = f"Official exchange holiday ({hp_sched.get('holiday_name')}). Cash & F&O derivatives desks suspended today."
+    else:
+        hp_banner_icon = "🛡️"
+        hp_banner_title = f"THETA DECAY & DAY 1 PREMIUM SHIELD: <span style='color: #818CF8;'>{hp_weekday.upper()} MANDATE</span>"
+        hp_banner_sub = "Standard: <b style='color: #A855F7;'>Tue & Wed = SENSEX ONLY (6 Lots)</b> &bull; <b style='color: #10B981;'>Mon, Thu & Fri = NIFTY ONLY (4 Lots)</b> &bull; <span style='color: #FCD34D;'>Post-1:00 PM Expiry Gamma Blast Exception (1 Call Cap)</span>"
+
     st.html(f"""
     <div style="background: linear-gradient(90deg, rgba(30, 27, 75, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid rgba(129, 140, 248, 0.5); border-radius: 10px; padding: 12px 18px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(0,0,0,0.35);">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.25rem;">🛡️</span>
+                <span style="font-size: 1.25rem;">{hp_banner_icon}</span>
                 <div>
                     <span style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.2px;">
-                        THETA DECAY & DAY 1 PREMIUM SHIELD: <span style="color: #818CF8;">{hp_weekday.upper()} MANDATE</span>
+                        {hp_banner_title}
                     </span>
                     <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
-                        Standard: <b style="color: #A855F7;">Tue & Wed = SENSEX ONLY (6 Lots)</b> &bull; <b style="color: #10B981;">Mon, Thu & Fri = NIFTY ONLY (4 Lots)</b> &bull; <span style="color: #FCD34D;">Post-1:00 PM Expiry Gamma Blast Exception (1 Call Cap)</span>
+                        {hp_banner_sub}
                     </div>
                 </div>
             </div>
@@ -7019,29 +7032,76 @@ if df is not None and not df.empty:
             </div>
             """)
         elif is_current_desk_locked:
-            lock_header_title = "LOCKED UNTIL 01:00 PM (EXPIRY WATCH)" if tradable_decision.get("status") == "EXPIRY_LOCKED_UNTIL_1PM" else ("1/1 EXPIRY CALL COMPLETED TODAY" if tradable_decision.get("status") == "GAMMA_EXCEPTION_COMPLETED" else f"{scrip_symbol} LOCKED TODAY ({desk_sched['weekday_name'].upper()})")
-            st.html(f"""
-            <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 2px solid #818CF8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(99, 102, 241, 0.25);">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <span style="font-size: 1.6rem;">{'⏳' if tradable_decision.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '🛡️'}</span>
-                        <div>
-                            <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
-                                THETA DECAY SHIELD: {lock_header_title}
-                            </div>
-                            <div style="font-size: 0.78rem; color: #C7D2FE; margin-top: 3px;">
-                                {tradable_decision['reason']} Primary active desk today is <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b>.
+            if desk_sched.get("is_weekend") or tradable_decision.get("status") == "WEEKEND_CLOSED":
+                st.html(f"""
+                <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%); border: 2px solid #64748B; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(100, 116, 139, 0.25);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 1.6rem;">🛑</span>
+                            <div>
+                                <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
+                                    WEEKEND MARKET CLOSURE: {desk_sched.get('weekday_name', 'WEEKEND').upper()} • CLOSED
+                                </div>
+                                <div style="font-size: 0.78rem; color: #CBD5E1; margin-top: 3px;">
+                                    Both NSE & BSE are closed for the weekend. Next active trading session begins <b style="color: #38BDF8;">Monday at 09:15 AM IST</b> with <b style="color: #10B981;">NIFTY 50 (4 Lots)</b> mandate.
+                                </div>
                             </div>
                         </div>
+                        <a href="./" style="text-decoration: none;">
+                            <span style="background: #334155; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
+                                🏠 Return to Command Center →
+                            </span>
+                        </a>
                     </div>
-                    <a href="./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}" target="_blank" style="text-decoration: none;">
-                        <span style="background: #4F46E5; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
-                            Launch {desk_sched['active_symbol']} Desk (Active Today) →
-                        </span>
-                    </a>
                 </div>
-            </div>
-            """)
+                """)
+            elif desk_sched.get("is_trading_holiday") or tradable_decision.get("status") == "MARKET_HOLIDAY_CLOSED":
+                st.html(f"""
+                <div style="background: linear-gradient(135deg, rgba(69, 10, 10, 0.95) 0%, rgba(30, 20, 25, 0.95) 100%); border: 2px solid #EF4444; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(239, 68, 68, 0.25);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 1.6rem;">🔴</span>
+                            <div>
+                                <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
+                                    NSE TRADING HOLIDAY: {desk_sched.get('holiday_name', 'EXCHANGE HOLIDAY').upper()} • CLOSED
+                                </div>
+                                <div style="font-size: 0.78rem; color: #FCA5A5; margin-top: 3px;">
+                                    Official NSE exchange trading holiday ({desk_sched.get('holiday_name')}). Cash & F&O derivatives desks suspended today.
+                                </div>
+                            </div>
+                        </div>
+                        <a href="./" style="text-decoration: none;">
+                            <span style="background: #7F1D1D; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
+                                🏠 Return to Command Center →
+                            </span>
+                        </a>
+                    </div>
+                </div>
+                """)
+            else:
+                lock_header_title = "LOCKED UNTIL 01:00 PM (EXPIRY WATCH)" if tradable_decision.get("status") == "EXPIRY_LOCKED_UNTIL_1PM" else ("1/1 EXPIRY CALL COMPLETED TODAY" if tradable_decision.get("status") == "GAMMA_EXCEPTION_COMPLETED" else f"{scrip_symbol} LOCKED TODAY ({desk_sched['weekday_name'].upper()})")
+                st.html(f"""
+                <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 2px solid #818CF8; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 0 20px rgba(99, 102, 241, 0.25);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 1.6rem;">{'⏳' if tradable_decision.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '🛡️'}</span>
+                            <div>
+                                <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
+                                    THETA DECAY SHIELD: {lock_header_title}
+                                </div>
+                                <div style="font-size: 0.78rem; color: #C7D2FE; margin-top: 3px;">
+                                    {tradable_decision['reason']} Primary active desk today is <b style="color: #38BDF8;">{desk_sched['active_symbol']}</b>.
+                                </div>
+                            </div>
+                        </div>
+                        <a href="./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}" target="_blank" style="text-decoration: none;">
+                            <span style="background: #4F46E5; color: #FFFFFF; font-weight: 800; font-size: 0.82rem; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: inline-block;">
+                                Launch {desk_sched['active_symbol']} Desk (Active Today) →
+                            </span>
+                        </a>
+                    </div>
+                </div>
+                """)
 
         # Groww 09:10 AM Pre-Market Support & Resistance Radar
         try:
@@ -7739,7 +7799,52 @@ if df is not None and not df.empty:
                     lock_status_code = tradable_decision.get("status", "STRICTLY_LOCKED")
                     other_desk_url = f"./{desk_sched['active_symbol'].capitalize()}?stock={desk_sched['active_symbol'].capitalize()}"
                     
-                    if lock_status_code == "EXPIRY_LOCKED_UNTIL_1PM":
+                    if lock_status_code in ("WEEKEND_CLOSED", "WEEKEND_STANDBY", "WEEKEND_LOCKED") or desk_sched.get("is_weekend"):
+                        stand_down_status_title = f"🛑 TRADE STATUS: WEEKEND MARKET CLOSURE &bull; {desk_sched.get('weekday_name', 'WEEKEND').upper()} CLOSED"
+                        stand_down_badge = f"🛑 WEEKEND CLOSURE: {desk_sched.get('weekday_name', 'WEEKEND').upper()} • BOTH EXCHANGES CLOSED"
+                        stand_down_badge_style = "background: linear-gradient(135deg, rgba(71, 85, 105, 0.40) 0%, rgba(30, 41, 59, 0.60) 100%); color: #E2E8F0; border: 1.5px solid rgba(148, 163, 184, 0.50); box-shadow: 0 0 12px rgba(100, 116, 139, 0.30);"
+                        stand_down_sub = f"Standard Weekend Market Closure: Both NSE and BSE cash and F&O derivatives segments are closed today ({desk_sched.get('weekday_name', '')}). Next trading session commences Monday at 09:15 AM IST (NIFTY 50 • 4 Lots)."
+                        gate_card_bg = "linear-gradient(135deg, rgba(30, 41, 59, 0.50) 0%, rgba(15, 23, 42, 0.70) 100%)"
+                        gate_card_border = "1.5px solid rgba(148, 163, 184, 0.50)"
+                        gate_card_title = "WEEKEND CLOSURE"
+                        gate_card_val = f"🛑 {desk_sched.get('weekday_name', 'Weekend')}"
+                        gate_card_sub = "Both Exchanges Closed"
+                        why_stand_down_html = f"""
+                        <b style="color: #FFFFFF;">Why is the Desk Closed Today?</b> Today is {desk_sched.get('weekday_name', 'the weekend')}! Both Indian stock exchanges (NSE and BSE) are closed on Saturday and Sunday.<br>
+                        • <b>Next Trading Session:</b> <b style="color: #38BDF8;">Monday at 09:15 AM IST</b> &bull; Active asset: <b style="color: #10B981;">NIFTY 50 (4 Lots)</b>.<br>
+                        • <b>Weekly Schedule:</b> <b style="color: #10B981;">Mon, Thu & Fri = NIFTY 50 (4 Lots)</b> &bull; <b style="color: #A855F7;">Tue & Wed = BSE SENSEX (6 Lots)</b>.<br>
+                        <div style="margin-top: 8px;">
+                            👉 <a href="./" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Return to Command Center Overview →</a>
+                        </div>
+                        """
+                        dot_color = "#94A3B8"
+                        cap_badge_title = "🛑 WEEKEND CLOSED"
+                        cap_badge_style = "background: rgba(100, 116, 139, 0.20); color: #E2E8F0; border: 1.5px solid rgba(148, 163, 184, 0.50);"
+                        cap_sub_desc = "🛑 Market closed &bull; Resumes Monday 09:15 AM IST"
+                    elif lock_status_code == "MARKET_HOLIDAY_CLOSED" or desk_sched.get("is_trading_holiday"):
+                        h_name = desk_sched.get("holiday_name", "Exchange Holiday")
+                        stand_down_status_title = f"🔴 TRADE STATUS: NSE TRADING HOLIDAY &bull; {h_name.upper()} CLOSED"
+                        stand_down_badge = f"🔴 TRADING HOLIDAY: {h_name.upper()}"
+                        stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+                        stand_down_sub = f"Official NSE Trading Holiday ({h_name}). Both cash & derivatives markets are closed today. Normal trading resumes on the next scheduled trading day at 09:15 AM IST."
+                        gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                        gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                        gate_card_title = "EXCHANGE HOLIDAY"
+                        gate_card_val = "🔴 Holiday Closed"
+                        gate_card_sub = h_name
+                        why_stand_down_html = f"""
+                        <b style="color: #FFFFFF;">Official Exchange Trading Holiday:</b> Today is {h_name}. Indian stock markets (NSE & BSE) are closed.<br>
+                        • <b>Cash & F&O Desks:</b> Suspended for the entire trading day.<br>
+                        • <b>Resume:</b> Regular market trading resumes next active trading day at 09:15 AM IST.<br>
+                        <div style="margin-top: 8px;">
+                            👉 <a href="./" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Return to Command Center Overview →</a>
+                        </div>
+                        """
+                        dot_color = "#EF4444"
+                        cap_badge_title = "🔴 HOLIDAY CLOSED"
+                        cap_badge_style = "background: rgba(239, 68, 68, 0.20); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.50);"
+                        cap_sub_desc = f"🔴 {h_name} &bull; Closed today"
+                    elif lock_status_code == "EXPIRY_LOCKED_UNTIL_1PM":
                         stand_down_status_title = f"⏳ TRADE STATUS: {scrip_symbol} LOCKED UNTIL 01:00 PM &bull; EXPIRY GAMMA WATCH"
                         stand_down_badge = f"⏳ EXPIRY GAMMA RADAR: {scrip_symbol} LOCKED UNTIL 01:00 PM IST"
                         stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.70); box-shadow: 0 0 12px rgba(245, 158, 11, 0.30);"

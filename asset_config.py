@@ -362,6 +362,33 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     from datetime import time
     t_curr = now_dt.time() if hasattr(now_dt, "time") else time(10, 0)
 
+    # 0. Check Weekend Closure (Saturday & Sunday are ALWAYS Exchange Holidays / Closed)
+    if weekday in (5, 6):
+        return {
+            "weekday": weekday,
+            "weekday_name": day_name,
+            "is_weekday": False,
+            "is_trading_holiday": True,
+            "is_weekend": True,
+            "holiday_name": f"Weekend Market Closure ({day_name})",
+            "active_symbol": "MARKET_CLOSED",
+            "locked_symbol": "MARKET_CLOSED",
+            "schedule_label": f"🛑 Weekend Market Closure: {day_name} (Exchange Closed)",
+            "schedule_desc": f"Standard weekend market closure ({day_name}). Next regular trading session: Monday 09:15 AM IST (NIFTY 50 • 4 Lots).",
+            "schedule_rule": "Saturday & Sunday: Markets Closed • Next Session: Monday NIFTY 50 (4 Lots)",
+            "is_nifty_allowed": False,
+            "is_sensex_allowed": False,
+            "active_lots": 0,
+            "mandate_lots": 0,
+            "locked_lots": 0,
+            "gamma_exception_symbol": None,
+            "is_post_1pm_window": False,
+            "is_gamma_exception_active": False,
+            "next_session_day": "Monday",
+            "next_session_symbol": "NIFTY",
+            "next_session_lots": 4
+        }
+
     # Check Official NSE Holiday Calendar First
     from nse_calendar import nse_calendar
     holiday_info = nse_calendar.get_holiday_details(now_dt)
@@ -372,6 +399,7 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
             "weekday_name": day_name,
             "is_weekday": weekday < 5,
             "is_trading_holiday": True,
+            "is_weekend": False,
             "holiday_name": h_name,
             "active_symbol": "MARKET_CLOSED",
             "locked_symbol": "MARKET_CLOSED",
@@ -461,6 +489,21 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
     target_sym = str(symbol).upper()
 
     if sched.get("is_trading_holiday"):
+        if sched.get("is_weekend"):
+            is_mon_active = (target_sym == "NIFTY")
+            return {
+                "can_trade": False,
+                "tradable": False,
+                "status": "WEEKEND_CLOSED",
+                "reason": (
+                    f"Exchange is closed for the weekend ({sched['weekday_name']}). Next active trading session: Monday ({target_sym} • 4 Lots)."
+                    if is_mon_active
+                    else f"Exchange is closed for the weekend ({sched['weekday_name']}). SENSEX desk opens Tuesday & Wednesday (6 Lots)."
+                ),
+                "badge_label": "🛑 WEEKEND CLOSED (NEXT: MON)" if is_mon_active else "🛑 WEEKEND CLOSED (TUE/WED DESK)",
+                "mandate_lots": 0,
+                "is_gamma_exception": False
+            }
         h_name = sched.get("holiday_name", "Exchange Holiday")
         return {
             "can_trade": False,
@@ -469,22 +512,6 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
             "reason": f"Official NSE Trading Holiday ({h_name}). Cash & F&O derivatives desks are closed today.",
             "badge_label": f"🔴 HOLIDAY CLOSED ({h_name.upper()})",
             "mandate_lots": 0,
-            "is_gamma_exception": False
-        }
-
-    if not sched["is_weekday"]:
-        is_mon_active = (target_sym == "NIFTY")
-        return {
-            "can_trade": False,
-            "tradable": False,
-            "status": "WEEKEND_STANDBY" if is_mon_active else "WEEKEND_LOCKED",
-            "reason": (
-                f"Exchange is closed for the weekend ({sched['weekday_name']}). Next active session: Monday ({target_sym} • 4 Lots)."
-                if is_mon_active
-                else f"Exchange is closed for the weekend ({sched['weekday_name']}). SENSEX desk opens Tuesday & Wednesday (6 Lots)."
-            ),
-            "badge_label": "⏸️ WEEKEND (NEXT: MON)" if is_mon_active else "🔒 WEEKEND (TUE/WED DESK)",
-            "mandate_lots": 4 if is_mon_active else 6,
             "is_gamma_exception": False
         }
 
