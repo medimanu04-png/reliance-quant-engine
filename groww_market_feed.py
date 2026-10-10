@@ -980,17 +980,18 @@ class GrowwMarketFeed:
 
     def _get_fallback_wallet(self) -> Dict[str, Any]:
         """Provides verified fallback wallet so balance is immediately available in 0ms."""
-        last_cash = 73643.72
+        last_cash = 53280.53
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     cfg = json.load(f)
-                    last_cash = float(cfg.get("last_wallet_balance", 73643.72))
+                    last_cash = float(cfg.get("last_wallet_balance", 53280.53))
             except Exception:
                 pass
         return {
             "status": "CACHED",
             "clear_cash": last_cash,
+            "net_available": last_cash,
             "available_fno_margin": last_cash,
             "net_margin_used": 0.0
         }
@@ -2314,6 +2315,7 @@ class GrowwMarketFeed:
                 wallet_dict = {
                     "status": "SUCCESS",
                     "clear_cash": clear_cash,
+                    "net_available": clear_cash,
                     "available_fno_margin": opt_buy,
                     "net_margin_used": used,
                     "raw": margin_res
@@ -2396,12 +2398,12 @@ class GrowwMarketFeed:
             if self._cached_wallet:
                 return self._cached_wallet.copy()
 
-        fallback_cash = 73643.72
+        fallback_cash = 53280.53
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     cfg = json.load(f)
-                    fallback_cash = float(cfg.get("last_wallet_balance", 73643.72))
+                    fallback_cash = float(cfg.get("last_wallet_balance", 53280.53))
             except Exception:
                 pass
 
@@ -2409,6 +2411,7 @@ class GrowwMarketFeed:
             "status": "CACHED" if not self._is_connected else "ERROR",
             "message": "Groww broker connecting..." if not self._is_connected else "Failed to fetch live balance",
             "clear_cash": fallback_cash,
+            "net_available": fallback_cash,
             "available_fno_margin": fallback_cash,
             "net_margin_used": 0.0
         }

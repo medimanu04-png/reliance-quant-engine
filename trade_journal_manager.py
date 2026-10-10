@@ -27,7 +27,21 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 JOURNAL_FILE = os.path.join(BASE_DIR, "daily_trade_journal.json")
 SIGNALS_FILE = os.path.join(BASE_DIR, "daily_signals_log.json")
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
-STARTING_CAPITAL = 73643.72  # Verified Account Cash Balance
+def _get_verified_account_capital() -> float:
+    """Dynamically reads verified wallet balance from groww_config.json, with safe fallback."""
+    cfg_file = os.path.join(BASE_DIR, "groww_config.json")
+    if os.path.exists(cfg_file):
+        try:
+            with open(cfg_file, "r") as f:
+                d = json.load(f)
+                val = float(d.get("last_wallet_balance", 53280.53))
+                if val > 0:
+                    return val
+        except Exception:
+            pass
+    return 53280.53
+
+STARTING_CAPITAL = _get_verified_account_capital()
 
 # Ensure screenshots directory exists
 if not os.path.exists(SCREENSHOTS_DIR):

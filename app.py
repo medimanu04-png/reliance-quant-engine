@@ -1527,10 +1527,10 @@ def render_persistent_sticky_header():
         gw_feed = GrowwMarketFeed.get_instance()
         live_wallet_obj = gw_feed.get_wallet_balance()
         live_pos_obj = gw_feed.get_live_positions()
-        wallet_val = float(live_wallet_obj.get("clear_cash", 73643.72))
+        wallet_val = float(live_wallet_obj.get("clear_cash", 53280.53))
         day_pnl = float(live_pos_obj.get("total_pnl", 37725.25))
     except Exception:
-        wallet_val = 73643.72
+        wallet_val = 53280.53
         day_pnl = 37725.25
 
     margin_buf = wallet_val - 19725.0
@@ -2686,7 +2686,7 @@ allow_orb_early_entry = bool(st.session_state.get("allow_orb_early_entry", True)
 live_wallet = groww_feed.get_wallet_balance()
 live_pos = groww_feed.get_live_positions()
 net_today_pnl = float(live_pos.get("total_pnl", 37725.25))
-account_cash = float(live_wallet.get("clear_cash", 73643.72))
+account_cash = float(live_wallet.get("clear_cash", 53280.53))
 margin_buffer = account_cash - 19725.0
 
 # Session Time Gate
@@ -4129,7 +4129,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                 alert_msg = TelegramNotifier.format_circuit_breaker_alert(
                     sl_count=tp.get('session_sl_count', 2),
                     max_allowed=tp.get('max_daily_sl_allowed', 2),
-                    capital_preserved=tp.get('account_cash', 73643.72),
+                    capital_preserved=tp.get('account_cash', 53280.53),
                     spot=spot_tick,
                     symbol=active_sym
                 )
@@ -9588,7 +9588,7 @@ if df is not None and not df.empty:
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; border-radius: 6px; padding: 4px 14px; text-align: right;">
                             <span style="font-size: 0.65rem; color: #94A3B8; text-transform: uppercase;">Clear Cash Wallet</span>
-                            <div style="font-size: 1.10rem; font-weight: 800; color: #38BDF8;">₹{live_wallet_telemetry.get('clear_cash', 73643.72):,.2f}</div>
+                            <div style="font-size: 1.10rem; font-weight: 800; color: #38BDF8;">₹{live_wallet_telemetry.get('clear_cash', 53280.53):,.2f}</div>
                         </div>
                         <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid {'rgba(16, 185, 129, 0.4)' if net_live_pnl_val >= 0 else 'rgba(239, 68, 68, 0.4)'}; border-radius: 6px; padding: 4px 14px; text-align: right;">
                             <span style="font-size: 0.65rem; color: #94A3B8; text-transform: uppercase;">Today's Net Realized P&L</span>

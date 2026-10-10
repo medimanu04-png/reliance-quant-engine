@@ -111,7 +111,12 @@ class EODSessionSummaryEngine:
         # 4. Groww Live Account Balance Reconciliation
         gw = GrowwMarketFeed.get_instance()
         wallet = gw.get_wallet_balance()
-        broker_cash = float(wallet.get("net_available", STARTING_CAPITAL))
+        broker_cash = float(
+            wallet.get("clear_cash") or 
+            wallet.get("available_fno_margin") or 
+            wallet.get("net_available") or 
+            STARTING_CAPITAL
+        )
         live_pos = gw.get_live_positions()
         broker_pnl = float(live_pos.get("total_pnl", net_post_tax_pnl))
 
