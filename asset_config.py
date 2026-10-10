@@ -416,13 +416,15 @@ def build_contract_symbol(
 def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     """
     Weekly Theta Decay Shield & Day 1 Premium Shield Trading Schedule:
-    - Tuesday & Wednesday: SENSEX ONLY (6 Lots)
-      * Tuesday: SENSEX active (NIFTY Expiry Gamma Radar unlocks post-1:00 PM)
-      * Wednesday: SENSEX active (NIFTY Locked to shield against Day 1 inflated premiums)
-    - Monday, Thursday & Friday: NIFTY ONLY (4 Lots)
-      * Monday: NIFTY active (DTE 1 before Tuesday expiry - cheap premiums, high gamma)
-      * Thursday: NIFTY active (SENSEX Expiry Gamma Radar unlocks post-1:00 PM)
-      * Friday: NIFTY active (Standard trading window)
+    - Tuesday & Wednesday: BSE SENSEX ONLY (6 Lots)
+      * Tuesday (NIFTY 0DTE Expiry): SENSEX active to shield morning capital from brutal 0DTE NIFTY theta decay.
+        (NIFTY Expiry Gamma Radar unlocks post-1:00 PM for 1 high-probability Gamma Blast setup).
+      * Wednesday: SENSEX active (DTE 1 before Thursday expiry) while NIFTY is locked to shield against Day 1 premium inflation.
+    - Monday, Thursday & Friday: NIFTY 50 ONLY (4 Lots)
+      * Monday: NIFTY active (DTE 1 before Tuesday expiry — affordable premiums, high directional gamma).
+      * Thursday (SENSEX 0DTE Expiry): NIFTY active to shield morning capital from brutal 0DTE SENSEX theta decay.
+        (SENSEX Expiry Gamma Radar unlocks post-1:00 PM for 1 high-probability Gamma Blast setup).
+      * Friday: NIFTY active (clean weekend momentum; shields from Day 1 SENSEX post-expiry premium inflation).
     """
     from datetime import datetime
     try:
@@ -515,9 +517,9 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
         locked_symbol = "NIFTY"
         schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots)"
         if weekday == 1:
-            schedule_label += " • NIFTY Expiry Gamma Radar Unlocks Post-1:00 PM"
+            schedule_label += " • NIFTY 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks Post-1:00 PM)"
         elif weekday == 2:
-            schedule_label += " • Day 1 NIFTY Premium Shield (Avoid High Extrinsic Value)"
+            schedule_label += " • Day 1 NIFTY Premium Shield & SENSEX DTE 1 Pre-Expiry Gamma"
         active_lots = 6
         locked_lots = 4
     elif weekday in (0, 3, 4):
@@ -525,9 +527,11 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
         locked_symbol = "SENSEX"
         schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots)"
         if weekday == 0:
-            schedule_label += " • DTE 1 Pre-Expiry Prime Gamma & Affordable Premiums"
+            schedule_label += " • NIFTY DTE 1 Pre-Expiry Prime Gamma & Affordable Premiums"
         elif weekday == 3:
-            schedule_label += " • SENSEX Expiry Gamma Radar Unlocks Post-1:00 PM"
+            schedule_label += " • SENSEX 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks Post-1:00 PM)"
+        elif weekday == 4:
+            schedule_label += " • Clean Weekend Momentum & SENSEX Day 1 Premium Shield"
         active_lots = 4
         locked_lots = 6
     else:

@@ -8302,9 +8302,11 @@ if df is not None and not df.empty:
                         gate_card_val = f"🛡️ {alt_desk_symbol} Active"
                         gate_card_sub = f"🛑 {scrip_symbol} Locked Today"
                         why_stand_down_html = f"""
-                        <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> To protect options trading capital against aggressive theta decay and Day 1 premium inflation, trading calls are restricted strictly by weekday schedule:<br>
-                        • <b>Tuesday & Wednesday:</b> <b style="color: #A855F7;">BSE SENSEX ONLY (6 Lots)</b> &bull; NIFTY 50 Locked (Wed Day 1 Premium Shield).<br>
-                        • <b>Monday, Thursday & Friday:</b> <b style="color: #10B981;">NIFTY 50 ONLY (4 Lots)</b> &bull; BSE SENSEX Locked.<br>
+                        <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> Under the Institutional Theta Decay Shield, trading calls are rotated to protect buyer capital from morning 0DTE decay and Day 1 premium inflation:<br>
+                        • <b>Tuesday (NIFTY Expiry):</b> <b style="color: #A855F7;">BSE SENSEX (6 Lots)</b> shields capital from morning 0DTE NIFTY theta bleed; NIFTY Expiry Gamma Radar unlocks post-1:00 PM.<br>
+                        • <b>Wednesday:</b> <b style="color: #A855F7;">BSE SENSEX (6 Lots)</b> captures SENSEX DTE 1 pre-expiry gamma while shielding against Day 1 NIFTY premium inflation.<br>
+                        • <b>Thursday (SENSEX Expiry):</b> <b style="color: #10B981;">NIFTY 50 (4 Lots)</b> shields capital from morning 0DTE SENSEX theta bleed; SENSEX Expiry Gamma Radar unlocks post-1:00 PM.<br>
+                        • <b>Monday & Friday:</b> <b style="color: #10B981;">NIFTY 50 (4 Lots)</b> trades DTE 1 pre-expiry gamma (Mon) and clean weekend momentum (Fri).<br>
                         <div style="margin-top: 8px;">
                             👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to view today's active signals.
                         </div>
@@ -11025,7 +11027,7 @@ if df is not None and not df.empty:
         },
         "8. EXECUTION WINDOW": "09:45 AM - 10:45 AM IST" if is_tradable else f"NONE — Stand down (Conditions do not satisfy {MIN_HIT_PERCENTAGE:.0f}% hit threshold or time gate)",
         "8.5. EXPIRY SELECTION & THETA DECAY PROTOCOL": {
-            "Mandate Rule": "Weekly Options Expiry Mandate (Current Week Thursday for NIFTY, Friday for SENSEX)" if scrip_symbol in ("NIFTY", "SENSEX") else "10-Day Theta Decay Avoidance Protocol (1st 10 Trading Days: Current Expiry; Day 11+: Rolled to Next Month)",
+            "Mandate Rule": "Weekly Options Expiry Mandate (Tuesday for NIFTY 50, Thursday for BSE SENSEX)" if scrip_symbol in ("NIFTY", "SENSEX") else "10-Day Theta Decay Avoidance Protocol (1st 10 Trading Days: Current Expiry; Day 11+: Rolled to Next Month)",
             "Cycle Status": f"Current Week Trading Cycle ({expiry_plan.get('trading_days_remaining_curr', 3)} Trading Days to Weekly Expiry)" if scrip_symbol in ("NIFTY", "SENSEX") else f"Day {expiry_plan['trading_days_elapsed']} of Monthly Cycle",
             "Current Expiry": expiry_plan['curr_expiry_str'],
             "Active Selected Expiry": expiry_plan['selected_expiry'],

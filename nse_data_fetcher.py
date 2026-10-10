@@ -226,7 +226,7 @@ class NSEIndiaFetcher:
         """
         Resolves active F&O expiry mandate:
         - For Indices (NIFTY 50, BSE SENSEX): Strictly trades the CURRENT WEEK'S EXPIRY
-          (Thursday for NIFTY, Friday for SENSEX) for peak intraday gamma responsiveness & contract depth.
+          (Tuesday for NIFTY, Thursday for SENSEX) for peak intraday gamma responsiveness & contract depth.
         - For Equities (RELIANCE, ADANIENT): Institutional 10-Day Expiry Rollover Rule (Theta Decay Avoidance Mandate):
           1st 10 Trading Days of cycle: Trade Current Month Expiry (Last Tuesday of Month).
           Day 11 onwards: Dynamically roll over to Next Month Expiry.

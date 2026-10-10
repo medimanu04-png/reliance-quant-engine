@@ -583,7 +583,7 @@ class NSECalendar:
         symbol: str = "NIFTY"
     ) -> Dict[str, Any]:
         """
-        Takes nominal contract expiry date (e.g. Thursday for NIFTY, Friday for SENSEX,
+        Takes nominal contract expiry date (e.g. Tuesday for NIFTY, Thursday for SENSEX,
         or Last Tuesday for Equities).
         Checks if that date is an NSE trading holiday or weekend.
         If it IS a holiday:
