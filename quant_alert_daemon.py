@@ -537,6 +537,8 @@ class RelianceQuantAlertDaemon:
         is_midday_lull = bool(confluence_eval.get("is_midday_lull", False))
         base_gate = float(getattr(spec, "min_confluence_gate", 68.0))
         min_confluence_gate = max(base_gate + 8.0, 78.0) if is_midday_lull else base_gate
+        engine_min_prob = float(confluence_eval.get("midday_theta_gate", {}).get("min_prob_required", min_confluence_gate))
+        min_confluence_gate = max(min_confluence_gate, engine_min_prob)
 
         # Check Daily Loss Circuit Breaker (One-and-Done Capital Preservation Protocol)
         has_daily_loss, loss_reason = SequentialTradeEngine.has_daily_loss_occurred_today(symbol=sym)
@@ -551,6 +553,7 @@ class RelianceQuantAlertDaemon:
             and not spread_stand_down
             and not opening_cooldown_active
             and not has_daily_loss
+            and bool(confluence_eval.get("is_tradable", True))
         )
         is_chop = "CHOP" in status_text.upper()
 
@@ -1100,6 +1103,11 @@ class RelianceQuantAlertDaemon:
                             lot_size=armed_lot_size,
                             win_prob=win_exp,
                             spot=spot,
+                            symbol=sym,
+                            tri_index_regime=confluence_eval.get("tri_index_alignment", {}).get("regime"),
+                            gex_regime=confluence_eval.get("gex_telemetry", {}).get("gex_regime"),
+                            metalabel_regime=confluence_eval.get("metalabeling", {}).get("metalabel_regime"),
+                            target_2_pts=confluence_eval.get("target_2_pts"),
                             rationale=(
                                 f"Armed Setup Breakout Confirmed ({tier_str})\n"
                                 f"• Breakout Trigger Level: ₹{armed_trigger:.2f} | Execution Price: ₹{cur_armed_ltp:.2f}\n"
@@ -1244,6 +1252,11 @@ class RelianceQuantAlertDaemon:
                         lot_size=active_risk.lot_size,
                         win_prob=win_exp,
                         spot=spot,
+                        symbol=sym,
+                        tri_index_regime=confluence_eval.get("tri_index_alignment", {}).get("regime"),
+                        gex_regime=confluence_eval.get("gex_telemetry", {}).get("gex_regime"),
+                        metalabel_regime=confluence_eval.get("metalabeling", {}).get("metalabel_regime"),
+                        target_2_pts=confluence_eval.get("target_2_pts"),
                         is_gamma_exception=is_gamma_exception_tick,
                         rationale=(
                             f"Dual ATM Breakout confirmed ({tier_str}){gamma_tag}\n"

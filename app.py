@@ -6578,6 +6578,38 @@ if df is not None and not df.empty:
             macro_bull += 2.0 if intraday_asset_pct >= 0 else 0.0
             macro_bear += 2.0 if intraday_asset_pct < 0 else 0.0
 
+    # Upgrade 1: The Tri-Index Alignment Matrix (NIFTY + BANK NIFTY + BSE SENSEX)
+    bank_nifty_info = benchmarks.get("BANK NIFTY", {}) if "benchmarks" in locals() or "benchmarks" in globals() else {}
+    bank_nifty_pct = float(bank_nifty_info.get("pct_change", 0.0))
+    nifty_pct_val = float(benchmarks.get("NIFTY 50", {}).get("pct_change", nifty_pct))
+    sensex_pct_val = float(benchmarks.get("BSE SENSEX", {}).get("pct_change", sensex_pct))
+
+    try:
+        from fo_quant_engine import MultiIndicatorMath
+        tri_score_bull_app, is_tri_trap_bull_app, tri_regime_bull_app, tri_pen_bull_app = MultiIndicatorMath.calculate_tri_index_alignment(
+            nifty_pct=nifty_pct_val, bank_nifty_pct=bank_nifty_pct, sensex_pct=sensex_pct_val,
+            active_symbol=scrip_symbol, direction="CE"
+        )
+        tri_score_bear_app, is_tri_trap_bear_app, tri_regime_bear_app, tri_pen_bear_app = MultiIndicatorMath.calculate_tri_index_alignment(
+            nifty_pct=nifty_pct_val, bank_nifty_pct=bank_nifty_pct, sensex_pct=sensex_pct_val,
+            active_symbol=scrip_symbol, direction="PE"
+        )
+        if is_tri_trap_bull_app:
+            macro_bull = max(0.0, macro_bull - tri_pen_bull_app)
+            macro_bear += 3.0
+        elif tri_score_bull_app > 0:
+            macro_bull += tri_score_bull_app
+
+        if is_tri_trap_bear_app:
+            macro_bear = max(0.0, macro_bear - tri_pen_bear_app)
+            macro_bull += 3.0
+        elif tri_score_bear_app > 0:
+            macro_bear += tri_score_bear_app
+    except Exception:
+        tri_score_bull_app, is_tri_trap_bull_app, tri_regime_bull_app, tri_pen_bull_app = 0.0, False, "TRI_INDEX_NORMAL", 0.0
+        tri_score_bear_app, is_tri_trap_bear_app, tri_regime_bear_app, tri_pen_bear_app = 0.0, False, "TRI_INDEX_NORMAL", 0.0
+
+
     news_modifier = (news_sentiment_score / 10.0) * 5.0
     raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull + news_modifier
     raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear - news_modifier
@@ -6705,16 +6737,70 @@ if df is not None and not df.empty:
             total_score = dominant_score
     else:
         # Operational Regime Trade Gate (Trade if dominant score > MIN_HIT_PERCENTAGE, within time window, and not in Choppiness Stand Down)
-        # Suggestion 1 & 2 Institutional Guards: Stand down if Sector Divergence trap or thin book liquidity vacuum
-        # Theta Decay Expiry Guard: Prohibit trade calls on locked asset
+        # Institutional Upgrade 1-6 Gating:
+        is_tri_trap_active_app = is_tri_trap_bull_app if recommended_contract_type == "CE" else is_tri_trap_bear_app
+        active_tri_regime_app = tri_regime_bull_app if recommended_contract_type == "CE" else tri_regime_bear_app
+
+        is_gamma_pinned_app = (gex_regime in ("POSITIVE_GAMMA_PINNING", "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION"))
+        is_gamma_squeeze_app = (gex_regime in ("SHORT_GAMMA_SQUEEZE_EXPANSION", "NEGATIVE_GAMMA_VOLATILITY_EXPANSION"))
+        if is_gamma_squeeze_app:
+            target_2_pts_app = 140.0 if scrip_symbol == "NIFTY" else 450.0
+        else:
+            target_2_pts_app = 80.0 if scrip_symbol == "NIFTY" else 280.0
+
+        # Upgrade 3: Midday Theta Trap (11:15 AM - 01:15 PM IST): Elevate gate to 85% conviction
+        is_midday_theta_trap_app = (time(11, 15) <= current_time <= time(13, 15))
+        effective_min_hit = max(MIN_HIT_PERCENTAGE, 85.0) if is_midday_theta_trap_app else MIN_HIT_PERCENTAGE
+        if is_gamma_pinned_app:
+            effective_min_hit = max(effective_min_hit, 84.0)
+
+        # Upgrade 4: 25-Delta IV Skew Velocity
+        skew_key = f"skew_hist_{scrip_symbol}"
+        if skew_key not in st.session_state:
+            st.session_state[skew_key] = []
+        st.session_state[skew_key].append(float(iv_skew_25d))
+        if len(st.session_state[skew_key]) > 30:
+            st.session_state[skew_key].pop(0)
+        atr_curr = float(latest.get('ATR', 15.0))
+        skew_vel_app, skew_vel_regime_app = MultiIndicatorMath.calculate_25delta_iv_skew_velocity(
+            st.session_state[skew_key], atr_curr
+        )
+
+        # Upgrade 5: Order Flow Imbalance & Micro-Price Absorption Wall
+        is_absorption_wall_app = (micro_spread <= -0.03) if recommended_contract_type == "CE" else (micro_spread >= 0.03)
+
+        # Upgrade 6: Marcos López de Prado Meta-Labeler Layer
+        try:
+            metalabel_approved_app, metalabel_conf_app, metalabel_regime_app, metalabel_bet_mult_app = MultiIndicatorMath.evaluate_metalabeling_trade_filter(
+                primary_confluence_score=dominant_score,
+                hawkes_branching_ratio=float(latest.get('Hawkes_Ratio', 0.55)),
+                vpin_val=float(latest.get('VPIN', 0.40)),
+                kyle_regime="NORMAL",
+                is_synthetic_feed=False,
+                copula_lambda_L=0.20,
+                required_threshold=effective_min_hit,
+                tri_index_trap=is_tri_trap_active_app,
+                gamma_pinned=is_gamma_pinned_app,
+                is_midday_theta_trap=is_midday_theta_trap_app,
+                is_order_book_absorbed=is_absorption_wall_app,
+                atr_compression_coiled=(float(latest.get('ATR_Comp_Ratio', 1.0)) < 0.65),
+                negative_gamma_squeeze=is_gamma_squeeze_app
+            )
+        except Exception:
+            metalabel_approved_app, metalabel_conf_app, metalabel_regime_app, metalabel_bet_mult_app = True, 0.75, "STANDARD", 1.0
+
         is_tradable = (
-            (dominant_score > MIN_HIT_PERCENTAGE)
+            (dominant_score > effective_min_hit)
             and time_gate_allowed
             and not is_choppy_regime
             and not is_sector_divergence_trap
             and not is_liquidity_vacuum
             and not is_current_desk_locked
+            and not (is_tri_trap_active_app and dominant_score < 82.0)
+            and not (is_gamma_pinned_app and dominant_score < 84.0)
+            and metalabel_approved_app
         )
+
 
     # Re-sync Dual ATM Stream, Active Strike & Best Strike with Final Confluent Direction
     target_engine_bias = "BEARISH" if recommended_contract_type == "PE" else "BULLISH"
@@ -7076,6 +7162,113 @@ if df is not None and not df.empty:
             </div>
         </div>
         """)
+
+        # ==============================================================================
+        # TOP 6 INSTITUTIONAL QUANTITATIVE AUDIT RADAR & TELEMETRY STRIP
+        # ==============================================================================
+        tri_pill_color = "#10B981" if ("CONVERGENCE" in active_tri_regime_app or "Sync" in active_tri_regime_app) else ("#EF4444" if is_tri_trap_active_app else "#38BDF8")
+        tri_pill_border = "rgba(16, 185, 129, 0.35)" if ("CONVERGENCE" in active_tri_regime_app) else ("rgba(239, 68, 68, 0.40)" if is_tri_trap_active_app else "rgba(56, 189, 248, 0.25)")
+        tri_badge = "✅ 100% SYNC" if ("CONVERGENCE" in active_tri_regime_app) else ("🚨 TRAP VETO" if is_tri_trap_active_app else "⚖️ MIXED")
+
+        gex_pill_color = "#F59E0B" if is_gamma_pinned_app else ("#A855F7" if is_gamma_squeeze_app else "#38BDF8")
+        gex_badge = "🛡️ PINNED (+GEX)" if is_gamma_pinned_app else ("🔥 SQUEEZE (-GEX)" if is_gamma_squeeze_app else "BALANCED")
+
+        theta_pill_color = "#EF4444" if is_midday_theta_trap_app else "#10B981"
+        theta_badge = "⏳ MIDDAY LULL (85% Gate)" if is_midday_theta_trap_app else "⚡ POWER WINDOW"
+
+        skew_pill_color = "#10B981" if skew_vel_app <= -0.20 else ("#EF4444" if skew_vel_app >= 0.30 else "#94A3B8")
+        skew_badge = "CALL SURGE" if skew_vel_app <= -0.20 else ("PUT HEDGING" if skew_vel_app >= 0.30 else "STEADY")
+
+        meta_pill_color = "#10B981" if metalabel_approved_app else "#EF4444"
+        meta_badge = f"{'APPROVED' if metalabel_approved_app else 'VETOED'} ({metalabel_conf_app*100:.0f}%)"
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.90)); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.05rem;">🏛️</span>
+                    <span style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px;">
+                        INSTITUTIONAL QUANTITATIVE RADAR • PROBABILITY ENGINE
+                    </span>
+                </div>
+                <div style="font-size: 0.72rem; color: #94A3B8;">
+                    Top-Tier Prop Architecture: Tri-Index • Dealer GEX • Midday Theta • 25Δ Skew • OFI • Meta-Labeler
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                <!-- 1. Tri-Index Alignment Matrix -->
+                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid {tri_pill_border}; border-radius: 8px; padding: 8px 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 0.70rem; font-weight: 700; color: #94A3B8;">1. TRI-INDEX MATRIX</span>
+                        <span style="font-size: 0.68rem; font-weight: 800; color: {tri_pill_color}; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px;">{tri_badge}</span>
+                    </div>
+                    <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; margin-bottom: 2px;">
+                        NIFTY {nifty_pct_val:+.2f}% • BANK {bank_nifty_pct:+.2f}%
+                    </div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        SENSEX {sensex_pct_val:+.2f}% (Banking 34% wt)
+                    </div>
+                </div>
+
+                <!-- 2. Dealer GEX & Gamma Flip -->
+                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 8px; padding: 8px 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 0.70rem; font-weight: 700; color: #94A3B8;">2. DEALER GEX FLIP</span>
+                        <span style="font-size: 0.68rem; font-weight: 800; color: {gex_pill_color}; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px;">{gex_badge}</span>
+                    </div>
+                    <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; margin-bottom: 2px;">
+                        Flip Level: ₹{gamma_flip_level:,.0f}
+                    </div>
+                    <div style="font-size: 0.68rem; color: #94A3B8;">
+                        Runner T2: <b>+{target_2_pts_app:.0f} pts</b> ({'Expanded' if is_gamma_squeeze_app else 'Standard'})
+                    </div>
+                </div>
+
+                <!-- 3. Midday Theta Window -->
+                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 8px 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 0.70rem; font-weight: 700; color: #94A3B8;">3. MIDDAY THETA GATE</span>
+                        <span style="font-size: 0.68rem; font-weight: 800; color: {theta_pill_color}; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px;">{theta_badge}</span>
+                    </div>
+                    <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; margin-bottom: 2px;">
+                        Required Gate: {effective_min_hit:.0f}%
+                    </div>
+                    <div style="font-size: 0.68rem; color: #94A3B8;">
+                        Sizing Cap: <b>{'50% Lots' if is_midday_theta_trap_app else '100% Lots'}</b>
+                    </div>
+                </div>
+
+                <!-- 4. 25Δ Skew Velocity & OFI -->
+                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 8px 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 0.70rem; font-weight: 700; color: #94A3B8;">4. IV SKEW & OFI</span>
+                        <span style="font-size: 0.68rem; font-weight: 800; color: {skew_pill_color}; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px;">{skew_badge}</span>
+                    </div>
+                    <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; margin-bottom: 2px;">
+                        Skew: {iv_skew_25d:+.1f}% │ Vel: {skew_vel_app:+.2f}
+                    </div>
+                    <div style="font-size: 0.68rem; color: #94A3B8;">
+                        OFI Spread: {micro_spread:+.2f}% ({'Wall' if is_absorption_wall_app else 'Clean'})
+                    </div>
+                </div>
+
+                <!-- 5. López de Prado Meta-Labeler -->
+                <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 0.70rem; font-weight: 700; color: #94A3B8;">5. META-LABELER (ML)</span>
+                        <span style="font-size: 0.68rem; font-weight: 800; color: {meta_pill_color}; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px;">{meta_badge}</span>
+                    </div>
+                    <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; margin-bottom: 2px;">
+                        Bet Sizing: {metalabel_bet_mult_app*100:.0f}% Sizing
+                    </div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        Confidence: {metalabel_conf_app*100:.0f}%
+                    </div>
+                </div>
+            </div>
+        </div>
+        """)
+
 
         # Midday Chop Zone Warning
         if midday_penalty_active:

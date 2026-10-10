@@ -611,15 +611,31 @@ class TelegramNotifier:
         limit_collar = float(kwargs.get("limit_collar", getattr(spec, "limit_collar_pts", 3.0)))
         limit_cap = round(entry_price + limit_collar, 2)
 
+        tri_regime = kwargs.get("tri_index_regime")
+        gex_regime = kwargs.get("gex_regime")
+        metalabel_regime = kwargs.get("metalabel_regime")
+        t2_pts = kwargs.get("target_2_pts")
+        t2_line = f"\n🚀 <b>Runner Target 2:</b> <code>+{t2_pts:.1f} pts</code> (Dealer Gamma Runner Unleashed)" if t2_pts and t2_pts > target_pts else ""
+        inst_block = ""
+        if tri_regime or gex_regime or metalabel_regime:
+            inst_lines = []
+            if tri_regime:
+                inst_lines.append(f"🏛️ <b>Tri-Index:</b> <code>{tri_regime}</code>")
+            if gex_regime:
+                inst_lines.append(f"⚡ <b>Dealer GEX:</b> <code>{gex_regime}</code>")
+            if metalabel_regime:
+                inst_lines.append(f"🛡️ <b>Meta-Labeler:</b> <code>{metalabel_regime}</code>")
+            inst_block = "\n" + "\n".join(inst_lines)
+
         msg = f"""{header_banner}<b>{dir_badge} • {scrip_sym}</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
 📊 <b>Win Probability:</b> <b>{win_prob:.1f}%</b> (A+ Confluence)
 
 💰 <b>Limit Entry:</b> <code>₹{entry_price:.2f}</code>
-🎯 <b>Target:</b> <code>₹{target_price:.2f}</code> (+{target_pts:.1f} pts • +₹{potential_gain:,})
+🎯 <b>Target:</b> <code>₹{target_price:.2f}</code> (+{target_pts:.1f} pts • +₹{potential_gain:,}){t2_line}
 🛑 <b>Stop Loss:</b> <code>₹{sl_price:.2f}</code> (-{sl_pts:.1f} pts • -₹{potential_loss:,})
-📦 <b>Sizing:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty) • R:R 1:{rr_ratio}{sr_line}
+📦 <b>Sizing:</b> {num_lots} Lot{'s' if num_lots>1 else ''} ({total_qty:,} Qty) • R:R 1:{rr_ratio}{sr_line}{inst_block}
 📍 <b>Spot:</b> ₹{spot:,.2f} • {now_str}
 ────────────────────────
 ⚡ <i>Place SL-LMT BUY on broker ➔ Trigger: ₹{entry_price:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage ₹{limit_collar:.1f}). Set GTT SL & Target.</i>"""
