@@ -1928,10 +1928,8 @@ if active_route == "":
     </div>
     """)
 
-    # Theta Decay Expiry Shield: Weekly Asset Lock Schedule
-    # Monday & Tuesday: SENSEX ONLY (6 Lots) | Wednesday, Thursday, Friday: NIFTY ONLY (4 Lots)
-    # Theta Decay Expiry Shield: Weekly Asset Lock Schedule & Post-1:00 PM Gamma Exception
-    # Monday & Tuesday: SENSEX ONLY (6 Lots) | Wednesday, Thursday, Friday: NIFTY ONLY (4 Lots)
+    # Theta Decay & Day 1 Premium Shield: Weekly Asset Lock Schedule & Post-1:00 PM Gamma Exception
+    # Tuesday & Wednesday: SENSEX ONLY (6 Lots) | Monday, Thursday & Friday: NIFTY ONLY (4 Lots)
     # Exception: Post-1:00 PM on Tuesday (Nifty Expiry) & Thursday (Sensex Expiry) allows 1 Gamma Blast Call
     from asset_config import get_daily_asset_schedule, is_asset_tradable_now
     hp_sched = get_daily_asset_schedule(datetime.now(IST))
@@ -1950,10 +1948,10 @@ if active_route == "":
                 <span style="font-size: 1.25rem;">🛡️</span>
                 <div>
                     <span style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.2px;">
-                        THETA DECAY EXPIRY SHIELD: <span style="color: #818CF8;">{hp_weekday.upper()} MANDATE</span>
+                        THETA DECAY & DAY 1 PREMIUM SHIELD: <span style="color: #818CF8;">{hp_weekday.upper()} MANDATE</span>
                     </span>
                     <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
-                        Standard: <b style="color: #A855F7;">Mon & Tue = SENSEX ONLY (6 Lots)</b> &bull; <b style="color: #10B981;">Wed, Thu & Fri = NIFTY ONLY (4 Lots)</b> &bull; <span style="color: #FCD34D;">Post-1:00 PM Expiry Gamma Blast Exception (1 Call Cap)</span>
+                        Standard: <b style="color: #A855F7;">Tue & Wed = SENSEX ONLY (6 Lots)</b> &bull; <b style="color: #10B981;">Mon, Thu & Fri = NIFTY ONLY (4 Lots)</b> &bull; <span style="color: #FCD34D;">Post-1:00 PM Expiry Gamma Blast Exception (1 Call Cap)</span>
                     </div>
                 </div>
             </div>
@@ -7794,9 +7792,9 @@ if df is not None and not df.empty:
                         gate_card_val = f"🛡️ {desk_sched['active_symbol']} Active"
                         gate_card_sub = f"🛑 {scrip_symbol} Locked Today"
                         why_stand_down_html = f"""
-                        <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> To protect options trading capital against aggressive theta decay, trading calls are restricted strictly by weekday expiry:<br>
-                        • <b>Monday & Tuesday:</b> <b style="color: #A855F7;">BSE SENSEX ONLY (6 Lots)</b> &bull; NIFTY 50 Locked.<br>
-                        • <b>Wednesday, Thursday & Friday:</b> <b style="color: #10B981;">NIFTY 50 ONLY (4 Lots)</b> &bull; BSE SENSEX Locked.<br>
+                        <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> To protect options trading capital against aggressive theta decay and Day 1 premium inflation, trading calls are restricted strictly by weekday schedule:<br>
+                        • <b>Tuesday & Wednesday:</b> <b style="color: #A855F7;">BSE SENSEX ONLY (6 Lots)</b> &bull; NIFTY 50 Locked (Wed Day 1 Premium Shield).<br>
+                        • <b>Monday, Thursday & Friday:</b> <b style="color: #10B981;">NIFTY 50 ONLY (4 Lots)</b> &bull; BSE SENSEX Locked.<br>
                         <div style="margin-top: 8px;">
                             👉 <a href="{other_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {desk_sched['active_symbol']} Quant Desk →</a> to view today's active signals.
                         </div>

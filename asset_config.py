@@ -336,9 +336,14 @@ def get_asset_spec(symbol: Optional[str] = None, contract: Optional[str] = None)
 
 def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     """
-    Weekly Theta Decay Shield Trading Schedule:
-    - Monday & Tuesday: SENSEX ONLY (NIFTY Locked to prevent rapid pre-expiry theta bleed)
-    - Wednesday, Thursday & Friday: NIFTY ONLY (SENSEX Locked to prevent rapid pre-expiry theta bleed)
+    Weekly Theta Decay Shield & Day 1 Premium Shield Trading Schedule:
+    - Tuesday & Wednesday: SENSEX ONLY (6 Lots)
+      * Tuesday: SENSEX active (NIFTY Expiry Gamma Radar unlocks post-1:00 PM)
+      * Wednesday: SENSEX active (NIFTY Locked to shield against Day 1 inflated premiums)
+    - Monday, Thursday & Friday: NIFTY ONLY (4 Lots)
+      * Monday: NIFTY active (DTE 1 before Tuesday expiry - cheap premiums, high gamma)
+      * Thursday: NIFTY active (SENSEX Expiry Gamma Radar unlocks post-1:00 PM)
+      * Friday: NIFTY active (Standard trading window)
     """
     from datetime import datetime
     try:
@@ -398,30 +403,34 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     is_post_1pm_window = (gamma_window_start <= t_curr <= gamma_window_end)
     is_gamma_exception_active = (gamma_exception_symbol is not None and is_post_1pm_window)
 
-    if weekday in (0, 1):
+    if weekday in (1, 2):
         active_symbol = "SENSEX"
         locked_symbol = "NIFTY"
         schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots)"
         if weekday == 1:
             schedule_label += " • NIFTY Expiry Gamma Radar Unlocks Post-1:00 PM"
+        elif weekday == 2:
+            schedule_label += " • Day 1 NIFTY Premium Shield (Avoid High Extrinsic Value)"
         active_lots = 6
         locked_lots = 4
-    elif weekday in (2, 3, 4):
+    elif weekday in (0, 3, 4):
         active_symbol = "NIFTY"
         locked_symbol = "SENSEX"
         schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots)"
-        if weekday == 3:
+        if weekday == 0:
+            schedule_label += " • DTE 1 Pre-Expiry Prime Gamma & Affordable Premiums"
+        elif weekday == 3:
             schedule_label += " • SENSEX Expiry Gamma Radar Unlocks Post-1:00 PM"
         active_lots = 4
         locked_lots = 6
     else:
-        active_symbol = "SENSEX"
-        locked_symbol = "NIFTY"
-        schedule_label = "Weekend Mode: Market Closed (Next Session: Monday BSE SENSEX Mandate)"
-        active_lots = 6
-        locked_lots = 4
+        active_symbol = "NIFTY"
+        locked_symbol = "SENSEX"
+        schedule_label = "Weekend Mode: Market Closed (Next Session: Monday NIFTY 50 Mandate)"
+        active_lots = 4
+        locked_lots = 6
 
-    schedule_rule = "Mon & Tue: SENSEX (6 Lots) | Wed, Thu & Fri: NIFTY (4 Lots) • Post-1 PM Expiry Gamma Blast Exception (1 Call Cap)"
+    schedule_rule = "Tue & Wed: SENSEX (6 Lots) | Mon, Thu & Fri: NIFTY (4 Lots) • Post-1 PM Expiry Gamma Blast Exception (1 Call Cap)"
 
     return {
         "weekday": weekday,
@@ -509,12 +518,17 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
                     "is_gamma_exception": False
                 }
         else:
+            is_wed_nifty = (sched["weekday"] == 2 and target_sym == "NIFTY")
             return {
                 "can_trade": False,
                 "tradable": False,
                 "status": "STRICTLY_LOCKED",
-                "reason": f"{target_sym} is strictly locked today to avoid near-expiry theta bleed.",
-                "badge_label": "🔒 LOCKED (THETA SHIELD)",
+                "reason": (
+                    f"{target_sym} is strictly locked today to shield against Day 1 premium inflation (fresh weekly cycle)."
+                    if is_wed_nifty
+                    else f"{target_sym} is strictly locked today to avoid near-expiry theta bleed."
+                ),
+                "badge_label": "🔒 LOCKED (DAY 1 PREMIUM SHIELD)" if is_wed_nifty else "🔒 LOCKED (THETA SHIELD)",
                 "mandate_lots": sched["locked_lots"],
                 "is_gamma_exception": False
             }
