@@ -1956,7 +1956,7 @@ if active_route == "":
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="background: {'rgba(16, 185, 129, 0.20)' if is_nifty_tradable_today else ('rgba(245, 158, 11, 0.20)' if nifty_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.20)')}; color: {'#34D399' if is_nifty_tradable_today else ('#FDE68A' if nifty_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '#94A3B8')}; border: 1px solid {'rgba(16, 185, 129, 0.40)' if is_nifty_tradable_today else ('rgba(245, 158, 11, 0.40)' if nifty_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.35)')}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
+                <span style="background: {'rgba(16, 185, 129, 0.20)' if is_nifty_tradable_today else ('rgba(245, 158, 11, 0.20)' if nifty_tradable_info.get('status') in ('EXPIRY_LOCKED_UNTIL_1PM', 'WEEKEND_STANDBY') else 'rgba(100, 116, 139, 0.20)')}; color: {'#34D399' if is_nifty_tradable_today else ('#FDE68A' if nifty_tradable_info.get('status') in ('EXPIRY_LOCKED_UNTIL_1PM', 'WEEKEND_STANDBY') else '#94A3B8')}; border: 1px solid {'rgba(16, 185, 129, 0.40)' if is_nifty_tradable_today else ('rgba(245, 158, 11, 0.40)' if nifty_tradable_info.get('status') in ('EXPIRY_LOCKED_UNTIL_1PM', 'WEEKEND_STANDBY') else 'rgba(100, 116, 139, 0.35)')}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
                     {nifty_tradable_info['badge_label']}
                 </span>
                 <span style="background: {'rgba(168, 85, 247, 0.20)' if is_sensex_tradable_today else ('rgba(245, 158, 11, 0.20)' if sensex_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.20)')}; color: {'#C084FC' if is_sensex_tradable_today else ('#FDE68A' if sensex_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '#94A3B8')}; border: 1px solid {'rgba(168, 85, 247, 0.40)' if is_sensex_tradable_today else ('rgba(245, 158, 11, 0.40)' if sensex_tradable_info.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else 'rgba(100, 116, 139, 0.35)')}; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 800;">
@@ -1983,8 +1983,8 @@ if active_route == "":
     ltp_sensex_hp = float(spot_sensex_hp.get("spot_ltp", spec_sensex_hp.default_spot))
 
     # NIFTY Desk Tile
-    nifty_tile_border = "rgba(16, 185, 129, 0.55)" if is_nifty_tradable_today else ("rgba(245, 158, 11, 0.45)" if nifty_tradable_info.get("status") == "EXPIRY_LOCKED_UNTIL_1PM" else "rgba(100, 116, 139, 0.35)")
-    nifty_status_pill = f'<span style="background: {"rgba(16, 185, 129, 0.25)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.20)"}; color: {"#34D399" if is_nifty_tradable_today else "#94A3B8"}; border: 1px solid {"rgba(16, 185, 129, 0.5)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.4)"}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{nifty_tradable_info["badge_label"]}</span>'
+    nifty_tile_border = "rgba(16, 185, 129, 0.55)" if is_nifty_tradable_today else ("rgba(245, 158, 11, 0.45)" if nifty_tradable_info.get("status") in ("EXPIRY_LOCKED_UNTIL_1PM", "WEEKEND_STANDBY") else "rgba(100, 116, 139, 0.35)")
+    nifty_status_pill = f'<span style="background: {"rgba(16, 185, 129, 0.25)" if is_nifty_tradable_today else ("rgba(245, 158, 11, 0.20)" if nifty_tradable_info.get("status") in ("EXPIRY_LOCKED_UNTIL_1PM", "WEEKEND_STANDBY") else "rgba(100, 116, 139, 0.20)")}; color: {"#34D399" if is_nifty_tradable_today else ("#FDE68A" if nifty_tradable_info.get("status") in ("EXPIRY_LOCKED_UNTIL_1PM", "WEEKEND_STANDBY") else "#94A3B8")}; border: 1px solid {"rgba(16, 185, 129, 0.5)" if is_nifty_tradable_today else ("rgba(245, 158, 11, 0.4)" if nifty_tradable_info.get("status") in ("EXPIRY_LOCKED_UNTIL_1PM", "WEEKEND_STANDBY") else "rgba(100, 116, 139, 0.4)")}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{nifty_tradable_info["badge_label"]}</span>'
 
     with col_idx1:
         st.html(f"""
@@ -1996,7 +1996,7 @@ if active_route == "":
                         {nifty_status_pill}
                     </div>
                     <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 700; margin-bottom: 8px;">
-                        Mandate: 4 Lots ({spec_nifty_hp.lot_size * 4} Qty) &bull; Lot Size: {spec_nifty_hp.lot_size} &bull; Wed / Thu / Fri Active
+                        Mandate: 4 Lots ({spec_nifty_hp.lot_size * 4} Qty) &bull; Lot Size: {spec_nifty_hp.lot_size} &bull; Mon / Thu / Fri Active
                     </div>
                     <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.5; margin: 0 0 10px 0; text-align: left;">
                         Institutional Benchmark Engine. Calibrated with Multi-Index Confluence, 50-Pt Strike Corridor & Escalator.
@@ -2025,7 +2025,7 @@ if active_route == "":
         """)
 
     # SENSEX Desk Tile
-    sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else ("rgba(245, 158, 11, 0.45)" if sensex_tradable_info.get("status") == "EXPIRY_LOCKED_UNTIL_1PM" else "rgba(100, 116, 139, 0.35)")
+    sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else ("rgba(245, 158, 11, 0.45)" if sensex_tradable_info.get("status") in ("EXPIRY_LOCKED_UNTIL_1PM", "WEEKEND_STANDBY") else "rgba(100, 116, 139, 0.35)")
     sensex_status_pill = f'<span style="background: {"rgba(168, 85, 247, 0.25)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.20)"}; color: {"#C084FC" if is_sensex_tradable_today else "#94A3B8"}; border: 1px solid {"rgba(168, 85, 247, 0.5)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.4)"}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{sensex_tradable_info["badge_label"]}</span>'
 
     with col_idx2:
@@ -2038,7 +2038,7 @@ if active_route == "":
                         {sensex_status_pill}
                     </div>
                     <div style="font-size: 0.72rem; color: #D8B4FE; font-weight: 700; margin-bottom: 8px;">
-                        Mandate: 6 Lots ({spec_sensex_hp.lot_size * 6} Qty) &bull; Lot Size: {spec_sensex_hp.lot_size} &bull; Mon / Tue Active
+                        Mandate: 6 Lots ({spec_sensex_hp.lot_size * 6} Qty) &bull; Lot Size: {spec_sensex_hp.lot_size} &bull; Tue / Wed Active
                     </div>
                     <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.5; margin: 0 0 10px 0; text-align: left;">
                         Institutional Benchmark Engine. 100-Pt Strike Intervals with 2:1 Asymmetric Volatility Runner.

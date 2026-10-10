@@ -472,6 +472,22 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
             "is_gamma_exception": False
         }
 
+    if not sched["is_weekday"]:
+        is_mon_active = (target_sym == "NIFTY")
+        return {
+            "can_trade": False,
+            "tradable": False,
+            "status": "WEEKEND_STANDBY" if is_mon_active else "WEEKEND_LOCKED",
+            "reason": (
+                f"Exchange is closed for the weekend ({sched['weekday_name']}). Next active session: Monday ({target_sym} • 4 Lots)."
+                if is_mon_active
+                else f"Exchange is closed for the weekend ({sched['weekday_name']}). SENSEX desk opens Tuesday & Wednesday (6 Lots)."
+            ),
+            "badge_label": "⏸️ WEEKEND (NEXT: MON)" if is_mon_active else "🔒 WEEKEND (TUE/WED DESK)",
+            "mandate_lots": 4 if is_mon_active else 6,
+            "is_gamma_exception": False
+        }
+
     if target_sym == sched["active_symbol"]:
         return {
             "can_trade": True,
