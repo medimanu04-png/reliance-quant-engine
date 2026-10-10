@@ -1527,11 +1527,11 @@ def render_persistent_sticky_header():
         gw_feed = GrowwMarketFeed.get_instance()
         live_wallet_obj = gw_feed.get_wallet_balance()
         live_pos_obj = gw_feed.get_live_positions()
-        wallet_val = float(live_wallet_obj.get("clear_cash", 53280.53))
-        day_pnl = float(live_pos_obj.get("total_pnl", 37725.25))
+        wallet_val = float(live_wallet_obj.get("clear_cash") or live_wallet_obj.get("net_available") or 53280.53)
+        day_pnl = float(live_pos_obj.get("total_pnl", 0.0))
     except Exception:
         wallet_val = 53280.53
-        day_pnl = 37725.25
+        day_pnl = 0.0
 
     margin_buf = wallet_val - 19725.0
     margin_pct = int((margin_buf / max(1.0, wallet_val)) * 100) if wallet_val > 0 else 73
@@ -2686,8 +2686,8 @@ allow_orb_early_entry = bool(st.session_state.get("allow_orb_early_entry", True)
 # Live broker balance
 live_wallet = groww_feed.get_wallet_balance()
 live_pos = groww_feed.get_live_positions()
-net_today_pnl = float(live_pos.get("total_pnl", 37725.25))
-account_cash = float(live_wallet.get("clear_cash", 53280.53))
+net_today_pnl = float(live_pos.get("total_pnl", 0.0))
+account_cash = float(live_wallet.get("clear_cash") or live_wallet.get("net_available") or 53280.53)
 margin_buffer = account_cash - 19725.0
 
 # Session Time Gate
