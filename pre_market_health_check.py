@@ -46,6 +46,8 @@ class PreMarketHealthCheckEngine:
                 with open(HEALTH_STATE_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict):
+                        if not isinstance(data.get("last_diagnostic"), dict):
+                            data["last_diagnostic"] = {}
                         return data
             except Exception as e:
                 logger.debug(f"Error loading health check state: {e}")
@@ -53,7 +55,7 @@ class PreMarketHealthCheckEngine:
             "last_run_date": "",
             "last_run_time": "",
             "telegram_dispatched_date": "",
-            "last_diagnostic": None
+            "last_diagnostic": {}
         }
 
     @classmethod
@@ -333,119 +335,127 @@ class PreMarketHealthCheckEngine:
         Supports both full wide-banner mode (homepage) and compact card mode (sidebar/desk).
         """
         import streamlit as st
-        ctx = container if container is not None else st
-        k_pfx = f"{key_prefix}_" if key_prefix else ""
+        try:
+            ctx = container if container is not None else st
+            k_pfx = f"{key_prefix}_" if key_prefix else ""
 
-        state = cls.get_state()
-        diag = state.get("last_diagnostic")
-        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+            state = cls.get_state()
+            if not isinstance(state, dict):
+                state = {}
+            diag = state.get("last_diagnostic")
+            today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
-        if not diag or state.get("last_run_date") != today_str:
-            diag = cls.run_diagnostics()
+            if not isinstance(diag, dict) or state.get("last_run_date") != today_str:
+                diag = cls.run_diagnostics()
 
-        gw = diag.get("groww", {})
-        tg = diag.get("telegram", {})
-        cal = diag.get("calendar", {})
-        ready_code = diag.get("readiness_code", "UNKNOWN")
-        badge = diag.get("readiness_badge", "DIAGNOSTIC ACTIVE")
+            if not isinstance(diag, dict):
+                diag = {}
 
-        bg_border = (
-            "rgba(16, 185, 129, 0.45)" if ready_code == "COMBAT_READY" else (
-                "rgba(100, 116, 139, 0.40)" if ready_code == "MARKET_CLOSED" else "rgba(245, 158, 11, 0.45)"
+            gw = diag.get("groww") if isinstance(diag.get("groww"), dict) else {}
+            tg = diag.get("telegram") if isinstance(diag.get("telegram"), dict) else {}
+            cal = diag.get("calendar") if isinstance(diag.get("calendar"), dict) else {}
+            ready_code = diag.get("readiness_code", "UNKNOWN")
+            badge = diag.get("readiness_badge", "DIAGNOSTIC ACTIVE")
+
+            bg_border = (
+                "rgba(16, 185, 129, 0.45)" if ready_code == "COMBAT_READY" else (
+                    "rgba(100, 116, 139, 0.40)" if ready_code == "MARKET_CLOSED" else "rgba(245, 158, 11, 0.45)"
+                )
             )
-        )
-        bg_gradient = (
-            "linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)" if ready_code == "COMBAT_READY" else (
-                "linear-gradient(135deg, rgba(30, 41, 59, 0.45) 0%, rgba(15, 23, 42, 0.70) 100%)" if ready_code == "MARKET_CLOSED" else
-                "linear-gradient(135deg, rgba(120, 53, 15, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)"
+            bg_gradient = (
+                "linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)" if ready_code == "COMBAT_READY" else (
+                    "linear-gradient(135deg, rgba(30, 41, 59, 0.45) 0%, rgba(15, 23, 42, 0.70) 100%)" if ready_code == "MARKET_CLOSED" else
+                    "linear-gradient(135deg, rgba(120, 53, 15, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)"
+                )
             )
-        )
 
-        if compact:
+            if compact:
+                with ctx.container():
+                    st.html(f"""
+                    <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 0.82rem; font-weight: 800; color: #FFFFFF;">🩺 09:00 AM HEALTH CHECK</span>
+                            <span style="font-size: 0.70rem; font-weight: 800; color: {'#34D399' if ready_code == 'COMBAT_READY' else ('#94A3B8' if ready_code == 'MARKET_CLOSED' else '#FCD34D')};">{badge}</span>
+                        </div>
+                        <div style="font-size: 0.70rem; color: #94A3B8; margin-bottom: 6px; line-height: 1.4;">
+                            {diag.get('readiness_desc', '')}
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 4px; font-size: 0.70rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #94A3B8;">Groww Broker:</span>
+                                <span style="font-weight: 700; color: {'#34D399' if gw.get('status') == 'ONLINE' else '#F87171'};">{gw.get('badge')} ({gw.get('latency_ms', 0)}ms)</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #94A3B8;">Telegram Bot:</span>
+                                <span style="font-weight: 700; color: {'#34D399' if tg.get('status') == 'ONLINE' else ('#94A3B8' if tg.get('status') == 'DISABLED' else '#F87171')};">{tg.get('badge')}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #94A3B8;">Active Asset:</span>
+                                <span style="font-weight: 700; color: #38BDF8;">{cal.get('active_symbol', 'N/A')} ({cal.get('active_lots', 0)} Lots)</span>
+                            </div>
+                        </div>
+                    </div>
+                    """)
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button("🔄 Check", key=f"{k_pfx}btn_compact_diag", width="stretch", help="Re-run pre-market diagnostic checks now"):
+                            cls.run_diagnostics(force=True)
+                            st.toast("✅ Pre-market system diagnostics executed!")
+                            st.rerun()
+                    with col_btn2:
+                        if st.button("📲 Ping", key=f"{k_pfx}btn_compact_tg", width="stretch", help="Dispatch pre-market briefing alert to Telegram"):
+                            cls.run_diagnostics(send_telegram=True, force=True)
+                            st.toast("📲 Pre-market briefing dispatched to Telegram!")
+                            st.rerun()
+                return
+
             with ctx.container():
                 st.html(f"""
-                <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="font-size: 0.82rem; font-weight: 800; color: #FFFFFF;">🩺 09:00 AM HEALTH CHECK</span>
-                        <span style="font-size: 0.70rem; font-weight: 800; color: {'#34D399' if ready_code == 'COMBAT_READY' else ('#94A3B8' if ready_code == 'MARKET_CLOSED' else '#FCD34D')};">{badge}</span>
-                    </div>
-                    <div style="font-size: 0.70rem; color: #94A3B8; margin-bottom: 6px; line-height: 1.4;">
-                        {diag.get('readiness_desc', '')}
-                    </div>
-                    <div style="display: flex; flex-direction: column; gap: 4px; font-size: 0.70rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="color: #94A3B8;">Groww Broker:</span>
-                            <span style="font-weight: 700; color: {'#34D399' if gw.get('status') == 'ONLINE' else '#F87171'};">{gw.get('badge')} ({gw.get('latency_ms', 0)}ms)</span>
+                <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.25rem;">🩺</span>
+                            <div>
+                                <div style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.3px;">
+                                    PRE-MARKET 09:00 AM HEALTH CHECK &bull; <span style="color: {'#34D399' if ready_code == 'COMBAT_READY' else ('#E2E8F0' if ready_code == 'MARKET_CLOSED' else '#FCD34D')};">{badge}</span>
+                                </div>
+                                <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
+                                    {diag.get('readiness_desc', '')} &bull; Checked: <b style="color: #CBD5E1;">{diag.get('check_time', '')}</b>
+                                </div>
+                            </div>
                         </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="color: #94A3B8;">Telegram Bot:</span>
-                            <span style="font-weight: 700; color: {'#34D399' if tg.get('status') == 'ONLINE' else ('#94A3B8' if tg.get('status') == 'DISABLED' else '#F87171')};">{tg.get('badge')}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="color: #94A3B8;">Active Asset:</span>
-                            <span style="font-weight: 700; color: #38BDF8;">{cal.get('active_symbol', 'N/A')} ({cal.get('active_lots', 0)} Lots)</span>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
+                                🔌 Groww: <b style="color: {'#34D399' if gw.get('status') == 'ONLINE' else '#F87171'};">{gw.get('badge')}</b>
+                            </span>
+                            <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
+                                📡 Telegram: <b style="color: {'#34D399' if tg.get('status') == 'ONLINE' else ('#94A3B8' if tg.get('status') == 'DISABLED' else '#F87171')};">{tg.get('badge')}</b>
+                            </span>
+                            <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
+                                🎯 Active: <b style="color: #38BDF8;">{cal.get('active_symbol', 'N/A')}</b> ({cal.get('active_lots', 0)} Lots)
+                            </span>
                         </div>
                     </div>
                 </div>
                 """)
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("🔄 Check", key=f"{k_pfx}btn_compact_diag", width="stretch", help="Re-run pre-market diagnostic checks now"):
-                        cls.run_diagnostics(force=True)
-                        st.toast("✅ Pre-market system diagnostics executed!")
-                        st.rerun()
-                with col_btn2:
-                    if st.button("📲 Ping", key=f"{k_pfx}btn_compact_tg", width="stretch", help="Dispatch pre-market briefing alert to Telegram"):
-                        cls.run_diagnostics(send_telegram=True, force=True)
-                        st.toast("📲 Pre-market briefing dispatched to Telegram!")
-                        st.rerun()
-            return
 
-        with ctx.container():
-            st.html(f"""
-            <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 1.25rem;">🩺</span>
-                        <div>
-                            <div style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.3px;">
-                                PRE-MARKET 09:00 AM HEALTH CHECK &bull; <span style="color: {'#34D399' if ready_code == 'COMBAT_READY' else ('#E2E8F0' if ready_code == 'MARKET_CLOSED' else '#FCD34D')};">{badge}</span>
-                            </div>
-                            <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
-                                {diag.get('readiness_desc', '')} &bull; Checked: <b style="color: #CBD5E1;">{diag.get('check_time', '')}</b>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
-                            🔌 Groww: <b style="color: {'#34D399' if gw.get('status') == 'ONLINE' else '#F87171'};">{gw.get('badge')}</b>
-                        </span>
-                        <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
-                            📡 Telegram: <b style="color: {'#34D399' if tg.get('status') == 'ONLINE' else ('#94A3B8' if tg.get('status') == 'DISABLED' else '#F87171')};">{tg.get('badge')}</b>
-                        </span>
-                        <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
-                            🎯 Active: <b style="color: #38BDF8;">{cal.get('active_symbol', 'N/A')}</b> ({cal.get('active_lots', 0)} Lots)
-                        </span>
-                    </div>
-                </div>
-            </div>
-            """)
-
-            with st.expander("🔍 Pre-Market Health Check Telemetry & Diagnostic Controls", expanded=False):
-                col_d1, col_d2 = st.columns([3, 1.2])
-                with col_d1:
-                    st.markdown(f"""
-                    • **Broker API Telemetry:** {gw.get('message', '')}  
-                    • **Telegram Gateway:** {tg.get('message', '')}  
-                    • **Mandate Schedule Rule:** {cal.get('schedule_rule', '')}  
-                    • **09:00 AM Dispatch Status:** {'✅ Briefing Dispatched to Telegram' if diag.get('telegram_dispatched') else '⏳ Awaiting / Manual Dispatch'}
-                    """)
-                with col_d2:
-                    if st.button("🔄 Run Diagnostics Now", key=f"{k_pfx}btn_run_diag_now", width="stretch"):
-                        cls.run_diagnostics(force=True)
-                        st.toast("✅ Pre-market system diagnostics executed successfully!")
-                        st.rerun()
-                    if st.button("📲 Send Briefing to Telegram", key=f"{k_pfx}btn_send_diag_tg", width="stretch"):
-                        cls.run_diagnostics(send_telegram=True, force=True)
-                        st.toast("📲 Pre-market briefing dispatched to Telegram!")
-                        st.rerun()
+                with st.expander("🔍 Pre-Market Health Check Telemetry & Diagnostic Controls", expanded=False):
+                    col_d1, col_d2 = st.columns([3, 1.2])
+                    with col_d1:
+                        st.markdown(f"""
+                        • **Broker API Telemetry:** {gw.get('message', '')}  
+                        • **Telegram Gateway:** {tg.get('message', '')}  
+                        • **Mandate Schedule Rule:** {cal.get('schedule_rule', '')}  
+                        • **09:00 AM Dispatch Status:** {'✅ Briefing Dispatched to Telegram' if diag.get('telegram_dispatched') else '⏳ Awaiting / Manual Dispatch'}
+                        """)
+                    with col_d2:
+                        if st.button("🔄 Run Diagnostics Now", key=f"{k_pfx}btn_run_diag_now", width="stretch"):
+                            cls.run_diagnostics(force=True)
+                            st.toast("✅ Pre-market system diagnostics executed successfully!")
+                            st.rerun()
+                        if st.button("📲 Send Briefing to Telegram", key=f"{k_pfx}btn_send_diag_tg", width="stretch"):
+                            cls.run_diagnostics(send_telegram=True, force=True)
+                            st.toast("📲 Pre-market briefing dispatched to Telegram!")
+                            st.rerun()
+        except Exception as e:
+            logger.error(f"Error rendering Pre-Market Health Card: {e}", exc_info=True)

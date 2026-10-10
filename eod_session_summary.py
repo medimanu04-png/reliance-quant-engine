@@ -43,6 +43,10 @@ class EODSessionSummaryEngine:
                 with open(EOD_STATE_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict):
+                        if not isinstance(data.get("last_debrief"), dict):
+                            data["last_debrief"] = None
+                        if not isinstance(data.get("last_backup"), dict):
+                            data["last_backup"] = {}
                         return data
             except Exception as e:
                 logger.debug(f"Error loading EOD state: {e}")
@@ -50,8 +54,8 @@ class EODSessionSummaryEngine:
             "last_run_date": "",
             "last_run_time": "",
             "telegram_dispatched_date": "",
-            "last_debrief": None,
-            "last_backup": None
+            "last_debrief": {},
+            "last_backup": {}
         }
 
     @classmethod
@@ -256,106 +260,119 @@ class EODSessionSummaryEngine:
     def render_eod_card(cls, container: Any = None, compact: bool = False, key_prefix: str = ""):
         """Renders an interactive, glassmorphic EOD Performance Card in Streamlit."""
         import streamlit as st
-        ctx = container if container is not None else st
-        k_pfx = f"{key_prefix}_" if key_prefix else ""
+        try:
+            ctx = container if container is not None else st
+            k_pfx = f"{key_prefix}_" if key_prefix else ""
 
-        state = cls.get_state()
-        debrief = state.get("last_debrief")
-        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+            state = cls.get_state()
+            if not isinstance(state, dict):
+                state = {}
+            debrief = state.get("last_debrief")
+            today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
-        if not debrief or state.get("last_run_date") != today_str:
-            debrief = cls.compile_eod_debrief()
+            if not isinstance(debrief, dict) or state.get("last_run_date") != today_str:
+                debrief = cls.compile_eod_debrief()
 
-        badge = debrief.get("session_badge", "")
-        code = debrief.get("outcome_code", "UNKNOWN")
-        net_pnl = debrief.get("net_post_tax_pnl", 0.0)
-        n_trades = debrief.get("total_trades", 0)
+            if not isinstance(debrief, dict):
+                debrief = {}
 
-        bg_border = (
-            "rgba(16, 185, 129, 0.45)" if code == "NET_PROFIT" else (
-                "rgba(100, 116, 139, 0.40)" if code in ("MARKET_CLOSED", "NO_TRADES") else "rgba(239, 68, 68, 0.45)"
+            last_backup = state.get("last_backup")
+            backup_status = last_backup.get("status") if isinstance(last_backup, dict) else None
+            backup_badge = "✅ Snapshot Stored in backups/" if backup_status == "SUCCESS" else "Awaiting backup"
+
+            badge = debrief.get("session_badge", "")
+            code = debrief.get("outcome_code", "UNKNOWN")
+            net_pnl = debrief.get("net_post_tax_pnl", 0.0)
+            n_trades = debrief.get("total_trades", 0)
+
+            bg_border = (
+                "rgba(16, 185, 129, 0.45)" if code == "NET_PROFIT" else (
+                    "rgba(100, 116, 139, 0.40)" if code in ("MARKET_CLOSED", "NO_TRADES") else "rgba(239, 68, 68, 0.45)"
+                )
             )
-        )
-        bg_gradient = (
-            "linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)" if code == "NET_PROFIT" else (
-                "linear-gradient(135deg, rgba(30, 41, 59, 0.45) 0%, rgba(15, 23, 42, 0.70) 100%)" if code in ("MARKET_CLOSED", "NO_TRADES") else
-                "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)"
+            bg_gradient = (
+                "linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)" if code == "NET_PROFIT" else (
+                    "linear-gradient(135deg, rgba(30, 41, 59, 0.45) 0%, rgba(15, 23, 42, 0.70) 100%)" if code in ("MARKET_CLOSED", "NO_TRADES") else
+                    "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(15, 23, 42, 0.70) 100%)"
+                )
             )
-        )
 
-        if compact:
+            if compact:
+                with ctx.container():
+                    st.html(f"""
+                    <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 0.82rem; font-weight: 800; color: #FFFFFF;">📊 03:30 PM EOD DEBRIEF</span>
+                            <span style="font-size: 0.70rem; font-weight: 800; color: {'#34D399' if net_pnl > 0 else ('#94A3B8' if net_pnl == 0 else '#F87171')};">{badge}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94A3B8; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                            <span>Trades: <b style="color: #CBD5E1;">{n_trades}</b></span>
+                            <span>Net PnL: <b style="color: {'#34D399' if net_pnl > 0 else ('#94A3B8' if net_pnl == 0 else '#F87171')};">₹{net_pnl:+,.2f}</b></span>
+                        </div>
+                    </div>
+                    """)
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button("🔄 Audit", key=f"{k_pfx}btn_compact_eod", width="stretch", help="Re-compile 03:30 PM EOD performance audit"):
+                            cls.dispatch_eod_summary(force=True, send_telegram=False)
+                            st.toast("✅ EOD audit re-compiled!")
+                            st.rerun()
+                    with col_btn2:
+                        if st.button("📲 Send TG", key=f"{k_pfx}btn_compact_eod_tg", width="stretch", help="Send EOD summary debrief to Telegram"):
+                            cls.dispatch_eod_summary(force=True, send_telegram=True)
+                            st.toast("📲 EOD debrief sent to Telegram!")
+                            st.rerun()
+                return
+
             with ctx.container():
                 st.html(f"""
-                <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="font-size: 0.82rem; font-weight: 800; color: #FFFFFF;">📊 03:30 PM EOD DEBRIEF</span>
-                        <span style="font-size: 0.70rem; font-weight: 800; color: {'#34D399' if net_pnl > 0 else ('#94A3B8' if net_pnl == 0 else '#F87171')};">{badge}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #94A3B8; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
-                        <span>Trades: <b style="color: #CBD5E1;">{n_trades}</b></span>
-                        <span>Net PnL: <b style="color: {'#34D399' if net_pnl > 0 else ('#94A3B8' if net_pnl == 0 else '#F87171')};">₹{net_pnl:+,.2f}</b></span>
+                <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.25rem;">📊</span>
+                            <div>
+                                <div style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.3px;">
+                                    03:30 PM EOD CLOSING PERFORMANCE AUDIT &bull; <span style="color: {'#34D399' if net_pnl > 0 else ('#94A3B8' if net_pnl == 0 else '#F87171')};">{badge}</span>
+                                </div>
+                                <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
+                                    Executed: <b style="color: #CBD5E1;">{n_trades} Trades</b> &bull; Win Rate: <b style="color: #38BDF8;">{debrief.get('win_rate_pct', 0.0):.1f}%</b> &bull; Audited: <b style="color: #CBD5E1;">{debrief.get('timestamp', '')}</b>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
+                                Gross PnL: <b style="color: {'#34D399' if debrief.get('gross_pnl', 0) > 0 else '#F87171'};">₹{debrief.get('gross_pnl', 0):+,.2f}</b>
+                            </span>
+                            <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
+                                Taxes & Brokerage: <b style="color: #CBD5E1;">-₹{debrief.get('statutory_charges', 0):,.2f}</b>
+                            </span>
+                            <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
+                                Net PnL: <b style="color: {'#34D399' if net_pnl > 0 else ('#CBD5E1' if net_pnl == 0 else '#F87171')};">₹{net_pnl:+,.2f}</b>
+                            </span>
+                        </div>
                     </div>
                 </div>
                 """)
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("🔄 Audit", key=f"{k_pfx}btn_compact_eod", width="stretch", help="Re-compile 03:30 PM EOD performance audit"):
-                        cls.dispatch_eod_summary(force=True, send_telegram=False)
-                        st.toast("✅ EOD audit re-compiled!")
-                        st.rerun()
-                with col_btn2:
-                    if st.button("📲 Send TG", key=f"{k_pfx}btn_compact_eod_tg", width="stretch", help="Send EOD summary debrief to Telegram"):
-                        cls.dispatch_eod_summary(force=True, send_telegram=True)
-                        st.toast("📲 EOD debrief sent to Telegram!")
-                        st.rerun()
-            return
 
-        with ctx.container():
-            st.html(f"""
-            <div style="background: {bg_gradient}; border: 1.5px solid {bg_border}; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 1.25rem;">📊</span>
-                        <div>
-                            <div style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.3px;">
-                                03:30 PM EOD CLOSING PERFORMANCE AUDIT &bull; <span style="color: {'#34D399' if net_pnl > 0 else ('#94A3B8' if net_pnl == 0 else '#F87171')};">{badge}</span>
-                            </div>
-                            <div style="font-size: 0.73rem; color: #94A3B8; margin-top: 2px;">
-                                Executed: <b style="color: #CBD5E1;">{n_trades} Trades</b> &bull; Win Rate: <b style="color: #38BDF8;">{debrief.get('win_rate_pct', 0.0):.1f}%</b> &bull; Audited: <b style="color: #CBD5E1;">{debrief.get('timestamp', '')}</b>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
-                            Gross PnL: <b style="color: {'#34D399' if debrief.get('gross_pnl', 0) > 0 else '#F87171'};">₹{debrief.get('gross_pnl', 0):+,.2f}</b>
-                        </span>
-                        <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
-                            Taxes & Brokerage: <b style="color: #CBD5E1;">-₹{debrief.get('statutory_charges', 0):,.2f}</b>
-                        </span>
-                        <span style="background: rgba(0,0,0,0.3); border: 1px solid #334155; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; color: #E2E8F0;">
-                            Net PnL: <b style="color: {'#34D399' if net_pnl > 0 else ('#CBD5E1' if net_pnl == 0 else '#F87171')};">₹{net_pnl:+,.2f}</b>
-                        </span>
-                    </div>
-                </div>
-            </div>
-            """)
+                with st.expander("🔍 End-of-Day Audit Telemetry & Database Backup Controls", expanded=False):
+                    col_e1, col_e2 = st.columns([3, 1.2])
+                    with col_e1:
+                        st.markdown(f"""
+                        • **Mandate Compliance:** {debrief.get('active_symbol', 'N/A')} ({debrief.get('schedule_rule', '')})  
+                        • **Financial Turnover:** ₹{debrief.get('total_turnover', 0):,.2f} across {n_trades} transactions  
+                        • **Available Margin Capital:** ₹{debrief.get('broker_available_cash', 0):,.2f} (Groww live account)  
+                        • **Telegram Dispatch Status:** {'✅ Closing Briefing Sent' if debrief.get('telegram_dispatched') else '⏳ Awaiting 03:30 PM or Manual Dispatch'}  
+                        • **Automated Database Backup:** {backup_badge}
+                        """)
+                    with col_e2:
+                        if st.button("🔄 Audit & Backup Now", key=f"{k_pfx}btn_run_eod_now", width="stretch"):
+                            cls.dispatch_eod_summary(force=True, send_telegram=False)
+                            st.toast("✅ EOD audit re-compiled and databases backed up!")
+                            st.rerun()
+                        if st.button("📲 Send EOD to Telegram", key=f"{k_pfx}btn_send_eod_tg", width="stretch"):
+                            cls.dispatch_eod_summary(force=True, send_telegram=True)
+                            st.toast("📲 EOD debrief dispatched to Telegram!")
+                            st.rerun()
+        except Exception as e:
+            logger.error(f"Error rendering EOD Performance Card: {e}", exc_info=True)
 
-            with st.expander("🔍 End-of-Day Audit Telemetry & Database Backup Controls", expanded=False):
-                col_e1, col_e2 = st.columns([3, 1.2])
-                with col_e1:
-                    st.markdown(f"""
-                    • **Mandate Compliance:** {debrief.get('active_symbol', 'N/A')} ({debrief.get('schedule_rule', '')})  
-                    • **Financial Turnover:** ₹{debrief.get('total_turnover', 0):,.2f} across {n_trades} transactions  
-                    • **Available Margin Capital:** ₹{debrief.get('broker_available_cash', 0):,.2f} (Groww live account)  
-                    • **Telegram Dispatch Status:** {'✅ Closing Briefing Sent' if debrief.get('telegram_dispatched') else '⏳ Awaiting 03:30 PM or Manual Dispatch'}  
-                    • **Automated Database Backup:** {'✅ Snapshot Stored in backups/' if state.get('last_backup', {}).get('status') == 'SUCCESS' else 'Awaiting backup'}
-                    """)
-                with col_e2:
-                    if st.button("🔄 Audit & Backup Now", key=f"{k_pfx}btn_run_eod_now", width="stretch"):
-                        cls.dispatch_eod_summary(force=True, send_telegram=False)
-                        st.toast("✅ EOD audit re-compiled and databases backed up!")
-                        st.rerun()
-                    if st.button("📲 Send EOD to Telegram", key=f"{k_pfx}btn_send_eod_tg", width="stretch"):
-                        cls.dispatch_eod_summary(force=True, send_telegram=True)
-                        st.toast("📲 EOD debrief dispatched to Telegram!")
-                        st.rerun()
