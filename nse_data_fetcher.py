@@ -444,6 +444,18 @@ class NSEIndiaFetcher:
                 "icon": "🇮🇳",
                 "category": "NSE Benchmark"
             },
+            "BSE SENSEX": {
+                "name": "BSE SENSEX",
+                "symbol": "^BSESN",
+                "price": 76540.20,
+                "change": 245.80,
+                "pct_change": 0.32,
+                "currency": "INR",
+                "prefix": "₹",
+                "unit": "pts",
+                "icon": "🏛️",
+                "category": "BSE Benchmark"
+            },
             "NIFTY ENERGY": {
                 "name": "NIFTY ENERGY",
                 "symbol": "^CNXENERGY",

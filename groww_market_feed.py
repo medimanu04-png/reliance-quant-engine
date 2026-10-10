@@ -835,19 +835,27 @@ class GrowwMarketFeed:
                         items = data.get("aggregatedGlobalInstrumentDto", [])
                         res = {}
                         for item in items:
-                            sym = item.get("instrumentDetailDto", {}).get("symbol", "")
+                            info = item.get("instrumentDetailDto", {})
+                            sym = info.get("symbol", "")
+                            sid = info.get("searchId", "")
                             lp = item.get("livePriceDto", {})
                             val = float(lp.get("value") or 0.0)
                             day_chg = float(lp.get("dayChange") or 0.0)
                             pct_chg = float(lp.get("dayChangePerc") or 0.0)
                             if val > 0:
-                                if sym == "NIFTY":
+                                if sym == "NIFTY" or sid == "nifty":
                                     res["NIFTY 50"] = {
                                         "name": "NIFTY 50", "symbol": "NSE:NIFTY", "price": round(val, 2),
                                         "change": round(day_chg, 2), "pct_change": round(pct_chg, 2),
                                         "currency": "INR", "prefix": "₹", "unit": "pts", "icon": "🇮🇳", "category": "Groww NSE Live"
                                     }
-                                elif sym == "BANKNIFTY":
+                                elif sym in ("1", "SENSEX") or "sensex" in sid:
+                                    res["BSE SENSEX"] = {
+                                        "name": "BSE SENSEX", "symbol": "BSE:SENSEX", "price": round(val, 2),
+                                        "change": round(day_chg, 2), "pct_change": round(pct_chg, 2),
+                                        "currency": "INR", "prefix": "₹", "unit": "pts", "icon": "🏛️", "category": "Groww BSE Live"
+                                    }
+                                elif sym == "BANKNIFTY" or sid == "nifty-bank":
                                     res["BANK NIFTY"] = {
                                         "name": "BANK NIFTY", "symbol": "NSE:BANKNIFTY", "price": round(val, 2),
                                         "change": round(day_chg, 2), "pct_change": round(pct_chg, 2),
@@ -951,6 +959,20 @@ class GrowwMarketFeed:
         except Exception as e:
             logger.debug(f"Groww benchmark parallel fetch error: {e}")
 
+        # Ensure BSE SENSEX is populated with live 0-delay spot engine if missing
+        if "BSE SENSEX" not in benchmarks:
+            try:
+                s_spot = self.get_live_spot_data("SENSEX")
+                if s_spot and s_spot.get("spot_ltp", 0) > 0:
+                    benchmarks["BSE SENSEX"] = {
+                        "name": "BSE SENSEX", "symbol": "BSE:SENSEX", "price": round(float(s_spot["spot_ltp"]), 2),
+                        "change": round(float(s_spot.get("day_change", 0.0)), 2),
+                        "pct_change": round(float(s_spot.get("day_change_perc", 0.0)), 2),
+                        "currency": "INR", "prefix": "₹", "unit": "pts", "icon": "🏛️", "category": "Groww BSE Live"
+                    }
+            except Exception:
+                pass
+
         with self._cache_lock:
             self._cached_benchmarks = benchmarks
             self._last_benchmarks_ts = time.time()
@@ -980,10 +1002,10 @@ class GrowwMarketFeed:
                 "change": 77.40, "pct_change": 0.34, "currency": "INR", "prefix": "₹",
                 "unit": "pts", "icon": "🇮🇳", "category": "Groww NSE Live"
             },
-            "NIFTY ENERGY": {
-                "name": "NIFTY ENERGY", "symbol": "NSE:CNXENERGY", "price": 40280.15,
-                "change": 182.50, "pct_change": 0.46, "currency": "INR", "prefix": "₹",
-                "unit": "pts", "icon": "⚡", "category": "Groww Sectoral Live"
+            "BSE SENSEX": {
+                "name": "BSE SENSEX", "symbol": "BSE:SENSEX", "price": 76540.20,
+                "change": 245.80, "pct_change": 0.32, "currency": "INR", "prefix": "₹",
+                "unit": "pts", "icon": "🏛️", "category": "Groww BSE Live"
             },
             "BANK NIFTY": {
                 "name": "BANK NIFTY", "symbol": "NSE:BANKNIFTY", "price": 55580.40,
@@ -1009,6 +1031,11 @@ class GrowwMarketFeed:
                 "name": "CRUDE OIL (MCX)", "symbol": "MCX:CRUDEOIL", "contract": "MCX_CRUDEOIL19OCT26FUT",
                 "price": 8848.00, "change": -319.00, "pct_change": -3.48, "currency": "INR", "prefix": "₹",
                 "unit": "/bbl", "icon": "🛢️", "category": "Groww MCX Live", "volume": 6271200, "open_interest": 13035
+            },
+            "NIFTY ENERGY": {
+                "name": "NIFTY ENERGY", "symbol": "NSE:CNXENERGY", "price": 40280.15,
+                "change": 182.50, "pct_change": 0.46, "currency": "INR", "prefix": "₹",
+                "unit": "pts", "icon": "⚡", "category": "Groww Sectoral Live"
             }
         }
     @staticmethod

@@ -1874,10 +1874,10 @@ def _render_live_macro_benchmarks_strip_body():
     source_label = "Groww Trading API (0-Delay Authenticated)" if groww_inst.is_connected else "Groww Live Feed (0-Delay Direct Engine)"
 
     cards_html = []
-    order = ["NIFTY 50", "NIFTY ENERGY", "BANK NIFTY", "GIFT NIFTY", "INDIA VIX", "CRUDE OIL"]
+    order = ["NIFTY 50", "BSE SENSEX", "BANK NIFTY", "GIFT NIFTY", "INDIA VIX", "CRUDE OIL"]
     benchmark_source_map = {
         "NIFTY 50": "Groww API (NSE)",
-        "NIFTY ENERGY": "Groww API (Sectoral)",
+        "BSE SENSEX": "Groww API (BSE)",
         "BANK NIFTY": "Groww API (NSE)",
         "GIFT NIFTY": "Groww API (NSE IX)",
         "S&P 500 (US)": "Groww API (Global)",
