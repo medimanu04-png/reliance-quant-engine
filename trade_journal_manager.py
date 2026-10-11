@@ -2919,3 +2919,153 @@ class SequentialTradeEngine:
 
         return rows
 
+
+BREAKOUT_TRIGGER_FILE = os.path.join(BASE_DIR, "breakout_triggers_log.json")
+
+
+class BreakoutTriggerManager:
+    """
+    Institutional Persistent Breakout Trigger Pinning Engine.
+    Ensures that once an entry trigger level is established for an option contract on a trading day,
+    it remains completely stationary and NEVER drifts or increases as the option price climbs,
+    even across browser page refreshes, tab reconnects, or Streamlit server reruns.
+    """
+    TRIGGER_FILE = BREAKOUT_TRIGGER_FILE
+
+    @classmethod
+    def _load_records(cls) -> dict:
+        if os.path.exists(cls.TRIGGER_FILE):
+            try:
+                with open(cls.TRIGGER_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+        return {}
+
+    @classmethod
+    def _save_records(cls, records: dict):
+        try:
+            temp_path = f"{cls.TRIGGER_FILE}.tmp.{os.getpid()}"
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(records, f, indent=2)
+            os.replace(temp_path, cls.TRIGGER_FILE)
+        except Exception:
+            pass
+
+    @classmethod
+    def get_or_set_trigger(cls, strike: int, contract_type: str, current_ltp: float, buffer_pts: Optional[float] = None, manual_override: float = 0.0, symbol: Optional[str] = None) -> float:
+        try:
+            import streamlit as st
+        except ImportError:
+            st = None
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        sym = (symbol or "").upper().strip()
+        if buffer_pts is None or buffer_pts <= 0.0:
+            buffer_pts = get_asset_spec(sym).breakout_buffer if sym else 1.20
+        key = f"{today_str}_{sym}_{strike}_{contract_type}" if sym else f"{today_str}_{strike}_{contract_type}"
+        session_key = f"breakout_level_{sym}_{strike}_{contract_type}" if sym else f"breakout_level_{strike}_{contract_type}"
+        legacy_key = f"{today_str}_{strike}_{contract_type}"
+        legacy_session_key = f"breakout_level_{strike}_{contract_type}"
+
+        has_st = st is not None and hasattr(st, "session_state")
+
+        if manual_override > 0.0:
+            override_val = round(float(manual_override), 2)
+            if has_st:
+                st.session_state[session_key] = override_val
+                st.session_state[legacy_session_key] = override_val
+            records = cls._load_records()
+            records[key] = override_val
+            cls._save_records(records)
+            return override_val
+
+        # 1. Check Streamlit session state (scoped first, then legacy fallback)
+        if has_st:
+            if session_key in st.session_state and isinstance(st.session_state[session_key], (int, float)) and st.session_state[session_key] > 0.0:
+                return float(st.session_state[session_key])
+            if legacy_session_key in st.session_state and isinstance(st.session_state[legacy_session_key], (int, float)) and st.session_state[legacy_session_key] > 0.0:
+                return float(st.session_state[legacy_session_key])
+
+        # 2. Check persistent disk file (guards against F5 / browser reload)
+        records = cls._load_records()
+        if key in records and isinstance(records[key], (int, float)) and records[key] > 0.0:
+            val = float(records[key])
+            if current_ltp > 0.05:
+                expected_trigger = float(current_ltp) + float(buffer_pts)
+                if abs(val - expected_trigger) / max(1.0, current_ltp) > 0.35:
+                    val = round(expected_trigger, 2)
+                    records[key] = val
+                    cls._save_records(records)
+            if has_st:
+                st.session_state[session_key] = val
+            return val
+        if legacy_key in records and isinstance(records[legacy_key], (int, float)) and records[legacy_key] > 0.0:
+            val = float(records[legacy_key])
+            if current_ltp > 0.05:
+                expected_trigger = float(current_ltp) + float(buffer_pts)
+                if abs(val - expected_trigger) / max(1.0, current_ltp) > 0.35:
+                    val = round(expected_trigger, 2)
+                    records[legacy_key] = val
+                    cls._save_records(records)
+            if has_st:
+                st.session_state[session_key] = val
+            return val
+
+        # 3. Only pin if we have a valid market price (> 0.05)
+        if current_ltp > 0.05:
+            pinned_val = round(float(current_ltp) + float(buffer_pts), 2)
+            records[key] = pinned_val
+            cls._save_records(records)
+            if has_st:
+                st.session_state[session_key] = pinned_val
+            return pinned_val
+
+        return 0.0
+
+    @classmethod
+    def reset_trigger(cls, strike: int = None, contract_type: str = None, current_ltp: float = 0.0, buffer_pts: Optional[float] = None, symbol: Optional[str] = None) -> float:
+        try:
+            import streamlit as st
+        except ImportError:
+            st = None
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        sym = (symbol or "").upper().strip()
+        if buffer_pts is None or buffer_pts <= 0.0:
+            buffer_pts = get_asset_spec(sym).breakout_buffer if sym else 1.20
+        records = cls._load_records()
+        has_st = st is not None and hasattr(st, "session_state")
+        if strike and contract_type:
+            key = f"{today_str}_{sym}_{strike}_{contract_type}" if sym else f"{today_str}_{strike}_{contract_type}"
+            session_key = f"breakout_level_{sym}_{strike}_{contract_type}" if sym else f"breakout_level_{strike}_{contract_type}"
+            legacy_key = f"{today_str}_{strike}_{contract_type}"
+            legacy_session_key = f"breakout_level_{strike}_{contract_type}"
+            if current_ltp > 0.05:
+                new_val = round(float(current_ltp) + float(buffer_pts), 2)
+                records[key] = new_val
+                cls._save_records(records)
+                if has_st:
+                    st.session_state[session_key] = new_val
+                    st.session_state[legacy_session_key] = new_val
+                return new_val
+            else:
+                records.pop(key, None)
+                records.pop(legacy_key, None)
+                cls._save_records(records)
+                if has_st:
+                    st.session_state.pop(session_key, None)
+                    st.session_state.pop(legacy_session_key, None)
+                return 0.0
+        else:
+            for k in list(records.keys()):
+                if k.startswith(today_str):
+                    del records[k]
+            cls._save_records(records)
+            if has_st:
+                for k in list(st.session_state.keys()):
+                    if k.startswith("breakout_level_"):
+                        del st.session_state[k]
+            return 0.0
+
+

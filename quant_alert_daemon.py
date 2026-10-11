@@ -352,6 +352,9 @@ class RelianceQuantAlertDaemon:
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(2, len(self.symbols)), thread_name_prefix="QuantDeskPoller")
         # Pre-Market Warmup & Kalman Seeding (Suggestion 4)
         self._premarket_preload_and_seed_kalman()
+        # Interactive Telegram Command & Callback Poller Worker
+        self._tg_poller_thread = threading.Thread(target=self._telegram_command_poller_thread, daemon=True, name="TelegramCommandPoller")
+        self._tg_poller_thread.start()
 
     def _premarket_preload_and_seed_kalman(self):
         """
@@ -1604,6 +1607,276 @@ class RelianceQuantAlertDaemon:
                         os.remove(DAEMON_LOCK_FILE)
             except Exception:
                 pass
+
+    def start(self):
+        """Starts the daemon execution loop."""
+        self.run()
+
+    def _telegram_command_poller_thread(self):
+        """
+        Background long-polling worker to receive user commands (/status, /arm, /standdown, /exit)
+        and interactive button clicks from Telegram back into the daemon.
+        """
+        tg_cfg = TelegramNotifier.load_config()
+        bot_token = tg_cfg.get("bot_token")
+        if not bot_token:
+            logger.info("Telegram command poller: No bot token configured, standing down.")
+            return
+
+        authorized_chat_ids = set(TelegramNotifier.parse_chat_ids(tg_cfg.get("chat_id", "")))
+        offset = None
+        logger.info("🤖 Telegram Command & Callback Poller worker thread started.")
+
+        while self.running:
+            try:
+                updates = TelegramNotifier.get_updates(bot_token=bot_token, offset=offset, timeout=5)
+                for update in updates:
+                    update_id = update.get("update_id")
+                    if update_id is not None:
+                        offset = update_id + 1
+
+                    # 1. Handle Callback Query (from inline button clicks)
+                    callback_query = update.get("callback_query")
+                    if callback_query:
+                        cb_id = callback_query.get("id")
+                        from_user = callback_query.get("from", {})
+                        sender_id = str(from_user.get("id"))
+                        msg = callback_query.get("message", {})
+                        chat = msg.get("chat", {})
+                        chat_id = str(chat.get("id"))
+                        cb_data = callback_query.get("data", "")
+
+                        # Security validation: Ensure sender or chat is in authorized recipients list
+                        if authorized_chat_ids and (chat_id not in authorized_chat_ids and sender_id not in authorized_chat_ids):
+                            TelegramNotifier.answer_callback_query(bot_token, cb_id, text="⚠️ Unauthorized request rejected.", show_alert=True)
+                            continue
+
+                        self._handle_telegram_callback(bot_token, chat_id, cb_id, cb_data)
+                        continue
+
+                    # 2. Handle Text Messages & Slash Commands
+                    message = update.get("message")
+                    if message:
+                        chat = message.get("chat", {})
+                        chat_id = str(chat.get("id"))
+                        from_user = message.get("from", {})
+                        sender_id = str(from_user.get("id"))
+                        text = (message.get("text") or "").strip()
+
+                        if authorized_chat_ids and (chat_id not in authorized_chat_ids and sender_id not in authorized_chat_ids):
+                            continue
+
+                        if text.startswith("/"):
+                            self._handle_telegram_slash_command(bot_token, chat_id, text)
+
+            except Exception as e:
+                logger.debug(f"Telegram poller exception: {e}")
+                time.sleep(3.0)
+
+    def _handle_telegram_callback(self, bot_token: str, chat_id: str, cb_id: str, cb_data: str):
+        """Processes 1-click callback commands from Telegram inline buttons."""
+        parts = cb_data.split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        target_sym = parts[2] if len(parts) > 2 else "NIFTY"
+        spec = get_asset_spec(target_sym)
+        canon_sym = spec.symbol
+
+        if action == "ARM":
+            TelegramNotifier.answer_callback_query(bot_token, cb_id, text=f"⚡ Arming {canon_sym} Desk...")
+            SequentialTradeEngine.arm_setup(
+                contract=f"{canon_sym} LIVE",
+                instrument=f"{canon_sym} OPTION",
+                symbol=canon_sym,
+                strike=spec.default_strike,
+                contract_type="AUTO",
+                breakout_trigger=0.0,
+                initial_ltp=0.0,
+                target_pts=spec.target_pts,
+                sl_pts=spec.sl_pts,
+                confluence=85.0,
+                num_lots=spec.default_lots,
+                lot_size=spec.lot_size,
+                spot=self.last_spot.get(canon_sym, spec.default_spot),
+                expiry="CURRENT"
+            )
+            msg = (
+                f"<b>⚡ {canon_sym} DESK ARMED VIA TELEGRAM</b>\n"
+                f"────────────────────────\n"
+                f"Asset: <b>{canon_sym}</b>\n"
+                f"Status: 🟢 <i>Monitoring Breakout Trigger & Confluence</i>\n"
+                f"Zero delay: You will be notified instantly on fill."
+            )
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
+
+        elif action == "STANDDOWN":
+            TelegramNotifier.answer_callback_query(bot_token, cb_id, text=f"🛑 {canon_sym} Stood Down.")
+            SequentialTradeEngine.cancel_armed_setup(symbol=canon_sym, reason="Telegram 1-Click Remote Command")
+            SequentialTradeEngine.acknowledge_and_reset(symbol=canon_sym)
+            msg = (
+                f"<b>🛑 {canon_sym} DESK STOOD DOWN VIA TELEGRAM</b>\n"
+                f"────────────────────────\n"
+                f"Asset: <b>{canon_sym}</b>\n"
+                f"Status: 🛡️ <i>Standing Down. 0 trades will trigger.</i>\n"
+                f"Capital safely preserved."
+            )
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
+
+        elif action == "STATUS":
+            TelegramNotifier.answer_callback_query(bot_token, cb_id, text="📊 Compiling Telemetry...")
+            status_msg = self._build_telegram_status_message(canon_sym if target_sym != "ALL" else None)
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, status_msg, reply_markup=buttons)
+
+        elif action == "EXIT":
+            TelegramNotifier.answer_callback_query(bot_token, cb_id, text=f"🚨 Emergency Exit: {canon_sym}...", show_alert=True)
+            state = SequentialTradeEngine.get_state(symbol=canon_sym)
+            if state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE and state.get("active_trade"):
+                act = state["active_trade"]
+                cur_ltp = float(act.get("current_ltp", act.get("actual_entry", 100.0)))
+                res = SequentialTradeEngine.close_trade(
+                    exit_price=cur_ltp,
+                    status="Manual Telegram Emergency Exit",
+                    notes="Immediate square-off initiated via Telegram 1-click remote button.",
+                    symbol=canon_sym
+                )
+                cl_pnl = res.get("closed_trade", {}).get("pnl", "0.0")
+                msg = (
+                    f"<b>🚨 EMERGENCY EXIT EXECUTED</b>\n"
+                    f"────────────────────────\n"
+                    f"Asset: <b>{canon_sym}</b>\n"
+                    f"Reason: Telegram 1-Click Remote Exit\n"
+                    f"Outcome: {cl_pnl}"
+                )
+            else:
+                msg = f"<b>ℹ️ NO ACTIVE TRADE</b>\n────────────────────────\nAsset: <b>{canon_sym}</b> has no active position open."
+            TelegramNotifier.send_message(bot_token, chat_id, msg)
+
+        else:
+            TelegramNotifier.answer_callback_query(bot_token, cb_id, text="Command acknowledged.")
+
+    def _handle_telegram_slash_command(self, bot_token: str, chat_id: str, cmd_text: str):
+        """Processes slash commands typed by the user in Telegram."""
+        parts = cmd_text.split()
+        cmd = parts[0].lower()
+        arg = parts[1].upper() if len(parts) > 1 else "NIFTY"
+        spec = get_asset_spec(arg)
+        canon_sym = spec.symbol
+
+        if cmd in ("/status", "/stats"):
+            msg = self._build_telegram_status_message(canon_sym if len(parts) > 1 else None)
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
+
+        elif cmd in ("/arm", "/start"):
+            if cmd == "/start":
+                welcome = (
+                    "<b>👋 Welcome to Manoj Quant Engine Institutional Desk!</b>\n\n"
+                    "Available Commands:\n"
+                    "• <code>/status</code> - Live desk PnL, spots, & confluence\n"
+                    "• <code>/arm [NIFTY/SENSEX]</code> - Arm setup trigger\n"
+                    "• <code>/standdown [NIFTY/SENSEX]</code> - Stand down desk\n"
+                    "• <code>/exit [NIFTY/SENSEX]</code> - Emergency market square-off\n"
+                    "• <code>/help</code> - Show this menu"
+                )
+                buttons = TelegramNotifier.get_interactive_control_buttons("NIFTY")
+                TelegramNotifier.send_message(bot_token, chat_id, welcome, reply_markup=buttons)
+                return
+
+            SequentialTradeEngine.arm_setup(
+                contract=f"{canon_sym} LIVE",
+                instrument=f"{canon_sym} OPTION",
+                symbol=canon_sym,
+                strike=spec.default_strike,
+                contract_type="AUTO",
+                breakout_trigger=0.0,
+                initial_ltp=0.0,
+                target_pts=spec.target_pts,
+                sl_pts=spec.sl_pts,
+                confluence=85.0,
+                num_lots=spec.default_lots,
+                lot_size=spec.lot_size,
+                spot=self.last_spot.get(canon_sym, spec.default_spot),
+                expiry="CURRENT"
+            )
+            msg = f"<b>⚡ {canon_sym} DESK ARMED</b>\nBreakout and confluence model actively scanning."
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
+
+        elif cmd in ("/standdown", "/stop"):
+            SequentialTradeEngine.cancel_armed_setup(symbol=canon_sym, reason="Telegram Slash Command")
+            SequentialTradeEngine.acknowledge_and_reset(symbol=canon_sym)
+            msg = f"<b>🛑 {canon_sym} DESK STOOD DOWN</b>\nTrading halted for {canon_sym}. 0 trades will be entered."
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
+
+        elif cmd in ("/exit", "/squareoff"):
+            state = SequentialTradeEngine.get_state(symbol=canon_sym)
+            if state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE and state.get("active_trade"):
+                act = state["active_trade"]
+                cur_ltp = float(act.get("current_ltp", act.get("actual_entry", 100.0)))
+                res = SequentialTradeEngine.close_trade(
+                    exit_price=cur_ltp,
+                    status="Manual Telegram Slash Command Exit",
+                    notes="Emergency square-off initiated via Telegram /exit command.",
+                    symbol=canon_sym
+                )
+                cl_pnl = res.get("closed_trade", {}).get("pnl", "0.0")
+                msg = f"<b>🚨 EMERGENCY EXIT PROCESSED</b>\nClosed {canon_sym} trade.\nOutcome: {cl_pnl}"
+            else:
+                msg = f"<b>ℹ️ No active position found on {canon_sym} desk.</b>"
+            TelegramNotifier.send_message(bot_token, chat_id, msg)
+
+        elif cmd in ("/help", "/info"):
+            help_txt = (
+                "<b>🤖 Institutional Quant Bot Commands:</b>\n\n"
+                "• <code>/status</code> - Full multi-desk telemetry\n"
+                "• <code>/arm NIFTY</code> - Arm Nifty desk\n"
+                "• <code>/arm SENSEX</code> - Arm Sensex desk\n"
+                "• <code>/standdown NIFTY</code> - Stand down Nifty desk\n"
+                "• <code>/standdown SENSEX</code> - Stand down Sensex desk\n"
+                "• <code>/exit NIFTY</code> - Emergency exit Nifty trade\n"
+                "• <code>/help</code> - Command menu"
+            )
+            buttons = TelegramNotifier.get_interactive_control_buttons("NIFTY")
+            TelegramNotifier.send_message(bot_token, chat_id, help_txt, reply_markup=buttons)
+
+    def _build_telegram_status_message(self, specific_symbol: Optional[str] = None) -> str:
+        """Constructs an institutional summary of all desks for Telegram."""
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        gw_status = "🟢 Connected (0-Delay)" if self.groww_feed.is_connected else "🟡 Fallback Mode"
+        lines = [
+            f"<b>📊 MANOJ QUANT DESK TELEMETRY</b>",
+            f"<i>{now_str}</i>",
+            f"Broker Feed: {gw_status}",
+            "────────────────────────"
+        ]
+
+        targets = [specific_symbol] if specific_symbol and specific_symbol in self.symbols else self.symbols
+        for s in targets:
+            spec = get_asset_spec(s)
+            spot = self.last_spot.get(s, 0.0)
+            if spot <= 0.0:
+                spot = spec.default_spot
+            seq_state = SequentialTradeEngine.get_state(symbol=s)
+            state_str = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
+            active_t = seq_state.get("active_trade")
+
+            lines.append(f"<b>📌 {spec.symbol} DESK</b>")
+            lines.append(f"Spot: ₹{spot:,.2f}")
+            lines.append(f"State: <code>{state_str}</code>")
+            if active_t:
+                inst = active_t.get("instrument", active_t.get("contract", ""))
+                entry = active_t.get("actual_entry", active_t.get("planned_entry", 0.0))
+                tgt = active_t.get("target", 0.0)
+                sl = active_t.get("sl", 0.0)
+                lines.append(f"Trade: <code>{inst}</code> @ ₹{entry:.2f}")
+                lines.append(f"Target: ₹{tgt:.2f} | SL: ₹{sl:.2f}")
+            lines.append("────────────────────────")
+
+        lines.append("<i>Use buttons below or slash commands to control remotely.</i>")
+        return "\n".join(lines)
 
 
 # Universal multi-asset daemon alias

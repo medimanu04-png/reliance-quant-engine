@@ -336,6 +336,67 @@ class TelegramNotifier:
         """
         return cls.send_broadcast(bot_token, chat_id, html_message, reply_markup=reply_markup)
 
+    @classmethod
+    def get_updates(cls, bot_token: str, offset: Optional[int] = None, timeout: int = 5) -> List[Dict[str, Any]]:
+        """
+        Polls incoming updates (slash commands, button clicks, callback queries) from Telegram.
+        Supports both requests and urllib fallback with zero external dependencies.
+        """
+        token = bot_token.strip()
+        if not token:
+            return []
+        api_url = f"https://api.telegram.org/bot{token}/getUpdates"
+        params = {"timeout": timeout}
+        if offset is not None:
+            params["offset"] = offset
+
+        try:
+            if requests is not None:
+                resp = requests.get(api_url, params=params, timeout=timeout + 5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("ok"):
+                        return data.get("result", [])
+            else:
+                qs = urllib.parse.urlencode(params)
+                req = urllib.request.Request(f"{api_url}?{qs}")
+                with urllib.request.urlopen(req, timeout=timeout + 5) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                    if data.get("ok"):
+                        return data.get("result", [])
+        except Exception:
+            pass
+        return []
+
+    @classmethod
+    def answer_callback_query(cls, bot_token: str, callback_query_id: str, text: Optional[str] = None, show_alert: bool = False) -> bool:
+        """
+        Acknowledges an inline button callback click, showing an instant pop-up toast or modal on Telegram.
+        """
+        token = bot_token.strip()
+        if not token or not callback_query_id:
+            return False
+        api_url = f"https://api.telegram.org/bot{token}/answerCallbackQuery"
+        payload = {
+            "callback_query_id": str(callback_query_id),
+            "show_alert": show_alert
+        }
+        if text:
+            payload["text"] = str(text)
+
+        try:
+            if requests is not None:
+                resp = requests.post(api_url, json=payload, timeout=6)
+                return resp.status_code == 200 and resp.json().get("ok", False)
+            else:
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(api_url, data=data, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=6) as response:
+                    res_json = json.loads(response.read().decode("utf-8"))
+                    return res_json.get("ok", False)
+        except Exception:
+            return False
+
     # =========================================================================
     # INLINE KEYBOARD ACTION BUTTONS FOR TELEGRAM (DYNAMIC SYMBOL / URL RESOLUTION)
     # =========================================================================
@@ -397,40 +458,69 @@ class TelegramNotifier:
         return spec.default_spot
 
     @classmethod
+    def get_interactive_control_buttons(cls, symbol: str = "NIFTY") -> Dict[str, Any]:
+        """Generates interactive 1-click callback remote execution buttons."""
+        s = cls._resolve_symbol(symbol)
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": f"⚡ ARM {s}", "callback_data": f"CMD:ARM:{s}"},
+                    {"text": f"🛑 STAND DOWN {s}", "callback_data": f"CMD:STANDDOWN:{s}"}
+                ],
+                [
+                    {"text": "📊 DESK STATUS", "callback_data": "CMD:STATUS:ALL"},
+                    {"text": f"🚨 EMERGENCY EXIT", "callback_data": f"CMD:EXIT:{s}"}
+                ]
+            ]
+        }
+
+    @classmethod
     def get_entry_ce_buttons(cls, contract: str = "", symbol: str = "") -> Dict[str, Any]:
-        """Green action buttons for CALL (CE) Trade Entry confirmation."""
+        """Green action buttons for CALL (CE) Trade Entry confirmation with 1-click controls."""
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "🟢 BUY CALL (CE) ON GROWW", "url": opt_url},
                     {"text": f"📊 OPEN {scrip_name} LIVE CHART", "url": stock_url}
+                ],
+                [
+                    {"text": f"⚡ ARM {scrip_name}", "callback_data": f"CMD:ARM:{scrip_name}"},
+                    {"text": f"🛑 STAND DOWN", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
         }
 
     @classmethod
     def get_entry_pe_buttons(cls, contract: str = "", symbol: str = "") -> Dict[str, Any]:
-        """Red/Crimson action buttons for PUT (PE) Trade Entry confirmation."""
+        """Red/Crimson action buttons for PUT (PE) Trade Entry confirmation with 1-click controls."""
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "🔴 BUY PUT (PE) ON GROWW", "url": opt_url},
                     {"text": f"📊 OPEN {scrip_name} LIVE CHART", "url": stock_url}
+                ],
+                [
+                    {"text": f"⚡ ARM {scrip_name}", "callback_data": f"CMD:ARM:{scrip_name}"},
+                    {"text": f"🛑 STAND DOWN", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
         }
 
     @classmethod
     def get_armed_buttons(cls, contract: str = "", symbol: str = "") -> Dict[str, Any]:
-        """Yellow warning buttons for ARMED state pre-alert."""
+        """Yellow warning buttons for ARMED state pre-alert with 1-click controls."""
         opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "🟡 VIEW OPTION CHAIN (GROWW)", "url": opt_url},
                     {"text": f"📊 {scrip_name} LIVE QUOTE", "url": stock_url}
+                ],
+                [
+                    {"text": f"⚡ ARM NOW", "callback_data": f"CMD:ARM:{scrip_name}"},
+                    {"text": f"🛑 STAND DOWN", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
         }
@@ -444,6 +534,10 @@ class TelegramNotifier:
                 [
                     {"text": "🎯 BOOK FULL PROFIT ON GROWW", "url": opt_url},
                     {"text": f"📈 VIEW {scrip_name} POSITIONS", "url": stock_url}
+                ],
+                [
+                    {"text": "📊 RE-CHECK STATUS", "callback_data": f"CMD:STATUS:{scrip_name}"},
+                    {"text": "🛑 STAND DOWN", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
         }
@@ -451,23 +545,31 @@ class TelegramNotifier:
     @classmethod
     def get_stop_loss_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Red capital preservation buttons for Stop Loss."""
-        opt_url, _, _ = cls._get_groww_urls(symbol, contract)
+        opt_url, _, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "🛑 EXIT POSITION NOW (GROWW)", "url": opt_url}
+                ],
+                [
+                    {"text": f"🚨 EMERGENCY EXIT", "callback_data": f"CMD:EXIT:{scrip_name}"},
+                    {"text": "🛑 STAND DOWN DESK", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
         }
 
     @classmethod
     def get_trailing_sl_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
-        """Amber/Cyan buttons for Trailing Stop Loss to Cost."""
-        opt_url, _, _ = cls._get_groww_urls(symbol, contract)
+        """Amber/Cyan buttons for Trailing Stop Loss to Cost with 1-click remote controls."""
+        opt_url, _, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "⚡ MODIFY SL ON GROWW", "url": opt_url}
+                ],
+                [
+                    {"text": f"🚨 EMERGENCY EXIT", "callback_data": f"CMD:EXIT:{scrip_name}"},
+                    {"text": "📊 DESK STATUS", "callback_data": f"CMD:STATUS:{scrip_name}"}
                 ]
             ]
         }
@@ -475,11 +577,14 @@ class TelegramNotifier:
     @classmethod
     def get_auto_sq_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Purple urgency buttons for EOD Auto-Square-Off."""
-        opt_url, _, _ = cls._get_groww_urls(symbol, contract)
+        opt_url, _, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "🔒 SQUARE-OFF ON GROWW (03:05 PM)", "url": opt_url}
+                ],
+                [
+                    {"text": f"🚨 EMERGENCY EXIT ALL", "callback_data": f"CMD:EXIT:{scrip_name}"}
                 ]
             ]
         }
@@ -487,11 +592,15 @@ class TelegramNotifier:
     @classmethod
     def get_chop_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Neutral observation buttons for Choppiness Stand Down."""
-        _, stock_url, _ = cls._get_groww_urls(symbol, contract)
+        _, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "🛡️ VIEW SPOT CHART (GROWW)", "url": stock_url}
+                ],
+                [
+                    {"text": f"⚡ ARM {scrip_name}", "callback_data": f"CMD:ARM:{scrip_name}"},
+                    {"text": "📊 STATUS", "callback_data": "CMD:STATUS:ALL"}
                 ]
             ]
         }
@@ -499,12 +608,15 @@ class TelegramNotifier:
     @classmethod
     def get_circuit_breaker_buttons(cls, symbol: str = "", contract: str = "") -> Dict[str, Any]:
         """Burgundy/Red lock buttons for Circuit Breaker Daily Limit alert."""
-        opt_url, stock_url, _ = cls._get_groww_urls(symbol, contract)
+        opt_url, stock_url, scrip_name = cls._get_groww_urls(symbol, contract)
         return {
             "inline_keyboard": [
                 [
                     {"text": "🚨 OBSERVE SPOT ON GROWW", "url": stock_url},
                     {"text": "📊 VIEW GROWW POSITIONS", "url": opt_url}
+                ],
+                [
+                    {"text": "🛑 CONFIRM STAND DOWN", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
         }

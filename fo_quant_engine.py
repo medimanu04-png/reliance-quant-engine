@@ -5208,12 +5208,13 @@ class UltraHighConvictionRelianceEngine:
         actual_prev_close = spot
         active_sym = resolve_symbol(symbol=symbol or getattr(self, "symbol", "NIFTY"))
         is_adani_asset = False
-        try:
-            official_data = NSEIndiaFetcher.get_reliance_official_data(symbol=active_sym)
-            if isinstance(official_data, dict) and float(official_data.get("prev_close", 0.0)) > 100.0:
-                actual_prev_close = float(official_data["prev_close"])
-        except Exception:
-            pass
+        if not is_backtest:
+            try:
+                official_data = NSEIndiaFetcher.get_reliance_official_data(symbol=active_sym)
+                if isinstance(official_data, dict) and float(official_data.get("prev_close", 0.0)) > 100.0:
+                    actual_prev_close = float(official_data["prev_close"])
+            except Exception:
+                pass
         pdc_val = actual_prev_close if actual_prev_close > 100.0 else (float(c15m["close"][0]) if c15m["close"] else spot)
         cpr_pivot, cpr_bc, cpr_tc, cpr_width_pct, cpr_regime = MultiIndicatorMath.calculate_cpr(pdh_val, pdl_val, pdc_val)
         if cpr_regime == "NARROW_CPR_TRENDING_BREAKOUT":
@@ -5489,9 +5490,31 @@ class UltraHighConvictionRelianceEngine:
         spec_eval = get_asset_spec(symbol=active_sym)
         strike_step = spec_eval.strike_step
         atm_strike = int(round(spot / strike_step) * strike_step)
-        chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True, symbol=active_sym)
-        opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True, symbol=active_sym)
-        is_synthetic_feed = False if is_backtest else (opt_telemetry.get("is_synthetic", False) or chain_oi.get("is_synthetic", False))
+        if is_backtest:
+            chain_oi = {
+                "overall_pcr": 1.05,
+                "call_wall": atm_strike + 2 * strike_step,
+                "put_wall": atm_strike - 2 * strike_step,
+                "chain": [],
+                "is_synthetic": True
+            }
+            opt_telemetry = {
+                "call_oi_change_pct": 5.0,
+                "put_oi_change_pct": 5.0,
+                "call_oi": 100000,
+                "put_oi": 100000,
+                "best_bid": spot - 0.15,
+                "best_ask": spot + 0.15,
+                "bid_qty": 1000,
+                "ask_qty": 1000,
+                "bid_ask_spread": 0.30,
+                "is_synthetic": True
+            }
+            is_synthetic_feed = True
+        else:
+            chain_oi = NSEIndiaFetcher.get_full_option_chain_oi(atm_strike, spot, force_refresh=True, symbol=active_sym)
+            opt_telemetry = NSEIndiaFetcher.get_option_contract_telemetry(atm_strike, spot, force_refresh=True, symbol=active_sym)
+            is_synthetic_feed = (opt_telemetry.get("is_synthetic", False) or chain_oi.get("is_synthetic", False))
 
         # Microstructure Micro-Price Imbalance & Spread Cushion Evaluation
         best_bid = float(opt_telemetry.get("best_bid", spot - 0.15))
@@ -5515,11 +5538,12 @@ class UltraHighConvictionRelianceEngine:
 
         # Upgrade 5: Order Flow Imbalance (OFI) & Stoikov Micro-Price Absorption Filter (Cont et al. 2014)
         l2_data = {}
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            l2_data = GrowwMarketFeed.get_instance().get_reliance_order_book_imbalance(symbol=active_sym)
-        except Exception:
-            pass
+        if not is_backtest:
+            try:
+                from groww_market_feed import GrowwMarketFeed
+                l2_data = GrowwMarketFeed.get_instance().get_reliance_order_book_imbalance(symbol=active_sym)
+            except Exception:
+                pass
         if l2_data and isinstance(l2_data, dict):
             l2_micro_spread = float(l2_data.get("micro_spread", 0.0))
             l2_obi = float(l2_data.get("normalized_obi", 0.0))
@@ -5797,24 +5821,25 @@ class UltraHighConvictionRelianceEngine:
         energy_pct = 0.0
         bank_nifty_pct = 0.0
         sensex_pct = 0.0
-        try:
-            from groww_market_feed import GrowwMarketFeed
-            gw = GrowwMarketFeed.get_instance()
-            benchmarks = gw.get_live_benchmarks()
-            if isinstance(benchmarks, dict):
-                vix_item = benchmarks.get("INDIA VIX", {})
-                if isinstance(vix_item, dict) and float(vix_item.get("ltp", 0.0)) > 5.0:
-                    india_vix = float(vix_item["ltp"])
-                nifty_info = benchmarks.get("NIFTY 50", {})
-                energy_info = benchmarks.get("NIFTY ENERGY", {})
-                bank_info = benchmarks.get("BANK NIFTY", {})
-                sensex_info = benchmarks.get("BSE SENSEX", {})
-                nifty_pct = float(nifty_info.get("pct_change", 0.0))
-                energy_pct = float(energy_info.get("pct_change", 0.0))
-                bank_nifty_pct = float(bank_info.get("pct_change", 0.0))
-                sensex_pct = float(sensex_info.get("pct_change", 0.0))
-        except Exception:
-            pass
+        if not is_backtest:
+            try:
+                from groww_market_feed import GrowwMarketFeed
+                gw = GrowwMarketFeed.get_instance()
+                benchmarks = gw.get_live_benchmarks()
+                if isinstance(benchmarks, dict):
+                    vix_item = benchmarks.get("INDIA VIX", {})
+                    if isinstance(vix_item, dict) and float(vix_item.get("ltp", 0.0)) > 5.0:
+                        india_vix = float(vix_item["ltp"])
+                    nifty_info = benchmarks.get("NIFTY 50", {})
+                    energy_info = benchmarks.get("NIFTY ENERGY", {})
+                    bank_info = benchmarks.get("BANK NIFTY", {})
+                    sensex_info = benchmarks.get("BSE SENSEX", {})
+                    nifty_pct = float(nifty_info.get("pct_change", 0.0))
+                    energy_pct = float(energy_info.get("pct_change", 0.0))
+                    bank_nifty_pct = float(bank_info.get("pct_change", 0.0))
+                    sensex_pct = float(sensex_info.get("pct_change", 0.0))
+            except Exception:
+                pass
 
         # Upgrade 1: The Tri-Index Alignment Matrix (NIFTY + BANK NIFTY + SENSEX)
         tri_score_bull, is_tri_trap_bull, tri_regime_bull, tri_pen_bull = MultiIndicatorMath.calculate_tri_index_alignment(
@@ -6096,9 +6121,13 @@ class UltraHighConvictionRelianceEngine:
         v5_bear = min(15.0, max(0.0, v5_bear))
 
         # Dynamic Expiry Mandate Resolution (10-Day Theta Decay Avoidance Protocol)
-        expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=active_sym)
-        expiry_date_str = expiry_plan.get("selected_expiry", "27-OCT-2026")
-        dte_val = expiry_plan.get("dte", 30)
+        if is_backtest:
+            expiry_date_str = "BACKTEST_EXPIRY"
+            dte_val = 7
+        else:
+            expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=active_sym)
+            expiry_date_str = expiry_plan.get("selected_expiry", "27-OCT-2026")
+            dte_val = expiry_plan.get("dte", 30)
 
         # VECTOR 6: Dynamic Greek Delta, Expiry Shield, Liquidity & IV Percentile (12 pts)
         T_val = dte_val / 365.0
@@ -6291,16 +6320,17 @@ class UltraHighConvictionRelianceEngine:
             dec_val = int(market_breadth.get("declines", 25))
             pct_20ema_val = market_breadth.get("pct_above_20ema")
         else:
-            try:
-                from groww_market_feed import GrowwMarketFeed
-                gw = GrowwMarketFeed.get_instance()
-                breadth_feed = gw.get_nifty_market_breadth()
-                if breadth_feed:
-                    adv_val = int(breadth_feed.get("advances", 25))
-                    dec_val = int(breadth_feed.get("declines", 25))
-                    pct_20ema_val = breadth_feed.get("pct_above_20ema")
-            except Exception:
-                pass
+            if not is_backtest:
+                try:
+                    from groww_market_feed import GrowwMarketFeed
+                    gw = GrowwMarketFeed.get_instance()
+                    breadth_feed = gw.get_nifty_market_breadth()
+                    if breadth_feed:
+                        adv_val = int(breadth_feed.get("advances", 25))
+                        dec_val = int(breadth_feed.get("declines", 25))
+                        pct_20ema_val = breadth_feed.get("pct_above_20ema")
+                except Exception:
+                    pass
         breadth_score, ad_ratio, pct_20ema, breadth_regime = MultiIndicatorMath.calculate_market_breadth_signals(
             advances=adv_val, declines=dec_val, pct_above_20ema=pct_20ema_val
         )
@@ -6325,7 +6355,7 @@ class UltraHighConvictionRelianceEngine:
                 (b_closes[i] - b_closes[i - 1]) / max(0.1, b_closes[i - 1])
                 for i in range(1, len(b_closes))
             ]
-        else:
+        elif not is_backtest:
             # Query authentic benchmark series from GrowwMarketFeed cache if available
             try:
                 from groww_market_feed import GrowwMarketFeed
@@ -6510,7 +6540,7 @@ class UltraHighConvictionRelianceEngine:
         # Issue 3 Fix / Synthetic Feed Uncertainty Clamping:
         # When running on offline fallback, V3 (derivatives flow, 20 pts) is absent.
         # Clamp total probability to <= 75.0% to accurately reflect missing option surface intelligence.
-        if is_synthetic_feed:
+        if is_synthetic_feed and not is_backtest:
             bullish_score = min(bullish_score, 75.0)
             bearish_score = min(bearish_score, 75.0)
 
@@ -6635,7 +6665,7 @@ class UltraHighConvictionRelianceEngine:
             hawkes_branching_ratio=branching_ratio,
             vpin_val=vpin_val,
             kyle_regime=kyle_regime,
-            is_synthetic_feed=is_synthetic_feed,
+            is_synthetic_feed=False if is_backtest else is_synthetic_feed,
             copula_lambda_L=lambda_L,
             required_threshold=self.trade_regime_threshold,
             tri_index_trap=is_active_tri_trap,
@@ -6665,7 +6695,7 @@ class UltraHighConvictionRelianceEngine:
             and not opening_cooldown_active
             and not auto_sq_active
             and not is_choppy_regime
-            and not is_synthetic_feed
+            and (not is_synthetic_feed or is_backtest)
             and not spread_stand_down
             and midday_cleared
             and not (is_active_tri_trap and dominant_score < 82.0)  # Tri-index divergence trap veto

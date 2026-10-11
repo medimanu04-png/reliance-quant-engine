@@ -38,6 +38,71 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKTEST_RESULTS_FILE = os.path.join(BASE_DIR, "backtest_results_summary.json")
 
 
+class BlackScholesPricer:
+    """
+    Institutional Black-Scholes-Merton option pricing & Greeks engine.
+    Supports dynamic Delta, Gamma, Theta decay, and intraday premium progression.
+    Zero external dependencies: uses Python standard library math.erf.
+    """
+    @staticmethod
+    def norm_cdf(x: float) -> float:
+        return 0.5 * (1.0 + math.erf(x / 1.4142135623730951))
+
+    @staticmethod
+    def norm_pdf(x: float) -> float:
+        return 0.3989422804014327 * math.exp(-0.5 * x * x)
+
+    @classmethod
+    def price_and_greeks(
+        cls,
+        spot: float,
+        strike: float,
+        t_years: float,
+        iv: float = 0.145,
+        r: float = 0.065,
+        is_call: bool = True
+    ) -> Dict[str, float]:
+        t_safe = max(1e-6, t_years)
+        sqrt_t = math.sqrt(t_safe)
+        d1 = (math.log(max(1.0, spot) / max(1.0, strike)) + (r + 0.5 * iv * iv) * t_safe) / (iv * sqrt_t)
+        d2 = d1 - iv * sqrt_t
+        df = math.exp(-r * t_safe)
+        pdf_d1 = cls.norm_pdf(d1)
+
+        if is_call:
+            price = spot * cls.norm_cdf(d1) - strike * df * cls.norm_cdf(d2)
+            delta = cls.norm_cdf(d1)
+            theta_ann = - (spot * pdf_d1 * iv) / (2.0 * sqrt_t) - r * strike * df * cls.norm_cdf(d2)
+        else:
+            price = strike * df * cls.norm_cdf(-d2) - spot * cls.norm_cdf(-d1)
+            delta = cls.norm_cdf(d1) - 1.0
+            theta_ann = - (spot * pdf_d1 * iv) / (2.0 * sqrt_t) + r * strike * df * cls.norm_cdf(-d2)
+
+        gamma = pdf_d1 / (spot * iv * sqrt_t)
+        theta_daily = theta_ann / 365.0
+        return {
+            "price": max(0.05, round(price, 2)),
+            "delta": round(delta, 4),
+            "gamma": round(gamma, 6),
+            "theta_daily": round(theta_daily, 4)
+        }
+
+    @classmethod
+    def calculate_time_to_expiry(cls, candle_dt: datetime, expiry_dt: datetime) -> float:
+        """
+        Calculates realistic time-to-expiry T in annualized years.
+        Accounts for day difference plus intraday elapsed trading minutes (375 minutes per trading day).
+        """
+        days_diff = (expiry_dt.date() - candle_dt.date()).days
+        close_minutes = 15 * 60 + 30
+        candle_minutes = candle_dt.hour * 60 + candle_dt.minute
+        remaining_intraday_mins = max(5, close_minutes - candle_minutes)
+        intraday_day_fraction = remaining_intraday_mins / 375.0
+
+        total_trading_days = max(0.01, days_diff + intraday_day_fraction)
+        return total_trading_days / 365.0
+
+
 class RelianceQuantBacktester:
     def __init__(self, symbol: str = "NIFTY", period: str = "60d"):
         from asset_config import get_asset_spec
@@ -51,8 +116,21 @@ class RelianceQuantBacktester:
         self.target_option_pts = self.spec.target_pts
         self.sl_option_pts = self.spec.sl_pts
         self.delta_approx = 0.52
+        self.use_black_scholes = True
+        self.default_iv = 0.145
+        self.risk_free_rate = 0.065
         self.spot_target_pts = round(self.target_option_pts / self.delta_approx, 2)
         self.spot_sl_pts = round(self.sl_option_pts / self.delta_approx, 2)
+
+    def _resolve_session_expiry(self, candle_dt: datetime) -> datetime:
+        canon = self.symbol
+        target_wd = 1 if canon == "NIFTY" else (3 if canon == "SENSEX" else 1)
+        cur_wd = candle_dt.weekday()
+        days_ahead = (target_wd - cur_wd) % 7
+        if days_ahead == 0 and candle_dt.time() >= time(15, 30):
+            days_ahead = 7
+        exp_date = candle_dt.date() + timedelta(days=days_ahead)
+        return datetime(exp_date.year, exp_date.month, exp_date.day, 15, 30, tzinfo=candle_dt.tzinfo)
 
     def run_backtest(self) -> Dict[str, Any]:
         import yfinance as yf
@@ -64,12 +142,18 @@ class RelianceQuantBacktester:
         cache_dir = os.path.join(BASE_DIR, "data_cache")
         os.makedirs(cache_dir, exist_ok=True)
         cache_file = os.path.join(cache_dir, f"{self.symbol.lower()}_5m_cache.parquet")
+        hist_cache_file = os.path.join(cache_dir, f"{self.symbol.lower()}_jan_sep_2026_cache.parquet")
 
         df_raw = pd.DataFrame()
         cached_df = pd.DataFrame()
         if os.path.exists(cache_file):
             try:
                 cached_df = pd.read_parquet(cache_file)
+            except Exception:
+                pass
+        if (cached_df.empty or len(cached_df) < 50) and os.path.exists(hist_cache_file):
+            try:
+                cached_df = pd.read_parquet(hist_cache_file)
             except Exception:
                 pass
 
@@ -88,6 +172,8 @@ class RelianceQuantBacktester:
                     df_raw.to_parquet(cache_file)
                 except Exception:
                     pass
+            else:
+                df_raw = cached_df
         except Exception as e:
             print(f"yfinance download warning: {e}")
             df_raw = cached_df
@@ -97,9 +183,19 @@ class RelianceQuantBacktester:
 
         # Benchmark NIFTY 50 Caching for authentic Clayton Copula cross-asset returns
         cache_nifty_file = os.path.join(cache_dir, "nifty_5m_cache.parquet")
+        hist_nifty_file = os.path.join(cache_dir, "nifty_jan_sep_2026_cache.parquet")
         df_nifty_raw = pd.DataFrame()
         cached_nifty_df = pd.DataFrame()
         if os.path.exists(cache_nifty_file):
+            try:
+                cached_nifty_df = pd.read_parquet(cache_nifty_file)
+            except Exception:
+                pass
+        if (cached_nifty_df.empty or len(cached_nifty_df) < 50) and os.path.exists(hist_nifty_file):
+            try:
+                cached_nifty_df = pd.read_parquet(hist_nifty_file)
+            except Exception:
+                pass
             try:
                 cached_nifty_df = pd.read_parquet(cache_nifty_file)
             except Exception:
@@ -123,9 +219,9 @@ class RelianceQuantBacktester:
         except Exception:
             df_nifty_raw = cached_nifty_df
 
-        df_nifty = df_nifty_raw.dropna().copy() if not df_nifty_raw.empty else pd.DataFrame()
-
-        df = df_raw.dropna().copy()
+        ohlc_cols = ["Open", "High", "Low", "Close"]
+        df_nifty = df_nifty_raw.dropna(subset=[c for c in ohlc_cols if c in df_nifty_raw.columns]).copy() if not df_nifty_raw.empty else pd.DataFrame()
+        df = df_raw.dropna(subset=[c for c in ohlc_cols if c in df_raw.columns]).copy()
         unique_dates = sorted(list(set(df.index.date)))
         print(f"Loaded {len(df)} candles across {len(unique_dates)} trading sessions. (NIFTY benchmark: {len(df_nifty)} bars)")
 
@@ -159,218 +255,140 @@ class RelianceQuantBacktester:
                 low = float(day_df["Low"].iloc[i])
 
                 # Manage existing active trade if any
+                # Manage existing active trade if any
                 if active_trade:
                     direction = active_trade["direction"]
+                    is_ce = direction == "BUY CE"
                     entry_p = active_trade["entry_price"]
-                    sl_p = active_trade["sl"]
-                    tgt_p = active_trade["target"]
+                    atm_k = active_trade.get("atm_strike", round(entry_p / self.spec.strike_step) * self.spec.strike_step)
+                    exp_dt = active_trade.get("expiry_dt", self._resolve_session_expiry(candle_dt))
+                    entry_opt_p = active_trade.get("entry_opt_price", self.target_option_pts * 2.0)
                     active_trade["bars_open"] = active_trade.get("bars_open", 0) + 1
                     atr_dyn = active_trade.get("atr_dyn", 4.0)
 
-                    # Track peak profit for Breakeven & Chandelier Trailing
-                    if direction == "BUY CE":
-                        cur_gain = round((spot - entry_p) * self.delta_approx, 2)
-                        high_gain = round((high - entry_p) * self.delta_approx, 2)
-                        
-                        # Solution 4: Chandelier / Trailing ATR Exit once 1:1 R:R achieved
-                        if high_gain >= active_trade.get("sl_opt_pts", 3.5):
-                            ch_stop = round(high - (2.0 * atr_dyn), 2)
-                            active_trade["sl"] = max(active_trade["sl"], entry_p + (0.2 / self.delta_approx), ch_stop)
-                        elif high_gain >= 3.5:
-                            active_trade["sl"] = max(active_trade["sl"], entry_p + (0.2 / self.delta_approx))
+                    # Dynamic Black-Scholes Greeks evaluation with intraday theta decay
+                    t_now = BlackScholesPricer.calculate_time_to_expiry(candle_dt, exp_dt)
+                    bs_close = BlackScholesPricer.price_and_greeks(
+                        spot=spot, strike=atm_k, t_years=t_now, iv=self.default_iv, r=self.risk_free_rate, is_call=is_ce
+                    )
+                    bs_high = BlackScholesPricer.price_and_greeks(
+                        spot=high if is_ce else low, strike=atm_k, t_years=t_now, iv=self.default_iv, r=self.risk_free_rate, is_call=is_ce
+                    )
+                    bs_low = BlackScholesPricer.price_and_greeks(
+                        spot=low if is_ce else high, strike=atm_k, t_years=t_now, iv=self.default_iv, r=self.risk_free_rate, is_call=is_ce
+                    )
 
-                        # Check Target Hit
-                        if high >= tgt_p:
-                            pts_opt = self.target_option_pts
-                            pnl = round(pts_opt * self.total_qty, 2)
-                            active_trade["exit_price"] = tgt_p
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "TARGET_HIT"
-                            active_trade["pts_captured"] = pts_opt
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
-                            active_trade = None
-                            break  # 1 trade per day rule
+                    opt_close = bs_close["price"]
+                    opt_high = bs_high["price"]
+                    opt_low = bs_low["price"]
 
-                        # Solution 2: Two-Tier Stop Loss Check
-                        # Hard Catastrophic Stop Loss (Wick violation)
-                        elif low <= active_trade.get("hard_sl", active_trade["sl"] - 10.0):
-                            sl_pts_opt = round((entry_p - active_trade["hard_sl"]) * self.delta_approx, 2)
-                            pnl = round(-sl_pts_opt * self.total_qty, 2)
-                            active_trade["exit_price"] = active_trade["hard_sl"]
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "HARD_SL_HIT"
-                            active_trade["pts_captured"] = -sl_pts_opt
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
-                            
-                            # Solution 3: Resumption Re-entry Arming
-                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
-                                re_entry_armed = {
-                                    "direction": "BUY CE",
-                                    "original_entry": entry_p,
-                                    "wick_sl": low - 2.0,
-                                    "expiry_idx": i + 3,
-                                    "target": tgt_p,
-                                    "confluence": active_trade["confluence_score"]
-                                }
-                            active_trade = None
+                    cur_gain = round(opt_close - entry_opt_p, 2)
+                    high_gain = round(opt_high - entry_opt_p, 2)
+                    worst_loss = round(opt_low - entry_opt_p, 2)
+                    active_trade["current_delta"] = bs_close["delta"]
+                    active_trade["current_theta"] = bs_close["theta_daily"]
 
-                        # Soft Technical Stop Loss (Candle Close confirmation)
-                        elif spot <= active_trade["sl"]:
-                            sl_pts_opt = round((entry_p - active_trade["sl"]) * self.delta_approx, 2)
-                            pnl = round(-sl_pts_opt * self.total_qty, 2)
-                            active_trade["exit_price"] = active_trade["sl"]
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "SL_HIT" if active_trade["sl"] < entry_p else "BREAKEVEN_EXIT"
-                            active_trade["pts_captured"] = -sl_pts_opt
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
+                    # Breakeven & Trailing Escalate
+                    sl_opt_threshold = active_trade.get("sl_opt_pts", self.sl_option_pts)
+                    if high_gain >= sl_opt_threshold:
+                        # Lock in protected profit once 1:1 R:R achieved
+                        active_trade["sl_opt_pts"] = -1.0
+                    elif high_gain >= (sl_opt_threshold * 0.70):
+                        # Move SL to Breakeven
+                        active_trade["sl_opt_pts"] = 0.2
 
-                            # Solution 3: Resumption Re-entry Arming
-                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
-                                re_entry_armed = {
-                                    "direction": "BUY CE",
-                                    "original_entry": entry_p,
-                                    "wick_sl": low - 2.0,
-                                    "expiry_idx": i + 3,
-                                    "target": tgt_p,
-                                    "confluence": active_trade["confluence_score"]
-                                }
-                            active_trade = None
+                    tgt_opt_threshold = active_trade.get("target_opt_pts", self.target_option_pts)
 
-                        # Auto Square-Off at 15:05 PM
-                        elif current_time >= time(15, 5):
-                            exit_gain = round((spot - entry_p) * self.delta_approx, 2)
-                            pnl = round(exit_gain * self.total_qty, 2)
-                            active_trade["exit_price"] = spot
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "AUTO_SQUAREOFF"
-                            active_trade["pts_captured"] = exit_gain
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
-                            active_trade = None
-                            break
+                    # 1. Target Hit via Option Premium Expansion
+                    if high_gain >= tgt_opt_threshold:
+                        pts_opt = tgt_opt_threshold
+                        pnl = round(pts_opt * self.total_qty, 2)
+                        active_trade["exit_price"] = round(entry_opt_p + pts_opt, 2)
+                        active_trade["exit_time"] = str(current_time)
+                        active_trade["exit_reason"] = "TARGET_HIT"
+                        active_trade["pts_captured"] = pts_opt
+                        active_trade["pnl"] = pnl
+                        active_trade["final_delta"] = bs_high["delta"]
+                        running_cash += pnl
+                        trades.append(active_trade)
+                        active_trade = None
+                        break  # 1 trade per day rule
 
-                    elif direction == "BUY PE":
-                        cur_gain = round((entry_p - spot) * self.delta_approx, 2)
-                        high_gain = round((entry_p - low) * self.delta_approx, 2)
+                    # 2. Stop Loss Hit via Premium Deterioration (includes dynamic theta decay during chop!)
+                    elif worst_loss <= -sl_opt_threshold:
+                        pts_opt = -sl_opt_threshold
+                        pnl = round(pts_opt * self.total_qty, 2)
+                        active_trade["exit_price"] = round(max(0.05, entry_opt_p - sl_opt_threshold), 2)
+                        active_trade["exit_time"] = str(current_time)
+                        active_trade["exit_reason"] = "SL_HIT" if sl_opt_threshold > 0 else "BREAKEVEN_EXIT"
+                        active_trade["pts_captured"] = pts_opt
+                        active_trade["pnl"] = pnl
+                        active_trade["final_delta"] = bs_low["delta"]
+                        running_cash += pnl
+                        trades.append(active_trade)
 
-                        # Solution 4: Chandelier / Trailing ATR Exit once 1:1 R:R achieved
-                        if high_gain >= active_trade.get("sl_opt_pts", 3.5):
-                            ch_stop = round(low + (2.0 * atr_dyn), 2)
-                            active_trade["sl"] = min(active_trade["sl"], entry_p - (0.2 / self.delta_approx), ch_stop)
-                        elif high_gain >= 3.5:
-                            active_trade["sl"] = min(active_trade["sl"], entry_p - (0.2 / self.delta_approx))
+                        # Resumption Re-entry Arming
+                        if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
+                            re_entry_armed = {
+                                "direction": direction,
+                                "original_entry": entry_p,
+                                "wick_sl": low - 2.0 if is_ce else high + 2.0,
+                                "expiry_idx": i + 3,
+                                "target": active_trade["target"],
+                                "confluence": active_trade["confluence_score"]
+                            }
+                        active_trade = None
 
-                        # Check Target Hit
-                        if low <= tgt_p:
-                            pts_opt = self.target_option_pts
-                            pnl = round(pts_opt * self.total_qty, 2)
-                            active_trade["exit_price"] = tgt_p
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "TARGET_HIT"
-                            active_trade["pts_captured"] = pts_opt
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
-                            active_trade = None
-                            break
-
-                        # Solution 2: Two-Tier Stop Loss Check
-                        # Hard Catastrophic Stop Loss (Wick violation)
-                        elif high >= active_trade.get("hard_sl", active_trade["sl"] + 10.0):
-                            sl_pts_opt = round((active_trade["hard_sl"] - entry_p) * self.delta_approx, 2)
-                            pnl = round(-sl_pts_opt * self.total_qty, 2)
-                            active_trade["exit_price"] = active_trade["hard_sl"]
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "HARD_SL_HIT"
-                            active_trade["pts_captured"] = -sl_pts_opt
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
-
-                            # Solution 3: Resumption Re-entry Arming
-                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
-                                re_entry_armed = {
-                                    "direction": "BUY PE",
-                                    "original_entry": entry_p,
-                                    "wick_sl": high + 2.0,
-                                    "expiry_idx": i + 3,
-                                    "target": tgt_p,
-                                    "confluence": active_trade["confluence_score"]
-                                }
-                            active_trade = None
-
-                        # Soft Technical Stop Loss (Candle Close confirmation)
-                        elif spot >= active_trade["sl"]:
-                            sl_pts_opt = round((active_trade["sl"] - entry_p) * self.delta_approx, 2)
-                            pnl = round(-sl_pts_opt * self.total_qty, 2)
-                            active_trade["exit_price"] = active_trade["sl"]
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "SL_HIT" if active_trade["sl"] > entry_p else "BREAKEVEN_EXIT"
-                            active_trade["pts_captured"] = -sl_pts_opt
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
-
-                            # Solution 3: Resumption Re-entry Arming
-                            if active_trade["bars_open"] <= 3 and active_trade.get("confluence_score", 0) >= 65.0:
-                                re_entry_armed = {
-                                    "direction": "BUY PE",
-                                    "original_entry": entry_p,
-                                    "wick_sl": high + 2.0,
-                                    "expiry_idx": i + 3,
-                                    "target": tgt_p,
-                                    "confluence": active_trade["confluence_score"]
-                                }
-                            active_trade = None
-
-                        # Auto Square-Off at 15:05 PM
-                        elif current_time >= time(15, 5):
-                            exit_gain = round((entry_p - spot) * self.delta_approx, 2)
-                            pnl = round(exit_gain * self.total_qty, 2)
-                            active_trade["exit_price"] = spot
-                            active_trade["exit_time"] = str(current_time)
-                            active_trade["exit_reason"] = "AUTO_SQUAREOFF"
-                            active_trade["pts_captured"] = exit_gain
-                            active_trade["pnl"] = pnl
-                            running_cash += pnl
-                            trades.append(active_trade)
-                            active_trade = None
-                            break
+                    # 3. Auto Square-Off at 15:05 PM IST
+                    elif current_time >= time(15, 5):
+                        pts_opt = cur_gain
+                        pnl = round(pts_opt * self.total_qty, 2)
+                        active_trade["exit_price"] = opt_close
+                        active_trade["exit_time"] = str(current_time)
+                        active_trade["exit_reason"] = "AUTO_SQUAREOFF"
+                        active_trade["pts_captured"] = pts_opt
+                        active_trade["pnl"] = pnl
+                        active_trade["final_delta"] = bs_close["delta"]
+                        active_trade["final_theta"] = bs_close["theta_daily"]
+                        running_cash += pnl
+                        trades.append(active_trade)
+                        active_trade = None
+                        break
 
                 # Solution 3: Check Resumption Re-Entry Trigger
                 if not active_trade and re_entry_armed:
                     if i <= re_entry_armed["expiry_idx"]:
                         re_dir = re_entry_armed["direction"]
                         orig_entry = re_entry_armed["original_entry"]
-                        re_triggered = False
-                        if re_dir == "BUY PE" and spot <= orig_entry:
-                            re_triggered = True
-                            re_sl = round(re_entry_armed["wick_sl"], 2)
-                            re_tgt = re_entry_armed["target"]
-                        elif re_dir == "BUY CE" and spot >= orig_entry:
-                            re_triggered = True
-                            re_sl = round(re_entry_armed["wick_sl"], 2)
-                            re_tgt = re_entry_armed["target"]
+                        re_is_ce = re_dir == "BUY CE"
+                        re_triggered = (spot >= orig_entry) if re_is_ce else (spot <= orig_entry)
 
                         if re_triggered:
-                            re_sl_pts = max(1.0, round(abs(spot - re_sl) * self.delta_approx, 2))
+                            re_atm_k = round(spot / self.spec.strike_step) * self.spec.strike_step
+                            re_exp_dt = self._resolve_session_expiry(candle_dt)
+                            re_t = BlackScholesPricer.calculate_time_to_expiry(candle_dt, re_exp_dt)
+                            re_bs = BlackScholesPricer.price_and_greeks(
+                                spot=spot, strike=re_atm_k, t_years=re_t, iv=self.default_iv, r=self.risk_free_rate, is_call=re_is_ce
+                            )
+                            re_opt_p = re_bs["price"]
+                            re_delta = abs(re_bs["delta"])
+                            re_sl_pts = max(1.0, self.sl_option_pts)
+
                             active_trade = {
                                 "date": str(d),
                                 "entry_time": str(current_time),
                                 "direction": re_dir,
                                 "spot_entry": spot,
                                 "entry_price": spot,
-                                "target": re_tgt,
-                                "sl": re_sl,
-                                "hard_sl": round(spot + (re_sl_pts * 1.5 / self.delta_approx), 2) if re_dir == "BUY PE" else round(spot - (re_sl_pts * 1.5 / self.delta_approx), 2),
-                                "atr_dyn": re_sl_pts / 1.5,
+                                "atm_strike": re_atm_k,
+                                "expiry_dt": re_exp_dt,
+                                "entry_opt_price": re_opt_p,
+                                "initial_delta": re_delta,
+                                "initial_theta": re_bs["theta_daily"],
+                                "target": round(spot + (self.target_option_pts / re_delta), 2) if re_is_ce else round(spot - (self.target_option_pts / re_delta), 2),
+                                "sl": round(spot - (re_sl_pts / re_delta), 2) if re_is_ce else round(spot + (re_sl_pts / re_delta), 2),
+                                "hard_sl": round(spot - (re_sl_pts * 1.5 / re_delta), 2) if re_is_ce else round(spot + (re_sl_pts * 1.5 / re_delta), 2),
+                                "atr_dyn": (re_sl_pts / re_delta) / 1.5,
                                 "bars_open": 0,
                                 "target_opt_pts": self.target_option_pts,
                                 "sl_opt_pts": re_sl_pts,
@@ -466,11 +484,32 @@ class RelianceQuantBacktester:
                         is_ce = direction == "BUY CE"
 
 
-                        # Recommendation 3: India VIX Dynamic Target/SL pts
+                        # Dynamic Black-Scholes ATM Strike & Premium Initialization
                         tgt_opt_pts = float(eval_res.get("target_pts", self.target_option_pts))
                         sl_opt_pts = float(eval_res.get("sl_pts", self.sl_option_pts))
-                        spot_tgt_dyn = round(tgt_opt_pts / self.delta_approx, 2)
-                        spot_sl_dyn = round(sl_opt_pts / self.delta_approx, 2)
+
+                        # Select ATM Strike
+                        strike_step = self.spec.strike_step
+                        atm_strike = round(spot / strike_step) * strike_step
+
+                        # Determine upcoming expiry for backtested session
+                        expiry_dt = self._resolve_session_expiry(candle_dt)
+                        t_entry = BlackScholesPricer.calculate_time_to_expiry(candle_dt, expiry_dt)
+
+                        # Compute exact entry option premium and initial Greeks via Black-Scholes
+                        bs_entry = BlackScholesPricer.price_and_greeks(
+                            spot=spot,
+                            strike=atm_strike,
+                            t_years=t_entry,
+                            iv=self.default_iv,
+                            r=self.risk_free_rate,
+                            is_call=is_ce
+                        )
+                        entry_opt_price = bs_entry["price"]
+                        initial_delta = abs(bs_entry["delta"])
+
+                        spot_tgt_dyn = round(tgt_opt_pts / initial_delta, 2)
+                        spot_sl_dyn = round(sl_opt_pts / initial_delta, 2)
 
                         target_price = round(spot + spot_tgt_dyn, 2) if is_ce else round(spot - spot_tgt_dyn, 2)
                         sl_price = round(spot - spot_sl_dyn, 2) if is_ce else round(spot + spot_sl_dyn, 2)
@@ -482,6 +521,11 @@ class RelianceQuantBacktester:
                             "direction": direction,
                             "spot_entry": spot,
                             "entry_price": spot,
+                            "atm_strike": atm_strike,
+                            "expiry_dt": expiry_dt,
+                            "entry_opt_price": entry_opt_price,
+                            "initial_delta": initial_delta,
+                            "initial_theta": bs_entry["theta_daily"],
                             "target": target_price,
                             "sl": sl_price,
                             "hard_sl": hard_sl_price,
@@ -564,7 +608,7 @@ class RelianceQuantBacktester:
 
         try:
             with open(BACKTEST_RESULTS_FILE, "w", encoding="utf-8") as f:
-                json.dump(results, f, indent=2)
+                json.dump(results, f, indent=2, default=str)
         except Exception as e:
             print(f"Error saving backtest results: {e}")
 
