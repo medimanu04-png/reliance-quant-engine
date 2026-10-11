@@ -1697,8 +1697,6 @@ def execute_global_multi_desk_rescan(is_manual: bool = False):
     st.cache_data.clear()
     for sym_c in ("nifty", "sensex"):
         st.session_state.pop(f"cached_real_df_{sym_c}", None)
-    if "_APP_INDICATOR_CACHE" in st.session_state:
-        st.session_state["_APP_INDICATOR_CACHE"].clear()
 
     # 6. Synchronize session state tracking
     st.session_state["last_auto_rescan_ts"] = now
@@ -2172,8 +2170,6 @@ if os.path.exists(global_rescan_file):
 if desk_force_rescan:
     is_rescan = True
     st.session_state.pop(f"cached_real_df_{scrip_symbol.lower()}", None)
-    if "_APP_INDICATOR_CACHE" in st.session_state:
-        st.session_state["_APP_INDICATOR_CACHE"].clear()
 
 # Sync active scoped values to active keys so switching scrips never cross-pollinates
 st.session_state["live_broker_ltp"] = float(st.session_state.get(f"live_broker_ltp_{scrip_symbol}", 0.0))
@@ -2234,6 +2230,26 @@ st.sidebar.html(f"""
     </div>
 </div>
 """)
+
+# Sub-Millisecond JWT Token Auto-Warning Badge
+tok_exp = groww_feed.get_token_expiration() if hasattr(groww_feed, "get_token_expiration") else {}
+if tok_exp.get("has_exp"):
+    rem_secs = tok_exp.get("remaining_seconds", 0)
+    if tok_exp.get("is_expired"):
+        st.sidebar.html(f"""
+        <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #EF4444; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;">
+            <div style="font-size: 0.72rem; font-weight: 800; color: #F87171;">🔴 GROWW TOKEN EXPIRED</div>
+            <div style="font-size: 0.65rem; color: #CBD5E1; margin-top: 2px;">Expired at {tok_exp.get('exp_str')}. Renew session token.</div>
+        </div>
+        """)
+    elif rem_secs < 1800:  # < 30 minutes
+        rem_mins = max(1, int(rem_secs // 60))
+        st.sidebar.html(f"""
+        <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid #F59E0B; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;">
+            <div style="font-size: 0.72rem; font-weight: 800; color: #FCD34D;">⚠️ GROWW TOKEN EXPIRING SOON ({rem_mins}m)</div>
+            <div style="font-size: 0.65rem; color: #CBD5E1; margin-top: 2px;">Valid until {tok_exp.get('exp_str')}. Refresh before market cutoff.</div>
+        </div>
+        """)
 
 timeframe = st.sidebar.selectbox("Candle Timeframe", ["5m", "15m"], index=0, key="sb_timeframe")
 

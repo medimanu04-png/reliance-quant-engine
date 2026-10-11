@@ -60,12 +60,9 @@ class EODSessionSummaryEngine:
 
     @classmethod
     def save_state(cls, state: Dict[str, Any]) -> None:
-        """Persists EOD summary state to disk."""
-        try:
-            with open(EOD_STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Could not persist EOD state: {e}")
+        """Persists EOD summary state to disk atomically."""
+        from trade_journal_manager import atomic_json_write
+        atomic_json_write(EOD_STATE_FILE, state, indent=2)
 
     @classmethod
     def compile_eod_debrief(cls, date_str: Optional[str] = None) -> Dict[str, Any]:

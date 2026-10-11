@@ -6714,16 +6714,26 @@ class UltraHighConvictionRelianceEngine:
         )
 
 
-        # Dynamic Dual ATM Corridor Resolution & Best Strike Suggestion
-        corridor = NSEIndiaFetcher.get_atm_corridor(spot)
+        # Dynamic Dual ATM Corridor Resolution & Best Strike Suggestion (Asset-Calibrated Strike Interval)
+        corridor = NSEIndiaFetcher.get_atm_corridor(spot, symbol=active_sym)
         lower_atm = corridor["lower_strike"]
         upper_atm = corridor["upper_strike"]
+
+        # Far OTM / Large Gap Boundary Guard
+        gap_boundary_alert = None
+        prev_close_ref = float(spot_data.get("prev_close", spot)) if "spot_data" in locals() and spot_data else spot
+        if prev_close_ref > 0:
+            gap_pct = abs(spot - prev_close_ref) / prev_close_ref * 100.0
+            if gap_pct >= 2.5:
+                gap_boundary_alert = f"GAP_BOUNDARY_FALLBACK: Large gap ({gap_pct:.2f}%) on {active_sym}. Spot ₹{spot:.2f} anchored to dual corridor {lower_atm}/{upper_atm}."
+                logger.info(gap_boundary_alert)
 
         atm_stream = NSEIndiaFetcher.get_atm_call_and_put_live_telemetry(
             atm_strike=lower_atm,
             spot=spot,
             broker_call_ltp=37.65,
-            bias="BULLISH" if recommended_type == "CE" else "BEARISH"
+            bias="BULLISH" if recommended_type == "CE" else "BEARISH",
+            scrip_symbol=active_sym
         )
         best_meta = atm_stream["best_strike"]
         atm_strike = best_meta["strike"]

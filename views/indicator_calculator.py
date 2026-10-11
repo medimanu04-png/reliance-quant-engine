@@ -15,33 +15,36 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
     df = df.copy()
     hl2 = (df['High'] + df['Low']) / 2.0
     atr = df['ATR'] if 'ATR' in df.columns else (df['High'] - df['Low']).rolling(period).mean()
-    upper_band = hl2 + (multiplier * atr)
-    lower_band = hl2 - (multiplier * atr)
+    upper_band_arr = (hl2 + (multiplier * atr)).to_numpy(dtype=np.float64, copy=True)
+    lower_band_arr = (hl2 - (multiplier * atr)).to_numpy(dtype=np.float64, copy=True)
+    close_arr = df['Close'].to_numpy(dtype=np.float64)
 
-    supertrend = pd.Series(index=df.index, dtype='float64')
-    direction = pd.Series(index=df.index, dtype='int64')
+    n = len(df)
+    supertrend = np.zeros(n, dtype=np.float64)
+    direction = np.ones(n, dtype=np.int64)
 
-    for i in range(len(df)):
-        if i == 0:
-            supertrend.iloc[i] = lower_band.iloc[i]
-            direction.iloc[i] = 1
-            continue
+    if n > 0:
+        supertrend[0] = lower_band_arr[0]
+        direction[0] = 1
 
-        prev_upper = upper_band.iloc[i - 1]
-        prev_lower = lower_band.iloc[i - 1]
-        curr_close = df['Close'].iloc[i - 1]
+    for i in range(1, n):
+        prev_upper = upper_band_arr[i - 1]
+        prev_lower = lower_band_arr[i - 1]
+        curr_close = close_arr[i - 1]
 
-        lower_band.iloc[i] = lower_band.iloc[i] if (lower_band.iloc[i] > prev_lower or curr_close < prev_lower) else prev_lower
-        upper_band.iloc[i] = upper_band.iloc[i] if (upper_band.iloc[i] < prev_upper or curr_close > prev_upper) else prev_upper
+        if not (lower_band_arr[i] > prev_lower or curr_close < prev_lower):
+            lower_band_arr[i] = prev_lower
+        if not (upper_band_arr[i] < prev_upper or curr_close > prev_upper):
+            upper_band_arr[i] = prev_upper
 
-        if df['Close'].iloc[i] > prev_upper:
-            direction.iloc[i] = 1
-        elif df['Close'].iloc[i] < prev_lower:
-            direction.iloc[i] = -1
+        if close_arr[i] > prev_upper:
+            direction[i] = 1
+        elif close_arr[i] < prev_lower:
+            direction[i] = -1
         else:
-            direction.iloc[i] = direction.iloc[i - 1]
+            direction[i] = direction[i - 1]
 
-        supertrend.iloc[i] = lower_band.iloc[i] if direction.iloc[i] == 1 else upper_band.iloc[i]
+        supertrend[i] = lower_band_arr[i] if direction[i] == 1 else upper_band_arr[i]
 
     df['SuperTrend'] = supertrend
     df['SuperTrend_Dir'] = direction

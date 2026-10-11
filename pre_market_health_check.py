@@ -60,12 +60,9 @@ class PreMarketHealthCheckEngine:
 
     @classmethod
     def save_state(cls, state: Dict[str, Any]) -> None:
-        """Persists health check state to disk."""
-        try:
-            with open(HEALTH_STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Could not persist health check state: {e}")
+        """Persists health check state to disk atomically."""
+        from trade_journal_manager import atomic_json_write
+        atomic_json_write(HEALTH_STATE_FILE, state, indent=2)
 
     @classmethod
     def check_market_calendar_status(cls, now_dt: Optional[datetime] = None) -> Dict[str, Any]:
