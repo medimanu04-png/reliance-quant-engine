@@ -646,6 +646,26 @@ def render_cockpit_tab(ctx: dict):
 
     spot = float(ctx.get("spot", 0.0))
 
+    # 1. Trade Status Panel (A+ Signal or Stand-Down / Capital Preservation HUD)
+    render_trade_status_panel(ctx)
+
+    # 2. Execution Trigger Card (Armed Breakout & 1-Click Execution Engine)
+    render_execution_trigger_card_fn = ctx.get("render_execution_trigger_card_fn")
+    cockpit_trade_plan = ctx.get("cockpit_trade_plan")
+    if render_execution_trigger_card_fn and cockpit_trade_plan:
+        try:
+            render_execution_trigger_card_fn(
+                trade_plan=cockpit_trade_plan,
+                spot=spot,
+                broker_call_ltp=ctx.get("live_broker_ltp", 0.0),
+                corridor=ctx.get("corridor"),
+                low=ctx.get("low_data"),
+                high=ctx.get("high_data"),
+                spot_tick=spot
+            )
+        except Exception as _e_trig:
+            st.warning(f"Execution Trigger notice: {_e_trig}")
+
     # Groww 09:10 AM Pre-Market Support & Resistance Radar
     try:
         from groww_market_feed import GrowwMarketFeed
@@ -979,23 +999,3 @@ def render_cockpit_tab(ctx: dict):
             </div>
         </div>
         """)
-
-    # 6. Trade Status Panel (A+ Signal or Stand-Down / Capital Preservation HUD)
-    render_trade_status_panel(ctx)
-
-    # 7. Execution Trigger Card (Armed Breakout & 1-Click Execution Engine)
-    render_execution_trigger_card_fn = ctx.get("render_execution_trigger_card_fn")
-    cockpit_trade_plan = ctx.get("cockpit_trade_plan")
-    if render_execution_trigger_card_fn and cockpit_trade_plan:
-        try:
-            render_execution_trigger_card_fn(
-                trade_plan=cockpit_trade_plan,
-                spot=spot,
-                broker_call_ltp=ctx.get("live_broker_ltp", 0.0),
-                corridor=ctx.get("corridor"),
-                low=ctx.get("low_data"),
-                high=ctx.get("high_data"),
-                spot_tick=spot
-            )
-        except Exception as _e_trig:
-            st.warning(f"Execution Trigger notice: {_e_trig}")
