@@ -4873,8 +4873,8 @@ class QuantConfig:
     vpin_toxicity_threshold: float = 0.70
     
     # Sigmoid Calibration (Empirically fitted or calibrated via EmpiricalCalibrationEngine)
-    sigmoid_k: float = 0.12
-    sigmoid_s0: float = 48.0
+    sigmoid_k: float = 0.08
+    sigmoid_s0: float = 42.0
     
     # Time-Decay Entry Quality Filter (Admati & Pfleiderer 1988)
     time_decay_lambda: float = 1.5

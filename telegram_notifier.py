@@ -152,12 +152,12 @@ class TelegramNotifier:
                 unique_ids.append(cid)
         return unique_ids
 
-    DEFAULT_BOT_TOKEN = "8575235859:AAEcIQX_k-MfdvKXvHTm38no-AcC0xC_QUk"
-    DEFAULT_CHAT_ID = "-1004390764314"
+    DEFAULT_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    DEFAULT_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
     @classmethod
     def load_config(cls) -> Dict[str, Any]:
-        """Loads saved Telegram credentials and preferences with official hard-coded defaults."""
+        """Loads saved Telegram credentials and preferences securely from config file or environment."""
         config = {
             "bot_token": cls.DEFAULT_BOT_TOKEN,
             "chat_id": cls.DEFAULT_CHAT_ID,

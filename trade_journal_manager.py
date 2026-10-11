@@ -1659,17 +1659,15 @@ class SequentialTradeEngine:
             sym_str = str(act.get("contract", "")) + " " + str(act.get("instrument", ""))
             sym = resolve_symbol(sym_str)
         state_file = cls.get_state_file_path(sym)
+        temp_path = f"{state_file}.tmp.{os.getpid()}"
         try:
-            with open(state_file, "w", encoding="utf-8") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
+            os.replace(temp_path, state_file)
         except Exception as e:
             try:
-                temp_path = f"{state_file}.tmp.{os.getpid()}"
-                with open(temp_path, "w", encoding="utf-8") as f:
+                with open(state_file, "w", encoding="utf-8") as f:
                     json.dump(state, f, indent=2)
-                if os.path.exists(state_file):
-                    os.remove(state_file)
-                os.replace(temp_path, state_file)
             except Exception as e2:
                 logger.warning(f"Failed to persist sequential state to {state_file}: {e2}")
 
@@ -2358,9 +2356,23 @@ class SequentialTradeEngine:
         if target_2 <= target_1:
             target_2 = round(actual_entry + spec_tgt2_pts, 2)
 
-        t1_status = active.get("t1_status", "PENDING")
         t1_qty = int(active.get("t1_qty", qty // 2))
         t2_qty = qty - t1_qty
+        t1_status = active.get("t1_status", "PENDING")
+        # Mandatory EOD Cutoff (03:10 PM IST) — Auto-Square-off active in-flight trades to eliminate overnight decay risk
+        now_ist = datetime.now(IST)
+        if now_ist.weekday() < 5 and now_ist.time() >= time(15, 10):
+            exit_pts = round(current_ltp - actual_entry, 2)
+            exit_pnl = round(exit_pts * qty, 2)
+            status_desc = f"Auto Square-Off (+{exit_pts} pts)" if exit_pts >= 0 else f"Auto Square-Off ({exit_pts} pts)"
+            return cls.close_trade(
+                exit_price=current_ltp,
+                status=status_desc,
+                exit_time=now_ist.strftime("%I:%M:%S %p IST"),
+                notes=f"Mandatory EOD Cutoff (03:10 PM IST) enforced. Position closed at market ₹{current_ltp:.2f} (Net: {'+' if exit_pnl>=0 else ''}₹{exit_pnl:,.2f})",
+                starting_cash=starting_cash,
+                symbol=active_sym
+            )
 
         # Scenario 1: Tranche 1 is still pending
         if t1_status == "PENDING":

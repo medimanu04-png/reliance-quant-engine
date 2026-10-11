@@ -298,6 +298,9 @@ class GrowwMarketFeed:
                     self._fetch_live_wallet_and_positions()
             except Exception as e:
                 logger.debug(f"Wallet poller loop error: {e}")
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    logger.warning("⚠️ [Groww Rate Limit] HTTP 429 in wallet poller. Backing off 15s...")
+                    time.sleep(15.0)
             time.sleep(5.0 if self.is_market_active_now() else 30.0)
 
     def _spot_poller_loop(self):
@@ -314,6 +317,9 @@ class GrowwMarketFeed:
                     self._fetch_spot_now(symbol=sym)
                 except Exception as e:
                     logger.debug(f"Spot poller loop error for {sym}: {e}")
+                    if "429" in str(e) or "Too Many Requests" in str(e):
+                        logger.warning(f"⚠️ [Groww Rate Limit] HTTP 429 in spot poller for {sym}. Backing off 15s...")
+                        time.sleep(15.0)
             time.sleep(1.0 if self.is_market_active_now() else 20.0)
 
     def _option_chain_poller_loop(self):
@@ -330,10 +336,13 @@ class GrowwMarketFeed:
                     self._fetch_chain_now(symbol=sym)
                 except Exception as e:
                     logger.debug(f"Option chain poller loop error for {sym}: {e}")
+                    if "429" in str(e) or "Too Many Requests" in str(e):
+                        logger.warning(f"⚠️ [Groww Rate Limit] HTTP 429 in option chain poller for {sym}. Backing off 15s...")
+                        time.sleep(15.0)
             time.sleep(2.0 if self.is_market_active_now() else 25.0)
 
     def _benchmark_poller_loop(self):
-        """Dedicated benchmark poller (3.0s in-market, 30.0s off-market). Zero delay on NIFTY, BANK NIFTY, VIX, CRUDE."""
+        """Dedicated benchmark poller (15.0s in-market, 45.0s off-market). Minimalist macro ribbon feed."""
         # Immediate benchmark fetch at boot
         try:
             self._execute_live_benchmark_fetch()
@@ -345,7 +354,10 @@ class GrowwMarketFeed:
                 self._execute_live_benchmark_fetch()
             except Exception as e:
                 logger.debug(f"Benchmark poller loop error: {e}")
-            time.sleep(3.0 if self.is_market_active_now() else 30.0)
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    logger.warning("⚠️ [Groww Rate Limit] HTTP 429 in benchmark poller. Backing off 15s...")
+                    time.sleep(15.0)
+            time.sleep(15.0 if self.is_market_active_now() else 45.0)
 
     def _validate_and_initialize(self, access_token: str) -> Dict[str, Any]:
         """

@@ -203,17 +203,24 @@ class MultiAssetCandleFetcher:
             except Exception as e:
                 logger.debug(f"Groww charting candle fetch error ({sym}): {e}")
 
-            # 2. Fast local parquet cache (0ms instant load for both desks)
+            # 2. Fast local parquet cache (checked for freshness)
             if df is None or df.empty or len(df) < 30:
                 cache_file = os.path.join(BASE_DIR, "data_cache", f"{sym.lower()}_5m_cache.parquet")
                 if os.path.exists(cache_file):
                     try:
                         c_df = pd.read_parquet(cache_file)
                         if not c_df.empty and len(c_df) >= 30:
+                            last_bar_dt = c_df.index[-1]
+                            today_d = datetime.now(IST).date()
+                            last_bar_d = last_bar_dt.date() if hasattr(last_bar_dt, "date") else None
+                            is_stale = (last_bar_d is not None and last_bar_d < today_d and datetime.now(IST).weekday() < 5)
+
                             df = c_df.iloc[-120:].copy()
                             cls._cache_5m[sym] = df
                             cls._last_fetch_5m[sym] = now
-                            is_delayed_yfinance = False
+                            is_delayed_yfinance = is_stale
+                            if is_stale:
+                                logger.debug(f"[{sym}] Parquet cache is from previous session ({last_bar_d}). Marked as delayed.")
                     except Exception:
                         pass
 
@@ -473,8 +480,13 @@ class RelianceQuantAlertDaemon:
 
         if spot <= 0:
             nse_data = NSEIndiaFetcher.get_scrip_official_data(sym)
-            spec_fb = get_asset_spec(sym)
-            spot = float(nse_data.get("spot_ltp", spec_fb.default_spot))
+            spot = float(nse_data.get("spot_ltp", 0.0))
+            if spot <= 0:
+                spec_fb = get_asset_spec(sym)
+                if not self.force_run and now_dt.weekday() < 5 and time(9, 15) <= now_dt.time() <= time(15, 30):
+                    logger.warning(f"[{time_str}] ⚠️ Live spot quote unavailable for {sym} from Groww and NSE. Standing down this tick.")
+                    return
+                spot = float(spec_fb.default_spot)
 
         self.last_spot[sym] = spot
 
@@ -771,8 +783,11 @@ class RelianceQuantAlertDaemon:
                     },
                     "last_update": datetime.now(IST).strftime("%I:%M:%S %p IST")
                 }
-                with open(os.path.join(BASE_DIR, f"active_trade_state_{sym}.json"), "w", encoding="utf-8") as f_st:
+                st_target = os.path.join(BASE_DIR, f"active_trade_state_{sym}.json")
+                st_tmp = f"{st_target}.tmp.{os.getpid()}"
+                with open(st_tmp, "w", encoding="utf-8") as f_st:
                     json.dump(active_state_data, f_st, indent=2)
+                os.replace(st_tmp, st_target)
             except Exception as e:
                 logger.debug(f"Error persisting active state: {e}")
 

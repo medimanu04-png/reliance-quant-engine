@@ -887,37 +887,35 @@ st.markdown("""
         visibility: hidden !important;
         opacity: 0 !important;
     }
-    .live-benchmark-grid {
-        display: grid;
-        grid-template-columns: repeat(6, 1fr);
-        gap: 10px;
-        width: 100%;
-        margin-top: 4px;
-        align-items: stretch !important;
-    }
-    @media (max-width: 1200px) {
-        .live-benchmark-grid {
-            grid-template-columns: repeat(3, 1fr);
-        }
-    }
-    @media (max-width: 768px) {
-        .live-benchmark-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-    .live-benchmark-card {
-        background: #0F172A !important;
+    .live-macro-ticker-ribbon {
+        background: #0B1120 !important;
         border: 1px solid #1E293B !important;
-        border-radius: 10px !important;
-        padding: 12px 14px !important;
-        min-height: 114px !important;
-        height: 100% !important;
-        box-sizing: border-box !important;
+        border-radius: 8px !important;
+        padding: 8px 16px !important;
+        margin-bottom: 6px !important;
         display: flex !important;
-        flex-direction: column !important;
+        align-items: center !important;
         justify-content: space-between !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.40) !important;
-        flex: 1 1 auto !important;
+        gap: 12px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+        flex-wrap: wrap !important;
+    }
+    .live-macro-items-container {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        flex-wrap: wrap !important;
+        flex: 1 !important;
+        justify-content: space-around !important;
+    }
+    .live-macro-ticker-item {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 10px !important;
+        border-radius: 6px !important;
+        background: rgba(15, 23, 42, 0.65) !important;
+        border: 1px solid rgba(30, 41, 59, 0.85) !important;
     }
 
     /* 6-Vector Quantitative Confluence Grid */
@@ -1880,7 +1878,7 @@ elif manual_rescan and active_route != "":
     st.session_state["manual_rescan_clicked"] = False
 st.session_state["just_rescanned"] = False
 
-# 6 Sleek Live Market Cards with Dynamic Streaming Fragment
+# Sleek Minimalist Macro Benchmarks Ribbon (Option B: NIFTY 50, BSE SENSEX, BANK NIFTY, INDIA VIX)
 def _render_live_macro_benchmarks_strip_body():
     tick_payload = NSEIndiaFetcher.get_dynamic_market_ticks()
     benchmarks = tick_payload["benchmarks"]
@@ -1888,106 +1886,64 @@ def _render_live_macro_benchmarks_strip_body():
 
     from groww_market_feed import GrowwMarketFeed
     groww_inst = GrowwMarketFeed.get_instance()
-    source_label = "Groww Trading API (0-Delay Authenticated)" if groww_inst.is_connected else "Groww Live Feed (0-Delay Direct Engine)"
+    source_label = "Groww API" if groww_inst.is_connected else "Groww Feed"
 
-    cards_html = []
-    order = ["NIFTY 50", "BSE SENSEX", "BANK NIFTY", "GIFT NIFTY", "INDIA VIX", "CRUDE OIL"]
-    benchmark_source_map = {
-        "NIFTY 50": "Groww API (NSE)",
-        "BSE SENSEX": "Groww API (BSE)",
-        "BANK NIFTY": "Groww API (NSE)",
-        "GIFT NIFTY": "Groww API (NSE IX)",
-        "S&P 500 (US)": "Groww API (Global)",
-        "INDIA VIX": "Groww API (NSE VIX)",
-        "CRUDE OIL": "Groww API (MCX)"
-    }
+    items_html = []
+    order = ["NIFTY 50", "BSE SENSEX", "BANK NIFTY", "INDIA VIX"]
     fallback_b = NSEIndiaFetcher.get_live_market_benchmarks()
     for key in order:
         data = benchmarks.get(key) or fallback_b.get(key)
         if not data:
             continue
-        card_source = benchmark_source_map.get(key, "Groww Live Feed")
         is_pos = data['change'] >= 0
 
         if is_pos:
-            pts_color = "#10B981"  # Vibrant Emerald Green
+            pts_color = "#10B981"
             pts_arrow = "▲"
             pts_sign = "+"
-            badge_bg = "rgba(16, 185, 129, 0.20)"
-            badge_border = "rgba(16, 185, 129, 0.40)"
-            badge_color = "#34D399"
+            badge_bg = "rgba(16, 185, 129, 0.15)"
+            badge_border = "rgba(16, 185, 129, 0.35)"
         else:
-            pts_color = "#EF4444"  # Vibrant Crimson Red
+            pts_color = "#EF4444"
             pts_arrow = "▼"
             pts_sign = ""
-            badge_bg = "rgba(239, 68, 68, 0.20)"
-            badge_border = "rgba(239, 68, 68, 0.40)"
-            badge_color = "#F87171"
+            badge_bg = "rgba(239, 68, 68, 0.15)"
+            badge_border = "rgba(239, 68, 68, 0.35)"
 
         prefix = data.get('prefix', '₹')
         val_str = f"{prefix}{data['price']:,.2f}"
-
-        if data['unit'] in ['/bbl', '/10g']:
-            chg_sub_str = f"{pts_arrow} {pts_sign}{data['change']:,.2f} {data['unit']}"
-        else:
-            chg_sub_str = f"{pts_arrow} {pts_sign}{data['change']:,.2f} {data['unit']}"
-
         icon_prefix = f"{data['icon']} " if data.get('icon') else ""
 
-        tick_is_up = data.get('tick_direction') == 'UP'
-        tick_arrow = "▲" if tick_is_up else "▼"
-        tick_color = "#34D399" if tick_is_up else "#F87171"
-        tick_bg = "rgba(16, 185, 129, 0.15)" if tick_is_up else "rgba(239, 68, 68, 0.15)"
-        tick_delta_val = data.get('tick_delta', 0.0)
-
-        cards_html.append(f"""
-        <div class="live-benchmark-card">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 0.78rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.5px;">{icon_prefix}{data['name']}</span>
-                <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid {badge_border};">
-                    {pts_sign}{data['pct_change']:.2f}%
-                </span>
-            </div>
-            <div style="font-size: 1.55rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 2px 0; letter-spacing: -0.5px; display: flex; align-items: baseline; justify-content: space-between;">
-                <span>{val_str}</span>
-                <span style="font-size: 0.76rem; color: {tick_color}; font-weight: 800; background: {tick_bg}; padding: 1px 6px; border-radius: 4px;">
-                    {tick_arrow} {tick_delta_val:+.2f}
-                </span>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-                <span style="color: {pts_color}; font-weight: 700; font-size: 0.86rem; letter-spacing: 0.2px;">
-                    {chg_sub_str}
-                </span>
-                <span style="color: #94A3B8; font-size: 0.70rem; font-weight: 500;">
-                    {data['category']}
-                </span>
-            </div>
-            <div style="font-size: 0.68rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 6px; padding-top: 5px; display: flex; justify-content: space-between; align-items: center; gap: 4px; width: 100%; box-sizing: border-box;">
-                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 65%; color: #64748B;">Source: <b style="color: #38BDF8;">{card_source}</b></span>
-                <span style="color: #10B981; font-weight: 700; font-size: 0.66rem; white-space: nowrap; flex-shrink: 0; background: rgba(16, 185, 129, 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.25);">LIVE 0-DELAY</span>
-            </div>
+        items_html.append(f"""
+        <div class="live-macro-ticker-item">
+            <span style="font-size: 0.76rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.3px;">{icon_prefix}{data['name']}</span>
+            <span style="font-size: 0.88rem; font-weight: 800; color: #FFFFFF; font-family: 'JetBrains Mono', monospace, sans-serif;">{val_str}</span>
+            <span style="font-size: 0.72rem; color: {pts_color}; font-weight: 700; background: {badge_bg}; border: 1px solid {badge_border}; padding: 1px 6px; border-radius: 4px;">
+                {pts_arrow} {pts_sign}{data['change']:,.2f} ({pts_sign}{data['pct_change']:.2f}%)
+            </span>
         </div>
         """)
 
-    all_cards_str = "\n".join(cards_html)
+    all_items_str = "\n".join(items_html)
 
     st.html(f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="live-dot"></span>
-            <span style="font-size: 0.76rem; font-weight: 700; color: #10B981; letter-spacing: 0.5px; text-transform: uppercase;">
-                LIVE REAL-TIME INDIAN MARKET BENCHMARKS (1-SEC STREAM)
-            </span>
-            <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; font-size: 0.68rem; padding: 1px 7px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3);">
-                GROWW 0-DELAY
+    <div class="live-macro-ticker-ribbon">
+        <div style="display: flex; align-items: center; gap: 7px; flex-shrink: 0;">
+            <span class="live-dot" style="width: 8px; height: 8px; margin-right: 0;"></span>
+            <span style="font-size: 0.72rem; font-weight: 800; color: #10B981; letter-spacing: 0.5px; text-transform: uppercase;">
+                BENCHMARKS
             </span>
         </div>
-        <div style="font-size: 0.74rem; color: #94A3B8;">
-            ⏱️ Feed Time: <b style="color: #FFFFFF;">{feed_time}</b> &nbsp;|&nbsp; Source: <b style="color: #38BDF8;">{source_label}</b> &nbsp;|&nbsp; <span style="color: #10B981; font-weight: 800;">● STREAMING (1s)</span>
+        <div class="live-macro-items-container">
+            {all_items_str}
         </div>
-    </div>
-    <div class="live-benchmark-grid">
-        {all_cards_str}
+        <div style="font-size: 0.70rem; color: #64748B; flex-shrink: 0; display: flex; align-items: center; gap: 6px;">
+            <span>⏱️ <b style="color: #94A3B8;">{feed_time}</b></span>
+            <span>•</span>
+            <span style="color: #38BDF8; font-weight: 600;">{source_label}</span>
+            <span>•</span>
+            <span style="color: #10B981; font-weight: 700;">15s</span>
+        </div>
     </div>
     """)
 
@@ -1998,7 +1954,8 @@ def render_live_macro_benchmarks_strip():
         # Zero fragment, zero background timers, completely static & blink-free in Off state!
         _render_live_macro_benchmarks_strip_body()
     else:
-        @st.fragment(run_every=run_cadence)
+        bench_cadence = max(15, run_cadence)
+        @st.fragment(run_every=bench_cadence)
         def _stream_live_macro_benchmarks_frag():
             _render_live_macro_benchmarks_strip_body()
         _stream_live_macro_benchmarks_frag()
@@ -6629,12 +6586,20 @@ if df is not None and not df.empty:
         raw_bearish -= 4.0
         midday_penalty_active = True
 
-    # Calibrated Institutional Sigmoid Mapping (Maps raw confluence edge accurately to statistical win rates)
-    # Smooth, balanced calibration (k=0.08, s0=42.0) to prevent artificial saturation at 96%
+    # Calibrated Institutional Sigmoid Mapping (Unified with fo_quant_engine & calibrated_quant_config.json)
+    _calib_k, _calib_s0 = 0.08, 42.0
+    try:
+        _cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibrated_quant_config.json")
+        if os.path.exists(_cfg_path):
+            with open(_cfg_path, "r", encoding="utf-8") as _f_cfg:
+                _c_data = json.load(_f_cfg)
+                _calib_k = float(_c_data.get("calibrated_sigmoid_k", _calib_k))
+                _calib_s0 = float(_c_data.get("calibrated_sigmoid_s0", _calib_s0))
+    except Exception:
+        pass
+
     def calibrate_prob(score: float) -> float:
-        k = 0.08
-        s0 = 42.0
-        return round(100.0 / (1.0 + math.exp(-k * (score - s0))), 1)
+        return round(100.0 / (1.0 + math.exp(-_calib_k * (score - _calib_s0))), 1)
 
     bullish_score = min(96.0, max(10.0, calibrate_prob(raw_bullish)))
     bearish_score = min(96.0, max(10.0, calibrate_prob(raw_bearish)))
@@ -9144,7 +9109,7 @@ if df is not None and not df.empty:
                     </span>
                 </div>
                 <div style="font-size: 0.75rem; color: #94A3B8;">
-                    Aggregated: <b style="color: #34D399; font-size: 0.85rem;">{base_confluence:.1f} pts</b> &nbsp;|&nbsp; Macro News: <b style="color: {'#34D399' if news_modifier >= 0 else '#F87171'}; font-size: 0.85rem;">{news_modifier:+.1f} pts</b> <span style="color: #64748B;">(Raw: {raw_composite_pts:.1f} pts)</span> &nbsp;|&nbsp; Calibrated Win Rate: <b style="color: #FFFFFF; font-size: 0.90rem; cursor: help;" title="Sigmoid Calibration: Raw {raw_composite_pts:.1f} pts mapped via institutional logistic curve (58.0 pts = 50% neutral baseline) into statistical win probability">{active_conf_score}%</b>
+                    Aggregated: <b style="color: #34D399; font-size: 0.85rem;">{base_confluence:.1f} pts</b> &nbsp;|&nbsp; Macro News: <b style="color: {'#34D399' if news_modifier >= 0 else '#F87171'}; font-size: 0.85rem;">{news_modifier:+.1f} pts</b> <span style="color: #64748B;">(Raw: {raw_composite_pts:.1f} pts)</span> &nbsp;|&nbsp; Calibrated Win Rate: <b style="color: #FFFFFF; font-size: 0.90rem; cursor: help;" title="Sigmoid Calibration: Raw {raw_composite_pts:.1f} pts mapped via institutional logistic curve ({_calib_s0:.1f} pts = 50% neutral baseline, k={_calib_k}) into statistical win probability">{active_conf_score}%</b>
                 </div>
             </div>
             <div class="vector-grid">
