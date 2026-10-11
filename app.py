@@ -620,6 +620,9 @@ st.markdown("""
         background-color: #1E293B !important;
         color: #FFFFFF !important;
         border: 1px solid #334155 !important;
+        min-height: 38px !important;
+        height: 38px !important;
+        border-radius: 6px !important;
     }
     div[data-baseweb="select"] * {
         color: #FFFFFF !important;
@@ -676,6 +679,11 @@ st.markdown("""
         border: 1px solid #334155 !important;
         border-radius: 6px !important;
         font-weight: 700 !important;
+        min-height: 38px !important;
+        height: 38px !important;
+        line-height: 38px !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
         transition: all 0.2s ease !important;
     }
     .stButton > button:hover {
@@ -708,6 +716,14 @@ st.markdown("""
         background: #0A0D14 !important;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
         width: 100% !important;
+    }
+
+    /* Custom Component & Quant Clock Iframes - Clean borderless host without double borders */
+    div[data-testid="stCustomComponentV1"] iframe {
+        border: none !important;
+        border-radius: 8px !important;
+        background: transparent !important;
+        box-shadow: none !important;
     }
 
     /* Streamlit Alerts High Contrast */
@@ -1096,15 +1112,20 @@ def render_quant_desk_clock():
     .quant-clock-card {{
         background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(20, 30, 55, 0.95) 100%);
         border: 1px solid rgba(56, 189, 248, 0.35);
-        border-radius: 10px;
-        padding: 9px 13px;
+        border-radius: 8px;
+        padding: 6px 12px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        box-sizing: border-box;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }}
     .header-row {{
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 3px;
+        margin-bottom: 2px;
     }}
     .title {{
         font-size: 0.65rem;
@@ -1139,21 +1160,23 @@ def render_quant_desk_clock():
         border-radius: 4px;
         font-family: monospace;
     }}
-    .time-row {{
+    .mid-row {{
         display: flex;
-        align-items: baseline;
         justify-content: space-between;
-        margin-top: 1px;
+        align-items: center;
+        gap: 8px;
+        margin: 1px 0;
     }}
     .time-digits {{
         font-family: 'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
-        font-size: 1.45rem;
+        font-size: 1.40rem;
         font-weight: 800;
         color: #38BDF8;
         letter-spacing: 1.2px;
         text-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
         line-height: 1.1;
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
     }}
     .time-sec {{
         color: #F8FAFC;
@@ -1166,21 +1189,29 @@ def render_quant_desk_clock():
         font-weight: 700;
         margin-left: 2px;
     }}
+    .mid-meta {{
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px;
+        text-align: right;
+    }}
     .date-text {{
-        font-size: 0.70rem;
+        font-size: 0.68rem;
         color: #CBD5E1;
-        font-weight: 500;
-        margin-top: 2px;
+        font-weight: 600;
+        white-space: nowrap;
     }}
     .session-area {{
-        margin-top: 4px;
+        margin-top: 0;
+        white-space: nowrap;
     }}
     .footer-row {{
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-top: 5px;
-        padding-top: 4px;
+        margin-top: 2px;
+        padding-top: 3px;
         border-top: 1px solid rgba(148, 163, 184, 0.14);
         font-size: 0.62rem;
         color: #94A3B8;
@@ -1198,11 +1229,13 @@ def render_quant_desk_clock():
         </div>
         <div class="badge">IST &bull; UTC+5:30</div>
     </div>
-    <div class="time-row">
+    <div class="mid-row">
         <div id="quant-clock-time" class="time-digits">{h_init}:{m_init}:<span class="time-sec">{s_init}</span> <span class="time-ampm">{ampm_init}</span></div>
+        <div class="mid-meta">
+            <div id="quant-clock-date" class="date-text">📅 {date_init}</div>
+            <div id="quant-clock-session" class="session-area">{init_sess_html}</div>
+        </div>
     </div>
-    <div id="quant-clock-date" class="date-text">📅 {date_init}</div>
-    <div id="quant-clock-session" class="session-area">{init_sess_html}</div>
     <div class="footer-row">
         <span>📅 NSE CALENDAR: <b style="color: #38BDF8;">LINKED & LIVE</b></span>
         <span>🏖️ NEXT: <b style="color: #FCD34D;">{next_hol_str}</b></span>
@@ -1294,7 +1327,7 @@ def render_quant_desk_clock():
 </script>
 </body>
 </html>"""
-    components.html(html_code, height=138, scrolling=False)
+    components.html(html_code, height=96, scrolling=False)
 
 
 def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
@@ -1744,7 +1777,7 @@ def resolve_rescan_cadence():
 
 def render_auto_rescan_controller():
     # 1. Action Bar: Rendered directly outside any fragment so button & selectbox NEVER clear or blink
-    col_rb, col_cb = st.columns([1.6, 1.2])
+    col_rb, col_cb = st.columns([1.6, 1.2], gap="small")
     with col_rb:
         key_suffix = f"_{active_route or 'hp'}"
         rescan_btn = st_button_stretch("🔄 Instant Market Rescan", key=f"btn_instant_rescan{key_suffix}")
@@ -1840,6 +1873,9 @@ def render_auto_rescan_controller():
             chg_col = "#10B981" if chg_val >= 0 else "#EF4444"
             other_desk = "Sensex" if (cur_sel_scrip == "NIFTY 50" or cur_sel_scrip == "NIFTY") else "Nifty"
             other_label = "BSE SENSEX" if other_desk == "Sensex" else "NIFTY 50"
+            is_sensex = ("SENSEX" in cur_sel_scrip.upper() or "BSESN" in cur_sel_scrip.upper())
+            desk_border = "rgba(168, 85, 247, 0.35)" if is_sensex else "rgba(16, 185, 129, 0.35)"
+            sym_color = "#C084FC" if is_sensex else "#34D399"
 
             st.html(f"""
             <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
@@ -1847,8 +1883,8 @@ def render_auto_rescan_controller():
                 <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
                 <span>⚡ Multi-Desk Sync: <b style="color: #34D399;">Active & Live</b></span>
             </div>
-            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid #1E293B; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
-                <span>⚡ <b style="color: #FFFFFF;">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot) • ₹<b style="color: #FFFFFF;">{ltp_val:,.2f}</b> (<b style="color: {chg_col};">{chg_sign}{chg_val:.1f}</b>)</span>
+            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid {desk_border}; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
+                <span>⚡ <b style="color: {sym_color};">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot) • ₹<b style="color: #FFFFFF;">{ltp_val:,.2f}</b> (<b style="color: {chg_col};">{chg_sign}{chg_val:.1f}</b>)</span>
                 <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
                 <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
                 <a href="./{other_desk}?stock={other_desk}" target="_blank" style="text-decoration: none; color: #38BDF8; font-weight: 700;">↗ Open {other_label} Desk</a>
@@ -6356,7 +6392,7 @@ if df is not None and not df.empty:
     render_persistent_sticky_header()
 
     # Fast Rescan Controller & Live Real-Time Quant Desk Clock Watch (Multi-Desk Synchronized)
-    top_ctrl_col, top_clock_col = st.columns([2.3, 1.7])
+    top_ctrl_col, top_clock_col = st.columns([2.3, 1.7], gap="small")
     with top_ctrl_col:
         render_auto_rescan_controller()
     with top_clock_col:

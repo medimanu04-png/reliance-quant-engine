@@ -30,7 +30,7 @@ def render_homepage(ctx: dict):
     if render_sticky_header_fn:
         render_sticky_header_fn()
 
-    top_ctrl_col, top_clock_col = st.columns([2.3, 1.7])
+    top_ctrl_col, top_clock_col = st.columns([2.3, 1.7], gap="small")
     with top_ctrl_col:
         if render_auto_rescan_fn:
             render_auto_rescan_fn()
