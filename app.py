@@ -916,31 +916,34 @@ st.markdown("""
         background: #0B1120 !important;
         border: 1px solid #1E293B !important;
         border-radius: 8px !important;
-        padding: 8px 16px !important;
-        margin-bottom: 6px !important;
+        padding: 6px 14px !important;
+        margin-bottom: 8px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: space-between !important;
-        gap: 12px !important;
+        gap: 10px !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
-        flex-wrap: wrap !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
     }
     .live-macro-items-container {
         display: flex !important;
         align-items: center !important;
-        gap: 12px !important;
-        flex-wrap: wrap !important;
+        gap: 8px !important;
+        flex-wrap: nowrap !important;
         flex: 1 !important;
-        justify-content: space-around !important;
+        justify-content: space-evenly !important;
     }
     .live-macro-ticker-item {
         display: flex !important;
         align-items: center !important;
-        gap: 8px !important;
-        padding: 4px 10px !important;
+        gap: 6px !important;
+        padding: 3px 8px !important;
         border-radius: 6px !important;
         background: rgba(15, 23, 42, 0.65) !important;
         border: 1px solid rgba(30, 41, 59, 0.85) !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
     }
 
     /* 6-Vector Quantitative Confluence Grid */
@@ -1940,9 +1943,9 @@ def _render_live_macro_benchmarks_strip_body():
 
         items_html.append(f"""
         <div class="live-macro-ticker-item">
-            <span style="font-size: 0.76rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.3px;">{icon_prefix}{data['name']}</span>
-            <span style="font-size: 0.88rem; font-weight: 800; color: #FFFFFF; font-family: 'JetBrains Mono', monospace, sans-serif;">{val_str}</span>
-            <span style="font-size: 0.72rem; color: {pts_color}; font-weight: 700; background: {badge_bg}; border: 1px solid {badge_border}; padding: 1px 6px; border-radius: 4px;">
+            <span style="font-size: 0.73rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.2px; white-space: nowrap;">{icon_prefix}{data['name']}</span>
+            <span style="font-size: 0.85rem; font-weight: 800; color: #FFFFFF; font-family: 'JetBrains Mono', monospace, sans-serif; white-space: nowrap;">{val_str}</span>
+            <span style="font-size: 0.70rem; color: {pts_color}; font-weight: 700; background: {badge_bg}; border: 1px solid {badge_border}; padding: 1px 5px; border-radius: 4px; white-space: nowrap;">
                 {pts_arrow} {pts_sign}{data['change']:,.2f} ({pts_sign}{data['pct_change']:.2f}%)
             </span>
         </div>
@@ -1952,8 +1955,8 @@ def _render_live_macro_benchmarks_strip_body():
 
     st.html(f"""
     <div class="live-macro-ticker-ribbon">
-        <div style="display: flex; align-items: center; gap: 7px; flex-shrink: 0;">
-            <span class="live-dot" style="width: 8px; height: 8px; margin-right: 0;"></span>
+        <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap;">
+            <span class="live-dot" style="width: 7px; height: 7px; margin-right: 0;"></span>
             <span style="font-size: 0.72rem; font-weight: 800; color: #10B981; letter-spacing: 0.5px; text-transform: uppercase;">
                 BENCHMARKS
             </span>
@@ -1961,7 +1964,7 @@ def _render_live_macro_benchmarks_strip_body():
         <div class="live-macro-items-container">
             {all_items_str}
         </div>
-        <div style="font-size: 0.70rem; color: #64748B; flex-shrink: 0; display: flex; align-items: center; gap: 6px;">
+        <div style="font-size: 0.70rem; color: #64748B; flex-shrink: 0; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
             <span>⏱️ <b style="color: #94A3B8;">{feed_time}</b></span>
             <span>•</span>
             <span style="color: #38BDF8; font-weight: 600;">{source_label}</span>
@@ -2521,8 +2524,8 @@ class MultiTimeframeMatrixEngine:
         vwap_5 = float(df_5m['VWAP'].iloc[-1]) if 'VWAP' in df_5m.columns else spot
         st_dir_5 = int(df_5m['SuperTrend_Dir'].iloc[-1]) if 'SuperTrend_Dir' in df_5m.columns else 1
         
-        m5_bullish = (spot >= vwap_5) and (ema9_5 >= ema20_5) and (st_dir_5 == 1)
-        m5_bearish = (spot <= vwap_5) and (ema9_5 <= ema20_5) and (st_dir_5 == -1)
+        m5_bullish = ((spot >= vwap_5) and (ema9_5 >= ema20_5 or spot >= ema50_15 or st_dir_5 == 1)) or (st_dir_5 == 1 and ema9_5 >= ema20_5)
+        m5_bearish = ((spot <= vwap_5) and (ema9_5 <= ema20_5 or spot <= ema50_15 or st_dir_5 == -1)) or (st_dir_5 == -1 and ema9_5 <= ema20_5)
         
         if m5_bullish:
             m5_trigger = "BULLISH_TRIGGER_ARMED"
@@ -2540,8 +2543,16 @@ class MultiTimeframeMatrixEngine:
         # 3. 1-Minute Scalp Execution Timing & Limit-Order Premium Optimization
         # Pinpoints optimal limit-order entry to save ₹0.30–₹0.60 on option premium
         atr_val = float(df_active['ATR'].iloc[-1]) if 'ATR' in df_active.columns else 8.0
-        # Micro pullback support depth on spot (typically 0.40 - 0.70 pts on Reliance)
-        micro_pullback_spot = round(max(0.40, min(0.90, 0.065 * atr_val)), 2)
+        # Dynamic micro-pullback depth scaled to asset magnitude
+        if spot > 50000:  # BSE SENSEX
+            micro_pullback_spot = round(max(5.0, min(35.0, 0.08 * atr_val)), 2)
+            premium_savings_pts = round(max(1.5, min(12.0, micro_pullback_spot * delta_val)), 2)
+        elif spot > 15000:  # NIFTY 50
+            micro_pullback_spot = round(max(1.5, min(10.0, 0.08 * atr_val)), 2)
+            premium_savings_pts = round(max(0.6, min(4.5, micro_pullback_spot * delta_val)), 2)
+        else:  # Equities (e.g. Reliance)
+            micro_pullback_spot = round(max(0.40, min(1.80, 0.065 * atr_val)), 2)
+            premium_savings_pts = round(max(0.30, min(0.90, micro_pullback_spot * delta_val)), 2)
         
         limit_entry_spot_ce = round(spot - micro_pullback_spot, 2)
         limit_entry_spot_pe = round(spot + micro_pullback_spot, 2)
@@ -6361,7 +6372,10 @@ if df is not None and not df.empty:
 
     st.markdown("---")
 
-    # Dynamic Prevailing Market Bias Resolution with Institutional Conviction Tier
+    # Real-Time Benchmark Index Telemetry Ribbon across Both Desks
+    render_live_macro_benchmarks_strip()
+
+    st.markdown("---")
     active_side_conviction = bearish_score if recommended_contract_type == "PE" else bullish_score
     active_side_name = "Bearish" if recommended_contract_type == "PE" else "Bullish"
     active_side_icon = "🔴" if recommended_contract_type == "PE" else "🟢"
