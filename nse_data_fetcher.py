@@ -36,8 +36,18 @@ class NSEIndiaFetcher:
     _cached_data = None
     _last_fetch_time = 0
     _cached_expiry_mandate = None
-    _last_expiry_calc_time = 0
-    CACHE_TTL_SECONDS = 1.0  # Real-time Groww live feed with 0-delay instant caching
+    CACHE_TTL_SECONDS = 5.0  # Real-time Groww live feed with high-performance in-memory caching
+    BENCHMARK_CACHE_TTL = 5.0  # Real-time Groww live feed with high-performance continuous streaming
+
+    @classmethod
+    def get_cache_ttl(cls) -> float:
+        try:
+            from groww_market_feed import GrowwMarketFeed
+            if not GrowwMarketFeed.is_market_active_now():
+                return 30.0
+        except Exception:
+            pass
+        return 5.0
 
     @classmethod
     def clear_all_caches(cls):
@@ -101,7 +111,7 @@ class NSEIndiaFetcher:
         cached = getattr(cls, cache_attr, None)
         last_t = getattr(cls, time_attr, 0.0)
 
-        if not force_refresh and cached and (now - last_t < cls.CACHE_TTL_SECONDS):
+        if not force_refresh and cached and (now - last_t < cls.get_cache_ttl()):
             return cached
 
         # Check Groww live feed directly for 0-delay real-time market data
@@ -419,7 +429,6 @@ class NSEIndiaFetcher:
     _cached_benchmarks = None
     _last_benchmark_time = 0
     _prev_benchmark_ticks = {}
-    BENCHMARK_CACHE_TTL = 1.0  # Real-time Groww live feed with 0-delay continuous streaming
 
     @classmethod
     def get_live_market_benchmarks(cls, force_refresh: bool = False) -> Dict[str, Any]:
@@ -434,7 +443,7 @@ class NSEIndiaFetcher:
         All numbers 100% real-time with 0 delay.
         """
         now = time.time()
-        if not force_refresh and cls._cached_benchmarks and (now - cls._last_benchmark_time < cls.BENCHMARK_CACHE_TTL):
+        if not force_refresh and cls._cached_benchmarks and (now - cls._last_benchmark_time < cls.get_cache_ttl()):
             return cls._cached_benchmarks
 
         # Check Groww live feed directly for 0-delay real-time ticks

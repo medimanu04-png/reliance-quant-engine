@@ -27,13 +27,11 @@ IST = pytz.timezone("Asia/Kolkata")
 from asset_config import get_asset_spec, resolve_symbol
 from nse_calendar import nse_calendar
 
-try:
-    from growwapi.groww.exceptions import GrowwAPIAuthenticationException, GrowwAPIException
-except Exception:
-    class GrowwAPIAuthenticationException(Exception):
-        pass
-    class GrowwAPIException(Exception):
-        pass
+# Lightweight exception placeholders (prevents 5.5s import latency from heavy growwapi package on app boot)
+class GrowwAPIAuthenticationException(Exception):
+    pass
+class GrowwAPIException(Exception):
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -391,18 +389,17 @@ class GrowwMarketFeed:
                 "message": f"🟢 Groww Account verified! Welcome {name} (UCC: {ucc})",
                 "profile": profile
             }
-        except GrowwAPIAuthenticationException as e:
-            self._is_connected = False
-            self._user_profile = None
-            self._last_error = "Authentication failed. Your API token has either expired or is invalid."
-            return {
-                "status": "ERROR",
-                "message": "❌ Authentication failed: Your API token has either expired or is invalid. Please copy a fresh token from groww.in/trade-api/api-keys."
-            }
         except Exception as e:
             self._is_connected = False
             self._user_profile = None
             err_str = str(e)
+            is_auth_err = ("Authentication" in type(e).__name__) or ("expired" in err_str.lower()) or ("invalid" in err_str.lower())
+            if is_auth_err:
+                self._last_error = "Authentication failed. Your API token has either expired or is invalid."
+                return {
+                    "status": "ERROR",
+                    "message": "❌ Authentication failed: Your API token has either expired or is invalid. Please copy a fresh token from groww.in/trade-api/api-keys."
+                }
             self._last_error = err_str
             return {
                 "status": "ERROR",
@@ -1426,14 +1423,15 @@ class GrowwMarketFeed:
         if underlying in ("NIFTY", "SENSEX"):
             try:
                 now_ts = time.time()
-                # Fast in-memory check (if cached within 1.5s and NOT an uninitialized fallback, return instantly in 0.00ms)
+                cache_ttl = 4.0 if self.is_market_active_now() else 30.0
+                # Fast in-memory check (if cached within TTL and NOT an uninitialized fallback, return instantly in 0.00ms)
                 with self._cache_lock:
                     if hasattr(self, "_cached_spots_by_symbol") and underlying in self._cached_spots_by_symbol:
                         c_data, c_ts = self._cached_spots_by_symbol[underlying]
                         c_p = float(c_data.get("spot_ltp", 0.0))
                         c_prev = float(c_data.get("prev_close", 0.0))
                         is_stale_fallback = (abs(c_p - c_prev) < 0.001) or (c_p in (72000.0, 22450.0))
-                        if now_ts - c_ts < 1.5 and c_p > 0 and not is_stale_fallback:
+                        if now_ts - c_ts < cache_ttl and c_p > 0 and not is_stale_fallback:
                             return c_data.copy()
 
                 # Batch query from Groww's live index server (updates both NIFTY and SENSEX simultaneously)
@@ -1486,13 +1484,17 @@ class GrowwMarketFeed:
             except Exception as e:
                 logger.debug(f"Direct Groww index fetch error for {underlying}: {e}")
 
-            # Secondary fallback via yfinance (grounded to actual live market close)
+            # Secondary fallback via yfinance (with strict 0.75s timeout to prevent Cloud/local UI freeze)
             try:
-                import yfinance as yf
                 yf_sym = "^BSESN" if underlying == "SENSEX" else "^NSEI"
-                t = yf.Ticker(yf_sym)
-                h = t.history(period="2d")
-                if not h.empty and len(h) >= 1:
+                def _get_yf_spot():
+                    import yfinance as yf
+                    t = yf.Ticker(yf_sym)
+                    return t.history(period="2d")
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    fut = ex.submit(_get_yf_spot)
+                    h = fut.result(timeout=0.75)
+                if h is not None and not h.empty and len(h) >= 1:
                     last_c = round(float(h["Close"].iloc[-1]), 2)
                     prev_c = round(float(h["Close"].iloc[-2]) if len(h) >= 2 else float(h["Open"].iloc[-1]), 2)
                     d_chg = round(last_c - prev_c, 2)
@@ -1813,12 +1815,16 @@ class GrowwMarketFeed:
                     self._store_candle_cache(cache_key, df, now_ts)
                     return df
 
-            # 2. Secondary Fallback: yfinance (^NSEI for NIFTY 50)
+            # 2. Secondary Fallback: yfinance (^NSEI for NIFTY 50) with 0.75s timeout
             try:
-                import yfinance as yf
                 yf_sym = "^NSEI" if "50" in symbol or "NIFTY" in symbol else "^CNXENERGY"
-                t = yf.Ticker(yf_sym)
-                df_yf = t.history(period=f"{days}d", interval=interval)
+                def _get_yf_candles():
+                    import yfinance as yf
+                    t = yf.Ticker(yf_sym)
+                    return t.history(period=f"{days}d", interval=interval)
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    fut = ex.submit(_get_yf_candles)
+                    df_yf = fut.result(timeout=0.75)
                 if df_yf is not None and not df_yf.empty and len(df_yf) >= 15:
                     df = df_yf[["Open", "High", "Low", "Close", "Volume"]].copy()
                     self._store_candle_cache(cache_key, df, now_ts)
@@ -3188,22 +3194,32 @@ class GrowwMarketFeed:
         p_high = float(spot_info.get("high", curr_spot * 1.006))
         p_low = float(spot_info.get("low", curr_spot * 0.994))
 
-        # Check if candles cache has prior day High/Low for higher fidelity
-        try:
-            cache_file = os.path.join(os.path.dirname(__file__), "data_cache", f"{underlying.lower()}_5m_cache.parquet")
-            if os.path.exists(cache_file):
-                import pandas as pd
-                c_df = pd.read_parquet(cache_file)
-                if not c_df.empty and len(c_df) >= 30:
-                    unique_dates = sorted(list(set(c_df.index.date))) if hasattr(c_df.index, 'date') else []
-                    if len(unique_dates) > 1:
-                        prev_date = unique_dates[-2]
-                        prev_day_df = c_df[c_df.index.date == prev_date]
-                        p_high = float(prev_day_df['High'].max())
-                        p_low = float(prev_day_df['Low'].min())
-                        p_close = float(prev_day_df['Close'].iloc[-1])
-        except Exception:
-            pass
+        # Check if candles cache has prior day High/Low for higher fidelity (memoized to avoid repeated disk reads)
+        if not hasattr(self, "_cached_prior_day_ohlc"):
+            self._cached_prior_day_ohlc = {}
+        
+        today_date_str = now_ist.strftime("%Y-%m-%d")
+        prior_key = f"{underlying}_{today_date_str}"
+        cached_prior = self._cached_prior_day_ohlc.get(prior_key)
+        if cached_prior:
+            p_high, p_low, p_close = cached_prior
+        else:
+            try:
+                cache_file = os.path.join(os.path.dirname(__file__), "data_cache", f"{underlying.lower()}_5m_cache.parquet")
+                if os.path.exists(cache_file):
+                    import pandas as pd
+                    c_df = pd.read_parquet(cache_file)
+                    if not c_df.empty and len(c_df) >= 30:
+                        unique_dates = sorted(list(set(c_df.index.date))) if hasattr(c_df.index, 'date') else []
+                        if len(unique_dates) > 1:
+                            prev_date = unique_dates[-2]
+                            prev_day_df = c_df[c_df.index.date == prev_date]
+                            p_high = float(prev_day_df['High'].max())
+                            p_low = float(prev_day_df['Low'].min())
+                            p_close = float(prev_day_df['Close'].iloc[-1])
+                            self._cached_prior_day_ohlc[prior_key] = (p_high, p_low, p_close)
+            except Exception:
+                pass
 
         if p_high <= p_low:
             p_high = curr_spot * 1.006

@@ -32,22 +32,12 @@ logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict, Any, Tuple
 
 IST = pytz.timezone("Asia/Kolkata")
-import importlib
 import asset_config
 import groww_market_feed
 import nse_data_fetcher
 import trade_journal_manager
 import pre_market_health_check
 import eod_session_summary
-try:
-    importlib.reload(asset_config)
-    importlib.reload(groww_market_feed)
-    importlib.reload(nse_data_fetcher)
-    importlib.reload(trade_journal_manager)
-    importlib.reload(pre_market_health_check)
-    importlib.reload(eod_session_summary)
-except Exception:
-    pass
 
 from asset_config import get_asset_spec, resolve_symbol, get_daily_asset_schedule, build_contract_symbol, format_contract_code
 from groww_market_feed import GrowwMarketFeed
@@ -65,14 +55,14 @@ from views.ui_components import (
     st_dataframe_stretch,
     show_screenshot_modal,
 )
-import importlib
-import views.homepage_view; importlib.reload(views.homepage_view)
-import views.cockpit_view; importlib.reload(views.cockpit_view)
-import views.radar_view; importlib.reload(views.radar_view)
-import views.corridor_view; importlib.reload(views.corridor_view)
-import views.calendar_view; importlib.reload(views.calendar_view)
-import views.ledger_view; importlib.reload(views.ledger_view)
-import views.settings_view; importlib.reload(views.settings_view)
+
+import views.homepage_view
+import views.cockpit_view
+import views.radar_view
+import views.corridor_view
+import views.calendar_view
+import views.ledger_view
+import views.settings_view
 
 from views.homepage_view import render_homepage
 from views.cockpit_view import render_cockpit_tab
@@ -1894,7 +1884,9 @@ if is_rescan:
 
 cur_sel_scrip = st.session_state.get("selected_scrip", "NIFTY")
 active_feed_sym = resolve_symbol(cur_sel_scrip)
-nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=active_feed_sym)
+nse_data = None
+if active_route != "":
+    nse_data = NSEIndiaFetcher.get_reliance_official_data(force_refresh=is_rescan, symbol=active_feed_sym)
 benchmarks = NSEIndiaFetcher.get_live_market_benchmarks(force_refresh=is_rescan)
 
 if manual_rescan and active_route == "":
@@ -1917,7 +1909,7 @@ def _render_live_macro_benchmarks_strip_body():
 
     items_html = []
     order = ["NIFTY 50", "BSE SENSEX", "BANK NIFTY", "INDIA VIX"]
-    fallback_b = NSEIndiaFetcher.get_live_market_benchmarks()
+    fallback_b = benchmarks
     for key in order:
         data = benchmarks.get(key) or fallback_b.get(key)
         if not data:
