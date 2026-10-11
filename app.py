@@ -65,6 +65,15 @@ from views.ui_components import (
     st_dataframe_stretch,
     show_screenshot_modal,
 )
+import importlib
+import views.homepage_view; importlib.reload(views.homepage_view)
+import views.cockpit_view; importlib.reload(views.cockpit_view)
+import views.radar_view; importlib.reload(views.radar_view)
+import views.corridor_view; importlib.reload(views.corridor_view)
+import views.calendar_view; importlib.reload(views.calendar_view)
+import views.ledger_view; importlib.reload(views.ledger_view)
+import views.settings_view; importlib.reload(views.settings_view)
+
 from views.homepage_view import render_homepage
 from views.cockpit_view import render_cockpit_tab
 from views.radar_view import render_radar_tab

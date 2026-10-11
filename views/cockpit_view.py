@@ -69,6 +69,68 @@ def render_cockpit_tab(ctx: dict):
         </div>
         """)
 
+    spot = float(ctx.get("spot", 0.0))
+
+    # Groww 09:10 AM Pre-Market Support & Resistance Radar
+    try:
+        from groww_market_feed import GrowwMarketFeed
+        sr_telemetry = GrowwMarketFeed.get_instance().get_groww_daily_support_resistance(scrip_symbol)
+        p_val = float(sr_telemetry.get("pivot", 0.0))
+        r1_val = float(sr_telemetry.get("resistance", {}).get("r1", 0.0))
+        r2_val = float(sr_telemetry.get("resistance", {}).get("r2", 0.0))
+        r3_val = float(sr_telemetry.get("resistance", {}).get("r3", 0.0))
+        s1_val = float(sr_telemetry.get("support", {}).get("s1", 0.0))
+        s2_val = float(sr_telemetry.get("support", {}).get("s2", 0.0))
+        s3_val = float(sr_telemetry.get("support", {}).get("s3", 0.0))
+        cpr_data = sr_telemetry.get("cpr", {})
+        tc_val = float(cpr_data.get("tc", 0.0))
+        bc_val = float(cpr_data.get("bc", 0.0))
+        cpr_regime = cpr_data.get("regime", "MODERATE")
+        cam_data = sr_telemetry.get("camarilla", {})
+        h4_val = float(cam_data.get("h4", 0.0))
+        h3_val = float(cam_data.get("h3", 0.0))
+        l3_val = float(cam_data.get("l3", 0.0))
+        l4_val = float(cam_data.get("l4", 0.0))
+
+        st.html(f"""
+        <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.85) 100%); border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.15rem;">🧭</span>
+                    <span style="font-size: 0.90rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">GROWW 09:10 AM PRE-MARKET S&R RADAR</span>
+                    <span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); font-size: 0.70rem; font-weight: 800; padding: 2px 7px; border-radius: 4px;">GROWW APP 09:10 AM DISCOVERY</span>
+                </div>
+                <div style="font-size: 0.74rem; color: #94A3B8;">
+                    CPR Regime: <b style="color: {'#34D399' if 'NARROW' in cpr_regime else '#FBBF24'};">{cpr_regime}</b> &bull; Spot: ₹{spot:,.1f}
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center;">
+                <div style="background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px; padding: 8px;">
+                    <div style="font-size: 0.68rem; color: #FCA5A5; font-weight: 700;">RESISTANCE (GROWW)</div>
+                    <div style="font-size: 0.95rem; font-weight: 900; color: #EF4444; margin-top: 2px;">R1 ₹{r1_val:,.1f}</div>
+                    <div style="font-size: 0.70rem; color: #94A3B8;">R2 ₹{r2_val:,.1f} | R3 ₹{r3_val:,.1f}</div>
+                </div>
+                <div style="background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 8px;">
+                    <div style="font-size: 0.68rem; color: #7DD3FC; font-weight: 700;">FLOOR PIVOT (P)</div>
+                    <div style="font-size: 0.95rem; font-weight: 900; color: #38BDF8; margin-top: 2px;">₹{p_val:,.1f}</div>
+                    <div style="font-size: 0.70rem; color: #94A3B8;">CPR TC ₹{tc_val:,.1f} • BC ₹{bc_val:,.1f}</div>
+                </div>
+                <div style="background: rgba(16, 185, 129, 0.10); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px; padding: 8px;">
+                    <div style="font-size: 0.68rem; color: #6EE7B7; font-weight: 700;">SUPPORT (GROWW)</div>
+                    <div style="font-size: 0.95rem; font-weight: 900; color: #10B981; margin-top: 2px;">S1 ₹{s1_val:,.1f}</div>
+                    <div style="font-size: 0.70rem; color: #94A3B8;">S2 ₹{s2_val:,.1f} | S3 ₹{s3_val:,.1f}</div>
+                </div>
+                <div style="background: rgba(168, 85, 247, 0.10); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 6px; padding: 8px;">
+                    <div style="font-size: 0.68rem; color: #D8B4FE; font-weight: 700;">CAMARILLA RANGE</div>
+                    <div style="font-size: 0.95rem; font-weight: 900; color: #C084FC; margin-top: 2px;">H3 ₹{h3_val:,.1f} / L3 ₹{l3_val:,.1f}</div>
+                    <div style="font-size: 0.70rem; color: #94A3B8;">Breakout: H4 ₹{h4_val:,.1f} | L4 ₹{l4_val:,.1f}</div>
+                </div>
+            </div>
+        </div>
+        """)
+    except Exception as _sr_err:
+        pass
+
     # Sequential Trade State
     seq_state = SequentialTradeEngine.get_state(symbol=scrip_symbol)
     current_seq_state = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
@@ -229,15 +291,18 @@ def render_cockpit_tab(ctx: dict):
     render_execution_trigger_card_fn = ctx.get("render_execution_trigger_card_fn")
     cockpit_trade_plan = ctx.get("cockpit_trade_plan")
     if render_execution_trigger_card_fn and cockpit_trade_plan:
-        render_execution_trigger_card_fn(
-            trade_plan=cockpit_trade_plan,
-            spot=spot,
-            broker_call_ltp=ctx.get("live_broker_ltp", 0.0),
-            corridor=ctx.get("corridor"),
-            low=ctx.get("low_data"),
-            high=ctx.get("high_data"),
-            spot_tick=spot
-        )
+        try:
+            render_execution_trigger_card_fn(
+                trade_plan=cockpit_trade_plan,
+                spot=spot,
+                broker_call_ltp=ctx.get("live_broker_ltp", 0.0),
+                corridor=ctx.get("corridor"),
+                low=ctx.get("low_data"),
+                high=ctx.get("high_data"),
+                spot_tick=spot
+            )
+        except Exception as _e_trig:
+            st.warning(f"Execution Trigger notice: {_e_trig}")
 
     # 6. Institutional Multi-Timeframe Matrix (M15 + M5 + M1)
     mtf_matrix = ctx.get("mtf_matrix")
