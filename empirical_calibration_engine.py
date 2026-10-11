@@ -18,11 +18,18 @@ import os
 import json
 import math
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
-import pytz
-
-IST = pytz.timezone("Asia/Kolkata")
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    try:
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

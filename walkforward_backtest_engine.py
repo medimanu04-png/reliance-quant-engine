@@ -29,11 +29,18 @@ import json
 import math
 from datetime import datetime, time, timedelta
 from typing import Dict, Any, List, Tuple
-import pytz
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    try:
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 import pandas as pd
 import numpy as np
-
-IST = pytz.timezone("Asia/Kolkata")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKTEST_RESULTS_FILE = os.path.join(BASE_DIR, "backtest_results_summary.json")
 

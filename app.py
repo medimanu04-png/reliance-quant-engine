@@ -26,12 +26,19 @@ import time as time_mod
 import json
 import os
 import math
-import pytz
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    try:
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 import logging
 logger = logging.getLogger(__name__)
 from typing import Optional, List, Dict, Any, Tuple
-
-IST = pytz.timezone("Asia/Kolkata")
 import asset_config
 import groww_market_feed
 import nse_data_fetcher

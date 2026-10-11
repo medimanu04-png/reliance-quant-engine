@@ -11,9 +11,16 @@ import calendar
 from datetime import datetime, date, timezone, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 import math
-import pytz
-
-IST = pytz.timezone("Asia/Kolkata")
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    try:
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 from asset_config import get_asset_spec, resolve_symbol
 from nse_calendar import nse_calendar, NSECalendar
 

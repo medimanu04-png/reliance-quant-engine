@@ -9,11 +9,17 @@ Features Option 1 Multi-Tranche Runner Mode (50% Bank at T1 + 50% Runner to T2) 
 import os
 import json
 import pandas as pd
-from datetime import datetime
-import pytz
-from asset_config import resolve_symbol, get_asset_spec
-
-IST = pytz.timezone("Asia/Kolkata")
+from datetime import datetime, timedelta
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    try:
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LIVE_JOURNAL_FILE = os.path.join(BASE_DIR, "daily_trade_journal.json")

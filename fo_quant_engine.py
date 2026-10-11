@@ -34,9 +34,16 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Dict, Any, List, Tuple, Optional
 from asset_config import get_asset_spec, ASSET_SPECS, resolve_symbol
-import pytz
-
-IST = pytz.timezone("Asia/Kolkata")
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    try:
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 from nse_data_fetcher import NSEIndiaFetcher
 
 if sys.stdout.encoding != 'utf-8':

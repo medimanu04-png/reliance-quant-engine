@@ -377,3 +377,16 @@ class EODSessionSummaryEngine:
         except Exception as e:
             logger.error(f"Error rendering EOD Performance Card: {e}", exc_info=True)
 
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Manoj Quant Engine - End-of-Day Audit & Debrief")
+    parser.add_argument("--telegram", action="store_true", help="Send EOD summary to Telegram")
+    parser.add_argument("--force", action="store_true", help="Force re-run EOD debrief bypassing cache")
+    args = parser.parse_args()
+
+    print("[EOD AUDIT] Running End-of-Day Session Audit & Backup...")
+    eod_res = EODSessionSummaryEngine.dispatch_eod_summary(force=args.force, send_telegram=args.telegram)
+    print(f"[STATUS] {eod_res.get('session_badge')} ({eod_res.get('outcome_code')})")
+    print(f"[METRICS] Trades: {eod_res.get('total_trades')} | Net PnL: ₹{eod_res.get('net_post_tax_pnl', 0.0):+,.2f} | Available Margin: ₹{eod_res.get('broker_available_cash', 0.0):,.2f}")
+

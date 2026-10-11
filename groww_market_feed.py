@@ -21,9 +21,16 @@ except (ImportError, OSError):
     import requests
 
 from bs4 import BeautifulSoup
-import pytz
-
-IST = pytz.timezone("Asia/Kolkata")
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    try:
+        from zoneinfo import ZoneInfo
+        IST = ZoneInfo("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 from asset_config import get_asset_spec, resolve_symbol
 from nse_calendar import nse_calendar
 
@@ -111,6 +118,7 @@ class GrowwMarketFeed:
             cls._instance._cached_wallet = cls._instance._get_fallback_wallet()
             cls._instance._has_market_data_role = False
             cls._instance._token_role = ""
+            cls._instance._token_exp = None
 
             # Fast synchronous restoration of verified credentials and profile from local config (< 1ms):
             cls._instance._fast_preload_credentials()
@@ -121,7 +129,7 @@ class GrowwMarketFeed:
         return cls._instance
 
     def _inspect_token_roles(self, token: str):
-        """Extracts permissions from JWT token without external network requests (< 0.1ms)."""
+        """Extracts permissions and expiration from JWT token without external network requests (< 0.1ms)."""
         try:
             import base64
             parts = token.split(".")
@@ -134,10 +142,27 @@ class GrowwMarketFeed:
                 role = sub.get("role", "")
                 self._token_role = role
                 self._has_market_data_role = bool("data" in role or "market" in role)
+                self._token_exp = payload.get("exp")
                 return
         except Exception:
             pass
         self._has_market_data_role = False
+        self._token_exp = None
+
+    def get_token_expiration(self) -> dict:
+        """Returns token expiration telemetry and remaining validity."""
+        if not getattr(self, "_token_exp", None):
+            return {"has_exp": False, "is_expired": False, "remaining_seconds": None, "exp_str": "Unknown"}
+        now_ts = time.time()
+        rem = self._token_exp - now_ts
+        exp_dt = datetime.fromtimestamp(self._token_exp, tz=timezone(timedelta(hours=5, minutes=30)))
+        return {
+            "has_exp": True,
+            "exp_ts": self._token_exp,
+            "is_expired": rem <= 0,
+            "remaining_seconds": max(0.0, rem),
+            "exp_str": exp_dt.strftime("%d-%b-%Y %I:%M:%S %p IST")
+        }
 
     def _fast_preload_credentials(self):
         """Instantly restores cached broker session and profile from Streamlit secrets, env vars, or local storage in < 1ms."""

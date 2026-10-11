@@ -17,14 +17,29 @@ Features:
 """
 
 import os
+import sys
 import json
 import time
 import calendar
 from datetime import datetime, date, timedelta
-from typing import Dict, Any, List, Optional, Tuple, Set
-import pytz
+from typing import Dict, Any, List, Optional, Tuple, Set, Union
 
-IST = pytz.timezone("Asia/Kolkata")
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+try:
+    from zoneinfo import ZoneInfo
+    IST = ZoneInfo("Asia/Kolkata")
+except Exception:
+    try:
+        import pytz
+        IST = pytz.timezone("Asia/Kolkata")
+    except Exception:
+        from datetime import timezone
+        IST = timezone(timedelta(hours=5, minutes=30))
 
 # Path to persistent local cache
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cache")
@@ -632,7 +647,7 @@ class NSECalendar:
     def get_weekly_expiry(
         self,
         today_dt: Optional[datetime] = None,
-        target_weekday: int = 1,
+        target_weekday: Optional[Union[int, str]] = None,
         symbol: str = "NIFTY"
     ) -> Dict[str, Any]:
         """
@@ -641,6 +656,18 @@ class NSECalendar:
         - If today is past 15:30 on expiry day, rolls to next week.
         - Checks against NSE Calendar and prepones if holiday!
         """
+        if isinstance(target_weekday, str):
+            symbol = target_weekday
+            target_weekday = None
+
+        if target_weekday is None:
+            target_weekday = 3 if "SENSEX" in str(symbol).upper() else 1
+        else:
+            try:
+                target_weekday = int(target_weekday)
+            except (ValueError, TypeError):
+                target_weekday = 3 if "SENSEX" in str(symbol).upper() else 1
+
         if today_dt is None:
             today_dt = datetime.now(IST)
         if getattr(today_dt, "tzinfo", None) is not None:

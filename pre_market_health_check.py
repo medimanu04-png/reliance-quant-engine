@@ -459,3 +459,16 @@ class PreMarketHealthCheckEngine:
                             st.rerun()
         except Exception as e:
             logger.error(f"Error rendering Pre-Market Health Card: {e}", exc_info=True)
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Manoj Quant Engine - Pre-Market Health Diagnostics")
+    parser.add_argument("--telegram", action="store_true", help="Send pre-market briefing to Telegram")
+    parser.add_argument("--force", action="store_true", help="Force re-run diagnostics bypassing cache")
+    args = parser.parse_args()
+
+    print("[DIAGNOSTICS] Running Pre-Market Health Check...")
+    diag_res = PreMarketHealthCheckEngine.run_diagnostics(send_telegram=args.telegram, force=args.force)
+    print(f"[STATUS] {diag_res.get('readiness_badge')} ({diag_res.get('readiness_code')})")
+    print(f"[DETAILS] {diag_res.get('readiness_desc')}")
