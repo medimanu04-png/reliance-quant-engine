@@ -1204,7 +1204,6 @@ def render_quant_desk_clock():
     <div class="footer-row">
         <span>📅 NSE CALENDAR: <b style="color: #38BDF8;">LINKED & LIVE</b></span>
         <span>🏖️ NEXT: <b style="color: #FCD34D;">{next_hol_str}</b></span>
-        <span>🛡️ DECAY: <b style="color: #10B981;">10D RULE</b></span>
     </div>
 </div>
 

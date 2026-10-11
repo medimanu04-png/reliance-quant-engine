@@ -259,11 +259,11 @@ def render_radar_tab(ctx: dict):
             "icon": "🛡️",
             "score": sim_v6,
             "max": 12.0,
-            "source": "Dynamic 10-Day Mandate + Black-Scholes Greeks + Dynamic Half-Kelly",
+            "source": "Weekly Expiry Mandate + Black-Scholes Greeks + Dynamic Half-Kelly",
             "metrics": [
                 ("Dynamic Active Contract", f"{scrip_symbol} {atm_strike} {recommended_contract_type} ({expiry_date_str})", f"🟢 {dte} DTE Mandate Active"),
                 ("Dynamic Half-Kelly Sizing", f"{half_kelly_pct:.1f}% ({kelly_recommended_lots} Lot{'s' if kelly_recommended_lots > 1 else ''} | {lot_size * kelly_recommended_lots} Qty | Risk: ₹{v6_risk_val:,.0f})", f"{'🟢 ' + kelly_status.replace('_', ' ') if 'OPTIMAL' in kelly_status else '🟡 ' + kelly_status.replace('_', ' ')}"),
-                ("Decay Avoidance Protocol", "10-Day Window Enforcement", f"🟢 0-DTE Decay 100% Bypassed ({scrip_symbol})"),
+                ("Decay Avoidance Protocol", "Weekly Schedule Enforcement", f"🟢 0-DTE Decay Neutralized ({scrip_symbol})"),
                 ("Greeks Protection Shield", f"Delta: {active_delta:+.2f} ({recommended_contract_type}) | IV: {sigma*100.0:.1f}%", f"🟢 Theta Drag Insulated (+{sim_v6:.0f})")
             ],
             "behavior": v6_beh
