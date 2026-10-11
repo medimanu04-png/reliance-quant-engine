@@ -6429,10 +6429,14 @@ if df is not None and not df.empty:
         t_color = "#34D399" if t_dir == "UP" else "#F87171"
         t_bg = "rgba(16, 185, 129, 0.15)" if t_dir == "UP" else "rgba(239, 68, 68, 0.15)"
         
-        col_spot, col_bias = st.columns([1.2, 1.8])
-        with col_spot:
-            st.html(f"""
-            <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 14px 18px; min-height: 115px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
+        bias_theme_color = "#EF4444" if recommended_contract_type == "PE" else "#10B981"
+        bias_theme_bg = "rgba(239, 68, 68, 0.12)" if recommended_contract_type == "PE" else "rgba(16, 185, 129, 0.12)"
+        bias_theme_border = "rgba(239, 68, 68, 0.35)" if recommended_contract_type == "PE" else "rgba(16, 185, 129, 0.35)"
+        
+        st.html(f"""
+        <div style="display: grid; grid-template-columns: 1.2fr 1.8fr; gap: 14px; margin-bottom: 12px; align-items: stretch;">
+            <!-- Left Card: Live Spot Telemetry -->
+            <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 14px 18px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4); height: 100%; box-sizing: border-box;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 0.78rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">{hero_title}</span>
                     <span style="font-size: 0.68rem; background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 2px 7px; border-radius: 4px; font-weight: 700;">{badge_label}</span>
@@ -6450,13 +6454,9 @@ if df is not None and not df.empty:
                     <span style="font-size: 0.68rem; color: #64748B;">⏱️ {f_time}</span>
                 </div>
             </div>
-            """)
-        with col_bias:
-            bias_theme_color = "#EF4444" if recommended_contract_type == "PE" else "#10B981"
-            bias_theme_bg = "rgba(239, 68, 68, 0.12)" if recommended_contract_type == "PE" else "rgba(16, 185, 129, 0.12)"
-            bias_theme_border = "rgba(239, 68, 68, 0.35)" if recommended_contract_type == "PE" else "rgba(16, 185, 129, 0.35)"
-            st.html(f"""
-            <div style="background: {bias_theme_bg}; border: 1.5px solid {bias_theme_border}; border-radius: 10px; padding: 14px 18px; min-height: 115px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
+
+            <!-- Right Card: Prevailing Market Bias -->
+            <div style="background: {bias_theme_bg}; border: 1.5px solid {bias_theme_border}; border-radius: 10px; padding: 14px 18px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 16px rgba(0,0,0,0.4); height: 100%; box-sizing: border-box;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 0.78rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;">PREVAILING MARKET BIAS</span>
                     <span style="font-size: 0.68rem; background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 7px; border-radius: 4px; font-weight: 700;">6-VECTOR ENGINE</span>
@@ -6471,7 +6471,8 @@ if df is not None and not df.empty:
                     <span style="font-size: 0.72rem; color: #94A3B8;">Dominant: <b style="color: #FFFFFF;">{scrip_symbol} {atm_strike} {recommended_contract_type}</b></span>
                 </div>
             </div>
-            """)
+        </div>
+        """)
 
     def render_reliance_spot_hero():
         if not auto_active_desk:
