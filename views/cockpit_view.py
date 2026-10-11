@@ -224,3 +224,89 @@ def render_cockpit_tab(ctx: dict):
             </div>
         </div>
         """)
+
+    # 5. Execution Trigger Card (Armed Breakout & 1-Click Execution Engine)
+    render_execution_trigger_card_fn = ctx.get("render_execution_trigger_card_fn")
+    cockpit_trade_plan = ctx.get("cockpit_trade_plan")
+    if render_execution_trigger_card_fn and cockpit_trade_plan:
+        render_execution_trigger_card_fn(
+            trade_plan=cockpit_trade_plan,
+            spot=spot,
+            broker_call_ltp=ctx.get("live_broker_ltp", 0.0),
+            corridor=ctx.get("corridor"),
+            low=ctx.get("low_data"),
+            high=ctx.get("high_data"),
+            spot_tick=spot
+        )
+
+    # 6. Institutional Multi-Timeframe Matrix (M15 + M5 + M1)
+    mtf_matrix = ctx.get("mtf_matrix")
+    if mtf_matrix and isinstance(mtf_matrix, dict) and "m15" in mtf_matrix:
+        mtf_sync_status = "🟢 TRIPLE BULLISH INVARIANCE (+4.0 PTS)" if mtf_matrix.get('is_triple_bullish') else ("🔴 TRIPLE BEARISH INVARIANCE (+4.0 PTS)" if mtf_matrix.get('is_triple_bearish') else ("🟡 TIMEFRAME CONFLICT / STAND DOWN (-4.0 PTS)" if mtf_matrix.get('is_conflict') else "🟡 PARTIAL ALIGNMENT (NEUTRAL)"))
+        mtf_sync_color = "#34D399" if mtf_matrix.get('is_triple_bullish') else ("#F87171" if mtf_matrix.get('is_triple_bearish') else "#FBBF24")
+        latest = ctx.get("latest", {})
+
+        st.html(f"""
+        <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 10px; padding: 14px 18px; margin: 16px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.45);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.15rem;">📐</span>
+                    <span style="font-size: 0.88rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.5px; text-transform: uppercase;">
+                        INSTITUTIONAL MULTI-TIMEFRAME MATRIX (M15 STRUCTURAL + M5 TRIGGER + M1 SCALP EXECUTION)
+                    </span>
+                    <span style="background: rgba(16, 185, 129, 0.15); color: #34D399; font-size: 0.70rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.35);">
+                        TRIPLE-TIMEFRAME SYNCHRONIZATION
+                    </span>
+                </div>
+                <div style="font-size: 0.76rem; color: #94A3B8;">
+                    Alignment Status: <b style="color: {mtf_sync_color};">{mtf_sync_status}</b>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;">
+                <!-- M15 Structural Compass -->
+                <div style="background: rgba(15, 23, 42, 0.90); border: 1px solid #334155; border-top: 3px solid {mtf_matrix['m15']['badge_color']}; border-radius: 8px; padding: 12px 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 0.74rem; font-weight: 800; color: #94A3B8; text-transform: uppercase;">1. 15-MINUTE (M15) STRUCTURAL COMPASS</span>
+                        <span style="background: rgba(255,255,255,0.06); color: {mtf_matrix['m15']['badge_color']}; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">{mtf_matrix['m15']['regime'].replace('_', ' ')}</span>
+                    </div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin: 4px 0;">
+                        {mtf_matrix['m15']['desc']}
+                    </div>
+                    <div style="font-size: 0.74rem; color: #CBD5E1; line-height: 1.45; margin-top: 6px; border-top: 1px solid #1E293B; padding-top: 6px;">
+                        <b>EMAs:</b> 9: ₹{mtf_matrix['m15']['ema9']:.1f} | 20: ₹{mtf_matrix['m15']['ema20']:.1f} | 50: ₹{mtf_matrix['m15']['ema50']:.1f}<br/>
+                        <span style="color: #64748B;">Role: Defines macro structural trend; filters counter-trend traps.</span>
+                    </div>
+                </div>
+
+                <!-- M5 Tactical Confluence -->
+                <div style="background: rgba(15, 23, 42, 0.90); border: 1px solid #334155; border-top: 3px solid {mtf_matrix['m5']['badge_color']}; border-radius: 8px; padding: 12px 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 0.74rem; font-weight: 800; color: #94A3B8; text-transform: uppercase;">2. 5-MINUTE (M5) TACTICAL TRIGGER</span>
+                        <span style="background: rgba(255,255,255,0.06); color: {mtf_matrix['m5']['badge_color']}; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">{mtf_matrix['m5']['trigger'].replace('_', ' ')}</span>
+                    </div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; margin: 4px 0;">
+                        {mtf_matrix['m5']['desc']}
+                    </div>
+                    <div style="font-size: 0.74rem; color: #CBD5E1; line-height: 1.45; margin-top: 6px; border-top: 1px solid #1E293B; padding-top: 6px;">
+                        <b>Confluence:</b> Above Session VWAP (₹{float(latest.get('VWAP', spot)):.2f}) & SuperTrend (₹{float(latest.get('SuperTrend', spot)):.2f})<br/>
+                        <span style="color: #64748B;">Role: Pinpoints tactical intraday entry confluence before execution.</span>
+                    </div>
+                </div>
+
+                <!-- M1 Scalp Micro-Timing -->
+                <div style="background: rgba(15, 23, 42, 0.90); border: 1px solid #334155; border-top: 3px solid {mtf_matrix['m1']['badge_color']}; border-radius: 8px; padding: 12px 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 0.74rem; font-weight: 800; color: #94A3B8; text-transform: uppercase;">3. 1-MINUTE (M1) SCALP EXECUTION TIMING</span>
+                        <span style="background: rgba(16, 185, 129, 0.18); color: #34D399; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">SAVE ₹{mtf_matrix['m1']['premium_savings_pts']:.2f}/UNIT</span>
+                    </div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #38BDF8; margin: 4px 0;">
+                        Limit Bid: ₹{mtf_matrix['m1']['rec_limit_premium_ce'] if recommended_contract_type == 'CE' else mtf_matrix['m1']['rec_limit_premium_pe']:.2f} <span style="font-size: 0.74rem; color: #94A3B8;">(vs Market ₹{current_option_ltp:.2f})</span>
+                    </div>
+                    <div style="font-size: 0.74rem; color: #CBD5E1; line-height: 1.45; margin-top: 6px; border-top: 1px solid #1E293B; padding-top: 6px;">
+                        <b>Micro Support:</b> ₹{mtf_matrix['m1']['limit_spot_ce'] if recommended_contract_type == 'CE' else mtf_matrix['m1']['limit_spot_pe']:.2f} (Savings: ₹{round(mtf_matrix['m1']['premium_savings_pts'] * total_trading_qty):,} on {num_lots} lots)<br/>
+                        <span style="color: #34D399; font-weight: 700;">{mtf_matrix['m1']['desc']}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """)
