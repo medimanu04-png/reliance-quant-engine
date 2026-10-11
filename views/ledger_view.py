@@ -32,6 +32,7 @@ def render_ledger_tab(ctx: dict):
     scrip_symbol = ctx.get("scrip_symbol", "NIFTY")
     scrip_name = ctx.get("scrip_name", "NIFTY")
     spec_ledger = get_asset_spec(scrip_symbol)
+    num_lots = ctx.get("num_lots", 4)
     lot_size = ctx.get("lot_size", spec_ledger.lot_size)
     estimated_premium = ctx.get("estimated_premium", 0.0)
     current_option_ltp = ctx.get("current_option_ltp", 0.0)
