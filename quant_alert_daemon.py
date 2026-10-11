@@ -1485,9 +1485,13 @@ class RelianceQuantAlertDaemon:
         try:
             from pre_market_health_check import PreMarketHealthCheckEngine
             now_dt = datetime.now(IST)
+            today_date = now_dt.strftime("%Y-%m-%d")
             cur_t = now_dt.time()
-            if cur_t >= dt_time(9, 0) or self.force_run:
-                PreMarketHealthCheckEngine.run_diagnostics(force=False)
+            diag_key = f"tg_sent_diag_{today_date}"
+            if (cur_t >= dt_time(9, 0) or self.force_run) and not TelegramNotifier.is_alert_sent(diag_key, cooldown_seconds=86400):
+                res = PreMarketHealthCheckEngine.run_diagnostics(force=False, send_telegram=True)
+                if res.get("telegram_dispatched"):
+                    TelegramNotifier.mark_alert_sent(diag_key)
         except Exception as e:
             logger.debug(f"Pre-market 09:00 AM health check check error: {e}")
 
@@ -1502,9 +1506,13 @@ class RelianceQuantAlertDaemon:
         try:
             from eod_session_summary import EODSessionSummaryEngine
             now_dt = datetime.now(IST)
+            today_date = now_dt.strftime("%Y-%m-%d")
             cur_t = now_dt.time()
-            if cur_t >= dt_time(15, 30) or self.force_run:
-                EODSessionSummaryEngine.dispatch_eod_summary(force=False, send_telegram=True)
+            eod_key = f"tg_sent_eod_{today_date}"
+            if (cur_t >= dt_time(15, 30) or self.force_run) and not TelegramNotifier.is_alert_sent(eod_key, cooldown_seconds=86400):
+                debrief = EODSessionSummaryEngine.dispatch_eod_summary(force=False, send_telegram=True)
+                if debrief.get("telegram_dispatched"):
+                    TelegramNotifier.mark_alert_sent(eod_key)
         except Exception as e:
             logger.debug(f"03:30 PM EOD debrief check error in daemon: {e}")
 

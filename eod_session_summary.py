@@ -234,7 +234,8 @@ class EODSessionSummaryEngine:
         is_post_330pm = (now.hour > 15) or (now.hour == 15 and now.minute >= 30)
         has_dispatched_today = (state.get("telegram_dispatched_date") == today_str)
 
-        should_dispatch = force or send_telegram or (is_post_330pm and not has_dispatched_today and debrief.get("is_trading_day"))
+        # Automated debrief should ONLY dispatch if forced (manual click) OR (after 3:30 PM on an open trading day and not yet sent today)
+        should_dispatch = force or (send_telegram and is_post_330pm and not has_dispatched_today and debrief.get("is_trading_day", False))
 
         if should_dispatch:
             try:

@@ -267,7 +267,7 @@ class PreMarketHealthCheckEngine:
         is_post_9am = (now.hour > 9) or (now.hour == 9 and now.minute >= 0)
         has_dispatched_today = (state.get("telegram_dispatched_date") == today_str)
 
-        should_dispatch = force or send_telegram or (is_post_9am and not has_dispatched_today and cal_res.get("is_trading_day"))
+        should_dispatch = force or (send_telegram and is_post_9am and not has_dispatched_today and cal_res.get("is_trading_day", False))
 
         if should_dispatch and tg_res.get("status") == "ONLINE":
             briefing_text = cls.format_telegram_briefing(diagnostic)
