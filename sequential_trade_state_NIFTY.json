@@ -25,17 +25,17 @@
     "t1_status": "PENDING",
     "t2_status": "PENDING",
     "confluence": 94.3,
-    "highest_price": 121.5,
+    "highest_price": 139.15,
     "trailing_sl": 82.85,
     "status": "Open",
     "proposed_at": "11:11:44 AM IST",
     "symbol": "NIFTY",
-    "current_ltp": 121.5,
-    "unrealized_pnl": 377.0
+    "current_ltp": 139.15,
+    "unrealized_pnl": 4966.0
   },
   "last_closed_trade": null,
   "today_trade_count": 0,
-  "updated_at": "2026-10-12 11:21:56 AM IST",
+  "updated_at": "2026-10-12 11:40:56 AM IST",
   "re_entry_armed": null,
   "archived_last_closed_trade": {
     "trade_num": 5,
