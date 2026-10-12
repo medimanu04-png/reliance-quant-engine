@@ -80,12 +80,11 @@ class TelegramNotifier:
     def is_alert_sent(cls, alert_key: str, cooldown_seconds: int = 14400) -> bool:
         """
         Checks if an alert key has already been dispatched today / within cooldown.
-        Survives browser tab refreshes, Streamlit reruns, and multi-session instances.
+        Survives browser tab refreshes, Streamlit reruns, and multi-process instances.
         """
-        if not cls._alert_cache_loaded:
-            cls.load_alert_log()
+        records = cls.load_alert_log()
         now = time.time()
-        last_ts = cls._alert_cache.get(alert_key)
+        last_ts = records.get(alert_key)
         if last_ts is None:
             return False
         return (now - last_ts) < cooldown_seconds

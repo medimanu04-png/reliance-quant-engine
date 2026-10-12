@@ -1932,6 +1932,19 @@ def main():
             print(f"❌ Failed: {msg}")
         return
 
+    # Enforce single-instance worker (prevent duplicate daemon processes & duplicate alerts)
+    is_running, existing_pid = is_daemon_running()
+    if is_running and existing_pid and existing_pid != os.getpid():
+        print(f"⚠️ [NOTICE] Another QuantAlertDaemon is already running (PID: {existing_pid}).")
+        print("To prevent duplicate Telegram notifications, this secondary instance will stand down.")
+        return
+
+    try:
+        with open(DAEMON_LOCK_FILE, "w", encoding="utf-8") as f:
+            json.dump({"pid": os.getpid(), "start_time": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")}, f)
+    except Exception:
+        pass
+
     daemon = RelianceQuantAlertDaemon(
         interval_seconds=args.interval,
         force_run=args.now,
