@@ -199,5 +199,31 @@
     "suggested_exit": 664.15,
     "suggested_sl": 484.15,
     "confluence_score": 96.0
+  },
+  "2026-10-12_NIFTY": {
+    "date": "2026-10-12",
+    "trade_given_time": "11:11:44 AM IST",
+    "full_contract": "NIFTY 22450 PE (13-OCT-2026)",
+    "symbol": "NIFTY",
+    "contract_type": "PE",
+    "strike": 13202622450,
+    "expiry": "13-OCT-2026",
+    "suggested_entry": 120.05,
+    "suggested_exit": 171.65,
+    "suggested_sl": 82.85,
+    "confluence_score": 94.3
+  },
+  "2026-10-12": {
+    "date": "2026-10-12",
+    "trade_given_time": "11:11:44 AM IST",
+    "full_contract": "NIFTY 22450 PE (13-OCT-2026)",
+    "symbol": "NIFTY",
+    "contract_type": "PE",
+    "strike": 13202622450,
+    "expiry": "13-OCT-2026",
+    "suggested_entry": 120.05,
+    "suggested_exit": 171.65,
+    "suggested_sl": 82.85,
+    "confluence_score": 94.3
   }
 }

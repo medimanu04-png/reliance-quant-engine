@@ -1910,7 +1910,7 @@ class SequentialTradeEngine:
 
         hard_sl_pts = round((actual_p - sl_p) * 1.5, 2)
         hard_sl = round(max(0.05, actual_p - hard_sl_pts), 2)
-        is_reentry = bool(state.get("re_entry_armed", {}).get("armed"))
+        is_reentry = bool((state.get("re_entry_armed") or {}).get("armed"))
 
         active_trade = {
             "trade_num": next_trade_num,
@@ -2032,7 +2032,7 @@ class SequentialTradeEngine:
         sl_val = round(float(sl), 2)
         hard_sl_pts = round((float(planned_entry) - sl_val) * 1.5, 2)
         hard_sl = round(max(0.05, float(planned_entry) - hard_sl_pts), 2)
-        is_reentry = bool(state.get("re_entry_armed", {}).get("armed"))
+        is_reentry = bool((state.get("re_entry_armed") or {}).get("armed"))
 
         next_trade_num = int(state.get("today_trade_count", 0)) + 1
         active_trade = {

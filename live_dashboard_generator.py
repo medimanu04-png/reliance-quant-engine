@@ -20,6 +20,8 @@ except Exception:
     except Exception:
         from datetime import timezone
         IST = timezone(timedelta(hours=5, minutes=30))
+from asset_config import resolve_symbol, get_asset_spec
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LIVE_JOURNAL_FILE = os.path.join(BASE_DIR, "daily_trade_journal.json")

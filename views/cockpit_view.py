@@ -4,6 +4,7 @@ Live Cockpit Tab View (Spot Hero, Execution Blocks, Sequential Trade Engine HUD)
 """
 
 from datetime import datetime, timezone, timedelta
+import logging
 import streamlit as st
 
 from asset_config import build_contract_symbol, get_asset_spec
@@ -12,6 +13,7 @@ from telegram_notifier import TelegramNotifier
 from views.ui_components import st_button_stretch
 
 IST = timezone(timedelta(hours=5, minutes=30))
+logger = logging.getLogger("CockpitView")
 
 
 def render_trade_status_panel(ctx: dict):
@@ -664,7 +666,9 @@ def render_cockpit_tab(ctx: dict):
                 spot_tick=spot
             )
         except Exception as _e_trig:
-            pass
+            import traceback
+            logger.error(f"Execution Trigger Card Exception: {_e_trig}\n{traceback.format_exc()}")
+            st.warning(f"⚠️ Trigger Card Notice: {_e_trig}")
 
     # Sequential Trade State Action Panel (Verified Fill, Active Tracking & Close Controls)
     seq_state = SequentialTradeEngine.get_state(symbol=scrip_symbol)
