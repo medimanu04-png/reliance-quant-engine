@@ -1,677 +1,5 @@
 [
   {
-    "timestamp": "2026-10-11T17:37:49.025294+05:30",
-    "dominant_score": 67.3,
-    "bullish_score": 26.9,
-    "bearish_score": 67.3,
-    "win_expectancy_pct": 56.1,
-    "is_tradable": false,
-    "intraday_regime": "NEUTRAL_REGIME",
-    "vector_scores": {
-      "v1_bull": 2.0,
-      "v1_bear": 17.5,
-      "v2_bull": 14.0,
-      "v2_bear": 6.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 4.5,
-      "v4_bear": 6.5,
-      "v5_bull": 0.0,
-      "v5_bear": 7.5,
-      "v6_bull": 11.0,
-      "v6_bear": 11.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 29.5,
-      "raw_bear": 51.0,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 3.5,
-          "bear": 3.5,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 2.5,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.57,
-    "vpin": 0.28,
-    "kalman_slope": -3.3907,
-    "changepoint_prob": 0.061,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.094665+05:30",
-    "dominant_score": 73.9,
-    "bullish_score": 31.9,
-    "bearish_score": 73.9,
-    "win_expectancy_pct": 58.4,
-    "is_tradable": false,
-    "intraday_regime": "NEUTRAL_REGIME",
-    "vector_scores": {
-      "v1_bull": 4.0,
-      "v1_bear": 19.5,
-      "v2_bull": 14.0,
-      "v2_bear": 8.0,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 4.5,
-      "v4_bear": 6.5,
-      "v5_bull": 0.0,
-      "v5_bear": 7.0,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 32.5,
-      "raw_bear": 55.0,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 3.5,
-          "bear": 3.5,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 4.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.6,
-    "vpin": 0.28,
-    "kalman_slope": -2.7998,
-    "changepoint_prob": 0.067,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.168896+05:30",
-    "dominant_score": 64.6,
-    "bullish_score": 26.1,
-    "bearish_score": 64.6,
-    "win_expectancy_pct": 55.1,
-    "is_tradable": false,
-    "intraday_regime": "NEUTRAL_REGIME",
-    "vector_scores": {
-      "v1_bull": 2.0,
-      "v1_bear": 19.5,
-      "v2_bull": 14.0,
-      "v2_bear": 4.0,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 3.0,
-      "v4_bear": 5.0,
-      "v5_bull": 0.0,
-      "v5_bear": 7.0,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 29.0,
-      "raw_bear": 49.5,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 3.5,
-          "bear": 3.5,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 0.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.62,
-    "vpin": 0.28,
-    "kalman_slope": -2.5246,
-    "changepoint_prob": 0.066,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.258229+05:30",
-    "dominant_score": 68.1,
-    "bullish_score": 68.1,
-    "bearish_score": 19.2,
-    "win_expectancy_pct": 56.3,
-    "is_tradable": false,
-    "intraday_regime": "NEUTRAL_REGIME",
-    "vector_scores": {
-      "v1_bull": 12.5,
-      "v1_bear": 6.0,
-      "v2_bull": 12.0,
-      "v2_bear": 0.0,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 5.0,
-      "v4_bear": 3.0,
-      "v5_bull": 10.0,
-      "v5_bear": 3.0,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": 0.0,
-      "macro_bear": -0.0,
-      "raw_bull": 51.5,
-      "raw_bear": 24.0,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 3.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 0.0,
-          "bear": 0.0,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 0.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.62,
-    "vpin": 0.28,
-    "kalman_slope": 2.4441,
-    "changepoint_prob": 0.115,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.318299+05:30",
-    "dominant_score": 85.3,
-    "bullish_score": 85.3,
-    "bearish_score": 18.5,
-    "win_expectancy_pct": 62.4,
-    "is_tradable": true,
-    "intraday_regime": "NEUTRAL_REGIME",
-    "vector_scores": {
-      "v1_bull": 18.0,
-      "v1_bear": 2.0,
-      "v2_bull": 15.5,
-      "v2_bear": 3.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 5.0,
-      "v4_bear": 3.0,
-      "v5_bull": 13.5,
-      "v5_bear": 3.0,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": 0.0,
-      "macro_bear": -0.0,
-      "raw_bull": 64.0,
-      "raw_bear": 23.5,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 3.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 3.5,
-          "bear": 3.5,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 0.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.66,
-    "vpin": 0.28,
-    "kalman_slope": 4.0989,
-    "changepoint_prob": 0.114,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.389987+05:30",
-    "dominant_score": 68.7,
-    "bullish_score": 20.9,
-    "bearish_score": 68.7,
-    "win_expectancy_pct": 56.5,
-    "is_tradable": false,
-    "intraday_regime": "NEUTRAL_REGIME",
-    "vector_scores": {
-      "v1_bull": 1.4,
-      "v1_bear": 14.35,
-      "v2_bull": 6.5,
-      "v2_bear": 4.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 4.5,
-      "v4_bear": 6.5,
-      "v5_bull": 3.0,
-      "v5_bear": 12.5,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 25.4,
-      "raw_bear": 51.85,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 0.0,
-          "bear": 0.0,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 0.0,
-          "bear": 4.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.65,
-    "vpin": 0.28,
-    "kalman_slope": -3.3675,
-    "changepoint_prob": 0.949,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.472108+05:30",
-    "dominant_score": 71.2,
-    "bullish_score": 28.6,
-    "bearish_score": 71.2,
-    "win_expectancy_pct": 57.4,
-    "is_tradable": false,
-    "intraday_regime": "TRENDING_REGIME",
-    "vector_scores": {
-      "v1_bull": 1.4,
-      "v1_bear": 14.35,
-      "v2_bull": 11.5,
-      "v2_bear": 4.0,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 4.5,
-      "v4_bear": 6.5,
-      "v5_bull": 3.0,
-      "v5_bear": 11.0,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 30.53,
-      "raw_bear": 53.31,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 1.0,
-          "bear": 1.0,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 2.5,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.66,
-    "vpin": 0.28,
-    "kalman_slope": -5.3771,
-    "changepoint_prob": 0.965,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.537023+05:30",
-    "dominant_score": 77.7,
-    "bullish_score": 23.0,
-    "bearish_score": 77.7,
-    "win_expectancy_pct": 59.7,
-    "is_tradable": false,
-    "intraday_regime": "TRENDING_REGIME",
-    "vector_scores": {
-      "v1_bull": 1.4,
-      "v1_bear": 16.1,
-      "v2_bull": 6.5,
-      "v2_bear": 4.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 6.0,
-      "v4_bear": 8.0,
-      "v5_bull": 3.0,
-      "v5_bear": 15.0,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 26.9,
-      "raw_bear": 57.6,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 0.0,
-          "bear": 0.0,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 0.0,
-          "bear": 4.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.66,
-    "vpin": 0.28,
-    "kalman_slope": -7.1034,
-    "changepoint_prob": 0.99,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.602804+05:30",
-    "dominant_score": 81.6,
-    "bullish_score": 30.8,
-    "bearish_score": 81.6,
-    "win_expectancy_pct": 61.1,
-    "is_tradable": false,
-    "intraday_regime": "TRENDING_REGIME",
-    "vector_scores": {
-      "v1_bull": 1.4,
-      "v1_bear": 15.75,
-      "v2_bull": 14.0,
-      "v2_bear": 6.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 6.0,
-      "v4_bear": 8.0,
-      "v5_bull": 0.0,
-      "v5_bear": 12.5,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 31.86,
-      "raw_bear": 60.65,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 3.5,
-          "bear": 3.5,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 2.5,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.68,
-    "vpin": 0.28,
-    "kalman_slope": -8.0146,
-    "changepoint_prob": 0.99,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.669157+05:30",
-    "dominant_score": 78.9,
-    "bullish_score": 21.0,
-    "bearish_score": 78.9,
-    "win_expectancy_pct": 60.1,
-    "is_tradable": false,
-    "intraday_regime": "TRENDING_REGIME",
-    "vector_scores": {
-      "v1_bull": 1.4,
-      "v1_bear": 15.75,
-      "v2_bull": 6.5,
-      "v2_bear": 4.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 6.0,
-      "v4_bear": 8.0,
-      "v5_bull": 2.0,
-      "v5_bear": 12.5,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 25.41,
-      "raw_bear": 58.45,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 0.0,
-          "bear": 0.0,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 0.0,
-          "bear": 4.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.7,
-    "vpin": 0.28,
-    "kalman_slope": -8.571,
-    "changepoint_prob": 0.985,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.761924+05:30",
-    "dominant_score": 72.2,
-    "bullish_score": 30.0,
-    "bearish_score": 72.2,
-    "win_expectancy_pct": 57.8,
-    "is_tradable": false,
-    "intraday_regime": "TRENDING_REGIME",
-    "vector_scores": {
-      "v1_bull": 1.4,
-      "v1_bear": 15.75,
-      "v2_bull": 14.0,
-      "v2_bear": 6.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 4.5,
-      "v4_bear": 6.5,
-      "v5_bull": 2.0,
-      "v5_bear": 7.5,
-      "v6_bull": 11.0,
-      "v6_bear": 11.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 31.44,
-      "raw_bear": 53.92,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 3.5,
-          "bear": 3.5,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 4.0,
-          "bear": 2.5,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.64,
-    "vpin": 0.28,
-    "kalman_slope": -8.6799,
-    "changepoint_prob": 0.99,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
-    "timestamp": "2026-10-11T17:37:49.861417+05:30",
-    "dominant_score": 69.4,
-    "bullish_score": 19.3,
-    "bearish_score": 69.4,
-    "win_expectancy_pct": 56.8,
-    "is_tradable": false,
-    "intraday_regime": "TRENDING_REGIME",
-    "vector_scores": {
-      "v1_bull": 1.4,
-      "v1_bear": 15.75,
-      "v2_bull": 6.5,
-      "v2_bear": 4.5,
-      "v3_bull": 0.0,
-      "v3_bear": 0.0,
-      "v4_bull": 4.5,
-      "v4_bear": 6.5,
-      "v5_bull": 2.0,
-      "v5_bear": 7.0,
-      "v6_bull": 12.0,
-      "v6_bear": 12.0,
-      "macro_bull": -2.0,
-      "macro_bear": 2.0,
-      "raw_bull": 24.13,
-      "raw_bear": 52.22,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 2.0,
-          "bear": 0.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 4.5,
-          "bear": 0.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 0.0,
-          "bear": 0.0,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 0.0,
-          "bear": 4.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.67,
-    "vpin": 0.28,
-    "kalman_slope": -8.6422,
-    "changepoint_prob": 0.95,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
     "timestamp": "2026-10-11T17:37:49.944635+05:30",
     "dominant_score": 74.7,
     "bullish_score": 26.5,
@@ -27995,6 +27323,678 @@
     "vpin": 0.722,
     "kalman_slope": 1.3814,
     "changepoint_prob": 0.164,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:30:28.720922+05:30",
+    "dominant_score": 62.2,
+    "bullish_score": 60.9,
+    "bearish_score": 62.2,
+    "win_expectancy_pct": 54.3,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 11.0,
+      "v1_bear": 2.5,
+      "v2_bull": 9.5,
+      "v2_bear": 8.5,
+      "v3_bull": 10.0,
+      "v3_bear": 20.0,
+      "v4_bull": 6.0,
+      "v4_bear": 6.0,
+      "v5_bull": 5.0,
+      "v5_bear": 0.0,
+      "v6_bull": 6.0,
+      "v6_bear": 6.0,
+      "macro_bull": 1.5,
+      "macro_bear": 3.5,
+      "raw_bull": 47.52,
+      "raw_bear": 48.25,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 3.5,
+          "bear": 3.5,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.722,
+    "kalman_slope": 1.3814,
+    "changepoint_prob": 0.164,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:30:38.131175+05:30",
+    "dominant_score": 62.2,
+    "bullish_score": 60.9,
+    "bearish_score": 62.2,
+    "win_expectancy_pct": 54.3,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 11.0,
+      "v1_bear": 2.5,
+      "v2_bull": 9.5,
+      "v2_bear": 8.5,
+      "v3_bull": 10.0,
+      "v3_bear": 20.0,
+      "v4_bull": 6.0,
+      "v4_bear": 6.0,
+      "v5_bull": 5.0,
+      "v5_bear": 0.0,
+      "v6_bull": 6.0,
+      "v6_bear": 6.0,
+      "macro_bull": 1.5,
+      "macro_bear": 3.5,
+      "raw_bull": 47.52,
+      "raw_bear": 48.25,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 3.5,
+          "bear": 3.5,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.722,
+    "kalman_slope": 1.3814,
+    "changepoint_prob": 0.164,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:30:48.504568+05:30",
+    "dominant_score": 62.2,
+    "bullish_score": 60.9,
+    "bearish_score": 62.2,
+    "win_expectancy_pct": 54.3,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 11.0,
+      "v1_bear": 2.5,
+      "v2_bull": 9.5,
+      "v2_bear": 8.5,
+      "v3_bull": 10.0,
+      "v3_bear": 20.0,
+      "v4_bull": 6.0,
+      "v4_bear": 6.0,
+      "v5_bull": 5.0,
+      "v5_bear": 0.0,
+      "v6_bull": 6.0,
+      "v6_bear": 6.0,
+      "macro_bull": 1.5,
+      "macro_bear": 3.5,
+      "raw_bull": 47.52,
+      "raw_bear": 48.25,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 3.5,
+          "bear": 3.5,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.722,
+    "kalman_slope": 1.3814,
+    "changepoint_prob": 0.164,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:30:58.272752+05:30",
+    "dominant_score": 62.2,
+    "bullish_score": 60.9,
+    "bearish_score": 62.2,
+    "win_expectancy_pct": 54.3,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 11.0,
+      "v1_bear": 2.5,
+      "v2_bull": 9.5,
+      "v2_bear": 8.5,
+      "v3_bull": 10.0,
+      "v3_bear": 20.0,
+      "v4_bull": 6.0,
+      "v4_bear": 6.0,
+      "v5_bull": 5.0,
+      "v5_bear": 0.0,
+      "v6_bull": 6.0,
+      "v6_bear": 6.0,
+      "macro_bull": 1.5,
+      "macro_bear": 3.5,
+      "raw_bull": 47.52,
+      "raw_bear": 48.25,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 3.5,
+          "bear": 3.5,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.722,
+    "kalman_slope": 1.3814,
+    "changepoint_prob": 0.164,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:31:08.579470+05:30",
+    "dominant_score": 60.9,
+    "bullish_score": 60.9,
+    "bearish_score": 57.8,
+    "win_expectancy_pct": 53.8,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 11.0,
+      "v1_bear": 2.5,
+      "v2_bull": 9.5,
+      "v2_bear": 8.5,
+      "v3_bull": 10.0,
+      "v3_bear": 18.0,
+      "v4_bull": 6.0,
+      "v4_bear": 6.0,
+      "v5_bull": 5.0,
+      "v5_bear": 0.0,
+      "v6_bull": 6.0,
+      "v6_bear": 6.0,
+      "macro_bull": 1.5,
+      "macro_bear": 3.5,
+      "raw_bull": 47.52,
+      "raw_bear": 45.95,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 3.5,
+          "bear": 3.5,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.722,
+    "kalman_slope": 1.3814,
+    "changepoint_prob": 0.164,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:34:17.534092+05:30",
+    "dominant_score": 62.2,
+    "bullish_score": 62.2,
+    "bearish_score": 42.0,
+    "win_expectancy_pct": 54.3,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 9.5,
+      "v1_bear": 4.5,
+      "v2_bull": 6.0,
+      "v2_bear": 5.0,
+      "v3_bull": 17.5,
+      "v3_bear": 9.5,
+      "v4_bull": 4.5,
+      "v4_bear": 4.5,
+      "v5_bull": 2.0,
+      "v5_bear": 4.5,
+      "v6_bull": 5.0,
+      "v6_bear": 5.0,
+      "macro_bull": 1.5,
+      "macro_bear": 3.5,
+      "raw_bull": 48.2,
+      "raw_bear": 37.95,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.712,
+    "kalman_slope": 0.2924,
+    "changepoint_prob": 0.235,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:34:29.132838+05:30",
+    "dominant_score": 62.2,
+    "bullish_score": 62.2,
+    "bearish_score": 38.1,
+    "win_expectancy_pct": 54.3,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 9.5,
+      "v1_bear": 4.5,
+      "v2_bull": 6.0,
+      "v2_bear": 5.0,
+      "v3_bull": 17.5,
+      "v3_bear": 9.5,
+      "v4_bull": 4.5,
+      "v4_bear": 4.5,
+      "v5_bull": 2.0,
+      "v5_bear": 4.5,
+      "v6_bull": 5.0,
+      "v6_bear": 5.0,
+      "macro_bull": 1.5,
+      "macro_bear": 1.5,
+      "raw_bull": 48.2,
+      "raw_bear": 35.95,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.717,
+    "kalman_slope": 0.2296,
+    "changepoint_prob": 0.243,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:34:39.220698+05:30",
+    "dominant_score": 62.2,
+    "bullish_score": 62.2,
+    "bearish_score": 31.9,
+    "win_expectancy_pct": 54.3,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 9.5,
+      "v1_bear": 4.5,
+      "v2_bull": 6.0,
+      "v2_bear": 5.0,
+      "v3_bull": 17.5,
+      "v3_bear": 6.5,
+      "v4_bull": 4.5,
+      "v4_bear": 4.5,
+      "v5_bull": 2.0,
+      "v5_bear": 4.5,
+      "v6_bull": 5.0,
+      "v6_bear": 5.0,
+      "macro_bull": 1.5,
+      "macro_bear": 1.5,
+      "raw_bull": 48.2,
+      "raw_bear": 32.5,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.717,
+    "kalman_slope": 0.2296,
+    "changepoint_prob": 0.243,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:34:51.097625+05:30",
+    "dominant_score": 67.4,
+    "bullish_score": 67.4,
+    "bearish_score": 31.9,
+    "win_expectancy_pct": 56.1,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 9.5,
+      "v1_bear": 4.5,
+      "v2_bull": 6.0,
+      "v2_bear": 5.0,
+      "v3_bull": 20.0,
+      "v3_bear": 6.5,
+      "v4_bull": 4.5,
+      "v4_bear": 4.5,
+      "v5_bull": 2.0,
+      "v5_bear": 4.5,
+      "v6_bull": 5.0,
+      "v6_bear": 5.0,
+      "macro_bull": 1.5,
+      "macro_bear": 1.5,
+      "raw_bull": 51.07,
+      "raw_bear": 32.5,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.717,
+    "kalman_slope": 0.2296,
+    "changepoint_prob": 0.243,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:35:03.312065+05:30",
+    "dominant_score": 60.0,
+    "bullish_score": 60.0,
+    "bearish_score": 30.2,
+    "win_expectancy_pct": 53.5,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 9.5,
+      "v1_bear": 4.5,
+      "v2_bull": 6.0,
+      "v2_bear": 5.0,
+      "v3_bull": 20.0,
+      "v3_bear": 6.5,
+      "v4_bull": 4.5,
+      "v4_bear": 4.5,
+      "v5_bull": 2.0,
+      "v5_bear": 4.5,
+      "v6_bull": 5.0,
+      "v6_bear": 5.0,
+      "macro_bull": 0.0,
+      "macro_bear": 3.0,
+      "raw_bull": 47.07,
+      "raw_bear": 31.5,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.717,
+    "kalman_slope": 0.2296,
+    "changepoint_prob": 0.243,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:35:14.577110+05:30",
+    "dominant_score": 60.0,
+    "bullish_score": 60.0,
+    "bearish_score": 30.2,
+    "win_expectancy_pct": 53.5,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 9.5,
+      "v1_bear": 4.5,
+      "v2_bull": 6.0,
+      "v2_bear": 5.0,
+      "v3_bull": 20.0,
+      "v3_bear": 6.5,
+      "v4_bull": 4.5,
+      "v4_bear": 4.5,
+      "v5_bull": 2.0,
+      "v5_bear": 4.5,
+      "v6_bull": 5.0,
+      "v6_bear": 5.0,
+      "macro_bull": 0.0,
+      "macro_bear": 3.0,
+      "raw_bull": 47.07,
+      "raw_bear": 31.5,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.717,
+    "kalman_slope": 0.2296,
+    "changepoint_prob": 0.243,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-12T09:35:23.213254+05:30",
+    "dominant_score": 60.0,
+    "bullish_score": 60.0,
+    "bearish_score": 30.2,
+    "win_expectancy_pct": 53.5,
+    "is_tradable": false,
+    "intraday_regime": "LOW_VOLATILITY_CONSOLIDATION",
+    "vector_scores": {
+      "v1_bull": 9.5,
+      "v1_bear": 4.5,
+      "v2_bull": 6.0,
+      "v2_bear": 5.0,
+      "v3_bull": 20.0,
+      "v3_bear": 6.5,
+      "v4_bull": 4.5,
+      "v4_bear": 4.5,
+      "v5_bull": 2.0,
+      "v5_bear": 4.5,
+      "v6_bull": 5.0,
+      "v6_bear": 5.0,
+      "macro_bull": 0.0,
+      "macro_bear": 3.0,
+      "raw_bull": 47.07,
+      "raw_bear": 31.5,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 2.0,
+          "bear": 5.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.52,
+    "vpin": 0.717,
+    "kalman_slope": 0.2296,
+    "changepoint_prob": 0.243,
     "outcome": null,
     "target_hit": null,
     "is_shadow": true
