@@ -668,7 +668,6 @@ def render_cockpit_tab(ctx: dict):
         except Exception as _e_trig:
             import traceback
             logger.error(f"Execution Trigger Card Exception: {_e_trig}\n{traceback.format_exc()}")
-            st.warning(f"⚠️ Trigger Card Notice: {_e_trig}")
 
     # Sequential Trade State Action Panel (Verified Fill, Active Tracking & Close Controls)
     seq_state = SequentialTradeEngine.get_state(symbol=scrip_symbol)
