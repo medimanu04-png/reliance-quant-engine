@@ -2525,18 +2525,62 @@ class SequentialTradeEngine:
         state = cls.get_state(symbol=sym_kw)
         active = state.get("active_trade")
 
-        # Find matching Groww position
+        def _get_contract_tokens(t_dict: Dict[str, Any]) -> Tuple[str, str]:
+            """Extracts option type (CE/PE) and strike number from a trade or position dict."""
+            import re
+            text = f"{t_dict.get('contract', '')} {t_dict.get('instrument', '')} {t_dict.get('trading_symbol', '')} {t_dict.get('symbol', '')}".upper()
+            is_pe = "PE" in text or "PUT" in text or "PE" in str(t_dict.get("direction", "")).upper()
+            is_ce = "CE" in text or "CALL" in text or "CE" in str(t_dict.get("direction", "")).upper()
+            o_type = "PE" if is_pe else ("CE" if is_ce else "")
+            strikes = re.findall(r"\b(\d{4,5})\b", text)
+            strikes = [s for s in strikes if s not in ("2025", "2026", "2027", "2028")]
+            stk = strikes[0] if strikes else ""
+            return o_type, stk
+
+        def _is_matching_contract(ref_trade: Optional[Dict[str, Any]], cand_sym: str) -> bool:
+            """Strict contract matching: requires symbol keyword, same option type (CE/PE), and same strike."""
+            cand = str(cand_sym or "").upper().replace(" ", "").replace("-", "")
+            if sym_kw not in cand:
+                return False
+            if not ref_trade:
+                return True
+            ref_type, ref_stk = _get_contract_tokens(ref_trade)
+            if ref_type and ref_type not in cand:
+                return False
+            if ref_stk and ref_stk not in cand:
+                return False
+            return True
+
+        def _parse_time_minutes(t_val: Any) -> Optional[int]:
+            if not t_val:
+                return None
+            try:
+                raw = str(t_val).replace("T", " ").replace(" IST", "").strip()
+                if " " in raw:
+                    raw = raw.split(" ")[-1]
+                raw = raw.split(".")[0]
+                for fmt in ("%H:%M:%S", "%I:%M:%S %p", "%I:%M %p"):
+                    try:
+                        dt = datetime.strptime(raw, fmt)
+                        return dt.hour * 60 + dt.minute
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            return None
+
+        # Find matching Groww position (strict contract if active trade exists)
         matching_pos = None
         for p in open_positions:
             p_sym = str(p.get("trading_symbol", "")).upper()
-            if sym_kw in p_sym:
+            if _is_matching_contract(active, p_sym):
                 matching_pos = p
                 break
 
         matching_trade = None
         for t in executed_today:
-            t_sym = str(t.get("symbol", "")).upper()
-            if sym_kw in t_sym:
+            t_sym = str(t.get("symbol", "") or t.get("trading_symbol", "")).upper()
+            if _is_matching_contract(active, t_sym):
                 matching_trade = t
                 break
 
@@ -2629,16 +2673,26 @@ class SequentialTradeEngine:
         # If no open position exists on Groww, reconcile active trade if it was closed or phantom
         if active:
             matching_closed = None
+            active_entry_min = _parse_time_minutes(active.get("actual_entry_time") or active.get("entry_time"))
             all_positions = pos_data.get("positions", []) if isinstance(pos_data, dict) else []
             for p in all_positions:
-                if sym_kw in str(p.get("trading_symbol", "")).upper() and int(p.get("quantity", 0)) == 0:
+                p_sym = str(p.get("trading_symbol", "")).upper()
+                if _is_matching_contract(active, p_sym) and int(p.get("quantity", 0)) == 0:
                     matching_closed = p
                     break
             
-            if matching_closed or matching_trade:
-                src = matching_closed or matching_trade or {}
-                exit_p = float(src.get("net_price", 0.0) or src.get("debit_price", 0.0) or src.get("exit_price", active.get("actual_entry", 0.0)))
-                rpnl = float(src.get("realised_pnl", 0.0))
+            # Verify candidate closed position or trade
+            matched_candidate = None
+            if matching_closed:
+                matched_candidate = matching_closed
+            elif matching_trade:
+                t_min = _parse_time_minutes(matching_trade.get("exit_time") or matching_trade.get("entry_time"))
+                if active_entry_min is None or t_min is None or t_min >= active_entry_min:
+                    matched_candidate = matching_trade
+
+            if matched_candidate:
+                exit_p = float(matched_candidate.get("net_price", 0.0) or matched_candidate.get("debit_price", 0.0) or matched_candidate.get("exit_price", active.get("actual_entry", 0.0)))
+                rpnl = float(matched_candidate.get("realised_pnl", 0.0))
                 status_lbl = "Target Hit" if rpnl >= 0 else "SL Hit"
                 return cls.close_trade(
                     exit_price=exit_p,
@@ -2648,10 +2702,11 @@ class SequentialTradeEngine:
                     symbol=sym_kw
                 )
             else:
+                # Active trade was not taken by user or doesn't exist on Groww -> clear phantom safely without false loss
                 state["current_state"] = cls.STATE_IDLE
                 state["active_trade"] = None
                 cls.save_state(state, symbol=sym_kw)
-                return {"status": "CLEARED_PHANTOM", "message": f"Cleared phantom active trade for {sym_kw} (not in Groww)"}
+                return {"status": "CLEARED_PHANTOM", "message": f"Cleared phantom active trade for {sym_kw} (not executed on Groww)"}
 
         return {"status": "NO_POSITION", "message": f"No open positions found in Groww for {sym_kw}"}
 

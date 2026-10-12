@@ -1,35 +1,6 @@
 {
-  "current_state": "TRADE CLOSED & AUDITED",
   "symbol": "NIFTY",
+  "current_state": "IDLE / SCANNING",
   "active_trade": null,
-  "last_closed_trade": {
-    "trade_num": 1,
-    "instrument": "NIFTY 22450 PE (13-OCT-2026)",
-    "planned_entry": 120.05,
-    "actual_entry": 120.05,
-    "executed": "Yes",
-    "sl": 82.85,
-    "target": 171.65,
-    "status": "Target Hit",
-    "exit_price": 98.15,
-    "exit_time": "11:48:27 AM IST",
-    "pnl": "\u20b9-5,694.00 (-21.90 pts)"
-  },
-  "today_trade_count": 1,
-  "updated_at": "2026-10-12 11:48:27 AM IST",
-  "re_entry_armed": null,
-  "archived_last_closed_trade": {
-    "trade_num": 5,
-    "instrument": "NIFTY 22450 PE (06-OCT-2026)",
-    "planned_entry": 57.8,
-    "actual_entry": 57.8,
-    "executed": "Yes",
-    "sl": 21.8,
-    "target": 107.8,
-    "status": "SL Hit",
-    "exit_price": 48.2,
-    "exit_time": "02:29:25 PM IST",
-    "pnl": "\u20b9-1,248.00 (-9.60 pts)"
-  },
-  "armed_setup": null
+  "updated_at": "2026-10-12 12:14:12 PM IST"
 }
