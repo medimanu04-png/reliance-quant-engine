@@ -13,7 +13,7 @@ import time
 import logging
 import threading
 from typing import Dict, Any, Optional, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 try:
     from curl_cffi import requests
