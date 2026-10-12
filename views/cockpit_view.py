@@ -664,6 +664,9 @@ def render_cockpit_tab(ctx: dict):
                 spot_tick=spot
             )
         except Exception as _e_trig:
+            import traceback
+            tb_str = traceback.format_exc()
+            print(f"[ERROR] Execution Trigger Traceback:\n{tb_str}")
             st.warning(f"Execution Trigger notice: {_e_trig}")
 
     # Sequential Trade State Action Panel (Verified Fill, Active Tracking & Close Controls)
