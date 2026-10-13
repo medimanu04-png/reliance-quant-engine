@@ -493,7 +493,24 @@ def render_trade_status_panel(ctx: dict):
             dot_color = "#EF4444"
             cap_badge_title = "🛡️ SLIPPAGE GUARD ACTIVE"
             cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(153, 27, 27, 0.35) 100%); color: #FECACA; border: 1.5px solid rgba(239, 68, 68, 0.55);"
-            cap_sub_desc = "🛡️ Protected against order book slippage"
+        elif seq_state.get("armed_setup") and seq_state["armed_setup"].get("armed"):
+            armed_data = seq_state["armed_setup"]
+            inst_str = armed_data.get("instrument", scrip_symbol)
+            trig_val = float(armed_data.get("breakout_trigger", 0.0))
+            stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; AWAITING BREAKOUT TRIGGER"
+            stand_down_badge = f"⚡ ARMED: {inst_str} @ ₹{trig_val:.2f}"
+            stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.70); box-shadow: 0 0 12px rgba(245, 158, 11, 0.30);"
+            stand_down_sub = f"Single-Trade Concentration: Awaiting live option breakout above ₹{trig_val:.2f} &bull; Keep contract on broker watchlist (DO NOT BUY YET)"
+            gate_card_bg = "linear-gradient(135deg, rgba(180, 83, 9, 0.35) 0%, rgba(69, 26, 3, 0.60) 100%)"
+            gate_card_border = "1.5px solid rgba(251, 191, 36, 0.50)"
+            gate_card_title = "BREAKOUT TRIGGER LEVEL"
+            gate_card_val = f"₹{trig_val:.2f}"
+            gate_card_sub = "⚡ Awaiting Live Cross"
+            why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Await Breakout?</b> Setup is <b>ARMED</b> for <b>{inst_str}</b>. Pre-alert delivered to Telegram. Do not buy early to avoid theta decay—await live confirmation above ₹{trig_val:.2f}."
+            dot_color = "#F59E0B"
+            cap_badge_title = "⚡ SETUP ARMED (WATCHLIST)"
+            cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.50);"
+            cap_sub_desc = "⚡ Breakout pending &bull; Do not buy yet"
         else:
             stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
             stand_down_badge = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"

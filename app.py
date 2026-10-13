@@ -3071,6 +3071,50 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         gap_pts = round(breakout_level - active_live_ltp, 2)
         entry_confirmed = (active_live_ltp >= breakout_level) and plan_tradable
 
+    # Single-Trade Concentration & Automated Cancellation Synchronization with SequentialTradeEngine
+    cur_armed_setup = SequentialTradeEngine.get_armed_setup(symbol=active_sym)
+    if cur_armed_setup and cur_armed_setup.get("armed") and sim_mode == "LIVE":
+        now_ts = datetime.now(IST).timestamp()
+        valid_until_ts = float(cur_armed_setup.get("valid_until_timestamp", 0.0))
+        is_timed_out = (valid_until_ts > 0 and now_ts > valid_until_ts)
+        armed_spot = float(cur_armed_setup.get("spot", spot_tick))
+        armed_type = str(cur_armed_setup.get("contract_type", "CE"))
+        armed_trigger = float(cur_armed_setup.get("breakout_trigger", breakout_level))
+        reversal_thresh = 110.0 if active_sym == "SENSEX" else 45.0
+        is_spot_reversed = (
+            (armed_type == "CE" and spot_tick <= (armed_spot - reversal_thresh)) or
+            (armed_type == "PE" and spot_tick >= (armed_spot + reversal_thresh))
+        )
+        if is_timed_out or is_spot_reversed:
+            cancel_reason = (
+                f"Spot reversed from ₹{armed_spot:,.2f} to ₹{spot_tick:,.2f} (by >{reversal_thresh:.0f} pts). Breakout thesis invalidated."
+                if is_spot_reversed else
+                f"Breakout trigger ₹{armed_trigger:.2f} was not breached within 25-minute setup window. Setup timed out."
+            )
+            today_date = datetime.now(IST).strftime("%Y-%m-%d")
+            cancel_alert_key = f"tg_sent_cancel_{today_date}_{active_sym}_{cur_armed_setup.get('strike')}_{armed_type}"
+            if tg_on and tg_token and tg_chat and not TelegramNotifier.is_alert_sent(cancel_alert_key):
+                cancel_msg = TelegramNotifier.format_setup_cancelled_alert(
+                    contract=cur_armed_setup.get("instrument", ""),
+                    reason=cancel_reason,
+                    breakout_trigger=armed_trigger,
+                    last_ltp=active_live_ltp,
+                    spot=spot_tick,
+                    symbol=active_sym,
+                    direction=cur_armed_setup.get("direction", "")
+                )
+                TelegramNotifier.send_message(tg_token, tg_chat, cancel_msg)
+                TelegramNotifier.record_alert_sent(cancel_alert_key)
+            SequentialTradeEngine.cancel_armed_setup(symbol=active_sym, reason=cancel_reason)
+            cur_armed_setup = None
+        else:
+            plan_tradable = True
+            plan_strike = float(cur_armed_setup.get("strike", plan_strike))
+            plan_contract_type = str(cur_armed_setup.get("contract_type", plan_contract_type))
+            breakout_level = float(cur_armed_setup.get("breakout_trigger", breakout_level))
+            gap_pts = round(breakout_level - active_live_ltp, 2)
+            entry_confirmed = (active_live_ltp >= breakout_level)
+
     active_seq_state = SequentialTradeEngine.get_state(symbol=active_sym)
     active_trade_obj = active_seq_state.get("active_trade")
     is_live_trade_running = (
@@ -4197,10 +4241,54 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     TelegramNotifier.record_alert_sent(armed_sent_key)
                     st.session_state["last_tg_armed_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_armed_status"] = f"✅ {feedback} at {st.session_state['last_tg_armed_time']}"
+                    if not (sim_armed or sim_mode == "ARMED"):
+                        try:
+                            SequentialTradeEngine.arm_setup(
+                                contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})",
+                                instrument=f"{active_sym} {plan_strike} {plan_contract_type}",
+                                symbol=active_sym,
+                                strike=plan_strike,
+                                contract_type=plan_contract_type,
+                                breakout_trigger=breakout_level,
+                                initial_ltp=active_live_ltp,
+                                target_pts=plan_target_pts,
+                                sl_pts=plan_sl_pts,
+                                confluence=plan_score,
+                                num_lots=plan_num_lots,
+                                lot_size=plan_lot_size,
+                                spot=spot_tick,
+                                expiry=plan_expiry,
+                                valid_minutes=25
+                            )
+                        except Exception:
+                            pass
                 else:
                     st.session_state["last_tg_armed_status"] = f"⚠️ {feedback}"
             elif TelegramNotifier.is_alert_sent(armed_sent_key):
                 st.session_state[armed_sent_key] = True
+                if not (sim_armed or sim_mode == "ARMED"):
+                    try:
+                        cur_chk = SequentialTradeEngine.get_armed_setup(symbol=active_sym)
+                        if not cur_chk or not cur_chk.get("armed"):
+                            SequentialTradeEngine.arm_setup(
+                                contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})",
+                                instrument=f"{active_sym} {plan_strike} {plan_contract_type}",
+                                symbol=active_sym,
+                                strike=plan_strike,
+                                contract_type=plan_contract_type,
+                                breakout_trigger=breakout_level,
+                                initial_ltp=active_live_ltp,
+                                target_pts=plan_target_pts,
+                                sl_pts=plan_sl_pts,
+                                confluence=plan_score,
+                                num_lots=plan_num_lots,
+                                lot_size=plan_lot_size,
+                                spot=spot_tick,
+                                expiry=plan_expiry,
+                                valid_minutes=25
+                            )
+                    except Exception:
+                        pass
 
             last_armed_stat = st.session_state.get("last_tg_armed_status", "✅ ARMED Pre-Alert Dispatched to Telegram!")
             tg_armed_status_html = f"""
