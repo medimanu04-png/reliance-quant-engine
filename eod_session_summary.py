@@ -248,6 +248,18 @@ class EODSessionSummaryEngine:
             except Exception as e:
                 logger.warning(f"Failed to dispatch 03:30 PM EOD Telegram summary: {e}")
                 debrief["telegram_dispatched"] = False
+
+            # Automated End-of-Day Git Sync (Strictly once daily at 03:30 PM IST after market close)
+            try:
+                from git_sync_manager import GitSyncManager
+                import threading
+                threading.Thread(
+                    target=GitSyncManager.sync_local_to_git,
+                    kwargs={"auto": True, "commit_message": f"chore(eod): 03:30 PM EOD session sync & backup [{today_str}]"},
+                    daemon=True
+                ).start()
+            except Exception as e:
+                logger.debug(f"EOD Git sync error in dispatch: {e}")
         else:
             debrief["telegram_dispatched"] = has_dispatched_today
 

@@ -427,21 +427,6 @@ class RelianceQuantAlertDaemon:
         except Exception:
             pass
 
-        # 8. Periodic 15-minute background git sync (Local Master Copy)
-        now_ts = time.time()
-        if now_ts - self.last_git_sync_ts > 900:
-            self.last_git_sync_ts = now_ts
-            try:
-                from git_sync_manager import GitSyncManager
-                time_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
-                threading.Thread(
-                    target=GitSyncManager.sync_local_to_git,
-                    kwargs={"auto": True, "commit_message": f"chore(sync): periodic auto-sync local master [{time_str}]"},
-                    daemon=True
-                ).start()
-            except Exception as e:
-                logger.debug(f"Periodic git sync error: {e}")
-
     def run_single_symbol_tick(self, symbol: str = "NIFTY"):
         """Executes a single market scan, signal check, and alert evaluation for the specified symbol."""
         sym = (symbol or "NIFTY").upper().strip()
@@ -823,17 +808,6 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(t1_key)
                     except Exception as e:
                         logger.debug(f"Telegram T1 dispatch error: {e}")
-            if trade_update.get("closed_trade"):
-                try:
-                    from git_sync_manager import GitSyncManager
-                    cl_t = trade_update.get("closed_trade", {})
-                    threading.Thread(
-                        target=GitSyncManager.sync_local_to_git,
-                        kwargs={"auto": True, "commit_message": f"feat(trade): auto-sync closed Trade #{trade_num} ({cl_t.get('status')}) PnL: {cl_t.get('pnl')}"},
-                        daemon=True
-                    ).start()
-                except Exception as e:
-                    logger.debug(f"Git auto-sync error on trade closure: {e}")
 
             # Tiered Breakeven Escalator Telegram Alerts (Dynamically Scaled per AssetSpec)
             # Milestone 1: At Breakeven threshold -> Move SL to Cost
@@ -1513,6 +1487,16 @@ class RelianceQuantAlertDaemon:
                 debrief = EODSessionSummaryEngine.dispatch_eod_summary(force=False, send_telegram=True)
                 if debrief.get("telegram_dispatched"):
                     TelegramNotifier.mark_alert_sent(eod_key)
+                # End-of-Day Git Sync (Strictly once daily at 03:30 PM IST after market close)
+                try:
+                    from git_sync_manager import GitSyncManager
+                    threading.Thread(
+                        target=GitSyncManager.sync_local_to_git,
+                        kwargs={"auto": True, "commit_message": f"chore(eod): 03:30 PM EOD session sync & backup [{today_date}]"},
+                        daemon=True
+                    ).start()
+                except Exception as e:
+                    logger.debug(f"03:30 PM EOD Git sync error in daemon: {e}")
         except Exception as e:
             logger.debug(f"03:30 PM EOD debrief check error in daemon: {e}")
 
