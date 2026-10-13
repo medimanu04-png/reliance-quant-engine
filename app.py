@@ -1700,6 +1700,7 @@ def execute_global_multi_desk_rescan(is_manual: bool = False):
 
     # 6. Synchronize session state tracking
     st.session_state["last_auto_rescan_ts"] = now
+    st.session_state["last_full_auto_rescan_ts"] = now
     st.session_state["rescan_time"] = rescan_time_str
     st.session_state["just_rescanned"] = True
     if is_manual:
@@ -1721,13 +1722,48 @@ RESCAN_INTERVAL_OPTIONS = [
     "⚡ 30s (Saver)",
     "⏸️ Off (Manual)"
 ]
-RESCAN_INTERVAL_SECONDS_MAP = {
-    "⚡ 2s (Ultra-Fast)": 2.0,
-    "⚡ 5s (Default)": 5.0,
-    "⚡ 10s (Relaxed)": 10.0,
-    "⚡ 30s (Saver)": 30.0,
-    "⏸️ Off (Manual)": None
+
+# Dual-Cadence Configuration Matrix:
+# - tick_sec: Micro-tick frequency for live quotes, macro ribbon, and 1s ATM corridor in fragments
+# - full_sec: Full-engine rescan cadence (clears caches, refreshes historical candles, recalculates indicators, CPR, MTF confluence, and Cockpit HUD)
+RESCAN_CADENCE_CONFIG = {
+    "⚡ 2s (Ultra-Fast)": {
+        "tick_cadence": "2s",
+        "tick_sec": 2.0,
+        "full_sec": 15.0,
+        "cycle_label": "⚡ 2s Ticks • 🔄 15s Full Rescan",
+        "is_active": True
+    },
+    "⚡ 5s (Default)": {
+        "tick_cadence": "5s",
+        "tick_sec": 5.0,
+        "full_sec": 25.0,
+        "cycle_label": "🟢 5s Ticks • 🔄 25s Full Rescan",
+        "is_active": True
+    },
+    "⚡ 10s (Relaxed)": {
+        "tick_cadence": "10s",
+        "tick_sec": 10.0,
+        "full_sec": 45.0,
+        "cycle_label": "🟢 10s Ticks • 🔄 45s Full Rescan",
+        "is_active": True
+    },
+    "⚡ 30s (Saver)": {
+        "tick_cadence": "30s",
+        "tick_sec": 30.0,
+        "full_sec": 60.0,
+        "cycle_label": "🟢 30s Ticks • 🔄 60s Full Rescan",
+        "is_active": True
+    },
+    "⏸️ Off (Manual)": {
+        "tick_cadence": None,
+        "tick_sec": None,
+        "full_sec": None,
+        "cycle_label": "⚪ Auto paused (Manual Only)",
+        "is_active": False
+    }
 }
+RESCAN_INTERVAL_SECONDS_MAP = {k: v["tick_sec"] for k, v in RESCAN_CADENCE_CONFIG.items()}
 
 USER_PREFS_FILE = os.path.join(os.path.dirname(__file__), "data_cache", "user_preferences.json")
 
@@ -1752,31 +1788,29 @@ def _save_persisted_rescan_pref(val: str):
         pass
 
 def resolve_rescan_cadence():
-    """Returns (run_every_str, cycle_label, is_active) synchronized globally across all 3 desks."""
+    """Returns (run_every_str, cycle_label, is_active) synchronized globally across all 3 desks with dual-cadence support."""
     if "global_rescan_interval_pref" not in st.session_state:
         st.session_state["global_rescan_interval_pref"] = _load_persisted_rescan_pref()
     selected = st.session_state.get("global_rescan_interval_pref", "⚡ 5s (Default)")
-    target_sec = RESCAN_INTERVAL_SECONDS_MAP.get(selected, 5.0)
-    is_active = (target_sec is not None)
+    cfg = RESCAN_CADENCE_CONFIG.get(selected, RESCAN_CADENCE_CONFIG["⚡ 5s (Default)"])
     
-    if not is_active:
-        run_every_str = None
-        cycle_label = "⚪ Auto paused (Manual)"
-    elif target_sec == 2.0:
-        run_every_str = "2s"
-        cycle_label = "⚡ 2s cycle (Ultra-Fast)"
-    elif target_sec == 5.0:
-        run_every_str = "5s"
-        cycle_label = "🟢 5s cycle (Default)"
-    elif target_sec == 10.0:
-        run_every_str = "10s"
-        cycle_label = "🟢 10s cycle (Relaxed)"
-    else:
-        run_every_str = "30s"
-        cycle_label = "🟢 30s cycle (Saver)"
-    
+    is_active = cfg["is_active"]
+    run_every_str = cfg["tick_cadence"]
+    full_rescan_sec = cfg["full_sec"]
+    cycle_label = cfg["cycle_label"]
+
+    # Check for optional custom sidebar override if present
+    override_full_sec = st.session_state.get("custom_full_rescan_sec")
+    if override_full_sec and is_active:
+        try:
+            full_rescan_sec = float(override_full_sec)
+            cycle_label = f"⚡ {cfg['tick_sec']:.0f}s Ticks • 🔄 {full_rescan_sec:.0f}s Full Rescan"
+        except Exception:
+            pass
+
     st.session_state["auto_rescan_active"] = is_active
-    st.session_state["auto_rescan_interval_sec"] = target_sec or 0.0
+    st.session_state["auto_rescan_interval_sec"] = cfg["tick_sec"] or 0.0
+    st.session_state["auto_full_rescan_sec"] = full_rescan_sec or 0.0
     return run_every_str, cycle_label, is_active
 
 
@@ -1793,6 +1827,8 @@ def render_auto_rescan_controller():
         def _on_interval_change():
             new_val = st.session_state.get("global_rescan_interval_pref")
             _save_persisted_rescan_pref(new_val)
+            # Reset full rescan timestamp on interval change to synchronize
+            st.session_state["last_full_auto_rescan_ts"] = time_mod.time()
 
         st.selectbox(
             "Auto Rescan Interval",
@@ -1803,14 +1839,26 @@ def render_auto_rescan_controller():
         )
 
     run_every_cadence, cycle_label, auto_active = resolve_rescan_cadence()
+    full_rescan_sec = float(st.session_state.get("auto_full_rescan_sec", 0.0))
 
     if rescan_btn:
         execute_global_multi_desk_rescan(is_manual=True)
+        st.session_state["last_full_auto_rescan_ts"] = time_mod.time()
         st.rerun(scope="app")
 
     def _render_desk_pills_banner():
         spec_nifty = get_asset_spec("NIFTY")
         spec_sensex = get_asset_spec("SENSEX")
+
+        now_ts = time_mod.time()
+        last_full_ts = float(st.session_state.get("last_full_auto_rescan_ts", 0.0))
+        if last_full_ts <= 0:
+            last_full_ts = now_ts
+            st.session_state["last_full_auto_rescan_ts"] = now_ts
+            
+        rem_sec = max(0, int(full_rescan_sec - (now_ts - last_full_ts))) if (auto_active and full_rescan_sec > 0) else 0
+        countdown_html = f" <span style='color: #FCD34D; font-weight: 700;'>(Next in {rem_sec}s)</span>" if (auto_active and full_rescan_sec > 0) else ""
+        rescan_disp = st.session_state.get("rescan_time", datetime.now(IST).strftime('%I:%M:%S %p'))
 
         if active_route == "":
             # Homepage Mode: display Benchmark desks with live refreshed spot prices and target parameters
@@ -1832,8 +1880,8 @@ def render_auto_rescan_controller():
 
             st.html(f"""
             <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
-                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
-                <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b>{countdown_html}</span>
+                <span>Last Full Rescan: <b style="color: #38BDF8;">{rescan_disp}</b></span>
                 <span>⚡ Multi-Desk Engine: <b style="color: #34D399;">Benchmark Desks Live</b></span>
             </div>
             <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
@@ -1884,8 +1932,8 @@ def render_auto_rescan_controller():
 
             st.html(f"""
             <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
-                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b></span>
-                <span>Last Rescan: <b style="color: #38BDF8;">{datetime.now(IST).strftime('%I:%M:%S %p')}</b></span>
+                <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b>{countdown_html}</span>
+                <span>Last Full Rescan: <b style="color: #38BDF8;">{rescan_disp}</b></span>
                 <span>⚡ Multi-Desk Sync: <b style="color: #34D399;">Active & Live</b></span>
             </div>
             <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid {desk_border}; border-radius: 8px; padding: 7px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
@@ -1901,6 +1949,16 @@ def render_auto_rescan_controller():
     else:
         @st.fragment(run_every=run_every_cadence)
         def _stream_desk_pills_banner_frag():
+            # Dual-Cadence Full Rescan Engine: Triggers full indicator & market refresh on schedule
+            if auto_active and full_rescan_sec > 0:
+                now_ts = time_mod.time()
+                last_full_ts = float(st.session_state.get("last_full_auto_rescan_ts", 0.0))
+                if last_full_ts <= 0:
+                    st.session_state["last_full_auto_rescan_ts"] = now_ts
+                elif (now_ts - last_full_ts) >= full_rescan_sec:
+                    st.session_state["last_full_auto_rescan_ts"] = now_ts
+                    execute_global_multi_desk_rescan(is_manual=False)
+                    st.rerun(scope="app")
             _render_desk_pills_banner()
         _stream_desk_pills_banner_frag()
 
@@ -2257,7 +2315,13 @@ st.sidebar.markdown("---")
 st.sidebar.caption("⏱️ **FAST MARKET RESCAN & TIMING**")
 if st_sidebar_button_stretch("🔄 Rescan Market Feed", key="sb_rescan_btn"):
     execute_global_multi_desk_rescan(is_manual=True)
+    st.session_state["last_full_auto_rescan_ts"] = time_mod.time()
     st.rerun(scope="app")
+
+sb_cadence_val = float(st.session_state.get("auto_rescan_interval_sec", 0.0))
+sb_full_val = float(st.session_state.get("auto_full_rescan_sec", 0.0))
+if st.session_state.get("auto_rescan_active", True) and sb_full_val > 0:
+    st.sidebar.caption(f"⚡ Live Sync: **{sb_cadence_val:.0f}s Ticks** • 🔄 **{sb_full_val:.0f}s Full Engine**")
 
 sb_early_entry = st.sidebar.checkbox(
     "⚡ Allow Early Entry (09:15-09:30 AM)",
