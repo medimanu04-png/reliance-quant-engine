@@ -123,32 +123,9 @@ _multi_desk_daemon_instance = None
 _multi_desk_daemon_lock = threading.Lock()
 
 def _start_background_multi_desk_daemon():
-    global _multi_desk_daemon_instance
-    with _multi_desk_daemon_lock:
-        existing_threads = {t.name for t in threading.enumerate() if t.is_alive()}
-        if "MultiDeskQuantAlertDaemon" in existing_threads:
-            return
-        # Disable background daemon on cloud hosting environments (Streamlit Cloud, Heroku, Docker)
-        # to prevent ghost alert spamming from cloud instances
-        if os.environ.get("STREAMLIT_SHARING_MODE") or os.environ.get("IS_STREAMLIT_CLOUD") or os.path.exists("/mount/src") or os.path.exists("/app"):
-            return
-        try:
-            from quant_alert_daemon import BenchmarkQuantAlertDaemon, is_daemon_running
-            running, running_pid = is_daemon_running()
-            if running and running_pid != os.getpid():
-                # External standalone daemon worker is already active and handling alerts
-                return
-            _multi_desk_daemon_instance = BenchmarkQuantAlertDaemon(
-                interval_seconds=5.0,
-                force_run=False,
-                symbols=["NIFTY", "SENSEX"]
-            )
-            t = threading.Thread(target=_multi_desk_daemon_instance.start, daemon=True, name="MultiDeskQuantAlertDaemon")
-            t.start()
-        except Exception:
-            pass
-
-_start_background_multi_desk_daemon()
+    # Telegram alerts and trade execution are exclusively managed by the standalone daemon terminal (quant_alert_daemon.py).
+    # Disabled inside Streamlit web server to eliminate duplicate notifications.
+    return
 
 class IndianFOTransactionCostEngine:
     """
@@ -3077,7 +3054,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     sim_run_id = tp.get("sim_run_id", "0")
     tg_token = tp.get("tg_bot_token", "")
     tg_chat = tp.get("tg_chat_id", "")
-    tg_on = tp.get("tg_enabled", True)
+    tg_on = False  # Automated alerts strictly delegated to standalone background daemon (quant_alert_daemon.py)
     plan_time_allowed = tp.get("time_gate_allowed", True)
     plan_time_msg = tp.get("time_gate_msg", "Prime Execution Window")
     plan_choppy = tp.get("is_choppy_regime", False)
@@ -4272,11 +4249,16 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
 
     elif plan_tradable or (sim_mode == "ARMED"):
         dist_color = "#38BDF8" if gap_pts <= 1.0 else "#FBBF24"
-        tg_badge_str = "🟢 Telegram Alerts Armed" if (tg_on and tg_token and tg_chat) else "⚪ Telegram Alerts Off"
+        tg_badge_str = "🟢 Telegram via Daemon" if (tg_config.get("enabled", True) and tg_token and tg_chat) else "⚪ Telegram Alerts Off"
 
-        # Telegram Alert Dispatch (Instant on ARMED State Pre-Alert or Simulation)
-        tg_armed_status_html = ""
-        if tg_on and tg_token and tg_chat:
+        # Automated alerts strictly delegated to standalone background daemon (quant_alert_daemon.py)
+        tg_armed_status_html = """
+        <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 6px 12px; margin-top: 10px; font-size: 0.74rem; color: #6EE7B7; display: flex; justify-content: space-between; align-items: center;">
+            <span>📡 <b>TELEGRAM NOTIFICATIONS:</b> Autonomous 0-delay push alerts actively managed by the Standalone Background Daemon</span>
+            <span style="color: #FFFFFF; font-weight: 700;">Zero-Browser Dependent</span>
+        </div>
+        """
+        if False:
             today_date = datetime.now(IST).strftime("%Y-%m-%d")
             if sim_armed or (sim_mode == "ARMED"):
                 armed_sent_key = f"tg_sent_sim_armed_{sim_run_id}_{active_sym}_{plan_strike}_{plan_contract_type}"

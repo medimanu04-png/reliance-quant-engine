@@ -1,14 +1,14 @@
 {
   "is_active": false,
   "symbol": "SENSEX",
-  "contract": "SENSEX 72000 PE (08-OCT-2026)",
-  "action": "BUY SENSEX 72000 PE (08-OCT-2026)",
-  "current_spot": 72350.25,
-  "entry_spot": 555.4,
-  "entry_time": "02:22:49 PM IST",
-  "peak_spot": 72350.25,
+  "contract": "SENSEX 73100 PE (15-OCT-2026)",
+  "action": "BUY SENSEX 73100 PE (15-OCT-2026)",
+  "current_spot": 73008.84,
+  "entry_spot": 418.7,
+  "entry_time": "11:31:35 AM IST",
+  "peak_spot": 73008.84,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -9848.0,
+  "unrealized_pnl_2lots": -9090.0,
   "target_pts": 120.0,
   "target_2_pts": 280.0,
   "sl_pts": 60.0,
@@ -16,18 +16,18 @@
   "market_status": "MONITORING (09:15 - 15:30 IST)",
   "strategy_mode": "OPTION 1: MULTI-TRANCHE RUNNER (50/50)",
   "tranche_1": {
-    "status": "BANKED",
+    "status": "PENDING",
     "target_pts": 120.0,
     "qty_pct": "50%",
-    "exit_price": 7039.05,
-    "pnl_rs": 129673.0
-  },
-  "tranche_2": {
-    "status": "RUNNER_ACTIVE",
-    "target_pts": 280.0,
-    "qty_pct": "50%",
-    "trailing_sl": "COST LOCK (\u20b9555.40)",
+    "exit_price": null,
     "pnl_rs": 0.0
   },
-  "last_update": "02:23:03 PM IST"
+  "tranche_2": {
+    "status": "PENDING",
+    "target_pts": 280.0,
+    "qty_pct": "50%",
+    "trailing_sl": "INITIAL SL (-60.0 pts)",
+    "pnl_rs": 0.0
+  },
+  "last_update": "11:45:34 AM IST"
 }

@@ -1,11 +1,41 @@
 {
-  "current_state": "IDLE / SCANNING",
+  "current_state": "TRADE CLOSED & AUDITED",
   "symbol": "SENSEX",
   "active_trade": null,
-  "last_closed_trade": null,
-  "today_trade_count": 0,
-  "updated_at": "2026-10-13 09:01:13 AM IST",
-  "re_entry_armed": null,
+  "last_closed_trade": {
+    "trade_num": 1,
+    "instrument": "SENSEX 73100 PE (15-OCT-2026)",
+    "planned_entry": 418.7,
+    "actual_entry": 418.7,
+    "executed": "Yes",
+    "sl": 356.8,
+    "target": 542.5,
+    "status": "SL Hit",
+    "exit_price": 347.55,
+    "exit_time": "11:45:22 AM IST",
+    "pnl": "\u20b9-8,538.00 (-71.15 pts)"
+  },
+  "today_trade_count": 1,
+  "updated_at": "2026-10-14 12:00:26 PM IST",
+  "re_entry_armed": {
+    "armed": false,
+    "symbol": "SENSEX",
+    "contract": "SENSEX15OCT202673100PE",
+    "instrument": "SENSEX 73100 PE (15-OCT-2026)",
+    "direction": "BUY PE",
+    "confluence": 86.3,
+    "planned_entry": 418.7,
+    "actual_entry": 418.7,
+    "wick_extreme_sl": 347.55,
+    "stop_loss_pts": 71.15,
+    "target": 542.5,
+    "target_2": 698.7,
+    "qty": 120,
+    "num_lots": 6,
+    "armed_at": "2026-10-14 11:45:24 AM IST",
+    "expires_at": "2026-10-14 12:00:24 PM IST",
+    "notes": "High conviction (86.3%) setup stopped on early wick at 11:45:22 AM IST. Re-entry armed for 15 mins if price breaks back past entry level \u20b9418.70."
+  },
   "archived_last_closed_trade": {
     "trade_num": 2,
     "instrument": "SENSEX 72000 PE (08-OCT-2026)",
@@ -19,5 +49,30 @@
     "exit_time": "02:23:01 PM IST",
     "pnl": "+\u20b9130,673.00 (+3266.82 pts)"
   },
-  "armed_setup": null
+  "armed_setup": null,
+  "last_cancelled_setup": {
+    "setup": {
+      "armed": true,
+      "contract": "SENSEX 73100 PE (15-OCT-2026)",
+      "instrument": "SENSEX 73100 PE",
+      "symbol": "SENSEX",
+      "strike": 73100,
+      "contract_type": "PE",
+      "direction": "BEARISH (PUT / PE)",
+      "breakout_trigger": 409.05,
+      "initial_ltp": 374.5,
+      "target_pts": 123.8,
+      "sl_pts": 61.9,
+      "confluence": 86.3,
+      "num_lots": 6,
+      "lot_size": 20,
+      "spot": 73012.5,
+      "expiry": "15-OCT-2026",
+      "armed_at": "11:07:30 AM IST",
+      "armed_timestamp": 1791956250.848496,
+      "valid_until_timestamp": 1791957750.848496
+    },
+    "reason": "Breakout trigger \u20b9409.05 was not breached within 25-minute setup window. Setup timed out.",
+    "cancelled_at": "11:32:41 AM IST"
+  }
 }

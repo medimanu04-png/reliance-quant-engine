@@ -225,5 +225,37 @@
     "suggested_exit": 171.65,
     "suggested_sl": 82.85,
     "confluence_score": 94.3
+  },
+  "2026-10-14_SENSEX": {
+    "date": "2026-10-14",
+    "trade_given_time": "11:31:35 AM IST",
+    "full_contract": "SENSEX 73100 PE (15-OCT-2026)",
+    "symbol": "SENSEX",
+    "contract_type": "PE",
+    "strike": 73100,
+    "expiry": "15-OCT-2026",
+    "suggested_entry": 418.7,
+    "limit_entry": 423.7,
+    "suggested_exit": 542.5,
+    "suggested_sl": 356.8,
+    "confluence_score": 86.3,
+    "win_expectancy_pct": 42.0,
+    "tier_rating": "TIER 4 (STAND DOWN / CAPITAL PRESERVATION)"
+  },
+  "2026-10-14": {
+    "date": "2026-10-14",
+    "trade_given_time": "11:31:35 AM IST",
+    "full_contract": "SENSEX 73100 PE (15-OCT-2026)",
+    "symbol": "SENSEX",
+    "contract_type": "PE",
+    "strike": 73100,
+    "expiry": "15-OCT-2026",
+    "suggested_entry": 418.7,
+    "limit_entry": 423.7,
+    "suggested_exit": 542.5,
+    "suggested_sl": 356.8,
+    "confluence_score": 86.3,
+    "win_expectancy_pct": 42.0,
+    "tier_rating": "TIER 4 (STAND DOWN / CAPITAL PRESERVATION)"
   }
 }

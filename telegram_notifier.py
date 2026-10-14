@@ -280,11 +280,39 @@ class TelegramNotifier:
             return False, f"Network error ({cid}): {str(e)}"
 
     @classmethod
-    def send_broadcast(cls, bot_token: str, chat_ids_input: Any, html_message: str, reply_markup: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
+    def send_broadcast(cls, bot_token: str, chat_ids_input: Any, html_message: str, reply_markup: Optional[Dict[str, Any]] = None, is_manual_test: bool = False) -> Tuple[bool, str]:
         """
         Broadcasts an HTML formatted alert to multiple Telegram users, groups, or channels.
         Returns (success: bool, status_summary: str).
         """
+        # Guard: Automated alerts are strictly reserved for the standalone background daemon (quant_alert_daemon.py)
+        # Web instances (Streamlit on localhost:8501 or https://manoj-quant-engine.streamlit.app/) are strictly prohibited from dispatching automated alerts
+        if not is_manual_test:
+            is_streamlit = (
+                bool(os.environ.get("STREAMLIT_SHARING_MODE")) or 
+                bool(os.environ.get("IS_STREAMLIT_CLOUD")) or 
+                os.path.exists("/mount/src") or 
+                os.path.exists("/app")
+            )
+            if not is_streamlit:
+                try:
+                    import streamlit as st
+                    if hasattr(st, "runtime") and st.runtime.exists():
+                        is_streamlit = True
+                except Exception:
+                    pass
+            if not is_streamlit:
+                try:
+                    import sys
+                    if any("streamlit" in (arg or "").lower() for arg in sys.argv):
+                        is_streamlit = True
+                except Exception:
+                    pass
+
+            if is_streamlit:
+                logger.debug("Automated alert suppressed in Streamlit web app. Exclusively dispatched by Background Daemon.")
+                return True, "Automated alert suppressed in Streamlit (Handled by Background Daemon)"
+
         chat_ids = cls.parse_chat_ids(chat_ids_input)
         if not chat_ids:
             return False, "No valid Telegram Chat IDs provided."
@@ -329,11 +357,11 @@ class TelegramNotifier:
             return False, summary
 
     @classmethod
-    def send_message(cls, bot_token: str, chat_id: Union[str, List[str]], html_message: str, reply_markup: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
+    def send_message(cls, bot_token: str, chat_id: Union[str, List[str]], html_message: str, reply_markup: Optional[Dict[str, Any]] = None, is_manual_test: bool = False) -> Tuple[bool, str]:
         """
         Universal entry point: automatically supports both single user or multiple comma-separated users/groups.
         """
-        return cls.send_broadcast(bot_token, chat_id, html_message, reply_markup=reply_markup)
+        return cls.send_broadcast(bot_token, chat_id, html_message, reply_markup=reply_markup, is_manual_test=is_manual_test)
 
     @classmethod
     def get_updates(cls, bot_token: str, offset: Optional[int] = None, timeout: int = 5) -> List[Dict[str, Any]]:
@@ -662,7 +690,7 @@ class TelegramNotifier:
                 ]
             ]
         }
-        return cls.send_broadcast(bot_token, chat_ids, msg, reply_markup=buttons)
+        return cls.send_broadcast(bot_token, chat_ids, msg, reply_markup=buttons, is_manual_test=True)
 
     # =========================================================================
     # ALL LIVE MARKET SCENARIO ALERT FORMATTERS
