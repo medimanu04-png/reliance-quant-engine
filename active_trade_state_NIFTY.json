@@ -7,8 +7,8 @@
   "entry_spot": 146.35,
   "entry_time": "10:46:25 AM IST",
   "peak_spot": 22928.95,
-  "peak_profit_rs": 165.75,
-  "unrealized_pnl_2lots": 165.75,
+  "peak_profit_rs": 331.5,
+  "unrealized_pnl_2lots": 331.5,
   "target_pts": 50.0,
   "target_2_pts": 110.0,
   "sl_pts": 36.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-36.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "11:27:10 AM IST"
+  "last_update": "11:27:15 AM IST"
 }
