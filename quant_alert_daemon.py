@@ -736,6 +736,37 @@ class RelianceQuantAlertDaemon:
                 f"TGT: ₹{target_p:.2f} | SL: ₹{effective_sl:.2f} | PnL: {'+' if unreal_pnl>=0 else ''}₹{unreal_pnl:,.2f}"
             )
 
+            # Safety Catch: Ensure Entry Trigger Alert was dispatched to Telegram for this active trade
+            active_contract_type = "PE" if "PE" in inst_sym.upper() else "CE"
+            import re
+            m_strike = re.search(r'\b(\d{4,5})\b', inst_sym)
+            trade_strike = int(m_strike.group(1)) if m_strike else spec.default_strike
+            entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{trade_strike}_{active_contract_type}"
+            trade_num_key = f"tg_sent_entry_{today_date}_{sym}_t{trade_num}"
+            if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key) and not TelegramNotifier.is_alert_sent(trade_num_key):
+                try:
+                    entry_msg = TelegramNotifier.format_entry_alert(
+                        contract=inst_sym,
+                        direction=active_trade.get("direction", f"BUY {active_contract_type}"),
+                        entry_price=act_entry,
+                        target_pts=round(target_p - act_entry, 2),
+                        sl_pts=round(act_entry - initial_sl, 2),
+                        num_lots=trade_num_lots,
+                        lot_size=trade_lot_size,
+                        win_prob=float(active_trade.get("confluence", 80.0)),
+                        spot=spot,
+                        symbol=sym,
+                        rationale=f"Active Trade #{trade_num} Confirmed Breakout: {inst_sym} filled @ ₹{act_entry:.2f}."
+                    )
+                    buttons = TelegramNotifier.get_entry_ce_buttons(f"{sym} {trade_strike} CE", symbol=sym) if active_contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"{sym} {trade_strike} PE", symbol=sym)
+                    ok_ent, fb_ent = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
+                    if ok_ent:
+                        TelegramNotifier.record_alert_sent(entry_alert_key)
+                        TelegramNotifier.record_alert_sent(trade_num_key)
+                        logger.info(f"🔥 🚀 RECONCILED MISSING ENTRY ALERT SENT TO TELEGRAM: {fb_ent}")
+                except Exception as e:
+                    logger.debug(f"Error reconciling missing entry alert: {e}")
+
             # Persist real-time active trade state for Live Dashboard
             try:
                 active_state_data = {
@@ -1299,7 +1330,7 @@ class RelianceQuantAlertDaemon:
                 try:
                     exp_clean = expiry_date.replace("-", "").upper()
                     seq_cur = SequentialTradeEngine.get_state(symbol=sym)
-                    if seq_cur.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not has_daily_loss:
+                    if seq_cur.get("current_state") == SequentialTradeEngine.STATE_IDLE and not has_daily_loss:
                         SequentialTradeEngine.enter_trade_direct(
                             contract=f"{sym}{exp_clean}{recommended_strike}{contract_type}",
                             instrument=contract_label,

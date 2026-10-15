@@ -695,30 +695,48 @@ def render_cockpit_tab(ctx: dict):
     account_cash = ctx.get("account_cash", 50000.0)
 
     if current_seq_state == SequentialTradeEngine.STATE_IN_TRADE and active_trade:
-        act_entry = float(active_trade.get("actual_entry_price", active_trade.get("planned_entry", 30.0)))
+        act_entry = float(active_trade.get("actual_entry", active_trade.get("planned_entry", 30.0)))
         active_ltp = float(active_trade.get("current_ltp", act_entry))
         target_p = float(active_trade.get("target", act_entry + 10.0))
         sl_p = float(active_trade.get("sl", act_entry - 8.0))
         trail_sl = float(active_trade.get("trailing_sl", sl_p))
 
-        def _handle_close_target(sym, p, cash):
-            SequentialTradeEngine.close_trade(exit_price=p, status="Target Hit", notes="Target reached in active monitoring", starting_cash=cash, symbol=sym)
-
-        def _handle_close_sl(sym, p, cash):
-            SequentialTradeEngine.close_trade(exit_price=p, status="SL Hit", notes="Stop loss hit in active monitoring", starting_cash=cash, symbol=sym)
-
         it_c1, it_c2, it_c3 = st.columns([1.2, 1.2, 1.6])
         with it_c1:
-            if st_button_stretch("🎯 Mark Target Hit & Close", key=f"btn_close_target_{scrip_symbol}", on_click=_handle_close_target, args=(scrip_symbol, active_ltp, account_cash), help="Record target hit outcome and close trade"):
+            if st_button_stretch("🎯 Mark Target Hit & Close", key=f"btn_close_target_{scrip_symbol}", help="Record target hit outcome and close trade"):
+                exit_tgt = max(target_p, active_ltp)
+                SequentialTradeEngine.close_trade(
+                    exit_price=exit_tgt,
+                    status="Target Hit",
+                    notes=f"Target reached in active monitoring (Target ₹{target_p:.2f})",
+                    starting_cash=account_cash,
+                    symbol=scrip_symbol
+                )
+                st.toast(f"🎯 Trade #{active_trade.get('trade_num', 1)} closed at Target Hit (₹{exit_tgt:.2f})!")
                 st.rerun()
         with it_c2:
-            if st_button_stretch("🛑 Mark SL Hit & Close", key=f"btn_close_sl_{scrip_symbol}", on_click=_handle_close_sl, args=(scrip_symbol, active_ltp, account_cash), help="Record stop-loss outcome and close trade"):
+            if st_button_stretch("🛑 Mark SL Hit & Close", key=f"btn_close_sl_{scrip_symbol}", help="Record stop-loss outcome and close trade"):
+                exit_sl = min(sl_p, active_ltp)
+                SequentialTradeEngine.close_trade(
+                    exit_price=exit_sl,
+                    status="SL Hit",
+                    notes=f"Stop loss hit in active monitoring (SL ₹{sl_p:.2f})",
+                    starting_cash=account_cash,
+                    symbol=scrip_symbol
+                )
+                st.toast(f"🛑 Trade #{active_trade.get('trade_num', 1)} closed at SL Hit (₹{exit_sl:.2f})!")
                 st.rerun()
         with it_c3:
-            if st_button_stretch("🔄 Sync with Groww Positions", key=f"btn_sync_groww_pos_{scrip_symbol}"):
+            if st_button_stretch("🔄 Sync with Groww Positions", key=f"btn_sync_groww_pos_{scrip_symbol}", help="Reconcile with authentic Groww open positions"):
                 sync_res = SequentialTradeEngine.sync_with_groww_positions(groww_feed=groww_feed, symbol=scrip_symbol, starting_cash=account_cash)
-                if sync_res.get("status") == "SUCCESS":
+                if sync_res.get("success") or sync_res.get("status") == "SUCCESS":
                     st.toast("✅ Reconciled with live Groww position!")
+                elif sync_res.get("status") == "CLEARED_PHANTOM":
+                    st.toast(f"✅ {sync_res.get('message', 'Cleared phantom trade — no active position on Groww!')}")
+                elif sync_res.get("status") == "NO_POSITION":
+                    st.toast("ℹ️ No open positions found on Groww.")
+                else:
+                    st.toast(f"ℹ️ {sync_res.get('message', sync_res.get('msg', 'Groww position sync complete.'))}")
                 st.rerun()
 
     elif current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
@@ -738,16 +756,23 @@ def render_cockpit_tab(ctx: dict):
                 st.rerun()
 
     elif current_seq_state == SequentialTradeEngine.STATE_TRADE_CLOSED and last_closed:
-        def _handle_ack_reset(sym):
-            SequentialTradeEngine.acknowledge_and_reset(symbol=sym)
-            st.session_state[f"seq_acked_{sym}"] = True
-
+        pnl_val = last_closed.get("pnl", "")
+        status_val = last_closed.get("status", "Closed")
+        inst_val = last_closed.get("instrument", "")
+        exit_p_val = float(last_closed.get("exit_price", 0.0))
+        st.markdown(f"""
+        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
+            <span>🏁 <b>Trade #{last_closed.get('trade_num', 1)} Closed & Audited</b>: <span style="color: #38BDF8;">{inst_val}</span> • Exit: ₹{exit_p_val:.2f}</span>
+            <span>Outcome: <b style="color: {'#34D399' if 'Hit' in status_val or '+' in pnl_val else '#F87171'};">{status_val} ({pnl_val})</b></span>
+        </div>
+        """, unsafe_allow_html=True)
         if st_button_stretch(
             "🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)",
             key=f"btn_ack_scan_next_{scrip_symbol}",
-            on_click=_handle_ack_reset,
-            args=(scrip_symbol,)
+            help="Acknowledge trade result and scan for next institutional setup"
         ):
+            SequentialTradeEngine.acknowledge_and_reset(symbol=scrip_symbol)
+            st.session_state[f"seq_acked_{scrip_symbol}"] = True
             st.toast(f"✅ Trade acknowledged! {scrip_symbol} desk is now in IDLE / SCANNING.")
             st.rerun()
 

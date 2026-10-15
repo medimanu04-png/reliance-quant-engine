@@ -1895,10 +1895,17 @@ class SequentialTradeEngine:
                 "state": state
             }
 
-        if curr_state == cls.STATE_IN_TRADE and state.get("active_trade"):
+        if curr_state in [cls.STATE_IN_TRADE, cls.STATE_ENTRY_PENDING] and state.get("active_trade"):
             return {
                 "success": False,
                 "msg": f"Already IN-TRADE with {state.get('active_trade', {}).get('instrument')}",
+                "state": state
+            }
+
+        if curr_state == cls.STATE_TRADE_CLOSED:
+            return {
+                "success": False,
+                "msg": f"⛔ REJECTED: Sequential Rule #5 active. Trade closed and awaiting trader acknowledgment.",
                 "state": state
             }
 
@@ -2011,10 +2018,10 @@ class SequentialTradeEngine:
             }
 
         # Zero Parallel Signals Guard
-        if curr_state in [cls.STATE_ENTRY_PENDING, cls.STATE_IN_TRADE]:
+        if curr_state in [cls.STATE_ENTRY_PENDING, cls.STATE_IN_TRADE, cls.STATE_TRADE_CLOSED]:
             return {
                 "success": False,
-                "msg": f"⛔ REJECTED: Sequential Rule #1 active. Current state is '{curr_state}'. Zero parallel trades permitted.",
+                "msg": f"⛔ REJECTED: Sequential Rule #1/#5 active. Current state is '{curr_state}'. Zero parallel trades permitted.",
                 "state": state
             }
 
@@ -2795,7 +2802,7 @@ class SequentialTradeEngine:
             "confluence_score": active.get("confluence", 75.0)
         }
         # Only record into authentic daily trade ledger if genuinely executed on Groww!
-        if active.get("executed") == "Yes" and active.get("actual_entry"):
+        if active.get("executed") in ["Yes", "Groww Verified"] and active.get("actual_entry"):
             TradeJournalManager.add_or_update_entry(journal_rec, starting_cash=starting_cash)
 
         # Label outcome in empirical calibration dataset
@@ -2961,7 +2968,7 @@ class SequentialTradeEngine:
         state = cls.get_state(symbol=symbol)
         curr_state = state.get("current_state")
         active = state.get("active_trade")
-        if active and curr_state == cls.STATE_IN_TRADE and active.get("executed") == "Yes":
+        if active and curr_state == cls.STATE_IN_TRADE and active.get("executed") in ["Yes", "Groww Verified"]:
             active_inst = str(active.get("instrument", "")) + " " + str(active.get("contract", ""))
             if sym_kw in active_inst.upper():
                 t_idx = int(active.get("trade_num") or (len(rows) + 1))

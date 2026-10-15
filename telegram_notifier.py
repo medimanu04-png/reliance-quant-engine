@@ -29,6 +29,8 @@ except ImportError:
     requests = None
 import urllib.request
 import urllib.parse
+import logging
+logger = logging.getLogger("TelegramNotifier")
 
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "telegram_config.json")

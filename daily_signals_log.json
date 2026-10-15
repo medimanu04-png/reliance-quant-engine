@@ -257,5 +257,31 @@
     "confluence_score": 86.3,
     "win_expectancy_pct": 42.0,
     "tier_rating": "TIER 4 (STAND DOWN / CAPITAL PRESERVATION)"
+  },
+  "2026-10-15_NIFTY": {
+    "date": "2026-10-15",
+    "trade_given_time": "09:16:36 AM IST",
+    "full_contract": "NIFTY 22900 CE (19-OCT-2026)",
+    "symbol": "NIFTY",
+    "contract_type": "CE",
+    "strike": 19202622900,
+    "expiry": "19-OCT-2026",
+    "suggested_entry": 159.7,
+    "suggested_exit": 212.1,
+    "suggested_sl": 122.0,
+    "confluence_score": 95.1
+  },
+  "2026-10-15": {
+    "date": "2026-10-15",
+    "trade_given_time": "09:16:36 AM IST",
+    "full_contract": "NIFTY 22900 CE (19-OCT-2026)",
+    "symbol": "NIFTY",
+    "contract_type": "CE",
+    "strike": 19202622900,
+    "expiry": "19-OCT-2026",
+    "suggested_entry": 159.7,
+    "suggested_exit": 212.1,
+    "suggested_sl": 122.0,
+    "confluence_score": 95.1
   }
 }

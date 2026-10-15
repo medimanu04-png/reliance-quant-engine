@@ -3054,7 +3054,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
     sim_run_id = tp.get("sim_run_id", "0")
     tg_token = tp.get("tg_bot_token", "")
     tg_chat = tp.get("tg_chat_id", "")
-    tg_on = False  # Automated alerts strictly delegated to standalone background daemon (quant_alert_daemon.py)
+    tg_on = bool(tp.get("tg_enabled", True)) and bool(tg_config.get("enabled", True))
     plan_time_allowed = tp.get("time_gate_allowed", True)
     plan_time_msg = tp.get("time_gate_msg", "Prime Execution Window")
     plan_choppy = tp.get("is_choppy_regime", False)
