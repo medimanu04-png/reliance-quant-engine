@@ -242,7 +242,7 @@ class EODSessionSummaryEngine:
                     token = cfg.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
                     chat = cfg.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
                     msg_text = cls.format_telegram_debrief(debrief)
-                    TelegramNotifier.send_message(token, chat, msg_text)
+                    TelegramNotifier.send_message(token, chat, msg_text, is_manual_test=bool(force))
                     state["telegram_dispatched_date"] = today_str
                     debrief["telegram_dispatched"] = True
             except Exception as e:

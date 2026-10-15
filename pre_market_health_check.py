@@ -273,7 +273,7 @@ class PreMarketHealthCheckEngine:
                 cfg = TelegramNotifier.load_config()
                 tok = cfg.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
                 chat = cfg.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
-                TelegramNotifier.send_message(tok, chat, briefing_text)
+                TelegramNotifier.send_message(tok, chat, briefing_text, is_manual_test=bool(force))
                 state["telegram_dispatched_date"] = today_str
                 diagnostic["telegram_dispatched"] = True
             except Exception as e:

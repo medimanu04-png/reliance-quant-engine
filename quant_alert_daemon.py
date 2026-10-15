@@ -1067,8 +1067,9 @@ class RelianceQuantAlertDaemon:
                         symbol=sym
                     )
                     if tg_enabled:
-                        re_key = f"tg_sent_re_{today_date}_{sym}_{re_arm.get('instrument', '')}"
-                        if not TelegramNotifier.is_alert_sent(re_key, cooldown_seconds=86400):
+                        re_t_num = int(SequentialTradeEngine.get_state(symbol=sym).get("today_trade_count", 0))
+                        re_key = f"tg_sent_re_{today_date}_{sym}_{re_arm.get('instrument', '')}_t{re_t_num}"
+                        if not TelegramNotifier.is_alert_sent(re_key, cooldown_seconds=180):
                             re_msg = TelegramNotifier.format_resumption_reentry_alert(
                                 contract=re_arm.get('instrument', ''),
                                 direction=re_dir,
@@ -1448,8 +1449,10 @@ class RelianceQuantAlertDaemon:
                     valid_minutes=25
                 )
 
-                armed_alert_key = f"tg_sent_armed_{today_date}_{sym}_{recommended_strike}_{contract_type}"
-                if tg_enabled and not TelegramNotifier.is_alert_sent(armed_alert_key):
+                seq_state_arm = SequentialTradeEngine.get_state(symbol=sym)
+                next_t_num = int(seq_state_arm.get("today_trade_count", 0)) + 1
+                armed_alert_key = f"tg_sent_armed_{today_date}_{sym}_{recommended_strike}_{contract_type}_t{next_t_num}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(armed_alert_key, cooldown_seconds=180):
                     armed_msg = TelegramNotifier.format_armed_alert(
                         contract=contract_label,
                         direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",

@@ -3288,8 +3288,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     symbol=active_sym,
                     direction=cur_armed_setup.get("direction", "")
                 )
-                TelegramNotifier.send_message(tg_token, tg_chat, cancel_msg)
-                TelegramNotifier.record_alert_sent(cancel_alert_key)
+                ok_c, _ = TelegramNotifier.send_message(tg_token, tg_chat, cancel_msg)
+                if ok_c:
+                    TelegramNotifier.record_alert_sent(cancel_alert_key)
             SequentialTradeEngine.cancel_armed_setup(symbol=active_sym, reason=cancel_reason)
             cur_armed_setup = None
         else:
@@ -4040,8 +4041,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     symbol=active_sym
                 )
                 buttons = TelegramNotifier.get_target_hit_buttons(symbol=active_sym, contract=act_inst)
-                TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
-                TelegramNotifier.record_alert_sent(target_alert_key)
+                ok_tgt, _ = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if ok_tgt:
+                    TelegramNotifier.record_alert_sent(target_alert_key)
 
             st.html(f"""
             <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #10B981; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(16, 185, 129, 0.35); margin-bottom: 16px;">
@@ -4103,8 +4105,9 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     symbol=active_sym
                 )
                 buttons = TelegramNotifier.get_stop_loss_buttons(symbol=active_sym, contract=act_inst)
-                TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
-                TelegramNotifier.record_alert_sent(sl_alert_key)
+                ok_sl, _ = TelegramNotifier.send_message(tg_token, tg_chat, alert_msg, reply_markup=buttons)
+                if ok_sl:
+                    TelegramNotifier.record_alert_sent(sl_alert_key)
 
             st.html(f"""
             <div style="background: linear-gradient(135deg, rgba(127, 29, 29, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border: 2px solid #EF4444; border-radius: 12px; padding: 18px 22px; box-shadow: 0 0 25px rgba(239, 68, 68, 0.35); margin-bottom: 16px;">
