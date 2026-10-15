@@ -2469,8 +2469,11 @@ with st.sidebar.expander("📊 03:30 PM EOD Session Debrief", expanded=False):
     EODSessionSummaryEngine.render_eod_card(compact=True, key_prefix=f"sb_{scrip_symbol.lower()}")
 
 # Background Alert Daemon Supervisor HUD
-from telegram_notifier import is_daemon_active
-daemon_is_active = is_daemon_active()
+try:
+    from telegram_notifier import is_daemon_active
+    daemon_is_active = is_daemon_active()
+except Exception:
+    daemon_is_active = bool(get_daemon_telemetry().get("is_healthy", False))
 with st.sidebar.expander("🤖 Background Alert Daemon", expanded=not daemon_is_active):
     render_daemon_supervisor_card(key_prefix=f"sb_{scrip_symbol.lower()}")
 

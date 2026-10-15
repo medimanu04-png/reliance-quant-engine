@@ -93,6 +93,9 @@ class TelegramNotifier:
     _alert_cache: Dict[str, float] = {}
     _alert_cache_loaded: bool = False
 
+    is_pid_alive = staticmethod(is_pid_alive)
+    is_daemon_active = staticmethod(is_daemon_active)
+
     @classmethod
     def load_alert_log(cls) -> Dict[str, float]:
         """Loads persistent alert dispatch records from disk, auto-pruning records older than 24 hours."""
