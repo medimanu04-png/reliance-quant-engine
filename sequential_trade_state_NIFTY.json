@@ -30,10 +30,10 @@
     "status": "Open",
     "proposed_at": "10:44:58 AM IST",
     "symbol": "NIFTY",
-    "current_ltp": 143.45,
-    "unrealized_pnl": -565.5
+    "current_ltp": 143.85,
+    "unrealized_pnl": -487.5
   },
-  "updated_at": "2026-10-15 11:26:30 AM IST",
+  "updated_at": "2026-10-15 11:26:35 AM IST",
   "today_trade_count": 3,
   "re_entry_armed": null,
   "armed_setup": null,
