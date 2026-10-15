@@ -35,6 +35,55 @@ logger = logging.getLogger("TelegramNotifier")
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "telegram_config.json")
 ALERT_LOG_FILE = os.path.join(os.path.dirname(__file__), "telegram_alert_log.json")
+DAEMON_LOCK_FILE = os.path.join(os.path.dirname(__file__), "quant_daemon.pid")
+DAEMON_HEARTBEAT_FILE = os.path.join(os.path.dirname(__file__), "daemon_heartbeat.json")
+
+
+def is_pid_alive(pid: int) -> bool:
+    """Checks whether a given process ID is actively running on the OS."""
+    if pid <= 0:
+        return False
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, int(pid))
+        if h:
+            kernel32.CloseHandle(h)
+            return True
+        return False
+    except Exception:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, PermissionError):
+            return False
+
+
+def is_daemon_active(max_heartbeat_age_secs: float = 45.0) -> bool:
+    """Checks if background quant_alert_daemon is actively running and healthy."""
+    now = time.time()
+    try:
+        if os.path.exists(DAEMON_HEARTBEAT_FILE):
+            with open(DAEMON_HEARTBEAT_FILE, "r", encoding="utf-8") as f:
+                hb = json.load(f)
+            ts = float(hb.get("timestamp", 0))
+            pid = int(hb.get("pid", 0))
+            if (now - ts) <= max_heartbeat_age_secs and is_pid_alive(pid):
+                return True
+    except Exception:
+        pass
+
+    try:
+        if os.path.exists(DAEMON_LOCK_FILE):
+            with open(DAEMON_LOCK_FILE, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            pid = int(d.get("pid", 0))
+            if pid and is_pid_alive(pid):
+                return True
+    except Exception:
+        pass
+    return False
 
 
 class TelegramNotifier:
@@ -53,8 +102,8 @@ class TelegramNotifier:
             try:
                 with open(ALERT_LOG_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if isinstance(data, dict):
-                        records = {str(k): float(v) for k, v in data.items() if (now - float(v)) < 86400}
+                if isinstance(data, dict):
+                    records = {str(k): float(v) for k, v in data.items() if (now - float(v)) < 86400}
             except Exception:
                 records = {}
         cls._alert_cache = records
@@ -102,6 +151,21 @@ class TelegramNotifier:
         now = time.time()
         cls._alert_cache[alert_key] = now
         cls.save_alert_log(cls._alert_cache)
+
+    @classmethod
+    def clear_entry_alerts_for_symbol(cls, symbol: str) -> None:
+        """Clears logged entry and armed alert keys for a specific symbol so subsequent setups can fire."""
+        records = cls.load_alert_log()
+        sym_kw = symbol.upper()
+        keys_to_del = [
+            k for k in records 
+            if (f"_{sym_kw}_" in k or k.endswith(f"_{sym_kw}")) and ("entry" in k or "armed" in k)
+        ]
+        if keys_to_del:
+            for k in keys_to_del:
+                records.pop(k, None)
+            cls._alert_cache = records
+            cls.save_alert_log(records)
 
     @classmethod
     def clear_alert_log(cls) -> None:
@@ -229,7 +293,8 @@ class TelegramNotifier:
     def send_single_message(cls, bot_token: str, chat_id: str, html_message: str, reply_markup: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         """
         Sends an HTML formatted message to a single Telegram Chat ID.
-        Supports optional reply_markup for Telegram inline action buttons.
+        Includes 3-attempt exponential backoff retry, rate limit handling,
+        and automatic plain-text fallback on entity parsing errors.
         Returns (success: bool, status_message: str).
         """
         token = bot_token.strip()
@@ -238,40 +303,90 @@ class TelegramNotifier:
         if not token or not cid:
             return False, "Bot Token and Chat ID are required."
 
-        def _do_send(target_id: str):
+        def _clean_plain_text(html_text: str) -> str:
+            """Strips HTML tags safely for plain-text fallback."""
+            import re
+            clean = re.sub(r'<[^>]+>', '', html_text)
+            clean = clean.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+            return clean
+
+        def _execute_http_post(target_id: str, text_content: str, parse_mode: Optional[str] = "HTML") -> Tuple[bool, str, Optional[int]]:
             api_url = f"https://api.telegram.org/bot{token}/sendMessage"
-            payload = {
+            payload: Dict[str, Any] = {
                 "chat_id": target_id,
-                "text": html_message,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True
+                "text": text_content,
+                "disable_web_page_preview": True,
+                "disable_notification": False
             }
+            if parse_mode:
+                payload["parse_mode"] = parse_mode
             if reply_markup is not None:
                 payload["reply_markup"] = reply_markup
 
             if requests is not None:
                 resp = requests.post(api_url, json=payload, timeout=8)
-                res_json = resp.json()
+                try:
+                    res_json = resp.json()
+                except Exception:
+                    res_json = {}
                 if resp.status_code == 200 and res_json.get("ok"):
-                    return True, "Delivered"
-                else:
-                    return False, res_json.get("description", resp.text)
+                    return True, "Delivered", None
+                retry_sec = res_json.get("parameters", {}).get("retry_after")
+                desc = res_json.get("description", resp.text)
+                return False, desc, retry_sec
             else:
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(api_url, data=data, headers={"Content-Type": "application/json"})
                 with urllib.request.urlopen(req, timeout=8) as response:
                     res_json = json.loads(response.read().decode("utf-8"))
                     if res_json.get("ok"):
+                        return True, "Delivered", None
+                    retry_sec = res_json.get("parameters", {}).get("retry_after")
+                    return False, res_json.get("description", ""), retry_sec
+
+        def _do_send_with_retries(target_id: str) -> Tuple[bool, str]:
+            max_attempts = 3
+            last_err = ""
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    ok, desc, retry_sec = _execute_http_post(target_id, html_message, parse_mode="HTML")
+                    if ok:
                         return True, "Delivered"
-                    else:
-                        return False, res_json.get("description", "")
+
+                    # If HTML parsing failed due to unescaped characters, fallback to plain text immediately
+                    if desc and "can't parse entities" in desc.lower():
+                        logger.warning(f"Telegram HTML parse error for {target_id}. Retrying with plain text fallback: {desc}")
+                        plain_txt = _clean_plain_text(html_message)
+                        ok_p, desc_p, _ = _execute_http_post(target_id, plain_txt, parse_mode=None)
+                        if ok_p:
+                            return True, "Delivered (Plain-Text Fallback)"
+                        last_err = desc_p
+                        break
+
+                    # If rate limited by Telegram, sleep requested interval and retry
+                    if retry_sec and retry_sec > 0:
+                        sleep_time = min(float(retry_sec), 5.0)
+                        logger.warning(f"Telegram 429 Rate Limit on {target_id}: sleeping {sleep_time}s (attempt {attempt}/{max_attempts})")
+                        time.sleep(sleep_time)
+                        continue
+
+                    last_err = desc
+                    if attempt < max_attempts:
+                        time.sleep(0.8 * attempt)
+
+                except Exception as ex:
+                    last_err = str(ex)
+                    if attempt < max_attempts:
+                        time.sleep(0.8 * attempt)
+
+            return False, last_err
 
         try:
-            ok, desc = _do_send(cid)
+            ok, desc = _do_send_with_retries(cid)
             if not ok and "chat not found" in desc.lower():
                 if not cid.startswith("-") and cid.isdigit():
                     for alt_id in [f"-{cid}", f"-100{cid}"]:
-                        ok_alt, _ = _do_send(alt_id)
+                        ok_alt, _ = _do_send_with_retries(alt_id)
                         if ok_alt:
                             return True, "Delivered"
             if ok:
@@ -285,10 +400,11 @@ class TelegramNotifier:
     def send_broadcast(cls, bot_token: str, chat_ids_input: Any, html_message: str, reply_markup: Optional[Dict[str, Any]] = None, is_manual_test: bool = False) -> Tuple[bool, str]:
         """
         Broadcasts an HTML formatted alert to multiple Telegram users, groups, or channels.
+        Features intelligent fail-safe dispatch: defers to background daemon when running,
+        or dispatches directly from Streamlit if daemon is offline so no trade is ever missed.
         Returns (success: bool, status_summary: str).
         """
-        # Guard: Automated alerts are strictly reserved for the standalone background daemon (quant_alert_daemon.py)
-        # Web instances (Streamlit on localhost:8501 or https://manoj-quant-engine.streamlit.app/) are strictly prohibited from dispatching automated alerts
+        # Guard: Fail-Safe Web Dispatch Architecture
         if not is_manual_test:
             is_streamlit = (
                 bool(os.environ.get("STREAMLIT_SHARING_MODE")) or 
@@ -312,8 +428,11 @@ class TelegramNotifier:
                     pass
 
             if is_streamlit:
-                logger.debug("Automated alert suppressed in Streamlit web app. Exclusively dispatched by Background Daemon.")
-                return True, "Automated alert suppressed in Streamlit (Handled by Background Daemon)"
+                if is_daemon_active():
+                    logger.debug("Automated alert deferred to active background daemon.")
+                    return False, "DEFERRED_TO_BACKGROUND_DAEMON"
+                else:
+                    logger.info("⚠️ Background Daemon is offline. Streamlit web app fail-safe dispatcher engaged for alert!")
 
         chat_ids = cls.parse_chat_ids(chat_ids_input)
         if not chat_ids:

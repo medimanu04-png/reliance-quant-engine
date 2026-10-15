@@ -445,6 +445,134 @@ def render_order_tape_hud(scrip_symbol: str = "NIFTY"):
     </div>
     """)
 
+
+def get_daemon_telemetry() -> Dict[str, Any]:
+    """Retrieves live background daemon telemetry and liveness."""
+    import time as time_mod
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    hb_file = os.path.join(base_dir, "daemon_heartbeat.json")
+    pid_file = os.path.join(base_dir, "quant_daemon.pid")
+    now_ts = time_mod.time()
+
+    hb_data = {}
+    if os.path.exists(hb_file):
+        try:
+            with open(hb_file, "r", encoding="utf-8") as f:
+                hb_data = json.load(f)
+        except Exception:
+            pass
+
+    pid = int(hb_data.get("pid", 0))
+    if not pid and os.path.exists(pid_file):
+        try:
+            with open(pid_file, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            pid = int(d.get("pid", 0))
+        except Exception:
+            pass
+
+    from telegram_notifier import is_pid_alive
+    alive = bool(pid and is_pid_alive(pid))
+    hb_ts = float(hb_data.get("timestamp", 0))
+    elapsed = max(0, int(now_ts - hb_ts)) if hb_ts > 0 else 9999
+    is_healthy = alive and (elapsed < 45)
+
+    return {
+        "is_alive": alive,
+        "is_healthy": is_healthy,
+        "pid": pid,
+        "heartbeat_elapsed": elapsed,
+        "symbols": hb_data.get("symbols", ["NIFTY", "SENSEX"]),
+        "time_str": hb_data.get("time_str", "—")
+    }
+
+
+def launch_background_daemon() -> bool:
+    """Launches quant_alert_daemon.py as a detached background process."""
+    import subprocess
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_python = os.path.join(base_dir, ".venv", "Scripts", "python.exe")
+    python_bin = venv_python if os.path.exists(venv_python) else sys.executable
+    script_path = os.path.join(base_dir, "quant_alert_daemon.py")
+
+    try:
+        flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0
+        subprocess.Popen(
+            [python_bin, script_path],
+            cwd=base_dir,
+            creationflags=flags,
+            close_fds=True
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to launch daemon: {e}")
+        return False
+
+
+def render_daemon_supervisor_card(key_prefix: str = "sb"):
+    """Renders a sleek supervisor HUD widget for the background alert daemon."""
+    import time as time_mod
+    telemetry = get_daemon_telemetry()
+    is_alive = telemetry["is_alive"]
+    is_healthy = telemetry["is_healthy"]
+    pid = telemetry["pid"]
+    elapsed = telemetry["heartbeat_elapsed"]
+
+    if is_healthy:
+        status_badge = f'<span style="background: rgba(16, 185, 129, 0.25); color: #34D399; border: 1px solid #10B981; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 0.72rem;">🟢 RUNNING (PID {pid})</span>'
+        hb_desc = f'<span style="color: #6EE7B7;">⚡ Active ({elapsed}s ago)</span>'
+        dispatch_mode = '<span style="color: #38BDF8; font-weight: 700;">Zero-Delay Daemon Push</span>'
+    elif is_alive:
+        status_badge = f'<span style="background: rgba(245, 158, 11, 0.25); color: #FCD34D; border: 1px solid #F59E0B; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 0.72rem;">🟡 STALLED (PID {pid})</span>'
+        hb_desc = f'<span style="color: #F87171;">⚠️ No tick ({elapsed}s ago)</span>'
+        dispatch_mode = '<span style="color: #FCD34D;">Fail-Safe Web Fallback</span>'
+    else:
+        status_badge = '<span style="background: rgba(239, 68, 68, 0.25); color: #F87171; border: 1px solid #EF4444; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 0.72rem;">🔴 OFFLINE</span>'
+        hb_desc = '<span style="color: #94A3B8;">Daemon not started</span>'
+        dispatch_mode = '<span style="color: #34D399; font-weight: 700;">Web Fail-Safe Active</span>'
+
+    st.html(f"""
+    <div style="background: #0B1120; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 0.75rem; font-weight: 800; color: #CBD5E1;">🤖 ALERT DAEMON</span>
+            {status_badge}
+        </div>
+        <div style="font-size: 0.71rem; color: #94A3B8; line-height: 1.6;">
+            • Heartbeat: {hb_desc}<br>
+            • Desks: <b style="color: #CBD5E1;">NIFTY & SENSEX</b><br>
+            • Dispatch: {dispatch_mode}
+        </div>
+    </div>
+    """)
+
+    c_btn1, c_btn2 = st.columns(2)
+    with c_btn1:
+        if st.button("🚀 Start" if not is_alive else "🔄 Restart", key=f"{key_prefix}_start_daemon_btn", use_container_width=True):
+            if is_alive and pid:
+                try:
+                    import signal
+                    os.kill(pid, signal.SIGTERM)
+                except Exception:
+                    pass
+                time_mod.sleep(1.0)
+            ok = launch_background_daemon()
+            if ok:
+                st.toast("✅ Quant Alert Daemon launched successfully in background!", icon="🚀")
+                time_mod.sleep(1.2)
+                st.rerun()
+            else:
+                st.error("Failed to launch daemon. Check console logs.")
+    with c_btn2:
+        if st.button("📲 Test Alert", key=f"{key_prefix}_test_tg_btn", use_container_width=True):
+            cfg = TelegramNotifier.load_config()
+            tok = cfg.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
+            cid = cfg.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
+            ok, msg = TelegramNotifier.send_test_alert(tok, cid)
+            if ok:
+                st.toast(f"✅ Telegram Test Alert Delivered: {msg}", icon="📲")
+            else:
+                st.toast(f"❌ Telegram Test Failed: {msg}", icon="⚠️")
+
 # Custom Institutional Styling (Single-Page App)
 st.markdown("""
 <style>
@@ -2340,6 +2468,20 @@ with st.sidebar.expander("🩺 09:00 AM Pre-Market Diagnostic", expanded=False):
 with st.sidebar.expander("📊 03:30 PM EOD Session Debrief", expanded=False):
     EODSessionSummaryEngine.render_eod_card(compact=True, key_prefix=f"sb_{scrip_symbol.lower()}")
 
+# Background Alert Daemon Supervisor HUD
+from telegram_notifier import is_daemon_active
+daemon_is_active = is_daemon_active()
+with st.sidebar.expander("🤖 Background Alert Daemon", expanded=not daemon_is_active):
+    render_daemon_supervisor_card(key_prefix=f"sb_{scrip_symbol.lower()}")
+
+# Auto-Supervisor: If during trading hours on weekday and daemon is offline, auto-spawn it once per session
+if "daemon_autostart_attempted" not in st.session_state:
+    st.session_state["daemon_autostart_attempted"] = True
+    now_ist_sb = datetime.now(IST)
+    if now_ist_sb.weekday() < 5 and time(9, 15) <= now_ist_sb.time() <= time(15, 30):
+        if not daemon_is_active:
+            launch_background_daemon()
+
 # Resolve parameters for engine computation
 symbol = scrip_yf
 scrip_choice = st.session_state.get("selected_scrip", "NIFTY 50")
@@ -4086,12 +4228,14 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         tg_status_html = ""
         if tg_on and tg_token and tg_chat and not has_cb_loss:
             today_date = datetime.now(IST).strftime("%Y-%m-%d")
+            seq_state_app = SequentialTradeEngine.get_state(symbol=active_sym)
+            t_num = int(seq_state_app.get("today_trade_count", 0)) + 1
             if sim_entry or (sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
                 alert_sent_key = f"tg_sent_sim_entry_{sim_run_id}_{active_sym}_{plan_strike}_{plan_contract_type}"
             else:
-                alert_sent_key = f"tg_sent_entry_{today_date}_{active_sym}_{plan_strike}_{plan_contract_type}"
+                alert_sent_key = f"tg_sent_entry_{today_date}_{active_sym}_{plan_strike}_{plan_contract_type}_t{t_num}"
 
-            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key, cooldown_seconds=180):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]) else ""
                 alert_msg = TelegramNotifier.format_entry_alert(
                     contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
@@ -4117,10 +4261,13 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     TelegramNotifier.record_alert_sent(alert_sent_key)
                     st.session_state["last_tg_alert_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_status"] = f"✅ {feedback} at {st.session_state['last_tg_alert_time']}"
+                elif feedback == "DEFERRED_TO_BACKGROUND_DAEMON":
+                    st.session_state["last_tg_status"] = "📡 Alert Handled Autonomously by Background Daemon"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
-            elif TelegramNotifier.is_alert_sent(alert_sent_key):
+            elif TelegramNotifier.is_alert_sent(alert_sent_key, cooldown_seconds=180):
                 st.session_state[alert_sent_key] = True
+                st.session_state["last_tg_status"] = "✅ Telegram Alert Dispatched & Verified"
 
             last_status = st.session_state.get("last_tg_status", "✅ Telegram Alert Dispatched!")
             tg_status_html = f"""
@@ -4295,29 +4442,32 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     TelegramNotifier.record_alert_sent(armed_sent_key)
                     st.session_state["last_tg_armed_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                     st.session_state["last_tg_armed_status"] = f"✅ {feedback} at {st.session_state['last_tg_armed_time']}"
-                    if not (sim_armed or sim_mode == "ARMED"):
-                        try:
-                            SequentialTradeEngine.arm_setup(
-                                contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})",
-                                instrument=f"{active_sym} {plan_strike} {plan_contract_type}",
-                                symbol=active_sym,
-                                strike=plan_strike,
-                                contract_type=plan_contract_type,
-                                breakout_trigger=breakout_level,
-                                initial_ltp=active_live_ltp,
-                                target_pts=plan_target_pts,
-                                sl_pts=plan_sl_pts,
-                                confluence=plan_score,
-                                num_lots=plan_num_lots,
-                                lot_size=plan_lot_size,
-                                spot=spot_tick,
-                                expiry=plan_expiry,
-                                valid_minutes=25
-                            )
-                        except Exception:
-                            pass
+                elif feedback == "DEFERRED_TO_BACKGROUND_DAEMON":
+                    st.session_state["last_tg_armed_status"] = "📡 Armed Alert Handled by Background Daemon"
                 else:
                     st.session_state["last_tg_armed_status"] = f"⚠️ {feedback}"
+
+                if not (sim_armed or sim_mode == "ARMED"):
+                    try:
+                        SequentialTradeEngine.arm_setup(
+                            contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry})",
+                            instrument=f"{active_sym} {plan_strike} {plan_contract_type}",
+                            symbol=active_sym,
+                            strike=plan_strike,
+                            contract_type=plan_contract_type,
+                            breakout_trigger=breakout_level,
+                            initial_ltp=active_live_ltp,
+                            target_pts=plan_target_pts,
+                            sl_pts=plan_sl_pts,
+                            confluence=plan_score,
+                            num_lots=plan_num_lots,
+                            lot_size=plan_lot_size,
+                            spot=spot_tick,
+                            expiry=plan_expiry,
+                            valid_minutes=25
+                        )
+                    except Exception:
+                        pass
             elif TelegramNotifier.is_alert_sent(armed_sent_key):
                 st.session_state[armed_sent_key] = True
                 if not (sim_armed or sim_mode == "ARMED"):

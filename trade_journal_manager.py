@@ -2904,6 +2904,13 @@ class SequentialTradeEngine:
         state["re_entry_armed"] = None
         cls.save_state(state, symbol=sym_kw)
 
+        # Clear stale Telegram entry locks for this symbol so next setup is never blocked
+        try:
+            from telegram_notifier import TelegramNotifier
+            TelegramNotifier.clear_entry_alerts_for_symbol(sym_kw)
+        except Exception:
+            pass
+
         # Reset breakout triggers for this symbol
         try:
             BreakoutTriggerManager.reset_trigger(symbol=sym_kw)

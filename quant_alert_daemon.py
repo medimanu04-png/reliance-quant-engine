@@ -64,6 +64,7 @@ from asset_config import get_asset_spec
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BREAKOUT_FILE = os.path.join(BASE_DIR, "breakout_triggers_log.json")
 DAEMON_LOCK_FILE = os.path.join(BASE_DIR, "quant_daemon.pid")
+DAEMON_HEARTBEAT_FILE = os.path.join(BASE_DIR, "daemon_heartbeat.json")
 
 
 def is_pid_alive(pid: int) -> bool:
@@ -372,6 +373,23 @@ class RelianceQuantAlertDaemon:
         self._tg_poller_thread = threading.Thread(target=self._telegram_command_poller_thread, daemon=True, name="TelegramCommandPoller")
         self._tg_poller_thread.start()
 
+    def _update_heartbeat(self, status: str = "RUNNING"):
+        """Writes real-time heartbeat to disk for supervisor monitoring."""
+        try:
+            hb_data = {
+                "pid": os.getpid(),
+                "timestamp": time.time(),
+                "time_str": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
+                "symbols": self.symbols,
+                "status": status
+            }
+            temp_hb = f"{DAEMON_HEARTBEAT_FILE}.tmp.{os.getpid()}"
+            with open(temp_hb, "w", encoding="utf-8") as f:
+                json.dump(hb_data, f, indent=2)
+            os.replace(temp_hb, DAEMON_HEARTBEAT_FILE)
+        except Exception:
+            pass
+
     def _premarket_preload_and_seed_kalman(self):
         """
         Pre-Market Historical Cache Pre-Loader & Kalman Filter State Seeder (Suggestion 4).
@@ -420,6 +438,7 @@ class RelianceQuantAlertDaemon:
 
     def run_single_tick(self):
         """Executes multi-asset market scan and alert evaluation concurrently via ThreadPool (Improvement 1)."""
+        self._update_heartbeat()
         futures = {self._pool.submit(self.run_single_symbol_tick, sym): sym for sym in self.symbols}
         for future in concurrent.futures.as_completed(futures):
             sym = futures[future]
@@ -760,9 +779,8 @@ class RelianceQuantAlertDaemon:
             import re
             m_strike = re.search(r'\b(\d{4,5})\b', inst_sym)
             trade_strike = int(m_strike.group(1)) if m_strike else spec.default_strike
-            entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{trade_strike}_{active_contract_type}"
-            trade_num_key = f"tg_sent_entry_{today_date}_{sym}_t{trade_num}"
-            if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key) and not TelegramNotifier.is_alert_sent(trade_num_key):
+            entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{trade_strike}_{active_contract_type}_t{trade_num}"
+            if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=180):
                 try:
                     entry_msg = TelegramNotifier.format_entry_alert(
                         contract=inst_sym,
@@ -781,7 +799,6 @@ class RelianceQuantAlertDaemon:
                     ok_ent, fb_ent = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
                     if ok_ent:
                         TelegramNotifier.record_alert_sent(entry_alert_key)
-                        TelegramNotifier.record_alert_sent(trade_num_key)
                         logger.info(f"🔥 🚀 RECONCILED MISSING ENTRY ALERT SENT TO TELEGRAM: {fb_ent}")
                 except Exception as e:
                     logger.debug(f"Error reconciling missing entry alert: {e}")
@@ -896,12 +913,14 @@ class RelianceQuantAlertDaemon:
                         TelegramNotifier.record_alert_sent(lock_alert_key)
                         logger.info(f"🔒 Telegram Profit Lock Alert dispatched: {fb}")
 
-            # Milestone 3: Higher trailing alert for explosive runners
+            # Milestone 3: Higher trailing alert for explosive runners (Quantized to discrete buckets to prevent spam)
             trail_runner_trigger = spec.profit_lock_trigger + spec.trail_runner_offset
             if cur_trade_ltp > active_trade.get("highest_price", act_entry) and unreal_pts >= trail_runner_trigger:
                 new_trail = round(act_entry + (unreal_pts * 0.65), 2)
-                trail_alert_key = f"tg_sent_trail_{today_date}_{sym}_{trade_num}_{round(new_trail, 1)}"
-                if tg_enabled and not TelegramNotifier.is_alert_sent(trail_alert_key):
+                trail_step = 15.0 if sym == "SENSEX" else 5.0
+                trail_bucket = int((new_trail - act_entry) / trail_step) * int(trail_step)
+                trail_alert_key = f"tg_sent_trail_{today_date}_{sym}_{trade_num}_b{trail_bucket}"
+                if tg_enabled and trail_bucket > 0 and not TelegramNotifier.is_alert_sent(trail_alert_key, cooldown_seconds=60):
                     trail_msg = TelegramNotifier.format_trailing_sl_alert(
                         contract=inst_sym,
                         current_ltp=cur_trade_ltp,
@@ -918,7 +937,7 @@ class RelianceQuantAlertDaemon:
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, trail_msg, reply_markup=buttons)
                     if ok:
                         TelegramNotifier.record_alert_sent(trail_alert_key)
-                        logger.info(f"📲 Telegram Trailing SL Alert dispatched: {fb}")
+                        logger.info(f"📲 Telegram Trailing SL Alert dispatched (+{trail_bucket} pts bucket): {fb}")
 
             # Target Hit Check
             if cur_trade_ltp >= target_p:
@@ -1116,13 +1135,15 @@ class RelianceQuantAlertDaemon:
                         f"[{time_str}] 🔥 🚀 BREAKOUT CONFIRMED FOR ARMED SETUP: {armed_contract} | "
                         f"LTP ₹{cur_armed_ltp:.2f} >= Trigger ₹{armed_trigger:.2f} (Gap breached: {abs(gap_pts):.2f} pts)!"
                     )
-                    entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{armed_strike}_{armed_type}"
+                    seq_state_armed = SequentialTradeEngine.get_state(symbol=sym)
+                    next_trade_num = int(seq_state_armed.get("today_trade_count", 0)) + 1
+                    entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{armed_strike}_{armed_type}_t{next_trade_num}"
                     active_risk = self.quant_engines.get(sym, self.quant_engine).risk
                     limit_cap = round(cur_armed_ltp + active_risk.limit_collar_pts, 2)
                     win_exp = float(confluence_eval.get("win_expectancy_pct", 65.0))
                     tier_str = str(confluence_eval.get("tier_rating", "TIER 1 (A+ INSTITUTIONAL BREAKOUT)"))
 
-                    if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key):
+                    if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=180):
                         sym_spec = get_asset_spec(sym)
                         groww_sr_info = ""
                         try:
@@ -1212,7 +1233,7 @@ class RelianceQuantAlertDaemon:
 
                     return
 
-                # 4B. INVALIDATION & FORMAL CLOSURE (Timeout / Spot Reversal / EOD Cutoff)
+                # 4B. INVALIDATION & FORMAL CLOSURE (Timeout / Momentum Decay / Spot Reversal / EOD Cutoff)
                 is_timed_out = (valid_until_ts > 0 and now_ts > valid_until_ts)
                 now_min = now_dt.hour * 60 + now_dt.minute
                 is_eod = (now_min >= 15 * 60 + 10)
@@ -1221,11 +1242,21 @@ class RelianceQuantAlertDaemon:
                     (armed_type == "CE" and spot <= (armed_spot - reversal_thresh)) or
                     (armed_type == "PE" and spot >= (armed_spot + reversal_thresh))
                 )
+                initial_armed_ltp = float(armed_setup.get("initial_ltp", 0.0))
+                is_premium_decayed = (initial_armed_ltp > 5.0 and cur_armed_ltp > 0.05 and cur_armed_ltp < (initial_armed_ltp * 0.70))
+                is_gap_widened = (armed_sl_pts > 0 and gap_pts > (armed_sl_pts * 1.5))
+                is_counter_trend = (confluence_eval.get("dominant_side") != armed_type and float(confluence_eval.get("dominant_score", 0.0)) >= 85.0)
 
-                if is_timed_out or is_spot_reversed or is_eod:
+                if is_timed_out or is_spot_reversed or is_premium_decayed or is_gap_widened or is_counter_trend or is_eod:
                     if is_spot_reversed:
                         rev_dir = "below support" if armed_type == "CE" else "above resistance"
                         cancel_reason = f"Spot reversed from ₹{armed_spot:,.2f} to ₹{spot:,.2f} ({rev_dir} by >{reversal_thresh:.0f} pts). Breakout thesis invalidated."
+                    elif is_premium_decayed:
+                        cancel_reason = f"Option premium decayed >30% from ₹{initial_armed_ltp:.2f} to ₹{cur_armed_ltp:.2f}. Buyer momentum failed."
+                    elif is_gap_widened:
+                        cancel_reason = f"Price drifted {gap_pts:+.1f} pts away from trigger (exceeds 1.5x risk threshold). Thesis invalidated."
+                    elif is_counter_trend:
+                        cancel_reason = f"Institutional momentum shifted to {confluence_eval.get('dominant_side')} ({confluence_eval.get('dominant_score', 0):.1f}% confluence). Stale setup superseded."
                     elif is_timed_out:
                         cancel_reason = f"Breakout trigger ₹{armed_trigger:.2f} was not breached within 25-minute setup window (Current LTP ₹{cur_armed_ltp:.2f}, {gap_pts:.2f} pts away). Setup timed out."
                     else:
@@ -1234,7 +1265,7 @@ class RelianceQuantAlertDaemon:
                     logger.info(f"[{time_str}] ⚪ SETUP CANCELLED FOR {sym}: {armed_contract} — {cancel_reason}")
 
                     cancel_alert_key = f"tg_sent_cancel_{today_date}_{sym}_{armed_strike}_{armed_type}"
-                    if tg_enabled and not TelegramNotifier.is_alert_sent(cancel_alert_key):
+                    if tg_enabled and not TelegramNotifier.is_alert_sent(cancel_alert_key, cooldown_seconds=300):
                         cancel_msg = TelegramNotifier.format_setup_cancelled_alert(
                             contract=armed_contract,
                             reason=cancel_reason,
@@ -1249,21 +1280,25 @@ class RelianceQuantAlertDaemon:
 
                     # Formally cancel in SequentialTradeEngine and reset back to IDLE
                     SequentialTradeEngine.cancel_armed_setup(symbol=sym, reason=cancel_reason)
-                    return
+                    # Reset local armed_setup reference so execution immediately evaluates current market tick
+                    armed_setup = None
 
-                # 4C. Awaiting Breakout — Dedicated Concentration Mode Active (Zero distractions!)
-                logger.info(
-                    f"[{time_str}] 🎯 CONCENTRATING ON ARMED SETUP ({sym}): {armed_contract} | "
-                    f"Option LTP: ₹{cur_armed_ltp:.2f} | Trigger: ₹{armed_trigger:.2f} (Gap: {gap_pts:+.2f} pts) | "
-                    f"Spot: ₹{spot:,.2f} | Window: {max(0, int((valid_until_ts - now_ts) / 60))}m left"
-                )
-                return
+                else:
+                    # 4C. Awaiting Breakout — Dedicated Concentration Mode Active
+                    logger.info(
+                        f"[{time_str}] 🎯 CONCENTRATING ON ARMED SETUP ({sym}): {armed_contract} | "
+                        f"Option LTP: ₹{cur_armed_ltp:.2f} | Trigger: ₹{armed_trigger:.2f} (Gap: {gap_pts:+.2f} pts) | "
+                        f"Spot: ₹{spot:,.2f} | Window: {max(0, int((valid_until_ts - now_ts) / 60))}m left"
+                    )
+                    return
 
             contract_label = f"{sym} {recommended_strike} {contract_type} ({expiry_date})"
 
             # B1. Confirmed Breakout Entry
             if entry_confirmed:
-                entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{recommended_strike}_{contract_type}"
+                seq_state_b1 = SequentialTradeEngine.get_state(symbol=sym)
+                next_trade_num = int(seq_state_b1.get("today_trade_count", 0)) + 1
+                entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{recommended_strike}_{contract_type}_t{next_trade_num}"
                 active_risk = self.quant_engines.get(sym, self.quant_engine).risk
                 limit_cap = round(active_option_ltp + active_risk.limit_collar_pts, 2)
                 win_exp = float(confluence_eval.get("win_expectancy_pct", 62.0))
@@ -1274,7 +1309,7 @@ class RelianceQuantAlertDaemon:
                     f"(Net Debit: ₹{debit_spread.get('net_debit_pts', 0):.2f} | Max Loss: ₹{debit_spread.get('max_risk_rupees', 0):,.0f} | Max Gain: ₹{debit_spread.get('max_reward_rupees', 0):,.0f})"
                 ) if debit_spread else ""
 
-                if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key):
+                if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=180):
                     sym_spec = get_asset_spec(sym)
                     groww_sr_info = ""
                     try:
@@ -1590,8 +1625,13 @@ class RelianceQuantAlertDaemon:
         try:
             with open(DAEMON_LOCK_FILE, "w", encoding="utf-8") as f:
                 json.dump({"pid": os.getpid(), "start_time": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")}, f)
+            pid_file = os.path.join(BASE_DIR, "quant_daemon.pid")
+            with open(pid_file, "w", encoding="utf-8") as pf:
+                json.dump({"pid": os.getpid(), "started_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")}, pf)
         except Exception:
             pass
+
+        self._update_heartbeat(status="STARTING")
 
         print("=" * 75)
         print("⚡ MULTI-ASSET QUANTITATIVE INTRADAY ENGINE — STANDALONE ALERT DAEMON")
@@ -1612,15 +1652,17 @@ class RelianceQuantAlertDaemon:
         try:
             while self.running:
                 try:
+                    self._update_heartbeat(status="ACTIVE")
                     self.check_and_send_0900_health_check()
                     self.check_and_send_morning_preflight()
                     self.check_and_send_0330_eod_summary()
 
                     is_open, reason = self.is_market_hours()
                     if not is_open:
+                        self._update_heartbeat(status=f"STANDBY ({reason})")
                         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
-                        logger.info(f"[{now_str}] ⏸️ Market Closed ({reason}). Sleeping 30s... (Pass --now to scan anytime)")
-                        time.sleep(30.0)
+                        logger.info(f"[{now_str}] ⏸️ Market Closed ({reason}). Sleeping 20s... (Pass --now to scan anytime)")
+                        time.sleep(20.0)
                         continue
 
                     self.run_single_tick()
@@ -1653,6 +1695,14 @@ class RelianceQuantAlertDaemon:
                         d = json.load(f)
                     if d.get("pid") == os.getpid():
                         os.remove(DAEMON_LOCK_FILE)
+            except Exception:
+                pass
+            try:
+                if os.path.exists(DAEMON_HEARTBEAT_FILE):
+                    with open(DAEMON_HEARTBEAT_FILE, "r", encoding="utf-8") as f:
+                        hb = json.load(f)
+                    if hb.get("pid") == os.getpid():
+                        os.remove(DAEMON_HEARTBEAT_FILE)
             except Exception:
                 pass
 
