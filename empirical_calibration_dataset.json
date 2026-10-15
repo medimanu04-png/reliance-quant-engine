@@ -1,61 +1,5 @@
 [
   {
-    "timestamp": "2026-10-12T11:01:54.459184+05:30",
-    "dominant_score": 76.1,
-    "bullish_score": 22.4,
-    "bearish_score": 76.1,
-    "win_expectancy_pct": 59.1,
-    "is_tradable": false,
-    "intraday_regime": "NEUTRAL_REGIME",
-    "vector_scores": {
-      "v1_bull": 0.0,
-      "v1_bear": 20.0,
-      "v2_bull": 3.5,
-      "v2_bear": 14.0,
-      "v3_bull": 18.0,
-      "v3_bear": 2.5,
-      "v4_bull": 0.0,
-      "v4_bear": 0.5,
-      "v5_bull": 3.0,
-      "v5_bear": 11.0,
-      "v6_bull": 6.0,
-      "v6_bear": 4.0,
-      "macro_bull": -1.5,
-      "macro_bear": 7.0,
-      "raw_bull": 26.5,
-      "raw_bear": 56.5,
-      "v2_clusters": {
-        "cluster_a_vol_intensity": {
-          "bull": 0.0,
-          "bear": 1.5,
-          "max": 5.0
-        },
-        "cluster_b_aggressor_cvd": {
-          "bull": 0.0,
-          "bear": 5.0,
-          "max": 5.0
-        },
-        "cluster_c_microstructure": {
-          "bull": 3.5,
-          "bear": 3.5,
-          "max": 4.0
-        },
-        "cluster_d_structural_profile": {
-          "bull": 0.0,
-          "bear": 4.0,
-          "max": 4.0
-        }
-      }
-    },
-    "hurst_exponent": 0.54,
-    "vpin": 0.619,
-    "kalman_slope": -6.5138,
-    "changepoint_prob": 0.152,
-    "outcome": null,
-    "target_hit": null,
-    "is_shadow": true
-  },
-  {
     "timestamp": "2026-10-12T11:01:58.809081+05:30",
     "dominant_score": 82.1,
     "bullish_score": 20.4,
@@ -27995,6 +27939,62 @@
     "vpin": 0.573,
     "kalman_slope": 2.0416,
     "changepoint_prob": 0.568,
+    "outcome": null,
+    "target_hit": null,
+    "is_shadow": true
+  },
+  {
+    "timestamp": "2026-10-15T11:29:24.648326+05:30",
+    "dominant_score": 84.3,
+    "bullish_score": 84.3,
+    "bearish_score": 12.8,
+    "win_expectancy_pct": 62.0,
+    "is_tradable": false,
+    "intraday_regime": "NEUTRAL_REGIME",
+    "vector_scores": {
+      "v1_bull": 20.0,
+      "v1_bear": 0.5,
+      "v2_bull": 10.5,
+      "v2_bear": 0.0,
+      "v3_bull": 4.5,
+      "v3_bear": 20.0,
+      "v4_bull": 3.5,
+      "v4_bear": 2.0,
+      "v5_bull": 3.5,
+      "v5_bear": 0.5,
+      "v6_bull": 7.5,
+      "v6_bear": 7.5,
+      "macro_bull": 11.0,
+      "macro_bear": -3.0,
+      "raw_bull": 63.0,
+      "raw_bear": 18.0,
+      "v2_clusters": {
+        "cluster_a_vol_intensity": {
+          "bull": 1.5,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_b_aggressor_cvd": {
+          "bull": 5.0,
+          "bear": 0.0,
+          "max": 5.0
+        },
+        "cluster_c_microstructure": {
+          "bull": 0.0,
+          "bear": 0.0,
+          "max": 4.0
+        },
+        "cluster_d_structural_profile": {
+          "bull": 4.0,
+          "bear": 0.0,
+          "max": 4.0
+        }
+      }
+    },
+    "hurst_exponent": 0.66,
+    "vpin": 0.571,
+    "kalman_slope": 2.8393,
+    "changepoint_prob": 0.427,
     "outcome": null,
     "target_hit": null,
     "is_shadow": true
