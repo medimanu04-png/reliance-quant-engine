@@ -5020,7 +5020,8 @@ class UltraHighConvictionRelianceEngine:
         market_breadth: Optional[Dict[str, Any]] = None,
         is_backtest: bool = False,
         symbol: Optional[str] = None,
-        sector_pct: Optional[float] = None
+        sector_pct: Optional[float] = None,
+        is_gamma_exception: bool = False
     ) -> Dict[str, Any]:
 
         """
@@ -5041,8 +5042,9 @@ class UltraHighConvictionRelianceEngine:
         in_orb_window = time(9, 15) <= current_time <= time(9, 30)
         opening_cooldown_active = False  # Unlocked from 09:15 AM market open itself
         market_open = time(9, 15)
-        market_close = time(15, 10)
-        cutoff, auto_sq = time(14, 45), time(15, 5)
+        market_close = time(15, 20) if is_gamma_exception else time(15, 10)
+        cutoff = time(15, 15) if is_gamma_exception else time(14, 45)
+        auto_sq = time(15, 20) if is_gamma_exception else time(15, 5)
 
         time_allowed = market_open <= current_time <= market_close and current_time <= cutoff
         auto_sq_active = current_time >= auto_sq
@@ -6686,7 +6688,8 @@ class UltraHighConvictionRelianceEngine:
 
         # Strict Execution Gate:
         # Time-decay gate: reject new entries after 13:45 (insufficient runway before 15:05 square-off)
-        is_afternoon_runway_exhausted = current_time >= time(13, 45)
+        # Exception: Post-1:00 PM Expiry Gamma Blast setup allows rapid 0DTE gamma execution until 15:10 IST
+        is_afternoon_runway_exhausted = (current_time >= time(13, 45)) and not is_gamma_exception
 
         # HTF Downtrend / Counter-Trend Veto (Bug 3 Fix):
         is_htf_counter_trend_trap = (

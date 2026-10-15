@@ -469,8 +469,11 @@ class RelianceQuantAlertDaemon:
                 is_gamma_exception_tick = True
                 logger.info(f"[{time_str}] ⚡ [EXPIRY GAMMA RADAR] Post-1:00 PM Expiry Window active for {sym}. Scanning for 1/1 Gamma Blast setup...")
             else:
-                if sym == sched["gamma_exception_symbol"] and not sched["is_post_1pm_window"]:
-                    logger.info(f"[{time_str}] ⏳ [THETA SHIELD] {sym} is locked until 01:00 PM IST (Expiry Gamma Blast Window unlocks at 1:00 PM).")
+                if sym == sched["gamma_exception_symbol"]:
+                    if now_dt.time() < dt_time(13, 0):
+                        logger.info(f"[{time_str}] ⏳ [THETA SHIELD] {sym} is locked until 01:00 PM IST (Expiry Gamma Blast Window unlocks at 1:00 PM).")
+                    else:
+                        logger.info(f"[{time_str}] 🛑 [EXPIRY WINDOW CLOSED] {sym} Expiry Gamma Blast window closed at 03:25 PM IST.")
                 else:
                     logger.info(f"[{time_str}] 🔒 [THETA SHIELD] {sym} is locked today ({sched['schedule_desc']}). Zero trade alert evaluation.")
                 return
@@ -526,7 +529,7 @@ class RelianceQuantAlertDaemon:
 
         q_engine = self.quant_engines.get(sym, self.quant_engine)
         confluence_eval = q_engine.evaluate_90plus_confluence(
-            curr_time, candles_5m, candles_15m, benchmark_c5m=benchmark_c5m
+            curr_time, candles_5m, candles_15m, benchmark_c5m=benchmark_c5m, symbol=sym, is_gamma_exception=is_gamma_exception_tick
         )
 
 
@@ -1147,6 +1150,7 @@ class RelianceQuantAlertDaemon:
                             gex_regime=confluence_eval.get("gex_telemetry", {}).get("gex_regime"),
                             metalabel_regime=confluence_eval.get("metalabeling", {}).get("metalabel_regime"),
                             target_2_pts=confluence_eval.get("target_2_pts"),
+                            is_gamma_exception=is_gamma_exception_tick,
                             rationale=(
                                 f"Armed Setup Breakout Confirmed ({tier_str})\n"
                                 f"• Breakout Trigger Level: ₹{armed_trigger:.2f} | Execution Price: ₹{cur_armed_ltp:.2f}\n"
@@ -1160,6 +1164,9 @@ class RelianceQuantAlertDaemon:
                         ok, fb = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
                         if ok:
                             TelegramNotifier.record_alert_sent(entry_alert_key)
+                            if is_gamma_exception_tick:
+                                self._expiry_gamma_calls[today_exc_key] = True
+                                logger.info(f"⚡ [EXPIRY EXCEPTION RECORDED] 1/1 Gamma Blast alert delivered for {sym}. Asset re-locked for session.")
                             logger.info(f"🔥 🚀 ENTRY TRIGGER ALERT SENT TO TELEGRAM: {fb}")
 
                     # Transition SequentialTradeEngine into active trade
@@ -1419,7 +1426,9 @@ class RelianceQuantAlertDaemon:
                         num_lots=spec.default_lots,
                         lot_size=spec.lot_size,
                         win_prob=win_exp if 'win_exp' in locals() else 65.0,
-                        spot=spot
+                        spot=spot,
+                        symbol=sym,
+                        is_gamma_exception=is_gamma_exception_tick
                     )
                     buttons = TelegramNotifier.get_armed_buttons(f"{sym} {recommended_strike} {contract_type}", symbol=sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, armed_msg, reply_markup=buttons)

@@ -1687,11 +1687,13 @@ class GrowwMarketFeed:
                     c_interval = getattr(self._groww_api, "CANDLE_INTERVAL_MIN_15", "15minute") if "15" in str(interval) else getattr(self._groww_api, "CANDLE_INTERVAL_MIN_5", "5minute")
 
                     res = None
+                    exch_sdk = getattr(self._groww_api, "EXCHANGE_BSE", "BSE") if underlying == "SENSEX" else getattr(self._groww_api, "EXCHANGE_NSE", "NSE")
+                    groww_sym_sdk = f"BSE-{underlying}" if underlying == "SENSEX" else f"NSE-{underlying}"
                     try:
                         res = self._groww_api.get_historical_candles(
-                            exchange=getattr(self._groww_api, "EXCHANGE_NSE", "NSE"),
+                            exchange=exch_sdk,
                             segment=getattr(self._groww_api, "SEGMENT_CASH", "CASH"),
-                            groww_symbol=f"NSE-{underlying}",
+                            groww_symbol=groww_sym_sdk,
                             start_time=start_dt,
                             end_time=end_dt,
                             candle_interval=c_interval,
@@ -1703,7 +1705,7 @@ class GrowwMarketFeed:
                             mins = 15 if "15" in str(interval) else 5
                             res = self._groww_api.get_historical_candle_data(
                                 trading_symbol=underlying,
-                                exchange=getattr(self._groww_api, "EXCHANGE_NSE", "NSE"),
+                                exchange=exch_sdk,
                                 segment=getattr(self._groww_api, "SEGMENT_CASH", "CASH"),
                                 start_time=start_dt,
                                 end_time=end_dt,
@@ -1748,11 +1750,12 @@ class GrowwMarketFeed:
                 except Exception as e:
                     logger.debug(f"Groww SDK candle fetch error for {underlying}: {e}")
 
-            # 2. SECONDARY: Direct Groww JSON charting endpoint (sub-70ms, 100% authentic NSE feed)
+            # 2. SECONDARY: Direct Groww JSON charting endpoint (sub-70ms, 100% authentic NSE/BSE feed)
             end_time = int(time.time() * 1000)
             start_time = end_time - (days * 24 * 3600 * 1000)
             interval_mins = 15 if "15" in str(interval) else 5
-            url = f"https://groww.in/v1/api/charting_service/v2/chart/exchange/NSE/segment/CASH/{underlying}?endTimeInMillis={end_time}&intervalInMinutes={interval_mins}&startTimeInMillis={start_time}"
+            exch = "BSE" if underlying == "SENSEX" else "NSE"
+            url = f"https://groww.in/v1/api/charting_service/v2/chart/exchange/{exch}/segment/CASH/{underlying}?endTimeInMillis={end_time}&intervalInMinutes={interval_mins}&startTimeInMillis={start_time}"
             sess = self._get_session()
             r = sess.get(url, timeout=2.5)
             if r.status_code == 200:

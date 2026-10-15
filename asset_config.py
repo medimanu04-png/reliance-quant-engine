@@ -513,9 +513,9 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     is_sensex_expiry_today = (s_act_dt == dt_today)
     is_sensex_expiry_preponed = is_sensex_expiry_today and sensex_exp_info.get("is_shifted", False)
 
-    # Post-1:00 PM IST Gamma Blast Window (13:00 to 15:15 IST)
+    # Post-1:00 PM IST Gamma Blast Window (13:00 to 15:25 IST)
     gamma_window_start = time(13, 0)
-    gamma_window_end = time(15, 15)
+    gamma_window_end = time(15, 25)
     is_post_1pm_window = (gamma_window_start <= t_curr <= gamma_window_end)
 
     # Dynamic Desk Allocation under the Theta Shield:
@@ -665,12 +665,17 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
                         "is_gamma_exception": True
                     }
             else:
+                is_after_window = (t_curr > time(15, 15))
                 return {
                     "can_trade": False,
                     "tradable": False,
-                    "status": "EXPIRY_LOCKED_UNTIL_1PM",
-                    "reason": f"{target_sym} is locked until 01:00 PM IST (Expiry Gamma Blast radar unlocks post-1:00 PM).",
-                    "badge_label": "⏳ LOCKED UNTIL 01:00 PM (EXPIRY WATCH)",
+                    "status": "EXPIRY_WINDOW_CLOSED" if is_after_window else "EXPIRY_LOCKED_UNTIL_1PM",
+                    "reason": (
+                        f"{target_sym} Expiry Gamma Blast window closed at 03:15 PM IST."
+                        if is_after_window
+                        else f"{target_sym} is locked until 01:00 PM IST (Expiry Gamma Blast radar unlocks post-1:00 PM)."
+                    ),
+                    "badge_label": "🛑 EXPIRY WINDOW CLOSED (03:15 PM)" if is_after_window else "⏳ LOCKED UNTIL 01:00 PM (EXPIRY WATCH)",
                     "mandate_lots": sched["locked_lots"],
                     "is_gamma_exception": False
                 }
