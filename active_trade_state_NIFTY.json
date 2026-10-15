@@ -3,12 +3,12 @@
   "symbol": "NIFTY",
   "contract": "NIFTY 22900 CE (19-OCT-2026)",
   "action": "BUY NIFTY 22900 CE (19-OCT-2026)",
-  "current_spot": 22958.25,
+  "current_spot": 22950.75,
   "entry_spot": 146.35,
   "entry_time": "10:46:25 AM IST",
-  "peak_spot": 22958.25,
-  "peak_profit_rs": 2505.75,
-  "unrealized_pnl_2lots": 2505.75,
+  "peak_spot": 22950.75,
+  "peak_profit_rs": 2203.5,
+  "unrealized_pnl_2lots": 2203.5,
   "target_pts": 50.0,
   "target_2_pts": 110.0,
   "sl_pts": 36.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-36.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "11:30:24 AM IST"
+  "last_update": "11:30:32 AM IST"
 }
