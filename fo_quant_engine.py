@@ -5603,7 +5603,7 @@ class UltraHighConvictionRelianceEngine:
 
         # Stand down if option bid-ask spread exceeds asset risk threshold (prevents spread slippage losses on 1 lot)
         opt_spread = float(opt_telemetry.get("bid_ask_spread", 0.20))
-        max_allowed_spread = float(active_spec.spread_threshold)
+        max_allowed_spread = max(1.50, float(active_spec.spread_threshold) * 50.0) if active_sym == "NIFTY" else max(3.50, float(active_spec.spread_threshold) * 100.0)
         spread_stand_down = (opt_spread > max_allowed_spread) and not is_synthetic_feed
 
         # Corwin-Schultz (2012) High-Low Effective Spread Estimator -> Cluster C

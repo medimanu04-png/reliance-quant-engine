@@ -755,25 +755,46 @@ def render_cockpit_tab(ctx: dict):
                 st.toast("ℹ️ Setup cancelled.")
                 st.rerun()
 
-    elif current_seq_state == SequentialTradeEngine.STATE_TRADE_CLOSED and last_closed:
-        pnl_val = last_closed.get("pnl", "")
-        status_val = last_closed.get("status", "Closed")
-        inst_val = last_closed.get("instrument", "")
-        exit_p_val = float(last_closed.get("exit_price", 0.0))
-        st.markdown(f"""
-        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
-            <span>🏁 <b>Trade #{last_closed.get('trade_num', 1)} Closed & Audited</b>: <span style="color: #38BDF8;">{inst_val}</span> • Exit: ₹{exit_p_val:.2f}</span>
-            <span>Outcome: <b style="color: {'#34D399' if 'Hit' in status_val or '+' in pnl_val else '#F87171'};">{status_val} ({pnl_val})</b></span>
-        </div>
-        """, unsafe_allow_html=True)
-        if st_button_stretch(
-            "🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)",
-            key=f"btn_ack_scan_next_{scrip_symbol}",
-            help="Acknowledge trade result and scan for next institutional setup"
-        ):
+    elif current_seq_state == SequentialTradeEngine.STATE_TRADE_CLOSED:
+        target_closed = last_closed or seq_state.get("archived_last_closed_trade")
+        if target_closed:
+            pnl_val = target_closed.get("pnl", "")
+            status_val = target_closed.get("status", "Closed")
+            inst_val = target_closed.get("instrument", "")
+            exit_p_val = float(target_closed.get("exit_price", 0.0))
+            st.markdown(f"""
+            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
+                <span>🏁 <b>Trade #{target_closed.get('trade_num', 1)} Closed & Audited</b>: <span style="color: #38BDF8;">{inst_val}</span> • Exit: ₹{exit_p_val:.2f}</span>
+                <span>Outcome: <b style="color: {'#34D399' if 'Hit' in status_val or '+' in pnl_val else '#F87171'};">{status_val} ({pnl_val})</b></span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            def _on_ack_reset_action(sym: str):
+                SequentialTradeEngine.acknowledge_and_reset(symbol=sym)
+                st.session_state[f"seq_acked_{sym}"] = True
+                st.session_state[f"just_acknowledged_{sym}"] = True
+                try:
+                    from trade_journal_manager import BreakoutTriggerManager
+                    BreakoutTriggerManager.reset_trigger(symbol=sym)
+                except Exception:
+                    pass
+                for k in list(st.session_state.keys()):
+                    if f"breakout_level_{sym}" in k or k.startswith("breakout_level_"):
+                        st.session_state.pop(k, None)
+
+            if st_button_stretch(
+                "🔄 Acknowledge & Scan Next Trade (Transition to IDLE / SCANNING)",
+                key=f"btn_ack_scan_next_{scrip_symbol}",
+                help="Acknowledge trade result and scan for next institutional setup",
+                on_click=_on_ack_reset_action,
+                args=(scrip_symbol,)
+            ):
+                _on_ack_reset_action(scrip_symbol)
+                st.toast(f"✅ Trade acknowledged! {scrip_symbol} desk is now in IDLE / SCANNING.")
+                st.rerun()
+        else:
+            # Self-heal orphaned closed state directly
             SequentialTradeEngine.acknowledge_and_reset(symbol=scrip_symbol)
-            st.session_state[f"seq_acked_{scrip_symbol}"] = True
-            st.toast(f"✅ Trade acknowledged! {scrip_symbol} desk is now in IDLE / SCANNING.")
             st.rerun()
 
     # Groww 09:10 AM Pre-Market Support & Resistance Radar

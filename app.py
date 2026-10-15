@@ -301,11 +301,13 @@ class BreakoutTriggerManager:
         else:
             for k in list(records.keys()):
                 if k.startswith(today_str):
-                    del records[k]
+                    if not sym or f"_{sym}_" in k or k.endswith(f"_{sym}") or f"_{sym}" in k:
+                        del records[k]
             cls._save_records(records)
             for k in list(st.session_state.keys()):
                 if k.startswith("breakout_level_"):
-                    del st.session_state[k]
+                    if not sym or f"_{sym}_" in k or k.endswith(f"_{sym}") or f"_{sym}" in k:
+                        del st.session_state[k]
             return 0.0
 
 # Note: Primary st.set_page_config is executed at line 25 before st.navigation router
@@ -4057,7 +4059,13 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         # Immediate Zero-Delay Sequential State Transition
         seq_now = SequentialTradeEngine.get_state(symbol=active_sym)
         has_cb_loss, _ = SequentialTradeEngine.has_daily_loss(symbol=active_sym)
-        if seq_now.get("current_state") in [SequentialTradeEngine.STATE_IDLE, SequentialTradeEngine.STATE_TRADE_CLOSED] and not has_cb_loss and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]):
+        just_acked = st.session_state.get(f"just_acknowledged_{active_sym}", False) or st.session_state.get(f"seq_acked_{active_sym}", False)
+        if (
+            seq_now.get("current_state") == SequentialTradeEngine.STATE_IDLE 
+            and not has_cb_loss 
+            and not (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"])
+            and not just_acked
+        ):
             exp_tag = plan_expiry.replace("-", "").upper()
             SequentialTradeEngine.enter_trade_direct(
                 contract=f"{active_sym}{exp_tag}{plan_strike}{plan_contract_type}",

@@ -2893,12 +2893,23 @@ class SequentialTradeEngine:
         Rule 5: Wait for closure.
         User acknowledges closed trade outcome; transitions engine back to IDLE / SCANNING.
         """
-        state = cls.get_state(symbol=symbol)
+        sym_kw = resolve_symbol(symbol=symbol)
+        state = cls.get_state(symbol=sym_kw)
         state["current_state"] = cls.STATE_IDLE
         if state.get("last_closed_trade"):
             state["archived_last_closed_trade"] = state["last_closed_trade"]
             state["last_closed_trade"] = None
-        cls.save_state(state, symbol=symbol)
+        state["active_trade"] = None
+        state["armed_setup"] = None
+        state["re_entry_armed"] = None
+        cls.save_state(state, symbol=sym_kw)
+
+        # Reset breakout triggers for this symbol
+        try:
+            BreakoutTriggerManager.reset_trigger(symbol=sym_kw)
+        except Exception as _e_rst:
+            logger.debug(f"Reset trigger in acknowledge_and_reset error: {_e_rst}")
+
         return {
             "success": True,
             "msg": "✅ Trade acknowledged and logged. Engine is now in IDLE / SCANNING for next high-probability setup.",
@@ -3133,12 +3144,14 @@ class BreakoutTriggerManager:
         else:
             for k in list(records.keys()):
                 if k.startswith(today_str):
-                    del records[k]
+                    if not sym or f"_{sym}_" in k or k.endswith(f"_{sym}") or f"_{sym}" in k:
+                        del records[k]
             cls._save_records(records)
             if has_st:
                 for k in list(st.session_state.keys()):
                     if k.startswith("breakout_level_"):
-                        del st.session_state[k]
+                        if not sym or f"_{sym}_" in k or k.endswith(f"_{sym}") or f"_{sym}" in k:
+                            del st.session_state[k]
             return 0.0
 
 

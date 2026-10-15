@@ -169,6 +169,22 @@ class StandaloneBreakoutManager:
 
         return 0.0
 
+    @classmethod
+    def reset_trigger(cls, strike: int = None, contract_type: str = None, symbol: Optional[str] = None):
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        sym = (symbol or "").upper().strip()
+        records = cls._load_records()
+        if strike and contract_type:
+            sym_part = f"{sym}_" if sym else ""
+            key = f"{today_str}_{sym_part}{strike}_{contract_type}"
+            records.pop(key, None)
+        else:
+            for k in list(records.keys()):
+                if k.startswith(today_str):
+                    if not sym or f"_{sym}_" in k or k.endswith(f"_{sym}") or f"_{sym}" in k:
+                        del records[k]
+        cls._save_records(records)
+
 
 # ==============================================================================
 # STANDALONE RELIANCE CANDLE FETCHER
@@ -1514,20 +1530,20 @@ class RelianceQuantAlertDaemon:
             today_date = now_dt.strftime("%Y-%m-%d")
             cur_t = now_dt.time()
             eod_key = f"tg_sent_eod_{today_date}"
-            if (cur_t >= dt_time(15, 30) or self.force_run) and not TelegramNotifier.is_alert_sent(eod_key, cooldown_seconds=86400):
+            if cur_t >= dt_time(15, 30) and not TelegramNotifier.is_alert_sent(eod_key, cooldown_seconds=86400):
                 debrief = EODSessionSummaryEngine.dispatch_eod_summary(force=False, send_telegram=True)
                 if debrief.get("telegram_dispatched"):
                     TelegramNotifier.mark_alert_sent(eod_key)
-                # End-of-Day Git Sync (Strictly once daily at 03:30 PM IST after market close)
-                try:
-                    from git_sync_manager import GitSyncManager
-                    threading.Thread(
-                        target=GitSyncManager.sync_local_to_git,
-                        kwargs={"auto": True, "commit_message": f"chore(eod): 03:30 PM EOD session sync & backup [{today_date}]"},
-                        daemon=True
-                    ).start()
-                except Exception as e:
-                    logger.debug(f"03:30 PM EOD Git sync error in daemon: {e}")
+                    # End-of-Day Git Sync (Strictly once daily at 03:30 PM IST after market close)
+                    try:
+                        from git_sync_manager import GitSyncManager
+                        threading.Thread(
+                            target=GitSyncManager.sync_local_to_git,
+                            kwargs={"auto": True, "commit_message": f"chore(eod): 03:30 PM EOD session sync & backup [{today_date}]"},
+                            daemon=True
+                        ).start()
+                    except Exception as e:
+                        logger.debug(f"03:30 PM EOD Git sync error in daemon: {e}")
         except Exception as e:
             logger.debug(f"03:30 PM EOD debrief check error in daemon: {e}")
 
