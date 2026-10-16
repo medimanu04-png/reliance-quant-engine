@@ -149,11 +149,11 @@ class TelegramNotifier:
         Records that an alert key has been successfully dispatched.
         Persists to both memory cache and disk immediately.
         """
-        if not cls._alert_cache_loaded:
-            cls.load_alert_log()
+        records = cls.load_alert_log()
         now = time.time()
-        cls._alert_cache[alert_key] = now
-        cls.save_alert_log(cls._alert_cache)
+        records[alert_key] = now
+        cls._alert_cache = records
+        cls.save_alert_log(records)
 
     @classmethod
     def clear_entry_alerts_for_symbol(cls, symbol: str) -> None:
@@ -445,18 +445,18 @@ class TelegramNotifier:
         if not token:
             return False, "Telegram Bot Token is required."
 
-        # Anti-Flood Protection: Deduplicate identical broadcast messages within 60s (bypassed for manual tests)
+        # Anti-Flood Protection: Deduplicate identical broadcast messages within 300s (bypassed for manual tests)
         if not is_manual_test:
             import hashlib
             now_ts = time.time()
             if not hasattr(cls, "_recent_msg_hashes"):
                 cls._recent_msg_hashes = {}
-            cls._recent_msg_hashes = {k: v for k, v in cls._recent_msg_hashes.items() if (now_ts - v) < 180}
+            cls._recent_msg_hashes = {k: v for k, v in cls._recent_msg_hashes.items() if (now_ts - v) < 600}
             norm_text = "".join(html_message.split())
             msg_hash = hashlib.md5(norm_text.encode("utf-8")).hexdigest()
             if msg_hash in cls._recent_msg_hashes:
                 elapsed = now_ts - cls._recent_msg_hashes[msg_hash]
-                if elapsed < 60:
+                if elapsed < 300:
                     return True, f"Anti-Flood Guard: duplicate message suppressed ({elapsed:.1f}s ago)"
             cls._recent_msg_hashes[msg_hash] = now_ts
 

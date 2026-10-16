@@ -780,7 +780,7 @@ class RelianceQuantAlertDaemon:
             m_strike = re.search(r'\b(\d{4,5})\b', inst_sym)
             trade_strike = int(m_strike.group(1)) if m_strike else spec.default_strike
             entry_alert_key = f"tg_sent_entry_{today_date}_{sym}_{trade_strike}_{active_contract_type}_t{trade_num}"
-            if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=180):
+            if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=86400):
                 try:
                     entry_msg = TelegramNotifier.format_entry_alert(
                         contract=inst_sym,
@@ -1066,10 +1066,20 @@ class RelianceQuantAlertDaemon:
                         num_lots=int(re_arm.get("num_lots", 1)),
                         symbol=sym
                     )
+                    if not re_res.get("success"):
+                        logger.warning(f"Resumption re-entry rejected by engine: {re_res.get('msg')}")
+                        try:
+                            seq_state_curr = SequentialTradeEngine.get_state(symbol=sym)
+                            seq_state_curr["re_entry_armed"] = None
+                            SequentialTradeEngine.save_state(seq_state_curr, symbol=sym)
+                        except Exception:
+                            pass
+                        return
+
                     if tg_enabled:
                         re_t_num = int(SequentialTradeEngine.get_state(symbol=sym).get("today_trade_count", 0))
                         re_key = f"tg_sent_re_{today_date}_{sym}_{re_arm.get('instrument', '')}_t{re_t_num}"
-                        if not TelegramNotifier.is_alert_sent(re_key, cooldown_seconds=180):
+                        if not TelegramNotifier.is_alert_sent(re_key, cooldown_seconds=86400):
                             re_msg = TelegramNotifier.format_resumption_reentry_alert(
                                 contract=re_arm.get('instrument', ''),
                                 direction=re_dir,
@@ -1144,7 +1154,7 @@ class RelianceQuantAlertDaemon:
                     win_exp = float(confluence_eval.get("win_expectancy_pct", 65.0))
                     tier_str = str(confluence_eval.get("tier_rating", "TIER 1 (A+ INSTITUTIONAL BREAKOUT)"))
 
-                    if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=180):
+                    if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=86400):
                         sym_spec = get_asset_spec(sym)
                         groww_sr_info = ""
                         try:
@@ -1266,7 +1276,7 @@ class RelianceQuantAlertDaemon:
                     logger.info(f"[{time_str}] ⚪ SETUP CANCELLED FOR {sym}: {armed_contract} — {cancel_reason}")
 
                     cancel_alert_key = f"tg_sent_cancel_{today_date}_{sym}_{armed_strike}_{armed_type}"
-                    if tg_enabled and not TelegramNotifier.is_alert_sent(cancel_alert_key, cooldown_seconds=300):
+                    if tg_enabled and not TelegramNotifier.is_alert_sent(cancel_alert_key, cooldown_seconds=86400):
                         cancel_msg = TelegramNotifier.format_setup_cancelled_alert(
                             contract=armed_contract,
                             reason=cancel_reason,
@@ -1310,7 +1320,7 @@ class RelianceQuantAlertDaemon:
                     f"(Net Debit: ₹{debit_spread.get('net_debit_pts', 0):.2f} | Max Loss: ₹{debit_spread.get('max_risk_rupees', 0):,.0f} | Max Gain: ₹{debit_spread.get('max_reward_rupees', 0):,.0f})"
                 ) if debit_spread else ""
 
-                if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=180):
+                if tg_enabled and not TelegramNotifier.is_alert_sent(entry_alert_key, cooldown_seconds=86400):
                     sym_spec = get_asset_spec(sym)
                     groww_sr_info = ""
                     try:
@@ -1452,7 +1462,7 @@ class RelianceQuantAlertDaemon:
                 seq_state_arm = SequentialTradeEngine.get_state(symbol=sym)
                 next_t_num = int(seq_state_arm.get("today_trade_count", 0)) + 1
                 armed_alert_key = f"tg_sent_armed_{today_date}_{sym}_{recommended_strike}_{contract_type}_t{next_t_num}"
-                if tg_enabled and not TelegramNotifier.is_alert_sent(armed_alert_key, cooldown_seconds=180):
+                if tg_enabled and not TelegramNotifier.is_alert_sent(armed_alert_key, cooldown_seconds=86400):
                     armed_msg = TelegramNotifier.format_armed_alert(
                         contract=contract_label,
                         direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",

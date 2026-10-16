@@ -599,20 +599,33 @@ class TradeJournalManager:
 
             is_target_scrip = sym_kw in sym.upper()
 
-            # Find matching existing entry (by timestamp or contract + entry price)
+            # Find matching existing entry (by timestamp, open contract accumulation, or entry price)
             existing_match_id = None
             for eid, e in unique_entries.items():
                 if e.get("date") != today_str:
                     continue
                 # Match by timestamp if available
                 e_en_t = str(e.get("actual_entry_time", ""))
-                if raw_entry_t and (raw_entry_t in e_en_t or e_en_t in raw_entry_t):
+                if raw_entry_t and (raw_entry_t in e_en_t or e_en_t in raw_entry_t or (actual_entry_time_str and actual_entry_time_str == e_en_t)):
+                    existing_match_id = eid
+                    break
+                # Match by same contract if currently open (multi-tranche accumulation of same contract)
+                if e.get("trading_symbol") == sym and not e.get("is_closed"):
                     existing_match_id = eid
                     break
                 # Match by symbol and entry price within tolerance
                 if e.get("trading_symbol") == sym and abs(float(e.get("actual_entry_price", 0.0)) - entry_p) < 0.15:
                     existing_match_id = eid
                     break
+
+            # If trade is confirmed closed on Groww, prune any intermediate unclosed records for this exact contract
+            if is_closed:
+                stale_open_keys = [
+                    k for k, v in unique_entries.items()
+                    if v.get("date") == today_str and v.get("trading_symbol") == sym and not v.get("is_closed") and k != existing_match_id
+                ]
+                for stk in stale_open_keys:
+                    unique_entries.pop(stk, None)
 
             existing = unique_entries.get(existing_match_id, {}) if existing_match_id else {}
             existing_screenshot = existing.get("screenshot", "")
@@ -715,6 +728,23 @@ class TradeJournalManager:
                 "confluence_score": confluence
             }
             unique_entries[rec_id] = record
+
+        # Strict Deduplication: Ensure only one verified execution record per contract on today_str
+        cleaned_entries = {}
+        for eid, e in unique_entries.items():
+            if e.get("date") == today_str and e.get("is_closed"):
+                dup = any(
+                    oe.get("trading_symbol") == e.get("trading_symbol") and
+                    oe.get("date") == today_str and
+                    oe.get("is_closed") and
+                    abs(float(oe.get("realised_pnl", 0.0)) - float(e.get("realised_pnl", 0.0))) < 1.0 and
+                    oe_id != eid
+                    for oe_id, oe in cleaned_entries.items()
+                )
+                if dup:
+                    continue
+            cleaned_entries[eid] = e
+        unique_entries = cleaned_entries
 
         all_updated = list(unique_entries.values())
         recalculated = recalculate_journal(all_updated, starting_cash)

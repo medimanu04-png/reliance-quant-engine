@@ -3,20 +3,20 @@
   "symbol": "NIFTY",
   "active_trade": null,
   "last_closed_trade": {
-    "trade_num": 8,
-    "instrument": "NIFTY 23000 CE (19-OCT-2026)",
-    "planned_entry": 133.55,
-    "actual_entry": 133.55,
+    "trade_num": 1,
+    "instrument": "NIFTY 23050 CE (19-OCT-2026)",
+    "planned_entry": 97.55,
+    "actual_entry": 97.55,
     "executed": "Yes",
-    "sl": 95.85,
-    "target": 185.85,
-    "status": "Target Hit",
-    "exit_price": 185.85,
-    "exit_time": "01:16:35 PM IST",
-    "pnl": "+\u20b913,598.00 (+52.30 pts)"
+    "sl": 60.65,
+    "target": 148.75,
+    "status": "SL Hit",
+    "exit_price": 59.55,
+    "exit_time": "09:31:28 AM IST",
+    "pnl": "\u20b9-9,880.00 (-38.00 pts)"
   },
-  "today_trade_count": 8,
-  "updated_at": "2026-10-15 01:16:35 PM IST",
+  "today_trade_count": 1,
+  "updated_at": "2026-10-16 09:36:08 AM IST",
   "archived_last_closed_trade": {
     "trade_num": 7,
     "instrument": "NIFTY 22900 CE (19-OCT-2026)",
@@ -29,5 +29,30 @@
     "pnl": "+\u20b913,598.00"
   },
   "armed_setup": null,
-  "re_entry_armed": null
+  "re_entry_armed": null,
+  "last_cancelled_setup": {
+    "setup": {
+      "armed": true,
+      "contract": "NIFTY 23050 CE (19-OCT-2026)",
+      "instrument": "NIFTY 23050 CE (19-OCT-2026)",
+      "symbol": "NIFTY",
+      "strike": 23050,
+      "contract_type": "CE",
+      "direction": "BULLISH (CALL / CE)",
+      "breakout_trigger": 111.45,
+      "initial_ltp": 99.35,
+      "target_pts": 45.3,
+      "sl_pts": 21.2,
+      "confluence": 92.9,
+      "num_lots": 4,
+      "lot_size": 65,
+      "spot": 23050.55,
+      "expiry": "19-OCT-2026",
+      "armed_at": "09:16:09 AM IST",
+      "armed_timestamp": 1792122369.60817,
+      "valid_until_timestamp": 1792123869.60817
+    },
+    "reason": "Institutional momentum shifted to BULLISH (CALL / CE) (92.9% confluence). Stale setup superseded.",
+    "cancelled_at": "09:16:17 AM IST"
+  }
 }

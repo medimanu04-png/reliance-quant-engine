@@ -4241,7 +4241,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
             else:
                 alert_sent_key = f"tg_sent_entry_{today_date}_{active_sym}_{plan_strike}_{plan_contract_type}_t{t_num}"
 
-            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key, cooldown_seconds=180):
+            if not st.session_state.get(alert_sent_key, False) and not TelegramNotifier.is_alert_sent(alert_sent_key, cooldown_seconds=86400):
                 sim_tag = " [SIMULATED SCENARIO]" if (sim_entry or sim_mode in ["ENTRY_CE", "ENTRY_PE"]) else ""
                 alert_msg = TelegramNotifier.format_entry_alert(
                     contract=f"{active_sym} {plan_strike} {plan_contract_type} ({plan_expiry}){sim_tag}",
@@ -4271,7 +4271,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     st.session_state["last_tg_status"] = "📡 Alert Handled Autonomously by Background Daemon"
                 else:
                     st.session_state["last_tg_status"] = f"⚠️ {feedback}"
-            elif TelegramNotifier.is_alert_sent(alert_sent_key, cooldown_seconds=180):
+            elif TelegramNotifier.is_alert_sent(alert_sent_key, cooldown_seconds=86400):
                 st.session_state[alert_sent_key] = True
                 st.session_state["last_tg_status"] = "✅ Telegram Alert Dispatched & Verified"
 
