@@ -6,6 +6,14 @@ lot sizes, risk boundaries, price steps, and broker endpoints.
 
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Any, Optional
+from datetime import datetime, time, timedelta, timezone
+
+try:
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+except Exception:
+    IST = timezone(timedelta(hours=5, minutes=30))
+
 
 @dataclass(frozen=True)
 class AssetSpec:
@@ -599,6 +607,10 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
     Evaluates whether an asset is authorized for trade calls right now,
     incorporating the weekly schedule and the Post-1:00 PM Expiry Gamma Blast Exception.
     """
+    if now_dt is None:
+        now_dt = datetime.now(IST)
+
+    t_curr = now_dt.time() if hasattr(now_dt, "time") else time(10, 0)
     sched = get_daily_asset_schedule(now_dt)
     target_sym = str(symbol).upper()
 
