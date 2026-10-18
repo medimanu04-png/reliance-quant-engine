@@ -61,19 +61,6 @@ def render_homepage(ctx: dict):
     .tile-sensex:hover {
         border-color: rgba(168, 85, 247, 0.95) !important;
     }
-    .quant-launch-btn {
-        transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
-    }
-    .quant-launch-btn:hover {
-        transform: translateY(-2px);
-        filter: brightness(1.12);
-    }
-    .quant-launch-nifty:hover {
-        box-shadow: 0 6px 26px rgba(16, 185, 129, 0.6) !important;
-    }
-    .quant-launch-sensex:hover {
-        box-shadow: 0 6px 26px rgba(168, 85, 247, 0.6) !important;
-    }
     </style>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -83,7 +70,7 @@ def render_homepage(ctx: dict):
             </span>
         </div>
         <span style="font-size: 0.76rem; color: #94A3B8;">
-            Click any tile or button to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>) ↗
+            Click any tile to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>) ↗
         </span>
     </div>
     """)
@@ -209,12 +196,6 @@ def render_homepage(ctx: dict):
                 </div>
             </div>
         </a>
-        <div style="height: 10px;"></div>
-        <a href="{nifty_url}" target="_blank" style="text-decoration: none; display: block; width: 100%;">
-            <div class="quant-launch-btn quant-launch-nifty" style="background: linear-gradient(135deg, #059669 0%, #0284C7 100%); border: 1.5px solid rgba(56, 189, 248, 0.6); border-radius: 8px; padding: 11px 16px; text-align: center; color: #FFFFFF; font-weight: 800; font-size: 0.90rem; letter-spacing: 0.5px; box-shadow: 0 4px 18px rgba(16, 185, 129, 0.35); cursor: pointer;">
-                ⚡ Open Nifty 50 Quant Desk (New Tab) ↗
-            </div>
-        </a>
         """)
 
     sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.35)"
@@ -261,12 +242,6 @@ def render_homepage(ctx: dict):
                         <span>Open Desk (New Tab) ↗</span>
                     </div>
                 </div>
-            </div>
-        </a>
-        <div style="height: 10px;"></div>
-        <a href="{sensex_url}" target="_blank" style="text-decoration: none; display: block; width: 100%;">
-            <div class="quant-launch-btn quant-launch-sensex" style="background: linear-gradient(135deg, #7C3AED 0%, #2563EB 100%); border: 1.5px solid rgba(192, 132, 252, 0.6); border-radius: 8px; padding: 11px 16px; text-align: center; color: #FFFFFF; font-weight: 800; font-size: 0.90rem; letter-spacing: 0.5px; box-shadow: 0 4px 18px rgba(168, 85, 247, 0.35); cursor: pointer;">
-                🏛️ Open Sensex Quant Desk (New Tab) ↗
             </div>
         </a>
         """)
