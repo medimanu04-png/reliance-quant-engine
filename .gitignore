@@ -30,6 +30,7 @@ git_sync_state.json
 # Sensitive config files (contain API tokens/secrets)
 groww_config.json
 telegram_config.json
+.streamlit/secrets.toml
 
 # Runtime persistent log files
 *_log.json

@@ -13,7 +13,7 @@ from groww_market_feed import GrowwMarketFeed
 from telegram_notifier import TelegramNotifier
 from pre_market_health_check import PreMarketHealthCheckEngine
 from eod_session_summary import EODSessionSummaryEngine
-from views.ui_components import st_download_button_stretch
+from views.ui_components import st_download_button_stretch, st_button_stretch, st_dataframe_stretch
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -137,7 +137,7 @@ def render_homepage(ctx: dict):
 
     with col_idx1:
         st.html(f"""
-        <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Nifty?stock=Nifty" target="_self" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid {nifty_tile_border}; border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -172,13 +172,21 @@ def render_homepage(ctx: dict):
             </div>
         </a>
         """)
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+        if st_button_stretch("⚡ Open Nifty 50 Quant Desk →", key="btn_hp_launch_nifty", type="primary"):
+            p_nifty_obj = props.get("p_nifty")
+            if p_nifty_obj:
+                st.switch_page(p_nifty_obj)
+            else:
+                st.query_params["stock"] = "Nifty"
+                st.rerun()
 
     sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.35)"
     sensex_status_pill = f'<span style="background: {"rgba(168, 85, 247, 0.25)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.20)"}; color: {"#C084FC" if is_sensex_tradable_today else "#94A3B8"}; border: 1px solid {"rgba(168, 85, 247, 0.5)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.4)"}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{sensex_tradable_info["badge_label"]}</span>'
 
     with col_idx2:
         st.html(f"""
-        <a href="./Sensex?stock=Sensex" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+        <a href="./Sensex?stock=Sensex" target="_self" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid {sensex_tile_border}; border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -213,6 +221,14 @@ def render_homepage(ctx: dict):
             </div>
         </a>
         """)
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+        if st_button_stretch("🏛️ Open Sensex Quant Desk →", key="btn_hp_launch_sensex"):
+            p_sensex_obj = props.get("p_sensex")
+            if p_sensex_obj:
+                st.switch_page(p_sensex_obj)
+            else:
+                st.query_params["stock"] = "Sensex"
+                st.rerun()
 
     PreMarketHealthCheckEngine.render_diagnostic_card(key_prefix="hp")
     EODSessionSummaryEngine.render_eod_card(key_prefix="hp")

@@ -3082,14 +3082,16 @@ class GrowwMarketFeed:
         trigger_price: Optional[float] = None,
         segment: str = "FNO",
         product: str = "NRML",
-        validity: str = "DAY"
+        validity: str = "DAY",
+        exchange: str = "AUTO"
     ) -> Dict[str, Any]:
         """
         Places a live order via the official Groww Trading API SDK.
         Supports FNO / CASH, LIMIT, MARKET, and SL-L orders with institutional sanity checks.
+        Automatically routes BSE SENSEX to BSE exchange and NIFTY to NSE.
         """
         if not self._is_connected or not self._groww_api:
-            return {"status": "ERROR", "message": "Groww broker not connected"}
+            return {"status": "ERROR", "message": "Groww broker not connected or token expired"}
 
         try:
             from growwapi import GrowwAPI
@@ -3098,24 +3100,34 @@ class GrowwMarketFeed:
             p_type = getattr(GrowwAPI, f"PRODUCT_{product.upper()}", product.upper())
             s_type = getattr(GrowwAPI, f"SEGMENT_{segment.upper()}", segment.upper())
             v_type = getattr(GrowwAPI, f"VALIDITY_{validity.upper()}", validity.upper())
-            ex = getattr(GrowwAPI, "EXCHANGE_NSE", "NSE")
+            
+            # Resolve exchange (BSE for SENSEX/BANKEX, NSE for NIFTY)
+            if exchange.upper() == "AUTO":
+                sym_up = trading_symbol.upper()
+                ex_str = "BSE" if ("SENSEX" in sym_up or "BANKEX" in sym_up) else "NSE"
+            else:
+                ex_str = exchange.upper()
+            ex = getattr(GrowwAPI, f"EXCHANGE_{ex_str}", ex_str)
 
             res = self._groww_api.place_order(
                 validity=v_type,
                 exchange=ex,
                 order_type=o_type,
                 product=p_type,
-                quantity=quantity,
+                quantity=int(quantity),
                 segment=s_type,
                 trading_symbol=trading_symbol,
                 transaction_type=t_type,
-                price=price,
-                trigger_price=trigger_price,
+                price=float(price),
+                trigger_price=float(trigger_price) if trigger_price is not None else None,
                 timeout=4.0
             )
-            return {"status": "SUCCESS", "order": res}
+            order_id = ""
+            if isinstance(res, dict):
+                order_id = str(res.get("order_id") or res.get("orderReferenceId") or res.get("order_reference_id") or "")
+            return {"status": "SUCCESS", "order": res, "order_id": order_id}
         except Exception as e:
-            logger.error(f"Groww place_order error: {e}")
+            logger.error(f"Groww place_order error for {trading_symbol}: {e}")
             return {"status": "ERROR", "message": str(e)}
 
     def create_broker_smart_order(

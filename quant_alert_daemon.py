@@ -1671,7 +1671,38 @@ class RelianceQuantAlertDaemon:
                 f"⚠️ Another Quant Alert Daemon instance is already active (PID {running_pid}). "
                 f"Skipping duplicate start to prevent multiple alerts."
             )
-            return
+    def check_and_auto_renew_0830_groww_token(self):
+        """
+        Automated 08:30 AM IST Pre-Market Groww Token Auto-Renewal Engine:
+        Exchanges the saved totp_token + dynamic TOTP secret for a fresh 24h Groww access token
+        every morning before the trading session starts, ensuring zero mid-day session expirations.
+        """
+        try:
+            now_dt = datetime.now(IST)
+            today_date = now_dt.strftime("%Y-%m-%d")
+            cur_t = now_dt.time()
+            renew_key = f"groww_token_renewed_{today_date}"
+
+            feed = getattr(self, "groww_feed", None) or GrowwMarketFeed.get_instance()
+            is_expired = feed.is_token_expired() if hasattr(feed, "is_token_expired") else False
+
+            if (cur_t >= dt_time(8, 30) or is_expired or self.force_run) and not TelegramNotifier.is_alert_sent(renew_key, cooldown_seconds=43200):
+                renewed = feed._auto_refresh_token()
+                if renewed:
+                    TelegramNotifier.mark_alert_sent(renew_key)
+                    logger.info("✅ Pre-market 08:30 AM Groww token successfully auto-renewed!")
+                    try:
+                        cfg = TelegramNotifier.load_config()
+                        tok = cfg.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
+                        cid = cfg.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
+                        TelegramNotifier.send_message(
+                            tok, cid,
+                            f"⚡ <b>GROWW 08:30 AM PRE-MARKET TOKEN RENEWED</b>\n\nDaily broker access token automatically renewed via TOTP engine.\nStatus: <b>Active & Ready for Session</b>\n1-Tap Execution Gate: <b>ARMED</b>"
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.debug(f"08:30 AM Groww token renewal check error: {e}")
 
     def check_and_send_0900_health_check(self):
         """
@@ -1787,6 +1818,7 @@ class RelianceQuantAlertDaemon:
             while self.running:
                 try:
                     self._update_heartbeat(status="ACTIVE")
+                    self.check_and_auto_renew_0830_groww_token()
                     self.check_and_send_0900_health_check()
                     self.check_and_send_morning_preflight()
                     self.check_and_send_0330_eod_summary()

@@ -3,6 +3,8 @@ views/cockpit_view.py
 Live Cockpit Tab View (Spot Hero, Execution Blocks, Sequential Trade Engine HUD).
 """
 
+import os
+import json
 from datetime import datetime, timezone, timedelta
 import logging
 import streamlit as st
@@ -10,6 +12,7 @@ import streamlit as st
 from asset_config import build_contract_symbol, get_asset_spec
 from trade_journal_manager import SequentialTradeEngine
 from telegram_notifier import TelegramNotifier
+from groww_market_feed import GrowwMarketFeed
 from views.ui_components import st_button_stretch
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -852,19 +855,79 @@ def render_cockpit_tab(ctx: dict):
 
     elif current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
         planned_p = float(active_trade.get("planned_entry", 30.0))
-        ep_c1, ep_c2, ep_c3 = st.columns([1.3, 1.2, 1.2])
-        with ep_c1:
-            actual_fill_input = st.number_input("Actual Groww Fill (₹)", value=float(planned_p), step=0.05, format="%.2f", key=f"groww_actual_fill_{scrip_symbol}")
-        with ep_c2:
-            if st_button_stretch("✅ Yes, Filled on Groww", key=f"btn_confirm_fill_{scrip_symbol}"):
-                SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=actual_fill_input, symbol=scrip_symbol)
-                st.toast(f"✅ Trade #{active_trade.get('trade_num', 1)} execution confirmed!")
-                st.rerun()
-        with ep_c3:
+        inst_label = active_trade.get("instrument") or active_trade.get("contract_code") or f"{scrip_symbol} Option"
+        trade_qty = int(active_trade.get("qty", 100))
+        trade_num = active_trade.get("trade_num", 1)
+
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.45) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid #10B981; border-radius: 12px; padding: 14px 18px; margin-bottom: 12px; box-shadow: 0 4px 20px rgba(16, 185, 129, 0.22);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="font-size: 0.95rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.3px;">⚡ 1-TAP DIRECT GROWW EXECUTION GATE</span>
+                    <span style="background: rgba(16, 185, 129, 0.2); color: #34D399; font-weight: 800; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; margin-left: 8px;">LIVE BROKER ARMED</span>
+                    <div style="font-size: 0.78rem; color: #94A3B8; margin-top: 4px;">
+                        Contract: <b style="color: #38BDF8;">{inst_label}</b> &bull; Size: <b style="color: #F8FAFC;">{trade_qty} Qty</b> &bull; Limit Entry: <b style="color: #10B981;">₹{planned_p:.2f}</b>
+                    </div>
+                </div>
+                <div style="font-size: 0.70rem; color: #64748B; text-align: right;">
+                    0-Delay Broker API<br>
+                    <b style="color: #34D399;">Order Verification: ACTIVE</b>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_onetap, col_manual_c = st.columns([1.5, 1])
+        with col_onetap:
+            if st_button_stretch(f"⚡ 1-Tap Direct Buy on Groww (Limit @ ₹{planned_p:.2f})", key=f"btn_onetap_buy_{scrip_symbol}", type="primary"):
+                with st.spinner("⚡ Routing 1-Tap limit order directly to Groww exchange gateway..."):
+                    feed = GrowwMarketFeed.get_instance()
+                    order_res = feed.place_broker_order(
+                        trading_symbol=inst_label,
+                        quantity=trade_qty,
+                        transaction_type="BUY",
+                        order_type="LIMIT",
+                        price=planned_p,
+                        segment="FNO"
+                    )
+                    if order_res.get("status") == "SUCCESS":
+                        oid = order_res.get("order_id", "BROKER_ACK")
+                        SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=planned_p, symbol=scrip_symbol)
+                        try:
+                            from telegram_notifier import TelegramNotifier
+                            tg_cfg_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "telegram_config.json")
+                            if os.path.exists(tg_cfg_path):
+                                with open(tg_cfg_path, "r", encoding="utf-8") as tf:
+                                    tc = json.load(tf)
+                                    TelegramNotifier.send_message(
+                                        tc.get("bot_token", ""),
+                                        tc.get("chat_id", ""),
+                                        f"⚡ <b>1-TAP GROWW ORDER EXECUTED</b>\n\nScrip: {scrip_symbol}\nContract: {inst_label}\nQty: {trade_qty}\nFill Price: ₹{planned_p:.2f}\nOrder ID: <code>{oid}</code>"
+                                    )
+                        except Exception:
+                            pass
+                        st.toast(f"✅ 1-Tap Groww Order Placed! Order ID: {oid}")
+                        st.rerun()
+                    else:
+                        err_msg = order_res.get("message", "Broker communication error")
+                        st.error(f"❌ Groww Order Failed: {err_msg}")
+
+        with col_manual_c:
             if st_button_stretch("❌ Cancel Setup", key=f"btn_cancel_fill_{scrip_symbol}"):
                 SequentialTradeEngine.confirm_groww_fill(confirmed=False, symbol=scrip_symbol)
                 st.toast("ℹ️ Setup cancelled.")
                 st.rerun()
+
+        with st.expander("📝 Manual Fill Confirmation (If order was placed manually on Groww App)", expanded=False):
+            ep_c1, ep_c2 = st.columns([1.5, 1])
+            with ep_c1:
+                actual_fill_input = st.number_input("Actual Groww Fill (₹)", value=float(planned_p), step=0.05, format="%.2f", key=f"groww_actual_fill_{scrip_symbol}")
+            with ep_c2:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                if st_button_stretch("✅ Confirm Manual Fill", key=f"btn_confirm_fill_{scrip_symbol}"):
+                    SequentialTradeEngine.confirm_groww_fill(confirmed=True, actual_price=actual_fill_input, symbol=scrip_symbol)
+                    st.toast(f"✅ Trade #{trade_num} execution confirmed!")
+                    st.rerun()
 
     elif current_seq_state == SequentialTradeEngine.STATE_TRADE_CLOSED:
         target_closed = last_closed or seq_state.get("archived_last_closed_trade")

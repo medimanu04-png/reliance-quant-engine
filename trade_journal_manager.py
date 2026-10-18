@@ -2483,6 +2483,15 @@ class SequentialTradeEngine:
                     symbol=active_sym
                 )
 
+        # Strategy 3: Ultra-Fast Breakeven Trailing Rule (+8.0 pts gain -> Lock Entry + 2.0 pts)
+        if is_gamma_trap and profit_pts >= 8.0:
+            fast_be_level = round(actual_entry + 2.0, 2)
+            if float(active.get("trailing_sl", 0.0)) < fast_be_level:
+                active["trailing_sl"] = fast_be_level
+                active["breakeven_activated"] = True
+                effective_sl = max(effective_sl, fast_be_level)
+                active["notes"] = f"Strategy 3 Fast Breakeven Armed (+{profit_pts:.1f} pts gain). Stop-Loss trailed to ₹{fast_be_level:.2f} (Cost + 2.0 pts brokerage buffer)."
+
         # Scenario 1: Tranche 1 is still pending
         if t1_status == "PENDING":
             if current_ltp >= target_1 and current_ltp > actual_entry:
@@ -2517,9 +2526,20 @@ class SequentialTradeEngine:
                     starting_cash=starting_cash,
                     symbol=active_sym
                 )
-            # Tier 2: Technical Soft Stop Loss (Filtered against intra-candle wick sweeps)
+            # Tier 2: Technical Stop Loss Check
             elif current_ltp <= effective_sl:
-                if not is_candle_closed:
+                # Institutional Hard Tick SL Gate: Strategy 3 Gamma Trap & Post-1:00 PM 0DTE Expiry trades
+                # STRICTLY bypass the soft 5m candle close shield to protect against violent 0DTE theta melt.
+                is_afternoon_trade = (now_ist.weekday() < 5 and now_ist.time() >= time(13, 0))
+                if is_gamma_trap or is_afternoon_trade:
+                    return cls.close_trade(
+                        exit_price=current_ltp,
+                        status="Hard Tick SL Hit (0DTE/Gamma)",
+                        notes=f"Hard Tick Stop-Loss Executed: ₹{current_ltp:.2f} <= ₹{effective_sl:.2f} (-{round(actual_entry - current_ltp, 2)} pts). 5m candle close shield bypassed for Strategy 3/0DTE gamma protection.",
+                        starting_cash=starting_cash,
+                        symbol=active_sym
+                    )
+                elif not is_candle_closed:
                     active["wick_touches"] = int(active.get("wick_touches", 0)) + 1
                     active["wick_guard_alert"] = f"Wick touch @ ₹{current_ltp:.2f} <= ₹{effective_sl:.2f}. Soft SL active, waiting for 5m candle close confirmation."
                     cls.save_state(state, symbol=active_sym)

@@ -80,7 +80,7 @@ from views.ledger_view import render_ledger_tab
 from views.settings_view import render_settings_tab
 
 # ==============================================================================
-# MULTI-PAGE NAVIGATION ROUTER (Clean URLs: / | /Nifty | /Sensex)
+# MULTI-PAGE NAVIGATION ROUTER & AIRTIGHT 2FA SECURITY GATEKEEPER
 # ==============================================================================
 st.set_page_config(
     page_title="Manoj Quant Engine | Institutional F&O Desk",
@@ -89,10 +89,40 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+import views.auth_manager as auth_mgr
+
+# 1. Midnight Session Rollover (Cleanly resets intraday states on calendar date transition)
+today_iso = datetime.now(IST).strftime("%Y-%m-%d")
+if st.session_state.get("_active_session_date") != today_iso:
+    st.session_state["_active_session_date"] = today_iso
+    for k in list(st.session_state.keys()):
+        if k.startswith("breakout_level_"):
+            st.session_state.pop(k, None)
+
+# 2. Institutional Authentication & Direct URL Security Enforcer
+is_authenticated = auth_mgr.is_user_authenticated()
+
 p_home = st.Page(lambda: None, title="Market Overview", icon="🏠", url_path="", default=True)
 p_nifty = st.Page(lambda: None, title="Nifty 50 Quant Desk", icon="📈", url_path="Nifty")
 p_sensex = st.Page(lambda: None, title="Sensex Quant Desk", icon="🏛️", url_path="Sensex")
 
+if not is_authenticated:
+    # Completely hide benchmark desks from the navigation tree for unauthenticated users
+    p_login = st.Page(lambda: None, title="Terminal Login // 2FA", icon="🔒", url_path="", default=True)
+    pg = st.navigation([p_login], position="hidden")
+    pg.run()
+
+    # Intercept direct URL attempts (e.g. unauthenticated user typing /Nifty or /Sensex or query params)
+    attempted_route = getattr(pg, "url_path", "") or st.query_params.get("stock", "") or st.query_params.get("scrip", "")
+    blocked_route = None
+    if attempted_route and any(d in str(attempted_route).upper() for d in ["NIFTY", "SENSEX"]):
+        blocked_route = "Nifty" if "NIFTY" in str(attempted_route).upper() else "Sensex"
+        st.query_params.clear()
+
+    auth_mgr.render_ultra_premium_login(blocked_route=blocked_route)
+    st.stop()
+
+# 3. Authenticated Session Routing
 pg = st.navigation({
     "Overview": [p_home],
     "Benchmark Index Desks": [p_nifty, p_sensex]
@@ -103,10 +133,8 @@ active_route = getattr(pg, "url_path", "")
 
 # Synchronize query parameters with active route
 if active_route:
-    # Update query param to match the active page
     st.query_params["stock"] = active_route
 else:
-    # On root/homepage, allow query param to route to target desk
     q_stock = st.query_params.get("stock") or st.query_params.get("scrip")
     if q_stock:
         q_str = str(q_stock).upper()
@@ -114,6 +142,9 @@ else:
             st.switch_page(p_sensex)
         elif "NIFTY" in q_str:
             st.switch_page(p_nifty)
+
+# Render authenticated operator badge & logout button in sidebar
+auth_mgr.render_authenticated_user_sidebar()
 
 # ==============================================================================
 # AUTONOMOUS 24/7 MULTI-DESK ALERT DAEMON (ACTIVE ON HOMEPAGE & ALL PAGES)
@@ -547,7 +578,7 @@ def render_daemon_supervisor_card(key_prefix: str = "sb"):
 
     c_btn1, c_btn2 = st.columns(2)
     with c_btn1:
-        if st.button("🚀 Start" if not is_alive else "🔄 Restart", key=f"{key_prefix}_start_daemon_btn", use_container_width=True):
+        if st_button_stretch("🚀 Start" if not is_alive else "🔄 Restart", key=f"{key_prefix}_start_daemon_btn"):
             if is_alive and pid:
                 try:
                     import signal
@@ -563,7 +594,7 @@ def render_daemon_supervisor_card(key_prefix: str = "sb"):
             else:
                 st.error("Failed to launch daemon. Check console logs.")
     with c_btn2:
-        if st.button("📲 Test Alert", key=f"{key_prefix}_test_tg_btn", use_container_width=True):
+        if st_button_stretch("📲 Test Alert", key=f"{key_prefix}_test_tg_btn"):
             cfg = TelegramNotifier.load_config()
             tok = cfg.get("bot_token", TelegramNotifier.DEFAULT_BOT_TOKEN)
             cid = cfg.get("chat_id", TelegramNotifier.DEFAULT_CHAT_ID)
@@ -1473,7 +1504,7 @@ def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
         </div>
         """)
     with c_head2:
-        if st.button("🔄 Sync NSE API", use_container_width=True, key="btn_sync_nse_cal"):
+        if st_button_stretch("🔄 Sync NSE API", key="btn_sync_nse_cal"):
             with st.spinner("Connecting to NSE India official API..."):
                 res = nse_calendar.sync_with_nse(force=True)
                 if res.get("success"):
@@ -1630,7 +1661,7 @@ def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
         })
 
     df_hol = pd.DataFrame(rows)
-    st.dataframe(df_hol, use_container_width=True, hide_index=True)
+    st_dataframe_stretch(df_hol, hide_index=True)
 
 
 # Active Groww Account Profile (Mandatory Link)
@@ -2219,6 +2250,8 @@ if active_route == "":
         "render_macro_benchmarks_fn": render_live_macro_benchmarks_strip,
         "render_nse_calendar_hub_fn": render_nse_calendar_hub,
         "is_rescan": locals().get("is_rescan", False),
+        "p_nifty": p_nifty,
+        "p_sensex": p_sensex,
     })
     st.stop()
 
@@ -2244,7 +2277,7 @@ else:
     forced_choice = st.session_state.get("sb_scrip_selector") or st.session_state.get("selected_scrip", "NIFTY 50")
     st.session_state["selected_scrip"] = forced_choice
 
-if st.sidebar.button("🏠 ← Return to Market Hub (Homepage)", use_container_width=True, key="sb_btn_return_home"):
+if st_sidebar_button_stretch("🏠 ← Return to Market Hub (Homepage)", key="sb_btn_return_home"):
     st.switch_page(p_home)
 
 scrip_options = ["NIFTY 50", "BSE SENSEX"]
