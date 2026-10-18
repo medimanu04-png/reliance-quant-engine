@@ -131,8 +131,11 @@ def render_radar_tab(ctx: dict):
     _calib_s0 = ctx.get("_calib_s0", 55.0)
     _calib_k = ctx.get("_calib_k", 0.08)
 
+    gex_regime = ctx.get("gex_regime", "BALANCED")
+    is_bull = (recommended_contract_type == "CE")
+
     macro_beh_str = f"Benchmark Macro Telemetry: NIFTY 50 is at {nifty_pct:+.2f}%, INDIA VIX at {vix_val:.2f} ({vix_pct_chg:+.2f}%). Domestic capital flow momentum is aligned."
-    v1_macro_metric = ("Benchmark Macro Telemetry", f"VIX {vix_val:.2f} ({vix_pct_chg:+.2f}%)", "🟢 Steady Volatility (+2)" if vix_stable_regime else "🟡 High Volatility (0)")
+    v1_macro_metric = ("Benchmark Macro Telemetry", f"VIX {vix_val:.2f} ({vix_pct_chg:+.2f}%)", "🟢 Steady Volatility (+2.5)" if vix_stable_regime else "🟡 High Volatility (0 pts)")
 
     v1_beh = (
         f"Multi-Timeframe Matrix: M15 Structural Regime is {mtf_matrix['m15']['regime'].replace('_', ' ')} ({mtf_matrix['m15']['desc']}) with 9/20/50 EMAs stacked. "
@@ -172,6 +175,116 @@ def render_radar_tab(ctx: dict):
         f"Terminal week 0-DTE accelerated decay is completely neutralized with {scrip_symbol} ATM IV at {sigma*100.0:.1f}%, maintaining contract delta ({active_delta:+.2f}) and Half-Kelly sizing ({kelly_recommended_lots} lot{'s' if kelly_recommended_lots > 1 else ''} / {lot_size*kelly_recommended_lots} qty, Risk: ₹{v6_risk_val:,.0f}) within account risk limits."
     )
 
+    # ----------------- DIRECTION-AWARE BADGE FORMULAS -----------------
+    # Vector 1
+    if is_bull:
+        v1_m15_badge = "🟢 Bullish 9/20/50 Stack (+5)" if mtf_matrix['m15']['is_bullish'] else ("🔴 Bearish Alignment (0 pts)" if mtf_matrix['m15']['is_bearish'] else "🟡 Neutral Alignment (+2)")
+        v1_st_badge = "🟢 Buy Regime (+4)" if st_bullish else "🔴 Sell Regime (0 pts)"
+        v1_orb_badge = "🟢 Confirmed Breakout (+3)" if orb_breakout else ("🔴 Breakdown Trap (0 pts)" if orb_breakdown else "🟡 Inside Range (0 pts)")
+        v1_cpr_badge = "🟢 Pivot Breakout (+2.5)" if spot > float(latest.get('CPR_TC', spot)) else ("🔴 Below BC (0 pts)" if spot < float(latest.get('CPR_BC', spot)) else "🟡 Inside CPR (0 pts)")
+    else:
+        v1_m15_badge = "🟢 Bearish 9/20/50 Stack (+5)" if mtf_matrix['m15']['is_bearish'] else ("🔴 Bullish Alignment (0 pts)" if mtf_matrix['m15']['is_bullish'] else "🟡 Neutral Alignment (+2)")
+        v1_st_badge = "🟢 Sell Regime (+4)" if not st_bullish else "🔴 Buy Regime (0 pts)"
+        v1_orb_badge = "🟢 Confirmed Breakdown (+3)" if orb_breakdown else ("🔴 Breakout Trap (0 pts)" if orb_breakout else "🟡 Inside Range (0 pts)")
+        v1_cpr_badge = "🟢 Below BC (+2.5)" if spot < float(latest.get('CPR_BC', spot)) else ("🔴 Above TC (0 pts)" if spot > float(latest.get('CPR_TC', spot)) else "🟡 Inside CPR (0 pts)")
+
+    # Vector 2
+    v2_avwap_badge = "🟢 Retest Support (+3)" if avwap_retest_support else ("🟢 Expanding (+2)" if avwap_expanding_above else ("🔴 Trap Breached (-4 pts)" if avwap_trap_failed else "🟡 Pre-Breakout (0 pts)"))
+    v2_cvd_badge = "🟢 Buyer Ask Aggression (+3)" if (cvd_buyer_agg if is_bull else not cvd_buyer_agg) else "🔴 Opposing Aggression (0 pts)"
+    cmf_val = float(latest.get('CMF_20', 0.0))
+    if (cmf_val >= 0.05 if is_bull else cmf_val <= -0.05):
+        v2_cmf_badge = "🟢 Inst Accumulation (+2)"
+    elif (cmf_val <= -0.05 if is_bull else cmf_val >= 0.05):
+        v2_cmf_badge = "🔴 Inst Distribution (0 pts)"
+    else:
+        v2_cmf_badge = "🟡 Neutral Money Flow (0 pts)"
+
+    eom_val = float(latest.get('EOM_14', 0.0))
+    if (eom_val > 5.0 if is_bull else eom_val < -5.0):
+        v2_eom_badge = "🟢 Effortless Expansion (+2)"
+    elif (eom_val < -5.0 if is_bull else eom_val > 5.0):
+        v2_eom_badge = "🔴 Downward Collapse (0 pts)"
+    else:
+        v2_eom_badge = "🟡 Balanced Flow (0 pts)"
+
+    v2_vwap_badge = "🟢 Favorable Mean (+4)" if (above_vwap if is_bull else not above_vwap) else "🔴 Opposing Mean (0 pts)"
+
+    # Vector 3
+    call_shift = opt_telemetry.get('call_oi_change_pct', 0.0)
+    put_shift = opt_telemetry.get('put_oi_change_pct', 0.0)
+
+    if abs(call_shift) < 0.05:
+        v3_call_badge = "⚪ Flat / Unchanged (0 pts)"
+    elif call_unwinding:
+        v3_call_badge = "🟢 Short Covering (+7)" if is_bull else "🔴 Panic Unwinding (0 pts)"
+    elif call_shift < 0:
+        v3_call_badge = "🟢 Mild Unwinding (+3)" if is_bull else "🔴 Long Liquidation (0 pts)"
+    elif call_shift > 10.0:
+        v3_call_badge = "🔴 Call Writing (0 pts)" if is_bull else "🟢 Heavy Call Resistance (+5)"
+    else:
+        v3_call_badge = "🟡 Neutral Shift (0 pts)"
+
+    if abs(put_shift) < 0.05:
+        v3_put_badge = "⚪ Flat / Unchanged (0 pts)"
+    elif put_writing:
+        v3_put_badge = "🟢 Heavy Put Writing (+5)" if is_bull else "🔴 Put Buildup (0 pts)"
+    elif put_shift > 10.0:
+        v3_put_badge = "🟢 Put Support (+2)" if is_bull else "🔴 Put Support (0 pts)"
+    elif put_shift < -10.0:
+        v3_put_badge = "🔴 Put Unwinding (0 pts)" if is_bull else "🟢 Long Put Liquidation (+7)"
+    else:
+        v3_put_badge = "🟡 Low Put Buildup (0 pts)"
+
+    if is_bull:
+        v3_basis_badge = "🟢 Futures Long Accumulation (+2)" if basis_regime == 'INSTITUTIONAL_FUTURES_LONG_ACCUMULATION' else ("🔴 Discount Bearish Hedging (0 pts)" if 'DISCOUNT' in basis_regime else "🟡 Normal Basis (0 pts)")
+    else:
+        v3_basis_badge = "🟢 Discount Bearish Hedging (+2)" if 'DISCOUNT' in basis_regime else ("🔴 Futures Long Accumulation (0 pts)" if 'ACCUMULATION' in basis_regime else "🟡 Normal Basis (0 pts)")
+
+    if "SHORT_GAMMA" in gex_regime or "NEGATIVE_GAMMA" in gex_regime:
+        v3_gex_badge = "🟢 Dealer Short Gamma Squeeze (+4)"
+    elif "POSITIVE_GAMMA" in gex_regime:
+        v3_gex_badge = "🔴 Dealer Gamma Pinning (-3 pts)"
+    elif ("CALL" in pcr_flow_bias if is_bull else "PUT" in pcr_flow_bias):
+        v3_gex_badge = "🟢 Stealth Flow Buying (+2.5)"
+    else:
+        v3_gex_badge = "🟡 Balanced Gamma Flow (+1.5)"
+
+    if is_bull:
+        v3_pcr_badge = "🟢 Strong Bull Cushion (+5)" if pcr_val >= 1.25 else ("🟡 Neutral Range (+2)" if pcr_val >= 1.05 else "🔴 Bearish Dominance (0 pts)")
+    else:
+        v3_pcr_badge = "🟢 Strong Bear Dominance (+5)" if pcr_val <= 0.85 else ("🟡 Neutral Range (+2)" if pcr_val <= 0.95 else "🔴 Bullish Cushion (0 pts)")
+
+    # Vector 4
+    v4_ivp_badge = "🟢 Clean Buying Window (+2)" if iv_cheap_window else ("🔴 IV Crush Lock (-4 pts)" if iv_elevated_crush_risk else "🟡 Fair Value (0 pts)")
+    v4_chop_badge = "🟢 Trending Persistence (+4)" if (is_trending_regime and hurst_regime == 'TRENDING_PERSISTENCE') else ("🛑 Choppy Stand Down (0 pts)" if is_choppy_regime else "🟡 Moderate Range (0 pts)")
+    v4_cv_badge = "🟢 Volatility Explosion (+1.5)" if float(latest.get('Chaikin_Vol', 0.0)) > 15.0 else "🟡 Standard Volatility (0 pts)"
+    v4_straddle_badge = "🟢 Squeeze Expansion (+2)" if 'SQUEEZE' in straddle_regime else "🟡 Rangebound Inside Move (0 pts)"
+    v4_sl_badge = f"🟢 ≤4.0% Risk Cap (+2)" if capital_risk_safe else "🔴 Exceeds 4% Budget (-4 pts)"
+
+    # Vector 5 (Direction-Aware Zero-Divergence)
+    rsi_val = float(latest.get('RSI', 50.0))
+    cmo_val = float(latest.get('CMO_14', 0.0))
+    stc_val = float(latest.get('STC', 50.0))
+    crsi_val = float(latest.get('Connors_RSI', 50.0))
+    if is_bull:
+        v5_rsi_badge = "🟢 Bullish Power Band (+6)" if rsi_sweetspot_bull else ("🟡 Constructive (+3)" if rsi_val >= 55.0 else "🔴 Bearish Breakdown (0 pts)")
+        v5_cmo_badge = "🟢 Strong Bull Momentum (+2.5)" if cmo_val >= 25.0 else ("🔴 Strong Bear Momentum (0 pts)" if cmo_val <= -25.0 else "🟡 Neutral Momentum (0 pts)")
+        v5_stc_badge = "🟢 Bullish Cycle (+2)" if stc_val >= 75.0 else ("🔴 Bearish Cycle (0 pts)" if stc_val <= 25.0 else "🟡 Balanced Cycle (0 pts)")
+        v5_crsi_badge = "🟢 Oversold Dip Buy (+2)" if crsi_val <= 20.0 else ("🔴 Overbought Reversal (0 pts)" if crsi_val >= 80.0 else "🟡 Neutral Pullback (0 pts)")
+        v5_macd_badge = "🟢 Accelerating Bull (+5)" if macd_expanding_bull else ("🔴 Accelerating Bear (0 pts)" if macd_expanding_bear else "🟡 Decelerating (0 pts)")
+    else:
+        v5_rsi_badge = "🟢 Bearish Breakdown (+6)" if rsi_sweetspot_bear else ("🟡 Weak Breakdown (+3)" if rsi_val <= 45.0 else "🔴 Bullish Power Band (0 pts)")
+        v5_cmo_badge = "🟢 Strong Bear Momentum (+2.5)" if cmo_val <= -25.0 else ("🔴 Strong Bull Momentum (0 pts)" if cmo_val >= 25.0 else "🟡 Neutral Momentum (0 pts)")
+        v5_stc_badge = "🟢 Bearish Cycle (+2)" if stc_val <= 25.0 else ("🔴 Bullish Cycle (0 pts)" if stc_val >= 75.0 else "🟡 Balanced Cycle (0 pts)")
+        v5_crsi_badge = "🟢 Overbought Rally Fade (+2)" if crsi_val >= 80.0 else ("🔴 Oversold Dip (0 pts)" if crsi_val <= 20.0 else "🟡 Neutral Pullback (0 pts)")
+        v5_macd_badge = "🟢 Accelerating Bear (+5)" if macd_expanding_bear else ("🔴 Accelerating Bull (0 pts)" if macd_expanding_bull else "🟡 Decelerating (0 pts)")
+
+    # Vector 6
+    v6_dte_badge = f"🟢 {dte} DTE Mandate (+3)" if (2 <= dte <= 5) else (f"🟡 {dte} DTE Window (+1.5)" if dte == 1 else "🔴 0-DTE High Decay (0 pts)")
+    v6_kelly_badge = "🟢 Optimal Half-Kelly (+2.5)" if "OPTIMAL" in kelly_status else "🟡 Controlled Size (+1.5)"
+    v6_decay_badge = "🟢 0-DTE Neutralized (+2)" if dte > 0 else "🔴 0-DTE Rapid Decay (-3 pts)"
+    v6_delta_badge = "🟢 Sweet Spot Delta (+4)" if (0.42 <= abs(active_delta) <= 0.68) else "🟡 Moderate Delta (+2)"
+
     vector_tiles_data = [
         {
             "num": 1,
@@ -181,10 +294,10 @@ def render_radar_tab(ctx: dict):
             "max": 20.0,
             "source": "M15 Structural + M5 Trigger + CPR + SuperTrend + ORB",
             "metrics": [
-                ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", f"{'🟢' if mtf_matrix['m15']['is_bullish'] else ('🔴' if mtf_matrix['m15']['is_bearish'] else '🟡')} 9/20/50 Stack"),
-                ("SuperTrend (5m Pillar)", f"ST ₹{float(latest.get('SuperTrend', 0.0)):.1f}", f"{'🟢 Buy Regime (+4)' if st_bullish else '🔴 Sell Regime (0 pts)'}"),
-                ("15m Opening Range (ORB)", f"ORB ₹{orb_h:.1f} - ₹{orb_l:.1f}", f"{'🟢 Confirmed Breakout (+3)' if orb_breakout else ('🔴 Confirmed Breakdown' if orb_breakdown else '🟡 Inside Range (0 pts)')}"),
-                ("Central Pivot Range (CPR)", f"TC ₹{float(latest.get('CPR_TC', spot)):.1f} | BC ₹{float(latest.get('CPR_BC', spot)):.1f}", f"{'🟢 Pivot Breakout (+2.5)' if spot > float(latest.get('CPR_TC', spot)) else ('🔴 Below BC' if spot < float(latest.get('CPR_BC', spot)) else '🟡 Inside CPR')}"),
+                ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", v1_m15_badge),
+                ("SuperTrend (5m Pillar)", f"ST ₹{float(latest.get('SuperTrend', 0.0)):.1f}", v1_st_badge),
+                ("15m Opening Range (ORB)", f"ORB ₹{orb_h:.1f} - ₹{orb_l:.1f}", v1_orb_badge),
+                ("Central Pivot Range (CPR)", f"TC ₹{float(latest.get('CPR_TC', spot)):.1f} | BC ₹{float(latest.get('CPR_BC', spot)):.1f}", v1_cpr_badge),
                 v1_macro_metric,
             ],
             "behavior": v1_beh
@@ -197,11 +310,11 @@ def render_radar_tab(ctx: dict):
             "max": 18.0,
             "source": "Session VWAP + ORB AVWAP + CVD + CMF + PVT + EOM",
             "metrics": [
-                ("ORB-15 Anchored VWAP", f"AVWAP: ₹{avwap_orb:.2f} ({avwap_diff:+.2f}p)", f"{'🟢 Retest Support (+3)' if avwap_retest_support else ('🟢 Expanding (+2)' if avwap_expanding_above else ('🔴 Trap Breached (-4)' if avwap_trap_failed else '🟡 Pre-Breakout'))}"),
-                ("CVD Aggressor Flow", f"CVD: {cvd_val:+,.0f} (Δ: {bar_delta:+,.0f})", f"{'🟢 Buyer Ask Aggression (+3)' if cvd_buyer_agg else '🔴 Seller Bid Dominance'}"),
-                ("Chaikin Money Flow & PVT", f"CMF {float(latest.get('CMF_20', 0.0)):+.3f} | PVT {float(latest.get('PVT', 0.0)):+,.0f}", f"{'🟢 Inst Accumulation' if float(latest.get('CMF_20', 0.0)) >= 0.05 else ('🔴 Inst Distribution' if float(latest.get('CMF_20', 0.0)) <= -0.05 else '🟡 Neutral Money Flow')}"),
-                ("Ease of Movement (EOM-14)", f"EOM: {float(latest.get('EOM_14', 0.0)):+.2f}", f"{'🟢 Effortless Upward Expansion' if float(latest.get('EOM_14', 0.0)) > 5.0 else ('🔴 Downward Collapse' if float(latest.get('EOM_14', 0.0)) < -5.0 else '🟡 Balanced Flow')}"),
-                ("Session VWAP & L2 Imbalance", f"VWAP ₹{float(latest.get('VWAP', spot)):.2f} | L2: {depth_ratio:.2f}x", f"🟢 Above Mean (+4)" if above_vwap else f"🔴 Below Mean (+4)")
+                ("ORB-15 Anchored VWAP", f"AVWAP: ₹{avwap_orb:.2f} ({avwap_diff:+.2f}p)", v2_avwap_badge),
+                ("CVD Aggressor Flow", f"CVD: {cvd_val:+,.0f} (Δ: {bar_delta:+,.0f})", v2_cvd_badge),
+                ("Chaikin Money Flow & PVT", f"CMF {float(latest.get('CMF_20', 0.0)):+.3f} | PVT {float(latest.get('PVT', 0.0)):+,.0f}", v2_cmf_badge),
+                ("Ease of Movement (EOM-14)", f"EOM: {float(latest.get('EOM_14', 0.0)):+.2f}", v2_eom_badge),
+                ("Session VWAP & L2 Imbalance", f"VWAP ₹{float(latest.get('VWAP', spot)):.2f} | L2: {depth_ratio:.2f}x", v2_vwap_badge)
             ],
             "behavior": v2_beh
         },
@@ -213,11 +326,11 @@ def render_radar_tab(ctx: dict):
             "max": 20.0,
             "source": "Groww Live Chain + Cash-Futures Basis + PCR Flow Divergence",
             "metrics": [
-                (f"Call OI Shift ({atm_strike} CE)", f"{opt_telemetry.get('call_oi_change_pct', 0.0):+.1f}% shift", "🟢 Short Covering (+8)" if call_unwinding else ("🟡 Mild Drop (+4)" if opt_telemetry.get('call_oi_change_pct', 0.0) < 0 else "🔴 Call Writing")),
-                (f"Put OI Shift ({atm_strike} PE)", f"{opt_telemetry.get('put_oi_change_pct', 0.0):+.1f}% shift", "🟢 Heavy Writing (+6)" if put_writing else ("🟡 Put Support (+3)" if opt_telemetry.get('put_oi_change_pct', 0.0) > 10.0 else "🔴 Low Put Buildup")),
-                ("Cash-Futures Basis Spread", f"Basis: {basis_pts:+.2f} pts ({basis_pct:+.2f}%)", f"{'🟢 Futures Long Accumulation (+2)' if basis_regime == 'INSTITUTIONAL_FUTURES_LONG_ACCUMULATION' else ('🔴 Discount Bearish Hedging' if 'DISCOUNT' in basis_regime else '🟡 Normal Basis')}"),
-                ("PCR Flow vs OI Divergence", f"PCR Vol {pcr_vol:.2f} vs OI {chain_oi.get('overall_pcr', 1.0):.2f}", f"{'🟢 Stealth Call Buying (+2.5)' if 'CALL' in pcr_flow_bias else ('🔴 Stealth Put Buying (+2.5)' if 'PUT' in pcr_flow_bias else '🟡 Aligned Flow')}"),
-                ("PCR (OI) & Max Pain", f"PCR: {pcr_val:.2f} | Max Pain: ₹{chain_oi.get('max_pain', 0.0):.0f}", "🟢 Strong Cushion (+6)" if pcr_val >= 1.25 else ("🟡 Neutral (+3)" if pcr_val >= 1.05 else "🔴 Bearish (<1.05)"))
+                (f"Call OI Shift ({atm_strike} CE)", f"{call_shift:+.1f}% shift", v3_call_badge),
+                (f"Put OI Shift ({atm_strike} PE)", f"{put_shift:+.1f}% shift", v3_put_badge),
+                ("Cash-Futures Basis Spread", f"Basis: {basis_pts:+.2f} pts ({basis_pct:+.2f}%)", v3_basis_badge),
+                ("Dealer GEX & Gamma Flip", f"Regime: {gex_regime.replace('_', ' ')}", v3_gex_badge),
+                ("PCR (OI) & Max Pain", f"PCR: {pcr_val:.2f} | Max Pain: ₹{chain_oi.get('max_pain', 0.0):.0f}", v3_pcr_badge)
             ],
             "behavior": v3_beh
         },
@@ -229,11 +342,11 @@ def render_radar_tab(ctx: dict):
             "max": 15.0,
             "source": "Wilder's ATR (14) + CHOP + Chaikin Vol + Mass Index + ATM Straddle",
             "metrics": [
-                (f"{scrip_name} IV Percentile (IVP)", f"{iv_percentile:.1f}% (IV {rel_iv*100.0:.1f}%)", "🟢 Clean Buying Window (+2)" if iv_cheap_window else ("🔴 IV Crush Lock (-4)" if iv_elevated_crush_risk else "🟡 Fair Value")),
-                ("Choppiness Index & Hurst (H)", f"CHOP: {chop_val:.1f} | H={hurst_val:.2f}", "🟢 Trending Persistence (+4)" if (is_trending_regime and hurst_regime == 'TRENDING_PERSISTENCE') else ("🛑 Choppy Stand Down (0)" if is_choppy_regime else "🟡 Moderate Range")),
-                ("Chaikin Vol & Mass Index", f"CV: {float(latest.get('Chaikin_Vol', 0.0)):+.1f}% | Mass: {float(latest.get('Mass_Index', 25.0)):.2f}", f"{'🟢 Volatility Explosion (+1.5)' if float(latest.get('Chaikin_Vol', 0.0)) > 15.0 else '🟡 Standard Volatility'}"),
-                ("ATM Straddle Expected Move", f"±₹{exp_move_pts:.1f} (₹{exp_lower:.1f} - ₹{exp_upper:.1f})", f"{'🟢 Squeeze Expansion (+2)' if 'SQUEEZE' in straddle_regime else '🟡 Rangebound Inside Move'}"),
-                ("Dynamic ATR(14) Stop Loss", f"{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f})", f"🟢 ≤4.0% Risk Cap ({risk_pct_of_capital:.1f}%)" if capital_risk_safe else "🔴 Exceeds 4% Budget")
+                (f"{scrip_name} IV Percentile (IVP)", f"{iv_percentile:.1f}% (IV {rel_iv*100.0:.1f}%)", v4_ivp_badge),
+                ("Choppiness Index & Hurst (H)", f"CHOP: {chop_val:.1f} | H={hurst_val:.2f}", v4_chop_badge),
+                ("Chaikin Vol & Mass Index", f"CV: {float(latest.get('Chaikin_Vol', 0.0)):+.1f}% | Mass: {float(latest.get('Mass_Index', 25.0)):.2f}", v4_cv_badge),
+                ("ATM Straddle Expected Move", f"±₹{exp_move_pts:.1f} (₹{exp_lower:.1f} - ₹{exp_upper:.1f})", v4_straddle_badge),
+                ("Dynamic ATR(14) Stop Loss", f"{effective_sl_pts:.1f} pts (-₹{net_actual_risk:,.0f})", v4_sl_badge)
             ],
             "behavior": v4_beh
         },
@@ -245,11 +358,11 @@ def render_radar_tab(ctx: dict):
             "max": 15.0,
             "source": "RSI + MACD + CMO + STC + Fisher Transform + Connors RSI",
             "metrics": [
-                ("RSI (14) Relative Strength", f"{float(latest.get('RSI', 50.0)):.1f} (Sweet Spot: 62-76)", "🟢 Bullish Power Band (+6)" if rsi_sweetspot_bull else ("🔴 Bearish Breakdown (+6)" if rsi_sweetspot_bear else ("🟡 Constructive (+3)" if float(latest.get('RSI', 50.0)) >= 55.0 else "🔴 Neutral/Weak"))),
-                ("Chande Momentum (CMO-14)", f"CMO: {float(latest.get('CMO_14', 0.0)):+.1f}", f"{'🟢 Strong Bull Momentum (+2.5)' if float(latest.get('CMO_14', 0.0)) >= 25.0 else ('🔴 Strong Bear Momentum (+2.5)' if float(latest.get('CMO_14', 0.0)) <= -25.0 else '🟡 Neutral Momentum')}"),
-                ("Schaff Trend Cycle & Fisher", f"STC {float(latest.get('STC', 50.0)):.1f} | Fisher {float(latest.get('Fisher_Transform', 0.0)):+.2f}", f"{'🟢 Bullish Cycle (+2)' if float(latest.get('STC', 50.0)) >= 75.0 else ('🔴 Bearish Cycle (+2)' if float(latest.get('STC', 50.0)) <= 25.0 else '🟡 Balanced Cycle')}"),
-                ("Connors RSI-3 Pullback Timing", f"CRSI-3: {float(latest.get('Connors_RSI', 50.0)):.1f}", f"{'🟢 Oversold Dip Buy (+2)' if float(latest.get('Connors_RSI', 50.0)) <= 20.0 else ('🔴 Overbought Rally Sell' if float(latest.get('Connors_RSI', 50.0)) >= 80.0 else '🟡 Neutral Pullback')}"),
-                ("MACD Histogram Trend", f"{float(latest.get('MACD_Hist', 0.0)):+.2f} (vs Prev: {float(prev.get('MACD_Hist', 0.0)):+.2f})", "🟢 Accelerating Bull (+5)" if macd_expanding_bull else ("🔴 Accelerating Bear (+5)" if macd_expanding_bear else "🟡 Decelerating (0)"))
+                ("RSI (14) Relative Strength", f"{rsi_val:.1f} (Sweet Spot: 62-76)", v5_rsi_badge),
+                ("Chande Momentum (CMO-14)", f"CMO: {cmo_val:+.1f}", v5_cmo_badge),
+                ("Schaff Trend Cycle & Fisher", f"STC {stc_val:.1f} | Fisher {float(latest.get('Fisher_Transform', 0.0)):+.2f}", v5_stc_badge),
+                ("Connors RSI-3 Pullback Timing", f"CRSI-3: {crsi_val:.1f}", v5_crsi_badge),
+                ("MACD Histogram Trend", f"{float(latest.get('MACD_Hist', 0.0)):+.2f} (vs Prev: {float(prev.get('MACD_Hist', 0.0)):+.2f})", v5_macd_badge)
             ],
             "behavior": v5_beh
         },
@@ -261,10 +374,10 @@ def render_radar_tab(ctx: dict):
             "max": 12.0,
             "source": "Weekly Expiry Mandate + Black-Scholes Greeks + Dynamic Half-Kelly",
             "metrics": [
-                ("Dynamic Active Contract", f"{scrip_symbol} {atm_strike} {recommended_contract_type} ({expiry_date_str})", f"🟢 {dte} DTE Mandate Active"),
-                ("Dynamic Half-Kelly Sizing", f"{half_kelly_pct:.1f}% ({kelly_recommended_lots} Lot{'s' if kelly_recommended_lots > 1 else ''} | {lot_size * kelly_recommended_lots} Qty | Risk: ₹{v6_risk_val:,.0f})", f"{'🟢 ' + kelly_status.replace('_', ' ') if 'OPTIMAL' in kelly_status else '🟡 ' + kelly_status.replace('_', ' ')}"),
-                ("Decay Avoidance Protocol", "Weekly Schedule Enforcement", f"🟢 0-DTE Decay Neutralized ({scrip_symbol})"),
-                ("Greeks Protection Shield", f"Delta: {active_delta:+.2f} ({recommended_contract_type}) | IV: {sigma*100.0:.1f}%", f"🟢 Theta Drag Insulated (+{sim_v6:.0f})")
+                ("Dynamic Active Contract", f"{scrip_symbol} {atm_strike} {recommended_contract_type} ({expiry_date_str})", v6_dte_badge),
+                ("Dynamic Half-Kelly Sizing", f"{half_kelly_pct:.1f}% ({kelly_recommended_lots} Lot{'s' if kelly_recommended_lots > 1 else ''} | {lot_size * kelly_recommended_lots} Qty | Risk: ₹{v6_risk_val:,.0f})", v6_kelly_badge),
+                ("Decay Avoidance Protocol", "Weekly Schedule Enforcement", v6_decay_badge),
+                ("Greeks Protection Shield", f"Delta: {active_delta:+.2f} ({recommended_contract_type}) | IV: {sigma*100.0:.1f}%", v6_delta_badge)
             ],
             "behavior": v6_beh
         }

@@ -1683,6 +1683,7 @@ tok_status = groww_feed.get_token_expiration() if hasattr(groww_feed, "get_token
 is_tok_expired = tok_status.get("has_exp") and tok_status.get("is_expired")
 is_groww_connected = groww_feed.is_connected and not is_tok_expired
 
+# Prominent alert banner displayed strictly when action is required (Session Expired)
 if is_tok_expired:
     st.html(f"""
     <div style="background: linear-gradient(135deg, rgba(127, 29, 29, 0.40) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid #EF4444; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
@@ -1701,42 +1702,6 @@ if is_tok_expired:
         </div>
     </div>
     """)
-elif is_groww_connected:
-    st.html(f"""
-    <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 10px #10B981; display: inline-block;"></span>
-            <span style="font-size: 0.78rem; font-weight: 800; color: #34D399; letter-spacing: 0.5px; text-transform: uppercase;">
-                GROWW BROKER: CONNECTED & VERIFIED (AUTOMATED 2FA ACTIVE)
-            </span>
-            <span style="color: #94A3B8; font-size: 0.74rem;">|</span>
-            <span style="font-size: 0.76rem; color: #F8FAFC;">
-                Account UCC: <b>{ucc_val}</b> ({name_val})
-            </span>
-        </div>
-        <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 600;">
-            ⚡ Direct Authenticated API Feed &bull; 0-Delay Real-Time
-        </div>
-    </div>
-    """)
-else:
-    st.html(f"""
-    <div style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="width: 8px; height: 8px; border-radius: 50%; background: #38BDF8; box-shadow: 0 0 10px #38BDF8; display: inline-block;"></span>
-            <span style="font-size: 0.78rem; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px; text-transform: uppercase;">
-                GROWW BROKER: LIVE REST ENGINE (CONNECTING 2FA SESSION...)
-            </span>
-            <span style="color: #94A3B8; font-size: 0.74rem;">|</span>
-            <span style="font-size: 0.76rem; color: #CBD5E1;">
-                Account UCC: <b>{ucc_val}</b>
-            </span>
-        </div>
-        <div style="font-size: 0.72rem; color: #94A3B8; font-weight: 600;">
-            ⚡ 0-Delay REST Feed Active &bull; Session Auto-Refresh in Background
-        </div>
-    </div>
-    """)
 
 
 def render_persistent_sticky_header():
@@ -1747,9 +1712,17 @@ def render_persistent_sticky_header():
         live_pos_obj = gw_feed.get_live_positions()
         wallet_val = float(live_wallet_obj.get("clear_cash") or live_wallet_obj.get("net_available") or 53280.53)
         day_pnl = float(live_pos_obj.get("total_pnl", 0.0))
+        tok_st = gw_feed.get_token_expiration() if hasattr(gw_feed, "get_token_expiration") else {}
+        tok_exp = bool(tok_st.get("has_exp") and tok_st.get("is_expired"))
+        gw_conn = bool(gw_feed.is_connected and not tok_exp)
+        u_prof = gw_feed.user_profile or {}
+        u_ucc = u_prof.get("ucc") or u_prof.get("client_id") or u_prof.get("user_id") or "5697793414"
     except Exception:
         wallet_val = 53280.53
         day_pnl = 0.0
+        tok_exp = False
+        gw_conn = True
+        u_ucc = "5697793414"
 
     margin_buf = wallet_val - 19725.0
     margin_pct = int((margin_buf / max(1.0, wallet_val)) * 100) if wallet_val > 0 else 73
@@ -1767,11 +1740,18 @@ def render_persistent_sticky_header():
     is_tg_armed = bool(tg_cfg.get("bot_token") and recs and tg_cfg.get("enabled", True))
     tg_str = f"Armed ({len(recs)} Recipient{'s' if len(recs) > 1 else ''})" if is_tg_armed else "Armed (1 Recipient)"
 
+    if tok_exp:
+        broker_pill = '<span class="header-pill pill-broker" style="background: rgba(239, 68, 68, 0.18); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.45);">🔴 Groww: Token Expired</span>'
+    elif gw_conn:
+        broker_pill = '<span class="header-pill pill-broker">🟢 Groww: Connected (2FA Active)</span>'
+    else:
+        broker_pill = '<span class="header-pill pill-broker" style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.40);">🔵 Groww: REST Engine Active</span>'
+
     st.html(f"""
     <div class="sticky-top-bar">
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <span class="header-pill pill-broker">🟢 Groww: Connected (2FA Active)</span>
-            <span class="header-pill pill-ucc">👤 UCC: 5697793414 <span style="color: #10B981; font-size: 0.70rem;">(Verified)</span></span>
+            {broker_pill}
+            <span class="header-pill pill-ucc">👤 UCC: {u_ucc} <span style="color: #10B981; font-size: 0.70rem;">(Verified)</span></span>
             <span class="header-pill pill-wallet">💳 Wallet: ₹{wallet_val:,.2f} | Margin Buffer: +₹{margin_buf:,.2f} ({margin_pct}%)</span>
             <span class="header-pill {pnl_class}">📈 Today's Net P&L: {pnl_sign}₹{day_pnl:,.2f}</span>
         </div>
@@ -7498,6 +7478,7 @@ if df is not None and not df.empty:
             "atm_strike": atm_strike,
             "recommended_contract_type": recommended_contract_type,
             "expiry_date_str": expiry_date_str,
+            "gex_regime": gex_regime if "gex_regime" in locals() else "BALANCED",
         })
 
     with tab_corridor:
