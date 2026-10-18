@@ -497,20 +497,42 @@ def render_trade_status_panel(ctx: dict):
             armed_data = seq_state["armed_setup"]
             inst_str = armed_data.get("instrument", scrip_symbol)
             trig_val = float(armed_data.get("breakout_trigger", 0.0))
-            stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; AWAITING BREAKOUT TRIGGER"
-            stand_down_badge = f"⚡ ARMED: {inst_str} @ ₹{trig_val:.2f}"
-            stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.70); box-shadow: 0 0 12px rgba(245, 158, 11, 0.30);"
-            stand_down_sub = f"Single-Trade Concentration: Awaiting live option breakout above ₹{trig_val:.2f} &bull; Keep contract on broker watchlist (DO NOT BUY YET)"
-            gate_card_bg = "linear-gradient(135deg, rgba(180, 83, 9, 0.35) 0%, rgba(69, 26, 3, 0.60) 100%)"
-            gate_card_border = "1.5px solid rgba(251, 191, 36, 0.50)"
-            gate_card_title = "BREAKOUT TRIGGER LEVEL"
-            gate_card_val = f"₹{trig_val:.2f}"
-            gate_card_sub = "⚡ Awaiting Live Cross"
-            why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Await Breakout?</b> Setup is <b>ARMED</b> for <b>{inst_str}</b>. Pre-alert delivered to Telegram. Do not buy early to avoid theta decay—await live confirmation above ₹{trig_val:.2f}."
-            dot_color = "#F59E0B"
-            cap_badge_title = "⚡ SETUP ARMED (WATCHLIST)"
-            cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.50);"
-            cap_sub_desc = "⚡ Breakout pending &bull; Do not buy yet"
+            is_gamma_armed = (armed_data.get("strategy_tag") == "GAMMA_TRAP_145")
+            if is_gamma_armed:
+                gbox = armed_data.get("gamma_box_telemetry") or {}
+                b_high = float(gbox.get("box_high", 0.0))
+                b_low = float(gbox.get("box_low", 0.0))
+                b_ratio = float(gbox.get("box_ratio", 0.0))
+                b_rvol = float(gbox.get("breakout_rvol", 0.0))
+                stand_down_status_title = "⚡ TRADE STATUS: STRATEGY 3 GAMMA TRAP ARMED &bull; AWAITING BREAKOUT"
+                stand_down_badge = f"⚡ 1:45 PM GAMMA TRAP: {inst_str} @ ₹{trig_val:.2f}"
+                stand_down_badge_style = "background: linear-gradient(135deg, rgba(124, 58, 237, 0.40) 0%, rgba(91, 33, 182, 0.50) 100%); color: #EDE9FE; border: 1.5px solid rgba(139, 92, 246, 0.70); box-shadow: 0 0 14px rgba(139, 92, 246, 0.35);"
+                stand_down_sub = f"Institutional Covering Wave: 11:30–13:45 Box Compression ({b_ratio*100:.2f}% < 0.45%) &bull; Range [₹{b_low:,.1f} - ₹{b_high:,.1f}] &bull; RVOL: {b_rvol:.1f}x &bull; 12M Time Stop Active"
+                gate_card_bg = "linear-gradient(135deg, rgba(88, 28, 135, 0.40) 0%, rgba(30, 27, 75, 0.60) 100%)"
+                gate_card_border = "1.5px solid rgba(167, 139, 250, 0.60)"
+                gate_card_title = "GAMMA BREAKOUT TRIGGER"
+                gate_card_val = f"₹{trig_val:.2f}"
+                gate_card_sub = "⚡ 12M Time-Stop Active on Fill"
+                why_stand_down_html = f"<b style='color: #FFFFFF;'>Strategy 3 Gamma Trap Armed:</b> Spot coiled tightly between 11:30 AM and 1:45 PM in a {b_ratio*100:.2f}% compression box [₹{b_low:,.1f} - ₹{b_high:,.1f}]. ATM option breakout trigger armed at <b>₹{trig_val:.2f}</b>. <i>Once filled: Position must deliver +10 pts gain within 12 minutes, or tactical scratch exit will be taken immediately to prevent 0DTE theta burn.</i>"
+                dot_color = "#A855F7"
+                cap_badge_title = "⚡ GAMMA TRAP ARMED"
+                cap_badge_style = "background: linear-gradient(135deg, rgba(124, 58, 237, 0.30) 0%, rgba(91, 33, 182, 0.40) 100%); color: #EDE9FE; border: 1.5px solid rgba(139, 92, 246, 0.60);"
+                cap_sub_desc = "⚡ 12M Time-Stop Protected &bull; Awaiting trigger"
+            else:
+                stand_down_status_title = "🟡 TRADE STATUS: SETUP ARMED &bull; AWAITING BREAKOUT TRIGGER"
+                stand_down_badge = f"⚡ ARMED: {inst_str} @ ₹{trig_val:.2f}"
+                stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.70); box-shadow: 0 0 12px rgba(245, 158, 11, 0.30);"
+                stand_down_sub = f"Single-Trade Concentration: Awaiting live option breakout above ₹{trig_val:.2f} &bull; Keep contract on broker watchlist (DO NOT BUY YET)"
+                gate_card_bg = "linear-gradient(135deg, rgba(180, 83, 9, 0.35) 0%, rgba(69, 26, 3, 0.60) 100%)"
+                gate_card_border = "1.5px solid rgba(251, 191, 36, 0.50)"
+                gate_card_title = "BREAKOUT TRIGGER LEVEL"
+                gate_card_val = f"₹{trig_val:.2f}"
+                gate_card_sub = "⚡ Awaiting Live Cross"
+                why_stand_down_html = f"<b style='color: #FFFFFF;'>Why Await Breakout?</b> Setup is <b>ARMED</b> for <b>{inst_str}</b>. Pre-alert delivered to Telegram. Do not buy early to avoid theta decay—await live confirmation above ₹{trig_val:.2f}."
+                dot_color = "#F59E0B"
+                cap_badge_title = "⚡ SETUP ARMED (WATCHLIST)"
+                cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(180, 83, 9, 0.30) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.50);"
+                cap_sub_desc = "⚡ Breakout pending &bull; Do not buy yet"
         else:
             stand_down_status_title = "🛑 TRADE STATUS: NON-TRADABLE DAY &bull; STAND DOWN"
             stand_down_badge = "STAND DOWN / CAPITAL PRESERVATION ACTIVE"
@@ -701,43 +723,132 @@ def render_cockpit_tab(ctx: dict):
         sl_p = float(active_trade.get("sl", act_entry - 8.0))
         trail_sl = float(active_trade.get("trailing_sl", sl_p))
 
-        it_c1, it_c2, it_c3 = st.columns([1.2, 1.2, 1.6])
-        with it_c1:
-            if st_button_stretch("🎯 Mark Target Hit & Close", key=f"btn_close_target_{scrip_symbol}", help="Record target hit outcome and close trade"):
-                exit_tgt = max(target_p, active_ltp)
-                SequentialTradeEngine.close_trade(
-                    exit_price=exit_tgt,
-                    status="Target Hit",
-                    notes=f"Target reached in active monitoring (Target ₹{target_p:.2f})",
-                    starting_cash=account_cash,
-                    symbol=scrip_symbol
-                )
-                st.toast(f"🎯 Trade #{active_trade.get('trade_num', 1)} closed at Target Hit (₹{exit_tgt:.2f})!")
-                st.rerun()
-        with it_c2:
-            if st_button_stretch("🛑 Mark SL Hit & Close", key=f"btn_close_sl_{scrip_symbol}", help="Record stop-loss outcome and close trade"):
-                exit_sl = min(sl_p, active_ltp)
-                SequentialTradeEngine.close_trade(
-                    exit_price=exit_sl,
-                    status="SL Hit",
-                    notes=f"Stop loss hit in active monitoring (SL ₹{sl_p:.2f})",
-                    starting_cash=account_cash,
-                    symbol=scrip_symbol
-                )
-                st.toast(f"🛑 Trade #{active_trade.get('trade_num', 1)} closed at SL Hit (₹{exit_sl:.2f})!")
-                st.rerun()
-        with it_c3:
-            if st_button_stretch("🔄 Sync with Groww Positions", key=f"btn_sync_groww_pos_{scrip_symbol}", help="Reconcile with authentic Groww open positions"):
-                sync_res = SequentialTradeEngine.sync_with_groww_positions(groww_feed=groww_feed, symbol=scrip_symbol, starting_cash=account_cash)
-                if sync_res.get("success") or sync_res.get("status") == "SUCCESS":
-                    st.toast("✅ Reconciled with live Groww position!")
-                elif sync_res.get("status") == "CLEARED_PHANTOM":
-                    st.toast(f"✅ {sync_res.get('message', 'Cleared phantom trade — no active position on Groww!')}")
-                elif sync_res.get("status") == "NO_POSITION":
-                    st.toast("ℹ️ No open positions found on Groww.")
-                else:
-                    st.toast(f"ℹ️ {sync_res.get('message', sync_res.get('msg', 'Groww position sync complete.'))}")
-                st.rerun()
+        is_gamma_active = (active_trade.get("strategy_tag") == "GAMMA_TRAP_145" or int(active_trade.get("time_stop_mins", 0)) > 0)
+        if is_gamma_active:
+            ts_mins = int(active_trade.get("time_stop_mins", 12))
+            min_pts = float(active_trade.get("time_stop_profit_gate", 10.0))
+            cur_gain = round(active_ltp - act_entry, 2)
+            ent_t = str(active_trade.get("actual_entry_time", ""))
+            elap_txt = "Calculating..."
+            m_diff = 0
+            try:
+                c_t = ent_t.replace(" IST", "").strip()
+                e_dt = datetime.strptime(c_t, "%I:%M:%S %p")
+                now_t = datetime.now(IST).time()
+                m_diff = (now_t.hour * 60 + now_t.minute) - (e_dt.hour * 60 + e_dt.minute)
+                elap_txt = f"{m_diff} / {ts_mins} min"
+            except Exception:
+                pass
+
+            timer_color = "#34D399" if cur_gain >= min_pts else ("#F87171" if m_diff >= ts_mins else "#FBBF24")
+            st.html(f"""
+            <div style="background: linear-gradient(135deg, rgba(88, 28, 135, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid #8B5CF6; border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 0 16px rgba(139, 92, 246, 0.25);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.3rem;">⚡</span>
+                    <div>
+                        <div style="font-size: 0.86rem; font-weight: 900; color: #EDE9FE; letter-spacing: 0.3px;">
+                            STRATEGY 3: 1:45 PM GAMMA TRAP &bull; 12-MINUTE TIME STOP ENGAGED
+                        </div>
+                        <div style="font-size: 0.74rem; color: #DDD6FE; margin-top: 2px;">
+                            Rule: Position must clear ≥ +{min_pts:.1f} pts within {ts_mins} min to stay open. Current: <b style="color: {'#34D399' if cur_gain>=min_pts else '#FCA5A5'};">{cur_gain:+.2f} pts</b> | Elapsed: <b style="color: {timer_color};">{elap_txt}</b>. Scratches are exempt from One-and-Done daily lockout.
+                        </div>
+                    </div>
+                </div>
+                <span style="background: rgba(139, 92, 246, 0.35); color: #F5F3FF; border: 1px solid #A78BFA; padding: 4px 12px; border-radius: 6px; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.5px;">
+                    ⏱️ 12M TIME-STOP
+                </span>
+            </div>
+            """)
+
+            it_c1, it_c2, it_c3, it_c4 = st.columns([1.1, 1.1, 1.3, 1.3])
+            with it_c1:
+                if st_button_stretch("🎯 Target Hit", key=f"btn_close_target_{scrip_symbol}", help="Record target hit outcome and close trade"):
+                    exit_tgt = max(target_p, active_ltp)
+                    SequentialTradeEngine.close_trade(
+                        exit_price=exit_tgt,
+                        status="Target Hit",
+                        notes=f"Target reached in active monitoring (Target ₹{target_p:.2f})",
+                        starting_cash=account_cash,
+                        symbol=scrip_symbol
+                    )
+                    st.toast(f"🎯 Trade #{active_trade.get('trade_num', 1)} closed at Target Hit (₹{exit_tgt:.2f})!")
+                    st.rerun()
+            with it_c2:
+                if st_button_stretch("🛑 Stop Loss", key=f"btn_close_sl_{scrip_symbol}", help="Record stop-loss outcome and close trade"):
+                    exit_sl = min(sl_p, active_ltp)
+                    SequentialTradeEngine.close_trade(
+                        exit_price=exit_sl,
+                        status="SL Hit",
+                        notes=f"Stop loss hit in active monitoring (SL ₹{sl_p:.2f})",
+                        starting_cash=account_cash,
+                        symbol=scrip_symbol
+                    )
+                    st.toast(f"🛑 Trade #{active_trade.get('trade_num', 1)} closed at SL Hit (₹{exit_sl:.2f})!")
+                    st.rerun()
+            with it_c3:
+                if st_button_stretch("⏱️ Scratch (Time Stop)", key=f"btn_scratch_ts_{scrip_symbol}", help="Exit tactical scratch to prevent 0DTE theta burn (exempt from daily lockout)"):
+                    cur_exit = active_ltp
+                    gain_pts = round(cur_exit - act_entry, 2)
+                    SequentialTradeEngine.close_trade(
+                        exit_price=cur_exit,
+                        status=f"12m Gamma Time-Stop ({'+' if gain_pts >= 0 else ''}{gain_pts} pts)",
+                        notes=f"Manual Strategy 3 12-Min Time-Stop scratch at ₹{cur_exit:.2f} ({gain_pts:+.2f} pts). Daily lockout bypassed.",
+                        starting_cash=account_cash,
+                        symbol=scrip_symbol
+                    )
+                    st.toast(f"⏱️ Strategy 3 trade scratched at ₹{cur_exit:.2f} ({gain_pts:+.2f} pts)!")
+                    st.rerun()
+            with it_c4:
+                if st_button_stretch("🔄 Sync Groww", key=f"btn_sync_groww_pos_{scrip_symbol}", help="Reconcile with authentic Groww open positions"):
+                    sync_res = SequentialTradeEngine.sync_with_groww_positions(groww_feed=groww_feed, symbol=scrip_symbol, starting_cash=account_cash)
+                    if sync_res.get("success") or sync_res.get("status") == "SUCCESS":
+                        st.toast("✅ Reconciled with live Groww position!")
+                    elif sync_res.get("status") == "CLEARED_PHANTOM":
+                        st.toast(f"✅ {sync_res.get('message', 'Cleared phantom trade — no active position on Groww!')}")
+                    elif sync_res.get("status") == "NO_POSITION":
+                        st.toast("ℹ️ No open positions found on Groww.")
+                    else:
+                        st.toast(f"ℹ️ {sync_res.get('message', sync_res.get('msg', 'Groww position sync complete.'))}")
+                    st.rerun()
+
+        else:
+            it_c1, it_c2, it_c3 = st.columns([1.2, 1.2, 1.6])
+            with it_c1:
+                if st_button_stretch("🎯 Mark Target Hit & Close", key=f"btn_close_target_{scrip_symbol}", help="Record target hit outcome and close trade"):
+                    exit_tgt = max(target_p, active_ltp)
+                    SequentialTradeEngine.close_trade(
+                        exit_price=exit_tgt,
+                        status="Target Hit",
+                        notes=f"Target reached in active monitoring (Target ₹{target_p:.2f})",
+                        starting_cash=account_cash,
+                        symbol=scrip_symbol
+                    )
+                    st.toast(f"🎯 Trade #{active_trade.get('trade_num', 1)} closed at Target Hit (₹{exit_tgt:.2f})!")
+                    st.rerun()
+            with it_c2:
+                if st_button_stretch("🛑 Mark SL Hit & Close", key=f"btn_close_sl_{scrip_symbol}", help="Record stop-loss outcome and close trade"):
+                    exit_sl = min(sl_p, active_ltp)
+                    SequentialTradeEngine.close_trade(
+                        exit_price=exit_sl,
+                        status="SL Hit",
+                        notes=f"Stop loss hit in active monitoring (SL ₹{sl_p:.2f})",
+                        starting_cash=account_cash,
+                        symbol=scrip_symbol
+                    )
+                    st.toast(f"🛑 Trade #{active_trade.get('trade_num', 1)} closed at SL Hit (₹{exit_sl:.2f})!")
+                    st.rerun()
+            with it_c3:
+                if st_button_stretch("🔄 Sync with Groww Positions", key=f"btn_sync_groww_pos_{scrip_symbol}", help="Reconcile with authentic Groww open positions"):
+                    sync_res = SequentialTradeEngine.sync_with_groww_positions(groww_feed=groww_feed, symbol=scrip_symbol, starting_cash=account_cash)
+                    if sync_res.get("success") or sync_res.get("status") == "SUCCESS":
+                        st.toast("✅ Reconciled with live Groww position!")
+                    elif sync_res.get("status") == "CLEARED_PHANTOM":
+                        st.toast(f"✅ {sync_res.get('message', 'Cleared phantom trade — no active position on Groww!')}")
+                    elif sync_res.get("status") == "NO_POSITION":
+                        st.toast("ℹ️ No open positions found on Groww.")
+                    else:
+                        st.toast(f"ℹ️ {sync_res.get('message', sync_res.get('msg', 'Groww position sync complete.'))}")
+                    st.rerun()
 
     elif current_seq_state == SequentialTradeEngine.STATE_ENTRY_PENDING and active_trade:
         planned_p = float(active_trade.get("planned_entry", 30.0))

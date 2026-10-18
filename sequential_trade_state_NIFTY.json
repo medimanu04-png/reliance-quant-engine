@@ -15,8 +15,8 @@
     "exit_time": "09:31:28 AM IST",
     "pnl": "\u20b9-9,880.00 (-38.00 pts)"
   },
-  "today_trade_count": 1,
-  "updated_at": "2026-10-16 09:36:08 AM IST",
+  "today_trade_count": 0,
+  "updated_at": "2026-10-18 10:54:37 PM IST",
   "archived_last_closed_trade": {
     "trade_num": 7,
     "instrument": "NIFTY 22900 CE (19-OCT-2026)",
@@ -54,5 +54,16 @@
     },
     "reason": "Institutional momentum shifted to BULLISH (CALL / CE) (92.9% confluence). Stale setup superseded.",
     "cancelled_at": "09:16:17 AM IST"
-  }
+  },
+  "closed_trades": [
+    {
+      "trade_num": 1,
+      "symbol": "NIFTY_TEST_STRAT3",
+      "entry_date": "2026-10-18",
+      "points_captured": -15.0,
+      "net_pnl": -3900.0,
+      "pnl": "-\u20b93,900.00",
+      "status": "SL Hit"
+    }
+  ]
 }

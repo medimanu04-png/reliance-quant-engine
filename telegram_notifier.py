@@ -1444,3 +1444,87 @@ class TelegramNotifier:
 ────────────────────────
 ⚠️ <i>Sideways consolidation detected. Market exit advised to avoid theta bleed.</i>"""
 
+    @classmethod
+    def format_gamma_trap_entry_alert(
+        cls,
+        contract: str,
+        direction: str,
+        entry_price: float,
+        target_pts: float,
+        sl_pts: float,
+        spot: float,
+        box_high: float,
+        box_low: float,
+        box_ratio_pct: float,
+        rvol: float,
+        num_lots: int = 2,
+        lot_size: int = 65,
+        symbol: str = "NIFTY",
+        **kwargs
+    ) -> str:
+        """Formats an institutional Strategy 3 (1:45 PM Gamma Trap Breakout) entry alert for Telegram."""
+        spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        est_target_premium = round(entry_price + target_pts, 2)
+        est_sl_premium = round(max(0.05, entry_price - sl_pts), 2)
+        max_risk = round(sl_pts * total_qty)
+        max_reward = round(target_pts * total_qty)
+        is_ce = "CE" in contract.upper() or "CALL" in direction.upper()
+        dir_icon = "🟢" if is_ce else "🔴"
+
+        return f"""<b>⚡ 1:45 PM GAMMA TRAP BREAKOUT • {symbol}</b>
+────────────────────────
+🎯 <b>Strategy:</b> Institutional Covering Wave (Strategy 3)
+{dir_icon} <b>Setup:</b> <b>{direction}</b>
+📌 <b>Contract:</b> <code>{contract}</code>
+⏱️ <b>Time:</b> {now_str}
+
+📦 <b>Theta Box:</b> 11:30–1:45 PM Range ₹{box_low:.1f} – ₹{box_high:.1f}
+📐 <b>Compression:</b> <b>{box_ratio_pct:.3f}%</b> (Strictly &lt; 0.45% Threshold)
+🔊 <b>Breakout RVOL:</b> <b>{rvol:.2f}x</b> (&gt; 1.8x Institutional Vol)
+
+💵 <b>Suggested Entry:</b> ₹{entry_price:.2f}
+🎯 <b>Target (+{target_pts:.1f} pts):</b> ₹{est_target_premium:.2f} (+₹{max_reward:,.0f})
+🛑 <b>Stop Loss (-{sl_pts:.1f} pts):</b> ₹{est_sl_premium:.2f} (-₹{max_risk:,.0f})
+⏱️ <b>STRICT 12-MIN TIME STOP:</b> Exit at market if not &ge; +10 pts within 12m!
+
+📦 <b>Order Sizing:</b> {num_lots} Lots ({total_qty:,} Qty)
+📍 <b>Spot Index:</b> ₹{spot:,.2f}
+────────────────────────
+🚀 <i>Theta sellers trapped! Algorithmic short covering expected to fuel impulse wave.</i>"""
+
+    @classmethod
+    def format_gamma_trap_timestop_alert(
+        cls,
+        contract: str,
+        entry_price: float,
+        exit_price: float,
+        elapsed_minutes: int,
+        unrealized_pnl: float = 0.0,
+        spot: float = 0.0,
+        symbol: str = "NIFTY",
+        num_lots: int = 2,
+        lot_size: int = 65,
+        **kwargs
+    ) -> str:
+        """Formats a Strategy 3 12-Minute Time Stop Exit alert for Telegram."""
+        spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
+        now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
+        total_qty = num_lots * lot_size
+        net_pts = round(exit_price - entry_price, 2)
+        pnl_rs = round(net_pts * total_qty)
+
+        return f"""<b>⏱️ 12-MIN GAMMA TIME-STOP TRIGGERED • {symbol}</b>
+────────────────────────
+📌 <b>Contract:</b> <code>{contract}</code>
+⏱️ <b>Duration:</b> <b>{elapsed_minutes} Minutes Elapsed</b>
+🚪 <b>Exit Rule:</b> Gain &lt; +10.0 pts within 12m gate
+
+💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  🚪 <b>Exit:</b> ₹{exit_price:.2f} ({'+' if net_pts >= 0 else ''}{net_pts:.2f} pts)
+💰 <b>Net PnL:</b> {'+' if pnl_rs >= 0 else ''}₹{pnl_rs:,.2f}
+📦 <b>Closed Sizing:</b> {num_lots} Lots ({total_qty:,} Qty)
+📍 <b>Spot Index:</b> ₹{spot:,.2f} • {now_str}
+────────────────────────
+🛡️ <i>Tactical market scratch executed. Capital preserved against late-day 0DTE theta cliff.</i>"""
+

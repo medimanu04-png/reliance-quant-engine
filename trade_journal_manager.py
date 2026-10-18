@@ -1744,7 +1744,11 @@ class SequentialTradeEngine:
         lot_size: int,
         spot: float,
         expiry: str,
-        valid_minutes: int = 25
+        valid_minutes: int = 25,
+        strategy_tag: Optional[str] = None,
+        time_stop_mins: Optional[int] = None,
+        time_stop_profit_gate: Optional[float] = None,
+        gamma_box_telemetry: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Locks the engine to concentrate solely on this specific contract until
@@ -1772,7 +1776,11 @@ class SequentialTradeEngine:
             "expiry": expiry,
             "armed_at": now_dt.strftime("%I:%M:%S %p IST"),
             "armed_timestamp": now_dt.timestamp(),
-            "valid_until_timestamp": now_dt.timestamp() + (valid_minutes * 60)
+            "valid_until_timestamp": now_dt.timestamp() + (valid_minutes * 60),
+            "strategy_tag": strategy_tag or "STANDARD_CONFLUENCE",
+            "time_stop_mins": int(time_stop_mins or 0),
+            "time_stop_profit_gate": float(time_stop_profit_gate or 0.0),
+            "gamma_box_telemetry": gamma_box_telemetry or {}
         }
         state["current_state"] = cls.STATE_SETUP_ARMED
         state["armed_setup"] = armed_data
@@ -1834,7 +1842,17 @@ class SequentialTradeEngine:
             t for t in journal
             if t.get("date") == today_str
             and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
-            and (t.get("status") in ["FAIL", "SL Hit", "Hard Catastrophic SL Hit"] or float(t.get("realised_pnl", 0.0)) < 0)
+            and (
+                t.get("status") in ["FAIL", "SL Hit", "Hard Catastrophic SL Hit"]
+                or (
+                    float(t.get("realised_pnl", 0.0)) < 0
+                    and "12m Gamma Time-Stop" not in str(t.get("status", ""))
+                )
+                or (
+                    "12m Gamma Time-Stop" in str(t.get("status", ""))
+                    and float(t.get("points_captured", 0.0)) <= -10.0
+                )
+            )
         ]
         if today_losses:
             loss_t = today_losses[-1]
@@ -1902,7 +1920,11 @@ class SequentialTradeEngine:
         confluence: float,
         qty: int = 0,
         num_lots: int = 1,
-        symbol: Optional[str] = None
+        symbol: Optional[str] = None,
+        strategy_tag: Optional[str] = None,
+        time_stop_mins: Optional[int] = None,
+        time_stop_profit_gate: Optional[float] = None,
+        gamma_box_telemetry: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Immediately transitions engine to IN-TRADE (ACTIVE MONITORING).
@@ -1977,7 +1999,11 @@ class SequentialTradeEngine:
             "trailing_sl": sl_p,
             "status": "Open (Re-Entry)" if is_reentry else "Open",
             "proposed_at": now_time_str,
-            "symbol": active_sym
+            "symbol": active_sym,
+            "strategy_tag": strategy_tag or "STANDARD_CONFLUENCE",
+            "time_stop_mins": int(time_stop_mins or 0),
+            "time_stop_profit_gate": float(time_stop_profit_gate or 0.0),
+            "gamma_box_telemetry": gamma_box_telemetry or {}
         }
 
         state["current_state"] = cls.STATE_IN_TRADE
@@ -2427,6 +2453,35 @@ class SequentialTradeEngine:
                 starting_cash=starting_cash,
                 symbol=active_sym
             )
+
+        # Strategy 3: 12-Minute Gamma Trap Time-Stop Enforcement
+        is_gamma_trap = active.get("strategy_tag") == "GAMMA_TRAP_145" or int(active.get("time_stop_mins", 0)) > 0
+        if is_gamma_trap:
+            time_stop_limit = int(active.get("time_stop_mins", 12))
+            min_profit_gate = float(active.get("time_stop_profit_gate", 10.0))
+            entry_time_str = str(active.get("actual_entry_time", ""))
+            elapsed_m = None
+            if entry_time_str:
+                try:
+                    clean_t = entry_time_str.replace(" IST", "").strip()
+                    ent_dt = datetime.strptime(clean_t, "%I:%M:%S %p")
+                    now_t = now_ist.time()
+                    elapsed_m = (now_t.hour * 60 + now_t.minute) - (ent_dt.hour * 60 + ent_dt.minute)
+                except Exception:
+                    pass
+
+            if elapsed_m is not None and elapsed_m >= time_stop_limit and profit_pts < min_profit_gate:
+                exit_pts = round(current_ltp - actual_entry, 2)
+                exit_pnl = round(exit_pts * qty, 2)
+                status_desc = f"12m Gamma Time-Stop ({'+' if exit_pts >= 0 else ''}{exit_pts} pts)"
+                return cls.close_trade(
+                    exit_price=current_ltp,
+                    status=status_desc,
+                    exit_time=now_ist.strftime("%I:%M:%S %p IST"),
+                    notes=f"Strategy 3 (1:45 PM Gamma Trap) 12-Min Time-Stop triggered. Position held {elapsed_m}m with gain of {exit_pts:+.2f} pts (< +{min_profit_gate:.1f} pts gate). Scratched at market ₹{current_ltp:.2f} to avert 0DTE theta cliff.",
+                    starting_cash=starting_cash,
+                    symbol=active_sym
+                )
 
         # Scenario 1: Tranche 1 is still pending
         if t1_status == "PENDING":

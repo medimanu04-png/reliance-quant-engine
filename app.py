@@ -4139,6 +4139,13 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         else:
             dist_to_tgt = round(act_target - active_track_ltp, 2)
             dist_to_sl = round(active_track_ltp - effective_sl, 2)
+            is_act_gamma = (active_trade_obj.get("strategy_tag") == "GAMMA_TRAP_145" or int(active_trade_obj.get("time_stop_mins", 0)) > 0)
+            gamma_tag_badge = """
+                        <span style="background: rgba(139, 92, 246, 0.35); color: #EDE9FE; font-size: 0.76rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1px solid #A78BFA;">
+                            ⚡ 1:45 PM GAMMA TRAP
+                        </span>
+            """ if is_act_gamma else ""
+            gamma_sub_desc = f"⚡ <b>Strategy 3 Active</b>: Position must achieve ≥ +{float(active_trade_obj.get('time_stop_profit_gate', 10.0)):.1f} pts gain within {int(active_trade_obj.get('time_stop_mins', 12))} min of entry, or tactical scratch will be executed to avert 0DTE theta cliff." if is_act_gamma else f"Trade #{act_trade_num} is actively running! Tracking every 1-second tick to conclusion (+{plan_target_pts:.1f} pts Target or -{plan_sl_pts:.1f} pts Stop Loss). Will not revert to armed."
             st.html(f"""
             <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.55) 0%, rgba(15, 23, 42, 0.95) 100%); border: 2.5px solid #10B981 !important; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 0 25px rgba(16, 185, 129, 0.25);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -4149,6 +4156,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                         </span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
+                        {gamma_tag_badge}
                         <span style="background: rgba(16, 185, 129, 0.25); color: #6EE7B7; font-size: 0.78rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; border: 1px solid #10B981;">
                             POSITION LOCKED IN
                         </span>
@@ -4158,7 +4166,7 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
                     </div>
                 </div>
                 <div style="font-size: 0.84rem; color: #6EE7B7; font-weight: 600; margin-bottom: 12px;">
-                    Trade #{act_trade_num} is actively running! Tracking every 1-second tick to conclusion (+{plan_target_pts:.1f} pts Target or -{plan_sl_pts:.1f} pts Stop Loss). Will not revert to armed.
+                    {gamma_sub_desc}
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: rgba(0, 0, 0, 0.50); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 16px;">
                     <div>

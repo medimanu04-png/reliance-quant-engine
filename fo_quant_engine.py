@@ -4808,6 +4808,167 @@ class MultiIndicatorMath:
             
         return ret_pct, regime, multiplier
 
+    @staticmethod
+    def calculate_gamma_trap_compression(
+        highs: List[float],
+        lows: List[float],
+        closes: List[float],
+        volumes: List[float],
+        spot: float,
+        current_time: time,
+        dates: Optional[List[Any]] = None,
+        times: Optional[List[Any]] = None,
+        datetimes: Optional[List[Any]] = None,
+        box_start_time: time = time(11, 30),
+        box_end_time: time = time(13, 45),
+        window_start_time: time = time(13, 45),
+        window_end_time: time = time(14, 55),
+        max_box_ratio: float = 0.0045,
+        min_rvol: float = 1.8,
+        symbol: str = "NIFTY"
+    ) -> Dict[str, Any]:
+        """
+        Strategy 3: The 1:45 PM Gamma Trap / Day-High Breakout (Institutional Covering Wave).
+        Identifies tight multi-hour afternoon consolidation (11:30 AM - 1:45 PM < 0.45% of spot),
+        where intraday theta sellers (straddles/strangles) have built heavy concentrated exposure.
+        A breakout beyond the box accompanied by volume (>= 1.8x 20-bar avg) triggers short covering.
+        Mandates a strict 12-minute time stop (+10 pts profit gate).
+        """
+        default_res = {
+            "is_in_gamma_window": (window_start_time <= current_time <= window_end_time),
+            "is_building_box": (box_start_time <= current_time < box_end_time),
+            "is_compressed": False,
+            "box_high": 0.0,
+            "box_low": 0.0,
+            "box_range": 0.0,
+            "box_ratio": 0.0,
+            "box_ratio_pct": 0.0,
+            "breakout_ce": False,
+            "breakout_pe": False,
+            "rvol": 1.0,
+            "vol_confirmed": False,
+            "is_gamma_trap_setup": False,
+            "direction": "NONE",
+            "strategy_name": "1:45 PM GAMMA TRAP / INSTITUTIONAL COVERING WAVE",
+            "target_pts": 40.0 if "SENSEX" not in str(symbol).upper() else 100.0,
+            "sl_pts": 15.0 if "SENSEX" not in str(symbol).upper() else 35.0,
+            "time_stop_mins": 12,
+            "time_stop_profit_gate": 10.0,
+            "bars_in_box": 0,
+            "status": "IDLE"
+        }
+
+        if highs is None or lows is None or closes is None or len(highs) == 0 or len(lows) == 0 or len(closes) < 10 or spot <= 0:
+            return default_res
+
+        # 1. Identify today's session indices
+        n_bars = len(closes)
+        session_indices = list(range(n_bars))
+        if dates and len(dates) == n_bars:
+            curr_date = dates[-1]
+            session_indices = [i for i, d in enumerate(dates) if d == curr_date]
+        elif datetimes and len(datetimes) == n_bars:
+            last_dt = datetimes[-1]
+            curr_d = last_dt.date() if hasattr(last_dt, 'date') else None
+            if curr_d:
+                session_indices = [i for i, dt in enumerate(datetimes) if getattr(dt, 'date', lambda: None)() == curr_d]
+
+        if not session_indices:
+            session_indices = list(range(max(0, n_bars - 75), n_bars))
+
+        # 2. Extract indices within the 11:30 AM to 1:45 PM box window
+        box_indices = []
+        if times and len(times) == n_bars:
+            for idx in session_indices:
+                t = times[idx]
+                if t and box_start_time <= t <= box_end_time:
+                    box_indices.append(idx)
+        elif datetimes and len(datetimes) == n_bars:
+            for idx in session_indices:
+                dt = datetimes[idx]
+                t = dt.time() if hasattr(dt, 'time') else None
+                if t and box_start_time <= t <= box_end_time:
+                    box_indices.append(idx)
+        else:
+            # Fallback for 5m bars without time index: 9:15 open -> 11:30 is bar 27, 13:45 is bar 54
+            if len(session_indices) >= 28:
+                box_indices = session_indices[27:min(55, len(session_indices))]
+
+        default_res["bars_in_box"] = len(box_indices)
+
+        # If we are currently building the box (11:30 AM - 1:45 PM)
+        is_building = (box_start_time <= current_time < box_end_time)
+        default_res["is_building_box"] = is_building
+
+        if len(box_indices) < 5:
+            default_res["status"] = "AWAITING_BOX_FORMATION" if current_time < box_start_time else "INSUFFICIENT_BOX_DATA"
+            return default_res
+
+        box_high = float(round(max(highs[i] for i in box_indices), 2))
+        box_low = float(round(min(lows[i] for i in box_indices), 2))
+        box_range = float(round(box_high - box_low, 2))
+        box_ratio = float(round(box_range / spot, 5)) if spot > 0 else 1.0
+        is_compressed = bool(box_ratio <= max_box_ratio)
+
+        default_res["box_high"] = box_high
+        default_res["box_low"] = box_low
+        default_res["box_range"] = box_range
+        default_res["box_ratio"] = box_ratio
+        default_res["box_ratio_pct"] = float(round(box_ratio * 100.0, 3))
+        default_res["is_compressed"] = is_compressed
+
+        if is_building:
+            default_res["status"] = f"BUILDING_GAMMA_BOX: Range ₹{box_range:.1f} ({box_ratio*100:.2f}% vs <=0.45% cap)"
+            return default_res
+
+        is_in_window = bool(window_start_time <= current_time <= window_end_time)
+        default_res["is_in_gamma_window"] = is_in_window
+
+        if not is_in_window:
+            default_res["status"] = "OUTSIDE_145_GAMMA_WINDOW"
+            return default_res
+
+        if not is_compressed:
+            default_res["status"] = f"STAND_DOWN_UNCOMPRESSED_BOX: Range ₹{box_range:.1f} ({box_ratio*100:.2f}% > 0.45% cap)"
+            return default_res
+
+        # 3. Check Breakout Beyond Box High or Low
+        last_close = float(closes[-1])
+        breakout_ce = bool((spot > box_high) or (last_close > box_high))
+        breakout_pe = bool((spot < box_low) or (last_close < box_low))
+
+        # 4. Volume Confirmation (RVOL >= 1.8x 20-period avg)
+        rvol = 1.0
+        vol_confirmed = True
+        if volumes is not None and len(volumes) >= 5:
+            last_vol = float(volumes[-1])
+            lookback_vols = volumes[-21:-1] if len(volumes) >= 21 else volumes[:-1]
+            avg_vol = (float(sum(lookback_vols)) / len(lookback_vols)) if (lookback_vols is not None and len(lookback_vols) > 0) else 0.0
+            if avg_vol > 0:
+                rvol = float(round(last_vol / avg_vol, 2))
+                vol_confirmed = bool(rvol >= min_rvol)
+            else:
+                # Volume feed is unavailable or 0 (common on index spot), do not block
+                rvol = 1.0
+                vol_confirmed = True
+
+        default_res["breakout_ce"] = breakout_ce
+        default_res["breakout_pe"] = breakout_pe
+        default_res["rvol"] = rvol
+        default_res["vol_confirmed"] = vol_confirmed
+
+        if (breakout_ce or breakout_pe) and vol_confirmed:
+            direction = "CE" if breakout_ce else "PE"
+            default_res["is_gamma_trap_setup"] = True
+            default_res["direction"] = direction
+            default_res["status"] = f"A+_GAMMA_TRAP_TRIGGERED: {direction} Breakout beyond ₹{box_high if direction == 'CE' else box_low} (RVOL: {rvol}x)"
+        elif (breakout_ce or breakout_pe) and not vol_confirmed:
+            default_res["status"] = f"BREAKOUT_UNCONFIRMED_BY_VOLUME: RVOL {rvol}x < {min_rvol}x threshold"
+        else:
+            default_res["status"] = f"COILED_INSIDE_BOX: Spot ₹{spot:.1f} between ₹{box_low:.1f} - ₹{box_high:.1f}"
+
+        return default_res
+
 
 # ============================================================================
 # 2b. QUANTITATIVE CONFIGURATION (Centralized Threshold Management)
@@ -4889,6 +5050,20 @@ class QuantConfig:
     afternoon_strict_gate_time: time = None
     afternoon_hard_stop_time: time = None
     
+    # Strategy 3: 1:45 PM Gamma Trap / Institutional Covering Wave
+    gamma_trap_start_time: time = None
+    gamma_trap_end_time: time = None
+    gamma_box_start_time: time = None
+    gamma_box_end_time: time = None
+    gamma_box_max_compression_ratio: float = 0.0045  # < 0.45% of spot price
+    gamma_box_min_rvol: float = 1.8  # >= 1.8x 20-period avg volume
+    gamma_trap_time_stop_mins: int = 12
+    gamma_trap_time_stop_profit_gate: float = 10.0
+    gamma_trap_nifty_target_pts: float = 40.0
+    gamma_trap_nifty_sl_pts: float = 15.0
+    gamma_trap_sensex_target_pts: float = 100.0
+    gamma_trap_sensex_sl_pts: float = 35.0
+    
     # HTF 5-Day Trend Filter & Directional Bias Correction (Moskowitz et al. 2012)
     htf_downtrend_threshold_pct: float = -1.5
     htf_uptrend_threshold_pct: float = 1.5
@@ -4919,6 +5094,14 @@ class QuantConfig:
             self.afternoon_strict_gate_time = time(13, 0)
         if self.afternoon_hard_stop_time is None:
             self.afternoon_hard_stop_time = time(13, 45)
+        if self.gamma_trap_start_time is None:
+            self.gamma_trap_start_time = time(13, 45)
+        if self.gamma_trap_end_time is None:
+            self.gamma_trap_end_time = time(14, 55)
+        if self.gamma_box_start_time is None:
+            self.gamma_box_start_time = time(11, 30)
+        if self.gamma_box_end_time is None:
+            self.gamma_box_end_time = time(13, 45)
 
         # Auto-load empirical calibration parameters if available
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -5021,7 +5204,8 @@ class UltraHighConvictionRelianceEngine:
         is_backtest: bool = False,
         symbol: Optional[str] = None,
         sector_pct: Optional[float] = None,
-        is_gamma_exception: bool = False
+        is_gamma_exception: bool = False,
+        c3m: Optional[Dict[str, List[float]]] = None
     ) -> Dict[str, Any]:
 
         """
@@ -6686,10 +6870,41 @@ class UltraHighConvictionRelianceEngine:
         )
         final_lot_multiplier = round(bet_multiplier * midday_lot_multiplier, 2)
 
+        # Strategy 3: 1:45 PM Gamma Trap / Institutional Covering Wave Evaluation
+        gamma_trap = MultiIndicatorMath.calculate_gamma_trap_compression(
+            highs=c3m.get("high") if (c3m and c3m.get("high")) else c5m.get("high", []),
+            lows=c3m.get("low") if (c3m and c3m.get("low")) else c5m.get("low", []),
+            closes=c3m.get("close") if (c3m and c3m.get("close")) else c5m.get("close", []),
+            volumes=c3m.get("volume") if (c3m and c3m.get("volume")) else c5m.get("volume", []),
+            spot=spot,
+            current_time=current_time,
+            dates=c5m.get("date"),
+            times=c5m.get("times"),
+            datetimes=c5m.get("datetimes"),
+            box_start_time=getattr(self.config, "gamma_box_start_time", time(11, 30)),
+            box_end_time=getattr(self.config, "gamma_box_end_time", time(13, 45)),
+            window_start_time=getattr(self.config, "gamma_trap_start_time", time(13, 45)),
+            window_end_time=getattr(self.config, "gamma_trap_end_time", time(14, 55)),
+            max_box_ratio=getattr(self.config, "gamma_box_max_compression_ratio", 0.0045),
+            min_rvol=getattr(self.config, "gamma_box_min_rvol", 1.8),
+            symbol=active_sym
+        )
+
+        is_gamma_trap_active = bool(gamma_trap.get("is_gamma_trap_setup", False))
+
         # Strict Execution Gate:
         # Time-decay gate: reject new entries after 13:45 (insufficient runway before 15:05 square-off)
-        # Exception: Post-1:00 PM Expiry Gamma Blast setup allows rapid 0DTE gamma execution until 15:10 IST
-        is_afternoon_runway_exhausted = (current_time >= time(13, 45)) and not is_gamma_exception
+        # Exception: Post-1:00 PM Expiry Gamma Blast setup OR Strategy 3 1:45 PM Gamma Trap allows rapid 0DTE execution
+        is_afternoon_runway_exhausted = (current_time >= time(13, 45)) and not is_gamma_exception and not is_gamma_trap_active
+
+        if is_gamma_trap_active:
+            recommended_type = gamma_trap.get("direction", recommended_type)
+            dominant_score = max(dominant_score, 93.5)
+            total_probability = max(total_probability, 93.5)
+            active_risk.target_pts = float(gamma_trap.get("target_pts", 40.0 if active_sym == "NIFTY" else 100.0))
+            active_risk.stop_loss_pts = float(gamma_trap.get("sl_pts", 15.0 if active_sym == "NIFTY" else 35.0))
+            self.risk.target_pts = active_risk.target_pts
+            self.risk.stop_loss_pts = active_risk.stop_loss_pts
 
         # HTF Downtrend / Counter-Trend Veto (Bug 3 Fix):
         is_htf_counter_trend_trap = (
@@ -7295,6 +7510,12 @@ class UltraHighConvictionRelianceEngine:
             "planned_exit_price": tp_premium if is_tradable else None,
             "actual_exit_price": None,   # Populated post-execution
             "exit_slippage_pts": None,   # actual_exit - planned_exit
+            # Strategy 3: 1:45 PM Gamma Trap / Institutional Covering Wave Telemetry
+            "gamma_trap_telemetry": gamma_trap,
+            "is_gamma_trap_setup": is_gamma_trap_active,
+            "strategy_tag": "GAMMA_TRAP_145" if is_gamma_trap_active else "STANDARD_CONFLUENCE",
+            "time_stop_mins": int(gamma_trap.get("time_stop_mins", 12)) if is_gamma_trap_active else 0,
+            "time_stop_profit_gate": float(gamma_trap.get("time_stop_profit_gate", 10.0)) if is_gamma_trap_active else 0.0,
         }
 
         # Gap 1: Shadow Signal Logging for Empirical Calibration

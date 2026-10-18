@@ -193,7 +193,9 @@ class StandaloneBreakoutManager:
 # MULTI-ASSET CANDLE FETCHER (GROWW CHARTING API & YFINANCE FALLBACK)
 # ==============================================================================
 class MultiAssetCandleFetcher:
-    """Fetches and caches 5m/15m authentic candles directly from Groww API per symbol."""
+    """Fetches and caches 3m/5m/15m authentic candles directly from Groww API and YFinance per symbol."""
+    _cache_3m: Dict[str, pd.DataFrame] = {}
+    _last_fetch_3m: Dict[str, float] = {}
     _cache_5m: Dict[str, pd.DataFrame] = {}
     _last_fetch_5m: Dict[str, float] = {}
     _cache_15m: Dict[str, pd.DataFrame] = {}
@@ -264,6 +266,8 @@ class MultiAssetCandleFetcher:
                 "close": [],
                 "volume": [],
                 "date": [],
+                "times": [],
+                "datetimes": [],
                 "is_synthetic": True,
                 "is_delayed": True
             }
@@ -274,6 +278,59 @@ class MultiAssetCandleFetcher:
             "close": df["Close"].tolist(),
             "volume": df["Volume"].tolist(),
             "date": df.index.date.tolist() if hasattr(df.index, 'date') else [],
+            "times": [x.time() for x in df.index] if hasattr(df.index, 'time') else [],
+            "datetimes": df.index.tolist() if hasattr(df, 'index') else [],
+            "is_synthetic": is_delayed_yfinance,
+            "is_delayed": is_delayed_yfinance
+        }
+
+    @classmethod
+    def get_3m_candles(cls, spot: float, symbol: str = "NIFTY", max_age_secs: float = 60.0) -> Dict[str, Any]:
+        """Fetches authentic 3m candles (or 1m resampled to 3m) for fine-grained Strategy 3 execution."""
+        sym = (symbol or "NIFTY").upper().strip()
+        now = time.time()
+        df = None
+        is_delayed_yfinance = False
+
+        if sym in cls._cache_3m and (now - cls._last_fetch_3m.get(sym, 0.0)) < max_age_secs:
+            df = cls._cache_3m[sym]
+        else:
+            try:
+                spec_item = get_asset_spec(sym)
+                ticker_str = spec_item.yf_symbol
+                t = yf.Ticker(ticker_str)
+                df_1m = t.history(period="2d", interval="1m")
+                if df_1m is not None and not df_1m.empty and len(df_1m) >= 20:
+                    df_3m = df_1m.resample("3min").agg({
+                        "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
+                    }).dropna()
+                    if len(df_3m) >= 15:
+                        df = df_3m
+                        cls._cache_3m[sym] = df
+                        cls._last_fetch_3m[sym] = now
+                        is_delayed_yfinance = False
+            except Exception as e:
+                logger.debug(f"3m candle resample error ({sym}): {e}")
+
+            if df is None or df.empty or len(df) < 15:
+                # Fallback directly to cached 5m candles
+                if sym in cls._cache_5m:
+                    df = cls._cache_5m[sym]
+
+        if df is None or df.empty or len(df) < 15:
+            return {
+                "high": [], "low": [], "close": [], "volume": [], "date": [], "times": [], "datetimes": [],
+                "is_synthetic": True, "is_delayed": True
+            }
+
+        return {
+            "high": df["High"].tolist(),
+            "low": df["Low"].tolist(),
+            "close": df["Close"].tolist(),
+            "volume": df["Volume"].tolist(),
+            "date": df.index.date.tolist() if hasattr(df.index, 'date') else [],
+            "times": [x.time() for x in df.index] if hasattr(df.index, 'time') else [],
+            "datetimes": df.index.tolist() if hasattr(df, 'index') else [],
             "is_synthetic": is_delayed_yfinance,
             "is_delayed": is_delayed_yfinance
         }
@@ -525,9 +582,10 @@ class RelianceQuantAlertDaemon:
         low_data = telemetry["lower"]
         high_data = telemetry["upper"]
 
-        # 3. Candles & Confluence Evaluation (Multi-Timeframe 5m & 15m)
+        # 3. Candles & Confluence Evaluation (Multi-Timeframe 3m, 5m & 15m)
         candles_5m = MultiAssetCandleFetcher.get_5m_candles(spot, symbol=sym)
         candles_15m = MultiAssetCandleFetcher.get_15m_candles(spot, symbol=sym)
+        candles_3m = MultiAssetCandleFetcher.get_3m_candles(spot, symbol=sym)
         curr_time = now_dt.time()
 
         benchmark_c5m = None
@@ -548,8 +606,22 @@ class RelianceQuantAlertDaemon:
 
         q_engine = self.quant_engines.get(sym, self.quant_engine)
         confluence_eval = q_engine.evaluate_90plus_confluence(
-            curr_time, candles_5m, candles_15m, benchmark_c5m=benchmark_c5m, symbol=sym, is_gamma_exception=is_gamma_exception_tick
+            curr_time, candles_5m, candles_15m, benchmark_c5m=benchmark_c5m, symbol=sym, is_gamma_exception=is_gamma_exception_tick, c3m=candles_3m
         )
+
+        is_gamma_trap_tick = bool(confluence_eval.get("is_gamma_trap_setup", False))
+        gamma_telemetry = confluence_eval.get("gamma_trap_telemetry", {})
+        if is_gamma_trap_tick:
+            logger.info(
+                f"[{time_str}] ⚡ [STRATEGY 3: 1:45 PM GAMMA TRAP] Breakout confirmed on {sym} ({confluence_eval.get('strategy_tag')})! "
+                f"Box: ₹{gamma_telemetry.get('box_low', 0):.1f} - ₹{gamma_telemetry.get('box_high', 0):.1f} ({gamma_telemetry.get('box_ratio_pct', 0):.3f}%) | "
+                f"RVOL: {gamma_telemetry.get('rvol', 1.0):.2f}x | 12m Time-Stop Armed"
+            )
+        elif gamma_telemetry.get("is_building_box"):
+            logger.debug(
+                f"[{time_str}] 📦 [STRATEGY 3: BUILDING BOX] {sym} 11:30–1:45 Box: Range ₹{gamma_telemetry.get('box_range', 0):.1f} "
+                f"({gamma_telemetry.get('box_ratio_pct', 0):.3f}% vs <=0.45% cap)"
+            )
 
 
         prob_str = confluence_eval.get("3. CONFLUENCE SCORE", confluence_eval.get("3. PROBABILITY SCORE", ""))
@@ -1005,6 +1077,26 @@ class RelianceQuantAlertDaemon:
                 lookback=25
             )
 
+            # Strategy 3: 12-Minute Gamma Trap Time-Stop Check
+            is_active_gamma_trap = active_trade.get("strategy_tag") == "GAMMA_TRAP_145" or int(active_trade.get("time_stop_mins", 0)) > 0
+            if is_active_gamma_trap and elapsed_mins >= 12 and unrealized_pts < 10.0:
+                time_stop_key = f"tg_sent_gamma_timestop_{today_date}_{sym}_{trade_num}"
+                if tg_enabled and not TelegramNotifier.is_alert_sent(time_stop_key):
+                    ts_msg = TelegramNotifier.format_gamma_trap_timestop_alert(
+                        contract=inst_sym,
+                        entry_price=act_entry,
+                        exit_price=cur_trade_ltp,
+                        elapsed_minutes=elapsed_mins,
+                        unrealized_pnl=round(unrealized_pts * trade_qty, 2),
+                        spot=spot,
+                        symbol=sym,
+                        num_lots=trade_num_lots,
+                        lot_size=trade_lot_size
+                    )
+                    TelegramNotifier.send_message(bot_token, chat_id, ts_msg)
+                    TelegramNotifier.record_alert_sent(time_stop_key)
+                    logger.info(f"⏱️ 📲 12-MIN GAMMA TIME-STOP ALERT DISPATCHED TO TELEGRAM for {sym}")
+
             if is_stagnant or ou_exit:
                 stag_key = f"tg_sent_stag_{today_date}_{sym}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(stag_key):
@@ -1215,7 +1307,11 @@ class RelianceQuantAlertDaemon:
                             confluence=armed_confluence,
                             qty=armed_lot_size * armed_num_lots,
                             num_lots=armed_num_lots,
-                            symbol=sym
+                            symbol=sym,
+                            strategy_tag=armed_setup.get("strategy_tag", "STANDARD_CONFLUENCE"),
+                            time_stop_mins=armed_setup.get("time_stop_mins", 0),
+                            time_stop_profit_gate=armed_setup.get("time_stop_profit_gate", 0.0),
+                            gamma_box_telemetry=armed_setup.get("gamma_box_telemetry")
                         )
                     except Exception as e:
                         logger.debug(f"SequentialTradeEngine enter error: {e}")
@@ -1333,38 +1429,55 @@ class RelianceQuantAlertDaemon:
                     except Exception:
                         pass
 
-                    gamma_tag = " • ⚡ EXPIRY SPECIAL: GAMMA BLAST CALL (1/1 EXCEPTION)" if is_gamma_exception_tick else ""
-                    entry_msg = TelegramNotifier.format_entry_alert(
-                        contract=contract_label,
-                        direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
-                        entry_price=active_option_ltp,
-                        target_pts=dynamic_target_pts,
-                        sl_pts=dynamic_sl_pts,
-                        num_lots=active_risk.num_lots,
-                        lot_size=active_risk.lot_size,
-                        win_prob=win_exp,
-                        spot=spot,
-                        symbol=sym,
-                        tri_index_regime=confluence_eval.get("tri_index_alignment", {}).get("regime"),
-                        gex_regime=confluence_eval.get("gex_telemetry", {}).get("gex_regime"),
-                        metalabel_regime=confluence_eval.get("metalabeling", {}).get("metalabel_regime"),
-                        target_2_pts=confluence_eval.get("target_2_pts"),
-                        is_gamma_exception=is_gamma_exception_tick,
-                        rationale=(
-                            f"Dual ATM Breakout confirmed ({tier_str}){gamma_tag}\n"
-                            f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
-                            f"• Order Type: Stop-Loss Limit (SL-LMT) | Pegged Limit: ₹{confluence_eval.get('pegged_limit_price', active_option_ltp):.2f}\n"
-                            f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{active_risk.limit_collar_pts:.2f})\n"
-                            f"• Sizing: {active_risk.num_lots} Lots ({active_risk.num_lots * active_risk.lot_size} Qty) strictly enforced\n"
-                            f"• Wick Guard: {'Passed (>=45s)' if wick_guard_passed else 'Immature'} | 2-Tick: Confirmed ({consecutive_ticks} ticks)\n"
-                            f"• Macro & Basis: W-AVWAP ₹{confluence_eval.get('w_avwap', spot):.2f} | Futures Basis {confluence_eval.get('basis_pts', 0.0):+.2f} pts ({confluence_eval.get('basis_regime', 'BALANCED')}){groww_sr_info}\n"
-                            f"• Sizing & Risk: Half-Kelly {confluence_eval.get('half_kelly_pct', 20.0):.1f}% ({confluence_eval.get('kelly_recommended_lots', 1)} Lots) | VaR-99% ₹{confluence_eval.get('var_99_rupees', 0.0):,.0f} | Delta Eqv: {confluence_eval.get('portfolio_delta_shares', 0.0):+.1f} Sh\n"
-                            f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', sym_spec.default_strike):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
-                            f"• Trend & Efficiency: KAMA @ ₹{confluence_eval.get('kama', spot):.2f} (KER: {confluence_eval.get('kaufman_efficiency_ratio', 0.5):.2f}) | FVG: {confluence_eval.get('fvg_status', 'NEUTRAL')}\n"
-                            f"• Routing & Slicing: {confluence_eval.get('routing_mode', 'ZERO_SLIPPAGE_ROUTING')} | {confluence_eval.get('slicing_regime', 'DIRECT_PEGGED')}\n"
-                            f"• Stop Loss Protection: Set SL-LMT order Trigger ₹{max(0.05, active_option_ltp - dynamic_sl_pts):.2f} / Limit ₹{max(0.05, active_option_ltp - dynamic_sl_pts - active_risk.limit_collar_pts):.2f}. (Emergency: Exit at Market if limit breached!){spread_text}"
+                    if is_gamma_trap_tick:
+                        entry_msg = TelegramNotifier.format_gamma_trap_entry_alert(
+                            contract=contract_label,
+                            direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
+                            entry_price=active_option_ltp,
+                            target_pts=dynamic_target_pts,
+                            sl_pts=dynamic_sl_pts,
+                            spot=spot,
+                            box_high=gamma_telemetry.get("box_high", spot),
+                            box_low=gamma_telemetry.get("box_low", spot),
+                            box_ratio_pct=gamma_telemetry.get("box_ratio_pct", 0.0),
+                            rvol=gamma_telemetry.get("rvol", 1.8),
+                            num_lots=active_risk.num_lots,
+                            lot_size=active_risk.lot_size,
+                            symbol=sym
                         )
-                    )
+                    else:
+                        gamma_tag = " • ⚡ EXPIRY SPECIAL: GAMMA BLAST CALL (1/1 EXCEPTION)" if is_gamma_exception_tick else ""
+                        entry_msg = TelegramNotifier.format_entry_alert(
+                            contract=contract_label,
+                            direction=f"BULLISH (CALL / CE)" if contract_type == "CE" else "BEARISH (PUT / PE)",
+                            entry_price=active_option_ltp,
+                            target_pts=dynamic_target_pts,
+                            sl_pts=dynamic_sl_pts,
+                            num_lots=active_risk.num_lots,
+                            lot_size=active_risk.lot_size,
+                            win_prob=win_exp,
+                            spot=spot,
+                            symbol=sym,
+                            tri_index_regime=confluence_eval.get("tri_index_alignment", {}).get("regime"),
+                            gex_regime=confluence_eval.get("gex_telemetry", {}).get("gex_regime"),
+                            metalabel_regime=confluence_eval.get("metalabeling", {}).get("metalabel_regime"),
+                            target_2_pts=confluence_eval.get("target_2_pts"),
+                            is_gamma_exception=is_gamma_exception_tick,
+                            rationale=(
+                                f"Dual ATM Breakout confirmed ({tier_str}){gamma_tag}\n"
+                                f"• Confluence: {dominant_score:.1f}/100 | Win Expectancy: {win_exp}%\n"
+                                f"• Order Type: Stop-Loss Limit (SL-LMT) | Pegged Limit: ₹{confluence_eval.get('pegged_limit_price', active_option_ltp):.2f}\n"
+                                f"• Trigger: ₹{active_option_ltp:.2f} | Limit Cap: ₹{limit_cap:.2f} (Max Slippage Collar: ₹{active_risk.limit_collar_pts:.2f})\n"
+                                f"• Sizing: {active_risk.num_lots} Lots ({active_risk.num_lots * active_risk.lot_size} Qty) strictly enforced\n"
+                                f"• Wick Guard: {'Passed (>=45s)' if wick_guard_passed else 'Immature'} | 2-Tick: Confirmed ({consecutive_ticks} ticks)\n"
+                                f"• Macro & Basis: W-AVWAP ₹{confluence_eval.get('w_avwap', spot):.2f} | Futures Basis {confluence_eval.get('basis_pts', 0.0):+.2f} pts ({confluence_eval.get('basis_regime', 'BALANCED')}){groww_sr_info}\n"
+                                f"• Sizing & Risk: Half-Kelly {confluence_eval.get('half_kelly_pct', 20.0):.1f}% ({confluence_eval.get('kelly_recommended_lots', 1)} Lots) | VaR-99% ₹{confluence_eval.get('var_99_rupees', 0.0):,.0f} | Delta Eqv: {confluence_eval.get('portfolio_delta_shares', 0.0):+.1f} Sh\n"
+                                f"• Microstructure: Max Pain @ ₹{confluence_eval.get('max_pain_strike', sym_spec.default_strike):.0f} | GKYZ Vol: {confluence_eval.get('yang_zhang_vol', 18.0):.1f}%\n"
+                                f"• Trend & Efficiency: KAMA @ ₹{confluence_eval.get('kama', spot):.2f} (KER: {confluence_eval.get('kaufman_efficiency_ratio', 0.5):.2f}) | FVG: {confluence_eval.get('fvg_status', 'NEUTRAL')}\n"
+                                f"• Routing & Slicing: {confluence_eval.get('routing_mode', 'ZERO_SLIPPAGE_ROUTING')} | {confluence_eval.get('slicing_regime', 'DIRECT_PEGGED')}\n"
+                                f"• Stop Loss Protection: Set SL-LMT order Trigger ₹{max(0.05, active_option_ltp - dynamic_sl_pts):.2f} / Limit ₹{max(0.05, active_option_ltp - dynamic_sl_pts - active_risk.limit_collar_pts):.2f}. (Emergency: Exit at Market if limit breached!){spread_text}"
+                            )
+                        )
                     buttons = TelegramNotifier.get_entry_ce_buttons(f"{sym} {recommended_strike} CE", symbol=sym) if contract_type == "CE" else TelegramNotifier.get_entry_pe_buttons(f"{sym} {recommended_strike} PE", symbol=sym)
                     ok, fb = TelegramNotifier.send_message(bot_token, chat_id, entry_msg, reply_markup=buttons)
                     if ok:
@@ -1411,7 +1524,11 @@ class RelianceQuantAlertDaemon:
                             confluence=dominant_score,
                             qty=active_risk.lot_size * active_risk.num_lots,
                             num_lots=active_risk.num_lots,
-                            symbol=sym
+                            symbol=sym,
+                            strategy_tag=confluence_eval.get("strategy_tag", "STANDARD_CONFLUENCE"),
+                            time_stop_mins=confluence_eval.get("time_stop_mins", 0),
+                            time_stop_profit_gate=confluence_eval.get("time_stop_profit_gate", 0.0),
+                            gamma_box_telemetry=gamma_telemetry
                         )
                 except Exception as e:
                     logger.debug(f"SequentialTradeEngine enter error in daemon: {e}")
@@ -1456,7 +1573,11 @@ class RelianceQuantAlertDaemon:
                     lot_size=spec.lot_size,
                     spot=spot,
                     expiry=expiry_date,
-                    valid_minutes=25
+                    valid_minutes=25,
+                    strategy_tag=confluence_eval.get("strategy_tag", "STANDARD_CONFLUENCE"),
+                    time_stop_mins=confluence_eval.get("time_stop_mins", 0),
+                    time_stop_profit_gate=confluence_eval.get("time_stop_profit_gate", 0.0),
+                    gamma_box_telemetry=gamma_telemetry
                 )
 
                 seq_state_arm = SequentialTradeEngine.get_state(symbol=sym)
