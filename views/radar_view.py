@@ -179,13 +179,12 @@ def render_radar_tab(ctx: dict):
             "icon": "📈",
             "score": sim_v1,
             "max": 20.0,
-            "source": "M15 Structural + M5 Trigger + CPR + W-AVWAP + Donchian",
             "metrics": [
-                ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", f"{'🟢' if mtf_matrix['m15']['is_bullish'] else ('🔴' if mtf_matrix['m15']['is_bearish'] else '🟡')} 9/20/50 EMA Stack"),
-                ("Central Pivot Range (CPR)", f"P ₹{float(latest.get('CPR_P', spot)):.1f} | TC ₹{float(latest.get('CPR_TC', spot)):.1f} | BC ₹{float(latest.get('CPR_BC', spot)):.1f}", f"{'🟢 Narrow Breakout' if latest.get('CPR_Regime') == 'NARROW_CPR_TRENDING_BREAKOUT' else ('🛑 Wide Range Chop' if latest.get('CPR_Regime') == 'WIDE_CPR_RANGEBOUND_CHOP' else '🟡 Normal CPR')}"),
-                ("W-AVWAP & Donchian-20", f"W-AVWAP ₹{float(latest.get('W_AVWAP', spot)):.1f} | [{float(latest.get('Donchian_Low', spot)):.1f} - {float(latest.get('Donchian_High', spot)):.1f}]", f"{'🟢 Weekly Acceptance' if spot >= float(latest.get('W_AVWAP', spot)) else '🔴 Below W-AVWAP'}"),
+                ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", f"{'🟢' if mtf_matrix['m15']['is_bullish'] else ('🔴' if mtf_matrix['m15']['is_bearish'] else '🟡')} 9/20/50 Stack"),
+                ("SuperTrend (5m Pillar)", f"ST ₹{float(latest.get('SuperTrend', 0.0)):.1f}", f"{'🟢 Buy Regime (+4)' if st_bullish else '🔴 Sell Regime (0 pts)'}"),
+                ("15m Opening Range (ORB)", f"ORB ₹{orb_h:.1f} - ₹{orb_l:.1f}", f"{'🟢 Confirmed Breakout (+3)' if orb_breakout else ('🔴 Confirmed Breakdown' if orb_breakdown else '🟡 Inside Range (0 pts)')}"),
+                ("Central Pivot Range (CPR)", f"TC ₹{float(latest.get('CPR_TC', spot)):.1f} | BC ₹{float(latest.get('CPR_BC', spot)):.1f}", f"{'🟢 Pivot Breakout (+2.5)' if spot > float(latest.get('CPR_TC', spot)) else ('🔴 Below BC' if spot < float(latest.get('CPR_BC', spot)) else '🟡 Inside CPR')}"),
                 v1_macro_metric,
-                ("15m ORB & Camarilla H4/L4", f"ORB: ₹{orb_h:.1f} | H4: ₹{cam_h4:.1f}", "🟢 Breakout (+5)" if (orb_breakout or cam_breakout_bull) else ("🔴 Breakdown (+5)" if (orb_breakdown or cam_breakdown_bear) else "🟡 Value Range"))
             ],
             "behavior": v1_beh
         },
