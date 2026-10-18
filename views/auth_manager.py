@@ -450,7 +450,7 @@ def render_ultra_premium_login(blocked_route: str = None):
             # Step 1: Request OTP
             if not active_otp:
                 st.html("<p style='font-size: 0.85rem; color: #CBD5E1; margin-bottom: 12px;'>Select country code and enter your registered mobile number to receive your institutional login passcode.</p>")
-                col_cc, col_m1, col_m2 = st.columns([1.1, 2.0, 1.3])
+                col_cc, col_m1, col_m2 = st.columns([1.1, 2.0, 1.3], vertical_alignment="bottom")
                 with col_cc:
                     country_codes = [
                         "🇮🇳 +91",
@@ -477,7 +477,6 @@ def render_ultra_premium_login(blocked_route: str = None):
                         help="Your registered mobile number for quant desk access"
                     )
                 with col_m2:
-                    st.html("<div style='height: 28px;'></div>")
                     if st_button_stretch("📩 Send Security OTP", type="primary", key="btn_send_otp"):
                         st.session_state["last_entered_mobile"] = mobile_val
                         st.session_state["last_country_code"] = selected_cc
@@ -513,7 +512,7 @@ def render_ultra_premium_login(blocked_route: str = None):
                 """))
 
                 with st.form("otp_verification_form"):
-                    col_o1, col_o2 = st.columns([1.5, 1])
+                    col_o1, col_o2 = st.columns([1.5, 1], vertical_alignment="bottom")
                     with col_o1:
                         otp_input = st.text_input(
                             "🔢 Enter 6-Digit One-Time Passcode (OTP)",
@@ -523,7 +522,6 @@ def render_ultra_premium_login(blocked_route: str = None):
                             help="Enter the 6-digit passcode sent to your device"
                         )
                     with col_o2:
-                        st.html("<div style='height: 28px;'></div>")
                         verify_btn = st_form_submit_button_stretch(
                             "⚡ Verify & Unlock Quant Desk →",
                             type="primary"

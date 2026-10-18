@@ -138,43 +138,50 @@ def render_homepage(ctx: dict):
     with col_idx1:
         st.html(f"""
         <a href="./Nifty?stock=Nifty" target="_self" style="text-decoration: none; color: inherit; display: block;">
-            <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid {nifty_tile_border}; border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+            <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid {nifty_tile_border}; border-radius: 12px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 290px; height: 290px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">📈 NIFTY 50 QUANT DESK <span style="font-size: 0.85rem; color: #34D399; font-weight: 700; margin-left: 6px;">₹{ltp_nifty_hp:,.2f}</span></span>
-                        {nifty_status_pill}
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; min-height: 44px;">
+                        <div>
+                            <div style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">📈 NIFTY 50 QUANT DESK</div>
+                            <div style="font-size: 0.85rem; color: #34D399; font-weight: 700; margin-top: 2px;">₹{ltp_nifty_hp:,.2f}</div>
+                        </div>
+                        <div>
+                            {nifty_status_pill}
+                        </div>
                     </div>
-                    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 700; margin-bottom: 8px;">
+                    <div style="font-size: 0.72rem; color: #6EE7B7; font-weight: 700; margin-bottom: 6px; min-height: 18px;">
                         Mandate: 4 Lots ({spec_nifty_hp.lot_size * 4} Qty) &bull; Lot Size: {spec_nifty_hp.lot_size} &bull; Mon / Thu / Fri Active
                     </div>
-                    <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.5; margin: 0 0 10px 0; text-align: left;">
+                    <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.45; margin: 0 0 10px 0; text-align: left; min-height: 38px;">
                         Institutional Benchmark Engine. Calibrated with Multi-Index Confluence, 50-Pt Strike Corridor & Escalator.
                     </p>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 6px;">
-                    <div>
-                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                        <div style="font-size: 1.00rem; font-weight: 800; color: #10B981;">+{spec_nifty_hp.target_pts:.1f} pts</div>
+                <div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 8px;">
+                        <div>
+                            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                            <div style="font-size: 1.00rem; font-weight: 800; color: #10B981;">+{spec_nifty_hp.target_pts:.1f} pts</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                            <div style="font-size: 1.00rem; font-weight: 800; color: #EF4444;">-{spec_nifty_hp.sl_pts:.1f} pts</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">SIZING (4 LOTS)</div>
+                            <div style="font-size: 1.00rem; font-weight: 800; color: #38BDF8;">{spec_nifty_hp.lot_size * 4} Qty</div>
+                        </div>
                     </div>
-                    <div>
-                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                        <div style="font-size: 1.00rem; font-weight: 800; color: #EF4444;">-{spec_nifty_hp.sl_pts:.1f} pts</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 6px; font-size: 0.74rem; color: #10B981; font-weight: 700;">
+                        <span>Benchmark Execution Terminal</span>
+                        <span>Launch Desk →</span>
                     </div>
-                    <div>
-                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">SIZING (4 LOTS)</div>
-                        <div style="font-size: 1.00rem; font-weight: 800; color: #38BDF8;">{spec_nifty_hp.lot_size * 4} Qty</div>
-                    </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 6px; font-size: 0.74rem; color: #10B981; font-weight: 700;">
-                    <span>Benchmark Execution Terminal</span>
-                    <span>Launch Desk →</span>
                 </div>
             </div>
         </a>
         """)
-        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+        st.html("<div style='height: 8px;'></div>")
         if st_button_stretch("⚡ Open Nifty 50 Quant Desk →", key="btn_hp_launch_nifty", type="primary"):
-            p_nifty_obj = props.get("p_nifty")
+            p_nifty_obj = ctx.get("p_nifty")
             if p_nifty_obj:
                 st.switch_page(p_nifty_obj)
             else:
@@ -187,43 +194,50 @@ def render_homepage(ctx: dict):
     with col_idx2:
         st.html(f"""
         <a href="./Sensex?stock=Sensex" target="_self" style="text-decoration: none; color: inherit; display: block;">
-            <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid {sensex_tile_border}; border-radius: 12px; padding: 20px 22px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 220px; height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+            <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid {sensex_tile_border}; border-radius: 12px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 270px; height: 270px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🏛️ BSE SENSEX QUANT DESK <span style="font-size: 0.85rem; color: #C084FC; font-weight: 700; margin-left: 6px;">₹{ltp_sensex_hp:,.2f}</span></span>
-                        {sensex_status_pill}
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; min-height: 44px;">
+                        <div>
+                            <div style="font-size: 1.15rem; font-weight: 900; color: #FFFFFF; letter-spacing: 0.2px;">🏛️ BSE SENSEX QUANT DESK</div>
+                            <div style="font-size: 0.85rem; color: #C084FC; font-weight: 700; margin-top: 2px;">₹{ltp_sensex_hp:,.2f}</div>
+                        </div>
+                        <div>
+                            {sensex_status_pill}
+                        </div>
                     </div>
-                    <div style="font-size: 0.72rem; color: #D8B4FE; font-weight: 700; margin-bottom: 8px;">
+                    <div style="font-size: 0.72rem; color: #D8B4FE; font-weight: 700; margin-bottom: 6px; min-height: 18px;">
                         Mandate: 6 Lots ({spec_sensex_hp.lot_size * 6} Qty) &bull; Lot Size: {spec_sensex_hp.lot_size} &bull; Tue / Wed Active
                     </div>
-                    <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.5; margin: 0 0 10px 0; text-align: left;">
+                    <p style="font-size: 0.80rem; color: #94A3B8; line-height: 1.45; margin: 0 0 10px 0; text-align: left; min-height: 38px;">
                         Institutional Benchmark Engine. 100-Pt Strike Intervals with 2:1 Asymmetric Volatility Runner.
                     </p>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 6px;">
-                    <div>
-                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
-                        <div style="font-size: 1.00rem; font-weight: 800; color: #10B981;">+{spec_sensex_hp.target_pts:.1f} pts</div>
+                <div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px; text-align: center; margin-bottom: 8px;">
+                        <div>
+                            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">PROFIT TARGET</div>
+                            <div style="font-size: 1.00rem; font-weight: 800; color: #10B981;">+{spec_sensex_hp.target_pts:.1f} pts</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
+                            <div style="font-size: 1.00rem; font-weight: 800; color: #EF4444;">-{spec_sensex_hp.sl_pts:.1f} pts</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">SIZING (6 LOTS)</div>
+                            <div style="font-size: 1.00rem; font-weight: 800; color: #C084FC;">120 Qty</div>
+                        </div>
                     </div>
-                    <div>
-                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">STOP LOSS</div>
-                        <div style="font-size: 1.00rem; font-weight: 800; color: #EF4444;">-{spec_sensex_hp.sl_pts:.1f} pts</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 6px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
+                        <span>Benchmark Execution Terminal</span>
+                        <span>Launch Desk →</span>
                     </div>
-                    <div>
-                        <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">SIZING (6 LOTS)</div>
-                        <div style="font-size: 1.00rem; font-weight: 800; color: #C084FC;">120 Qty</div>
-                    </div>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 6px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
-                    <span>Benchmark Execution Terminal</span>
-                    <span>Launch Desk →</span>
                 </div>
             </div>
         </a>
         """)
-        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+        st.html("<div style='height: 8px;'></div>")
         if st_button_stretch("🏛️ Open Sensex Quant Desk →", key="btn_hp_launch_sensex"):
-            p_sensex_obj = props.get("p_sensex")
+            p_sensex_obj = ctx.get("p_sensex")
             if p_sensex_obj:
                 st.switch_page(p_sensex_obj)
             else:

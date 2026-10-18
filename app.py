@@ -620,22 +620,22 @@ st.markdown("""
         backdrop-filter: blur(14px) !important;
         border: 1px solid #1E293B !important;
         border-radius: 10px !important;
-        padding: 9px 16px !important;
-        margin-bottom: 14px !important;
+        padding: 7px 14px !important;
+        margin-bottom: 12px !important;
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6) !important;
         display: flex;
         justify-content: space-between;
         align-items: center;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 6px;
     }
     .header-pill {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 5px 11px;
+        gap: 5px;
+        padding: 4px 9px;
         border-radius: 6px;
-        font-size: 0.77rem;
+        font-size: 0.73rem;
         font-weight: 700;
         font-family: 'JetBrains Mono', 'Fira Code', monospace;
         white-space: nowrap;
@@ -1067,12 +1067,12 @@ st.markdown("""
         background: #0B1120 !important;
         border: 1px solid #1E293B !important;
         border-radius: 8px !important;
-        padding: 6px 14px !important;
+        padding: 5px 12px !important;
         margin-bottom: 8px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: space-between !important;
-        gap: 10px !important;
+        gap: 8px !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
         flex-wrap: nowrap !important;
         overflow-x: auto !important;
@@ -1080,7 +1080,7 @@ st.markdown("""
     .live-macro-items-container {
         display: flex !important;
         align-items: center !important;
-        gap: 8px !important;
+        gap: 6px !important;
         flex-wrap: nowrap !important;
         flex: 1 !important;
         justify-content: space-evenly !important;
@@ -1088,8 +1088,8 @@ st.markdown("""
     .live-macro-ticker-item {
         display: flex !important;
         align-items: center !important;
-        gap: 6px !important;
-        padding: 3px 8px !important;
+        gap: 5px !important;
+        padding: 2px 6px !important;
         border-radius: 6px !important;
         background: rgba(15, 23, 42, 0.65) !important;
         border: 1px solid rgba(30, 41, 59, 0.85) !important;
