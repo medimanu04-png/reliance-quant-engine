@@ -20,10 +20,10 @@ Write-Host "   Manoj Quant Engine - Windows Task Scheduler Setup       " -Foregr
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "Script Directory: $ScriptDir" -ForegroundColor Gray
 
-# 1. Register Pre-Market 09:00 AM Task
-$PreMarketTask = "ManojQuant_PreMarket_0900"
-Write-Host "`n[1/2] Configuring $PreMarketTask at 09:00 AM IST (Mon-Fri)..." -ForegroundColor Yellow
-$PreCmd = "schtasks /create /tn `"$PreMarketTask`" /tr `"`"$PreMarketBat`"`" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:00 /f"
+# 1. Register Pre-Market 08:30 AM Token Renewal & Diagnostic Task
+$PreMarketTask = "ManojQuant_PreMarket_0830"
+Write-Host "`n[1/2] Configuring $PreMarketTask at 08:30 AM IST (Mon-Fri)..." -ForegroundColor Yellow
+$PreCmd = "schtasks /create /tn `"$PreMarketTask`" /tr `"`"$PreMarketBat`"`" /sc weekly /d MON,TUE,WED,THU,FRI /st 08:30 /f"
 cmd.exe /c $PreCmd
 
 # 2. Register EOD 03:30 PM Task

@@ -95,8 +95,14 @@ import views.auth_manager as auth_mgr
 today_iso = datetime.now(IST).strftime("%Y-%m-%d")
 if st.session_state.get("_active_session_date") != today_iso:
     st.session_state["_active_session_date"] = today_iso
+    st.session_state["session_calendar_date"] = today_iso
+    # Preserve master authentication credentials, but wipe all intraday trade states, sequence locks, and daily SL counters
+    auth_preserve_keys = {
+        "is_authenticated", "auth_user", "auth_time", "_active_session_date",
+        "session_calendar_date", "global_rescan_interval_pref"
+    }
     for k in list(st.session_state.keys()):
-        if k.startswith("breakout_level_"):
+        if k not in auth_preserve_keys:
             st.session_state.pop(k, None)
 
 # 2. Institutional Authentication & Direct URL Security Enforcer
@@ -6399,9 +6405,58 @@ if df is not None and not df.empty:
         tri_score_bear_app, is_tri_trap_bear_app, tri_regime_bear_app, tri_pen_bear_app = 0.0, False, "TRI_INDEX_NORMAL", 0.0
 
 
+    # Master Quant Engine Single Source of Truth Delegation
+    # Synchronizes 6-Vector scoring between Web UI and Background Daemon
+    try:
+        from fo_quant_engine import UltraHighConvictionRelianceEngine
+        candles_5m_app = {
+            "open": df["Open"].tolist(),
+            "high": df["High"].tolist(),
+            "low": df["Low"].tolist(),
+            "close": df["Close"].tolist(),
+            "volume": df["Volume"].tolist(),
+            "date": df.index.tolist()
+        }
+        candles_15m_app = {
+            "open": df_15m["Open"].tolist(),
+            "high": df_15m["High"].tolist(),
+            "low": df_15m["Low"].tolist(),
+            "close": df_15m["Close"].tolist(),
+            "volume": df_15m["Volume"].tolist(),
+            "date": df_15m.index.tolist()
+        } if ('df_15m' in locals() and df_15m is not None and not df_15m.empty) else candles_5m_app
+
+        q_eng = UltraHighConvictionRelianceEngine(symbol=scrip_symbol)
+        confl_eval_app = q_eng.evaluate_90plus_confluence(
+            current_time, candles_5m_app, candles_15m_app, symbol=scrip_symbol
+        )
+        vec_sc = confl_eval_app.get("vector_scores", {})
+        if vec_sc:
+            v1_bull = float(vec_sc.get("v1_bull", v1_bull))
+            v1_bear = float(vec_sc.get("v1_bear", v1_bear))
+            v2_bull = float(vec_sc.get("v2_bull", v2_bull))
+            v2_bear = float(vec_sc.get("v2_bear", v2_bear))
+            v3_bull = float(vec_sc.get("v3_bull", v3_bull))
+            v3_bear = float(vec_sc.get("v3_bear", v3_bear))
+            v4_bull = float(vec_sc.get("v4_bull", v4_bull))
+            v4_bear = float(vec_sc.get("v4_bear", v4_bear))
+            v5_bull = float(vec_sc.get("v5_bull", v5_bull))
+            v5_bear = float(vec_sc.get("v5_bear", v5_bear))
+            v6_bull = float(vec_sc.get("v6_bull", v6_bull))
+            v6_bear = float(vec_sc.get("v6_bear", v6_bear))
+            if "raw_bull" in vec_sc:
+                raw_bullish = float(vec_sc.get("raw_bull", v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull))
+                raw_bearish = float(vec_sc.get("raw_bear", v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear))
+    except Exception:
+        pass
+
     news_modifier = (news_sentiment_score / 10.0) * 5.0
-    raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull + news_modifier
-    raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear - news_modifier
+    if 'raw_bullish' not in locals():
+        raw_bullish = v1_bull + v2_bull + v3_bull + v4_bull + v5_bull + v6_bull + macro_bull + news_modifier
+        raw_bearish = v1_bear + v2_bear + v3_bear + v4_bear + v5_bear + v6_bear + macro_bear - news_modifier
+    else:
+        raw_bullish += news_modifier
+        raw_bearish -= news_modifier
 
     is_sector_divergence_trap = False
 

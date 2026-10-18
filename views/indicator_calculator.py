@@ -97,6 +97,13 @@ def calculate_all_indicators(df: pd.DataFrame, interval: str = "5m", scrip: str 
     df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
 
+    # 5.5 Cash Index Volume Proxy for Pure Free Tiers (^NSEI, ^BSESN)
+    # When free feeds report volume = 0, synthesize a volatility-weighted proxy to ensure
+    # VWAP, CVD, OBV, CMF, and PVT calculate valid non-zero institutional flow instead of flat 0.0 or NaNs.
+    if 'Volume' not in df.columns or df['Volume'].sum() == 0:
+        bar_span = (df['High'] - df['Low']).clip(lower=0.5)
+        df['Volume'] = ((bar_span / df['Close']) * 10_000_000).clip(lower=1000).round(0)
+
     # 6. Intraday Session VWAP & Bands
     date_groups = df.index.date
     typical_price = (df['High'] + df['Low'] + df['Close']) / 3.0
