@@ -14,6 +14,7 @@ import hmac
 import hashlib
 import json
 import time
+import textwrap
 from datetime import datetime, timedelta
 import streamlit as st
 from views.ui_components import st_button_stretch, st_form_submit_button_stretch, st_sidebar_button_stretch
@@ -284,24 +285,23 @@ def render_ultra_premium_login(blocked_route: str = None):
     - Direct URL interception alert banner.
     - Persistent HMAC session protection.
     """
-    st.markdown("""
+    st.html(textwrap.dedent("""
     <style>
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 2rem !important;
-        max-width: 900px !important;
+        max-width: 820px !important;
     }
     
-    .quant-login-wrap {
-        position: relative;
-        background: radial-gradient(ellipse at 50% 10%, rgba(16, 185, 129, 0.14) 0%, rgba(14, 165, 233, 0.09) 40%, rgba(8, 13, 26, 0.98) 100%);
-        border: 1px solid rgba(56, 189, 248, 0.25);
-        border-radius: 24px;
-        padding: 38px 46px;
-        box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 50px rgba(16, 185, 129, 0.10);
-        backdrop-filter: blur(20px);
-        margin: 10px auto;
-        color: #F8FAFC;
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: radial-gradient(ellipse at 50% 10%, rgba(16, 185, 129, 0.14) 0%, rgba(14, 165, 233, 0.09) 40%, rgba(8, 13, 26, 0.98) 100%) !important;
+        border: 1px solid rgba(56, 189, 248, 0.28) !important;
+        border-radius: 24px !important;
+        padding: 32px 38px !important;
+        box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 50px rgba(16, 185, 129, 0.10) !important;
+        backdrop-filter: blur(20px) !important;
+        margin: 10px auto !important;
+        color: #F8FAFC !important;
     }
 
     .quant-login-title {
@@ -342,6 +342,31 @@ def render_ultra_premium_login(blocked_route: str = None):
         gap: 14px;
     }
 
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px !important;
+        background-color: rgba(15, 23, 42, 0.6) !important;
+        padding: 6px !important;
+        border-radius: 12px !important;
+        border: 1px solid rgba(148, 163, 184, 0.15) !important;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 42px !important;
+        white-space: pre-wrap !important;
+        background-color: transparent !important;
+        border-radius: 8px !important;
+        color: #94A3B8 !important;
+        font-size: 0.85rem !important;
+        font-weight: 700 !important;
+        padding: 0 16px !important;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(16, 185, 129, 0.18) !important;
+        color: #38BDF8 !important;
+        border-bottom: 2px solid #38BDF8 !important;
+    }
+
     .quant-feature-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -373,7 +398,7 @@ def render_ultra_premium_login(blocked_route: str = None):
         box-shadow: 0 6px 25px rgba(16, 185, 129, 0.55) !important;
     }
     </style>
-    """, unsafe_allow_html=True)
+    """))
 
     blocked_alert_html = ""
     if blocked_route:
@@ -389,18 +414,18 @@ def render_ultra_premium_login(blocked_route: str = None):
         </div>
         """
 
-    st.markdown(f"""
-    <div class="quant-login-wrap">
+    with st.container(border=True):
+        st.html(textwrap.dedent(f"""
         {blocked_alert_html}
         <div style="text-align: center; margin-bottom: 20px;">
             <div style="font-size: 2.2rem; margin-bottom: 4px;">⚡</div>
             <h1 class="quant-login-title">MANOJ QUANT ENGINE</h1>
             <div style="font-size: 0.85rem; color: #94A3B8; font-weight: 600; margin-top: 4px; letter-spacing: 0.4px;">
-                INSTITUTIONAL F&O BENCHMARK TRADING DESK
+                INSTITUTIONAL F&amp;O BENCHMARK TRADING DESK
             </div>
             <div class="quant-login-badge">
                 <span style="display: inline-block; width: 7px; height: 7px; background: #10B981; border-radius: 50%;"></span>
-                GROWW 1-TAP BROKER GATEWAY GUARD & 2FA ACTIVE
+                GROWW 1-TAP BROKER GATEWAY GUARD &amp; 2FA ACTIVE
             </div>
         </div>
 
@@ -409,163 +434,163 @@ def render_ultra_premium_login(blocked_route: str = None):
             <div>
                 <div style="font-size: 0.82rem; font-weight: 700; color: #38BDF8;">Institutional 2-Factor Authentication Mandate</div>
                 <div style="font-size: 0.74rem; color: #94A3B8; margin-top: 2px;">
-                    Because this terminal executes 1-Tap live F&O orders directly on Groww, mobile 2FA verification is strictly required to unlock benchmark desks.
+                    Because this terminal executes 1-Tap live F&amp;O orders directly on Groww, mobile 2FA verification is strictly required to unlock benchmark desks.
                 </div>
             </div>
         </div>
-    """, unsafe_allow_html=True)
+        """))
 
-    tab_otp, tab_master = st.tabs(["📱 Mobile OTP Verification (2FA)", "🔑 Master Security Key"])
+        tab_otp, tab_master = st.tabs(["📱 Mobile OTP Verification (2FA)", "🔑 Master Security Key"])
 
-    with tab_otp:
-        active_otp = st.session_state.get("otp_code")
-        active_mobile = st.session_state.get("otp_mobile")
-        exp_time = st.session_state.get("otp_expires_at", 0)
+        with tab_otp:
+            active_otp = st.session_state.get("otp_code")
+            active_mobile = st.session_state.get("otp_mobile")
+            exp_time = st.session_state.get("otp_expires_at", 0)
 
-        # Step 1: Request OTP
-        if not active_otp:
-            st.markdown("<p style='font-size: 0.85rem; color: #CBD5E1; margin-bottom: 12px;'>Select country code and enter your registered mobile number to receive your institutional login passcode.</p>", unsafe_allow_html=True)
-            col_cc, col_m1, col_m2 = st.columns([1.1, 2.0, 1.3])
-            with col_cc:
-                country_codes = [
-                    "🇮🇳 +91",
-                    "🇺🇸 +1",
-                    "🇬🇧 +44",
-                    "🇦🇪 +971",
-                    "🇸🇬 +65",
-                    "🇨🇦 +1",
-                    "🇦🇺 +61",
-                    "🇩🇪 +49"
-                ]
-                selected_cc = st.selectbox(
-                    "🌐 Code",
-                    options=country_codes,
-                    index=0,
-                    help="Country dialing code",
-                    key="login_country_code_select"
-                )
-            with col_m1:
-                mobile_val = st.text_input(
-                    "📱 Mobile Number",
-                    value=st.session_state.get("last_entered_mobile", "9876543210"),
-                    placeholder="Enter 10-digit mobile",
-                    help="Your registered mobile number for quant desk access"
-                )
-            with col_m2:
-                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                if st_button_stretch("📩 Send Security OTP", type="primary", key="btn_send_otp"):
-                    st.session_state["last_entered_mobile"] = mobile_val
-                    st.session_state["last_country_code"] = selected_cc
-                    ok, code_or_err = send_security_otp(mobile_val, country_code=selected_cc)
-                    if ok:
-                        st.success(f"✅ Security OTP dispatched to {selected_cc} {mobile_val[-10:]} via Carrier Gateway & Telegram!")
+            # Step 1: Request OTP
+            if not active_otp:
+                st.html("<p style='font-size: 0.85rem; color: #CBD5E1; margin-bottom: 12px;'>Select country code and enter your registered mobile number to receive your institutional login passcode.</p>")
+                col_cc, col_m1, col_m2 = st.columns([1.1, 2.0, 1.3])
+                with col_cc:
+                    country_codes = [
+                        "🇮🇳 +91",
+                        "🇺🇸 +1",
+                        "🇬🇧 +44",
+                        "🇦🇪 +971",
+                        "🇸🇬 +65",
+                        "🇨🇦 +1",
+                        "🇦🇺 +61",
+                        "🇩🇪 +49"
+                    ]
+                    selected_cc = st.selectbox(
+                        "🌐 Code",
+                        options=country_codes,
+                        index=0,
+                        help="Country dialing code",
+                        key="login_country_code_select"
+                    )
+                with col_m1:
+                    mobile_val = st.text_input(
+                        "📱 Mobile Number",
+                        value=st.session_state.get("last_entered_mobile", "9876543210"),
+                        placeholder="Enter 10-digit mobile",
+                        help="Your registered mobile number for quant desk access"
+                    )
+                with col_m2:
+                    st.html("<div style='height: 28px;'></div>")
+                    if st_button_stretch("📩 Send Security OTP", type="primary", key="btn_send_otp"):
+                        st.session_state["last_entered_mobile"] = mobile_val
+                        st.session_state["last_country_code"] = selected_cc
+                        ok, code_or_err = send_security_otp(mobile_val, country_code=selected_cc)
+                        if ok:
+                            st.success(f"✅ Security OTP dispatched to {selected_cc} {mobile_val[-10:]} via Carrier Gateway & Telegram!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {code_or_err}")
+
+            # Step 2: Enter & Verify OTP
+            else:
+                time_left = max(0, int(exp_time - time.time()))
+                mins = time_left // 60
+                secs = time_left % 60
+
+                active_cc = st.session_state.get("otp_country_code", "+91")
+                # Real-time Dispatch Preview Banner (for instant developer convenience & live verification)
+                st.html(textwrap.dedent(f"""
+                <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.82rem; font-weight: 700; color: #34D399;">
+                            📲 SMS &amp; Telegram Gateway: Passcode dispatched to {active_cc} {active_mobile}
+                        </span>
+                        <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
+                            ⏱️ Expires in {mins:02d}:{secs:02d}
+                        </span>
+                    </div>
+                    <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 4px;">
+                        Verification Code delivered to Telegram channel &amp; Carrier SMS. <b>Instant Passcode Preview:</b> <code style="font-size: 0.95rem; color: #38BDF8; font-weight: 800; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px;">{active_otp}</code>
+                    </div>
+                </div>
+                """))
+
+                with st.form("otp_verification_form"):
+                    col_o1, col_o2 = st.columns([1.5, 1])
+                    with col_o1:
+                        otp_input = st.text_input(
+                            "🔢 Enter 6-Digit One-Time Passcode (OTP)",
+                            value=active_otp,
+                            max_chars=6,
+                            placeholder="e.g. 123456",
+                            help="Enter the 6-digit passcode sent to your device"
+                        )
+                    with col_o2:
+                        st.html("<div style='height: 28px;'></div>")
+                        verify_btn = st_form_submit_button_stretch(
+                            "⚡ Verify & Unlock Quant Desk →",
+                            type="primary"
+                        )
+
+                    if verify_btn:
+                        ok, msg = verify_security_otp(otp_input)
+                        if ok:
+                            st.success(f"✅ {msg}")
+                            time.sleep(0.3)
+                            if blocked_route:
+                                st.query_params["stock"] = blocked_route
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg}")
+
+                col_resend1, col_resend2 = st.columns(2)
+                with col_resend1:
+                    if st_button_stretch("🔄 Resend Fresh OTP", key="btn_resend_otp"):
+                        send_security_otp(active_mobile)
+                        st.toast("Fresh OTP dispatched to Telegram & SMS!")
                         st.rerun()
-                    else:
-                        st.error(f"❌ {code_or_err}")
+                with col_resend2:
+                    if st_button_stretch("✏️ Use Different Mobile", key="btn_change_mobile"):
+                        st.session_state.pop("otp_code", None)
+                        st.session_state.pop("otp_mobile", None)
+                        st.session_state.pop("otp_expires_at", None)
+                        st.rerun()
 
-        # Step 2: Enter & Verify OTP
-        else:
-            time_left = max(0, int(exp_time - time.time()))
-            mins = time_left // 60
-            secs = time_left % 60
+        with tab_master:
+            st.html("<p style='font-size: 0.82rem; color: #94A3B8; margin-bottom: 12px;'>Emergency administrative fallback. Use Operator ID and password configured in <code>secrets.toml</code>.</p>")
+            with st.form("master_login_form"):
+                c_u, c_p = st.columns(2)
+                with c_u:
+                    u_in = st.text_input("👤 Operator ID", value="admin")
+                with c_p:
+                    p_in = st.text_input("🔑 Security Access Key", type="password")
 
-            active_cc = st.session_state.get("otp_country_code", "+91")
-            # Real-time Dispatch Preview Banner (for instant developer convenience & live verification)
-            st.markdown(f"""
-            <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.82rem; font-weight: 700; color: #34D399;">
-                        📲 SMS & Telegram Gateway: Passcode dispatched to {active_cc} {active_mobile}
-                    </span>
-                    <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
-                        ⏱️ Expires in {mins:02d}:{secs:02d}
-                    </span>
-                </div>
-                <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 4px;">
-                    Verification Code delivered to Telegram channel & Carrier SMS. <b>Instant Passcode Preview:</b> <code style="font-size: 0.95rem; color: #38BDF8; font-weight: 800; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px;">{active_otp}</code>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            with st.form("otp_verification_form"):
-                col_o1, col_o2 = st.columns([1.5, 1])
-                with col_o1:
-                    otp_input = st.text_input(
-                        "🔢 Enter 6-Digit One-Time Passcode (OTP)",
-                        value=active_otp, # Pre-filled for seamless testing, user can type
-                        max_chars=6,
-                        placeholder="e.g. 123456",
-                        help="Enter the 6-digit passcode sent to your device"
-                    )
-                with col_o2:
-                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                    verify_btn = st_form_submit_button_stretch(
-                        "⚡ Verify & Unlock Quant Desk →",
-                        type="primary"
-                    )
-
-                if verify_btn:
-                    ok, msg = verify_security_otp(otp_input)
-                    if ok:
-                        st.success(f"✅ {msg}")
+                master_submit = st_form_submit_button_stretch("⚡ Unlock via Master Credentials")
+                if master_submit:
+                    creds, _ = _get_auth_credentials()
+                    u_clean = (u_in or "").strip()
+                    p_clean = (p_in or "").strip()
+                    if u_clean in creds and creds[u_clean] == p_clean:
+                        st.session_state["is_authenticated"] = True
+                        st.session_state["auth_user"] = u_clean
+                        st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
+                        st.query_params["_auth"] = generate_session_token(u_clean)
+                        st.success("✅ Master credentials verified. Terminal unlocked.")
                         time.sleep(0.3)
                         if blocked_route:
                             st.query_params["stock"] = blocked_route
                         st.rerun()
                     else:
-                        st.error(f"❌ {msg}")
+                        st.error("❌ Invalid master operator credentials.")
 
-            col_resend1, col_resend2 = st.columns(2)
-            with col_resend1:
-                if st_button_stretch("🔄 Resend Fresh OTP", key="btn_resend_otp"):
-                    send_security_otp(active_mobile)
-                    st.toast("Fresh OTP dispatched to Telegram & SMS!")
-                    st.rerun()
-            with col_resend2:
-                if st_button_stretch("✏️ Use Different Mobile", key="btn_change_mobile"):
-                    st.session_state.pop("otp_code", None)
-                    st.session_state.pop("otp_mobile", None)
-                    st.session_state.pop("otp_expires_at", None)
-                    st.rerun()
-
-    with tab_master:
-        st.markdown("<p style='font-size: 0.82rem; color: #94A3B8; margin-bottom: 12px;'>Emergency administrative fallback. Use Operator ID and password configured in <code>secrets.toml</code>.</p>", unsafe_allow_html=True)
-        with st.form("master_login_form"):
-            c_u, c_p = st.columns(2)
-            with c_u:
-                u_in = st.text_input("👤 Operator ID", value="admin")
-            with c_p:
-                p_in = st.text_input("🔑 Security Access Key", type="password")
-
-            master_submit = st_form_submit_button_stretch("⚡ Unlock via Master Credentials")
-            if master_submit:
-                creds, _ = _get_auth_credentials()
-                u_clean = (u_in or "").strip()
-                p_clean = (p_in or "").strip()
-                if u_clean in creds and creds[u_clean] == p_clean:
-                    st.session_state["is_authenticated"] = True
-                    st.session_state["auth_user"] = u_clean
-                    st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
-                    st.query_params["_auth"] = generate_session_token(u_clean)
-                    st.success("✅ Master credentials verified. Terminal unlocked.")
-                    time.sleep(0.3)
-                    if blocked_route:
-                        st.query_params["stock"] = blocked_route
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid master operator credentials.")
-
-    st.markdown("""
+        st.html(textwrap.dedent("""
         <div class="quant-feature-grid">
             <div class="quant-feature-card">
                 <div style="font-size: 0.70rem; color: #64748B; font-weight: 700;">BROKER ROUTING</div>
                 <div style="font-size: 0.85rem; font-weight: 800; color: #10B981; margin-top: 2px;">Groww Direct 0-Delay</div>
-                <div style="font-size: 0.65rem; color: #94A3B8; margin-top: 2px;">1-Tap Limit & Market Fills</div>
+                <div style="font-size: 0.65rem; color: #94A3B8; margin-top: 2px;">1-Tap Limit &amp; Market Fills</div>
             </div>
             <div class="quant-feature-card">
                 <div style="font-size: 0.70rem; color: #64748B; font-weight: 700;">STRATEGY 3 ENGINE</div>
                 <div style="font-size: 0.85rem; font-weight: 800; color: #38BDF8; margin-top: 2px;">1:45 PM Gamma Trap</div>
-                <div style="font-size: 0.65rem; color: #94A3B8; margin-top: 2px;">Hard Tick SL & +8pt Breakeven</div>
+                <div style="font-size: 0.65rem; color: #94A3B8; margin-top: 2px;">Hard Tick SL &amp; +8pt Breakeven</div>
             </div>
             <div class="quant-feature-card">
                 <div style="font-size: 0.70rem; color: #64748B; font-weight: 700;">2FA SECURITY</div>
@@ -577,8 +602,7 @@ def render_ultra_premium_login(blocked_route: str = None):
         <div style="text-align: center; margin-top: 18px; font-size: 0.72rem; color: #64748B;">
             Protected by Institutional Quant Engine Risk Controls &bull; 2FA Powered by Telegram Alert Gateway
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """))
 
 
 def render_authenticated_user_sidebar():
@@ -586,7 +610,7 @@ def render_authenticated_user_sidebar():
     user = str(st.session_state.get("auth_user", "Operator")).upper()
     login_time = st.session_state.get("auth_time", "--:--")
 
-    st.sidebar.markdown(f"""
+    st.sidebar.html(textwrap.dedent(f"""
     <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 6px;">
@@ -600,7 +624,7 @@ def render_authenticated_user_sidebar():
             <span>Auth: {login_time}</span>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """))
 
-    if st.sidebar.button("🔒 Lock Terminal (Logout)", key="sb_btn_logout", width="stretch", help="Revoke session and lock terminal"):
+    if st_sidebar_button_stretch("🔒 Lock Terminal (Logout)", key="sb_btn_logout", help="Revoke session and lock terminal"):
         logout_user()
