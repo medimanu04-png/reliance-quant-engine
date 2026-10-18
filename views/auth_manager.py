@@ -397,6 +397,38 @@ def render_ultra_premium_login(blocked_route: str = None):
         border-bottom: 2px solid #38BDF8 !important;
     }
 
+    /* Precision alignment for 2FA row (Code, Mobile, Button) across all viewports */
+    .stTabs [data-testid="stHorizontalBlock"] {
+        align-items: flex-end !important;
+    }
+
+    .stTabs [data-testid="stColumn"] {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-end !important;
+    }
+
+    .stTabs [data-testid="stColumn"] > div {
+        width: 100% !important;
+        margin-bottom: 0 !important;
+    }
+
+    .stTabs [data-testid="stButton"] button,
+    .stTabs [data-testid="stFormSubmitButton"] button {
+        height: 42px !important;
+        min-height: 42px !important;
+        margin-bottom: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    .stTabs [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+    .stTabs [data-testid="stTextInput"] div[data-baseweb="input"] {
+        height: 42px !important;
+        min-height: 42px !important;
+    }
+
     .quant-feature-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
