@@ -107,9 +107,11 @@ p_nifty = st.Page(lambda: None, title="Nifty 50 Quant Desk", icon="📈", url_pa
 p_sensex = st.Page(lambda: None, title="Sensex Quant Desk", icon="🏛️", url_path="Sensex")
 
 if not is_authenticated:
-    # Completely hide benchmark desks from the navigation tree for unauthenticated users
+    # Register sentinels for all routes so Streamlit router never throws "Page not found" popup
     p_login = st.Page(lambda: None, title="Terminal Login // 2FA", icon="🔒", url_path="", default=True)
-    pg = st.navigation([p_login], position="hidden")
+    p_nifty_gate = st.Page(lambda: None, title="Nifty Security Sentinel", icon="🔒", url_path="Nifty")
+    p_sensex_gate = st.Page(lambda: None, title="Sensex Security Sentinel", icon="🔒", url_path="Sensex")
+    pg = st.navigation([p_login, p_nifty_gate, p_sensex_gate], position="hidden")
     pg.run()
 
     # Intercept direct URL attempts (e.g. unauthenticated user typing /Nifty or /Sensex or query params)
@@ -134,6 +136,8 @@ active_route = getattr(pg, "url_path", "")
 # Synchronize query parameters with active route
 if active_route:
     st.query_params["stock"] = active_route
+    if "_auth" not in st.query_params and st.session_state.get("auth_user"):
+        st.query_params["_auth"] = auth_mgr.generate_session_token(str(st.session_state["auth_user"]))
 else:
     q_stock = st.query_params.get("stock") or st.query_params.get("scrip")
     if q_stock:
@@ -2031,6 +2035,9 @@ def render_auto_rescan_controller():
             n_ltp, n_chg, n_sign, n_col = _fmt_desk(spot_nifty, spec_nifty)
             s_ltp, s_chg, s_sign, s_col = _fmt_desk(spot_sensex, spec_sensex)
 
+            n_desk_link = auth_mgr.get_desk_url("Nifty")
+            s_desk_link = auth_mgr.get_desk_url("Sensex")
+
             st.html(f"""
             <div style="font-size: 0.70rem; color: #94A3B8; text-align: center; margin-top: -6px; display: flex; justify-content: space-between; align-items: center;">
                 <span>⏱️ Auto-rescan: <b style="color: {'#34D399' if auto_active else '#94A3B8'};">{cycle_label}</b>{countdown_html}</span>
@@ -2039,7 +2046,7 @@ def render_auto_rescan_controller():
             </div>
             <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                    <a href="./Nifty?stock=Nifty" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                    <a href="{n_desk_link}" target="_blank" style="text-decoration: none; color: inherit; display: block;">
                         <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
                             <span>📈 <b style="color: #10B981;">{spec_nifty.yf_symbol}</b> ({spec_nifty.lot_size}/L)</span>
                             <span>₹<b style="color: #FFFFFF;">{n_ltp:,.2f}</b> (<b style="color: {n_col};">{n_sign}{n_chg:.1f}</b>)</span>
@@ -2048,7 +2055,7 @@ def render_auto_rescan_controller():
                             <span>🚦 <b style="color: #FCD34D;">≥{spec_nifty.min_confluence_gate:.0f}%</b></span>
                         </div>
                     </a>
-                    <a href="./Sensex?stock=Sensex" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+                    <a href="{s_desk_link}" target="_blank" style="text-decoration: none; color: inherit; display: block;">
                         <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 8px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94A3B8;">
                             <span>🏛️ <b style="color: #A855F7;">{spec_sensex.yf_symbol}</b> ({spec_sensex.lot_size}/L)</span>
                             <span>₹<b style="color: #FFFFFF;">{s_ltp:,.2f}</b> (<b style="color: {s_col};">{s_sign}{s_chg:.1f}</b>)</span>
@@ -2093,7 +2100,7 @@ def render_auto_rescan_controller():
                 <span>⚡ <b style="color: {sym_color};">{cur_sel_sym}</b> ({cur_sel_lot} Qty/Lot) • ₹<b style="color: #FFFFFF;">{ltp_val:,.2f}</b> (<b style="color: {chg_col};">{chg_sign}{chg_val:.1f}</b>)</span>
                 <span>🎯 Target: <b style="color: #34D399;">+{cur_sel_tgt:.1f} pts</b></span>
                 <span>🛑 SL: <b style="color: #F87171;">-{cur_sel_sl:.1f} pts</b></span>
-                <a href="./{other_desk}?stock={other_desk}" target="_blank" style="text-decoration: none; color: #38BDF8; font-weight: 700;">↗ Open {other_label} Desk</a>
+                <a href="{auth_mgr.get_desk_url(other_desk)}" target="_blank" style="text-decoration: none; color: #38BDF8; font-weight: 700;">↗ Open {other_label} Desk</a>
             </div>
             """)
 
@@ -2352,7 +2359,7 @@ is_gamma_exception_desk = bool(tradable_decision.get("is_gamma_exception", False
 alt_desk_symbol = "SENSEX" if scrip_symbol in ("NIFTY", "NIFTY 50") else "NIFTY"
 alt_desk_label = "BSE SENSEX" if alt_desk_symbol == "SENSEX" else "NIFTY 50"
 alt_desk_lots = 6 if alt_desk_symbol == "SENSEX" else 4
-alt_desk_url = f"./{alt_desk_symbol.capitalize()}?stock={alt_desk_symbol.capitalize()}"
+alt_desk_url = auth_mgr.get_desk_url(alt_desk_symbol)
 
 # Dynamically resolve active expiry mandate for currently active ticker (Weekly for NIFTY/SENSEX, Monthly for Equities)
 expiry_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=scrip_symbol)

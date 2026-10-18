@@ -14,6 +14,7 @@ from telegram_notifier import TelegramNotifier
 from pre_market_health_check import PreMarketHealthCheckEngine
 from eod_session_summary import EODSessionSummaryEngine
 from views.ui_components import st_download_button_stretch, st_button_stretch, st_dataframe_stretch
+import views.auth_manager as auth_mgr
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -46,6 +47,34 @@ def render_homepage(ctx: dict):
     st.markdown("---")
 
     st.html("""
+    <style>
+    .quant-desk-tile {
+        transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    }
+    .quant-desk-tile:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6) !important;
+    }
+    .tile-nifty:hover {
+        border-color: rgba(16, 185, 129, 0.95) !important;
+    }
+    .tile-sensex:hover {
+        border-color: rgba(168, 85, 247, 0.95) !important;
+    }
+    .quant-launch-btn {
+        transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    }
+    .quant-launch-btn:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.12);
+    }
+    .quant-launch-nifty:hover {
+        box-shadow: 0 6px 26px rgba(16, 185, 129, 0.6) !important;
+    }
+    .quant-launch-sensex:hover {
+        box-shadow: 0 6px 26px rgba(168, 85, 247, 0.6) !important;
+    }
+    </style>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
         <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 1.25rem;">⚡</span>
@@ -54,7 +83,7 @@ def render_homepage(ctx: dict):
             </span>
         </div>
         <span style="font-size: 0.76rem; color: #94A3B8;">
-            Click any tile to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>)
+            Click any tile or button to launch desk in a new tab (<b style="color: #10B981;">/Nifty</b>, <b style="color: #A855F7;">/Sensex</b>) ↗
         </span>
     </div>
     """)
@@ -134,10 +163,12 @@ def render_homepage(ctx: dict):
 
     nifty_tile_border = "rgba(16, 185, 129, 0.55)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.35)"
     nifty_status_pill = f'<span style="background: {"rgba(16, 185, 129, 0.25)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.20)"}; color: {"#34D399" if is_nifty_tradable_today else "#94A3B8"}; border: 1px solid {"rgba(16, 185, 129, 0.5)" if is_nifty_tradable_today else "rgba(100, 116, 139, 0.4)"}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{nifty_tradable_info["badge_label"]}</span>'
+    nifty_url = auth_mgr.get_desk_url("Nifty")
+    sensex_url = auth_mgr.get_desk_url("Sensex")
 
     with col_idx1:
         st.html(f"""
-        <a href="./Nifty?stock=Nifty" target="_self" style="text-decoration: none; color: inherit; display: block;">
+        <a href="{nifty_url}" target="_blank" style="text-decoration: none; color: inherit; display: block;">
             <div class="quant-desk-tile tile-nifty" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(6, 78, 59, 0.85) 100%); border: 1.5px solid {nifty_tile_border}; border-radius: 12px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 290px; height: 290px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; min-height: 44px;">
@@ -173,28 +204,26 @@ def render_homepage(ctx: dict):
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 6px; font-size: 0.74rem; color: #10B981; font-weight: 700;">
                         <span>Benchmark Execution Terminal</span>
-                        <span>Launch Desk →</span>
+                        <span>Open Desk (New Tab) ↗</span>
                     </div>
                 </div>
             </div>
         </a>
+        <div style="height: 10px;"></div>
+        <a href="{nifty_url}" target="_blank" style="text-decoration: none; display: block; width: 100%;">
+            <div class="quant-launch-btn quant-launch-nifty" style="background: linear-gradient(135deg, #059669 0%, #0284C7 100%); border: 1.5px solid rgba(56, 189, 248, 0.6); border-radius: 8px; padding: 11px 16px; text-align: center; color: #FFFFFF; font-weight: 800; font-size: 0.90rem; letter-spacing: 0.5px; box-shadow: 0 4px 18px rgba(16, 185, 129, 0.35); cursor: pointer;">
+                ⚡ Open Nifty 50 Quant Desk (New Tab) ↗
+            </div>
+        </a>
         """)
-        st.html("<div style='height: 8px;'></div>")
-        if st_button_stretch("⚡ Open Nifty 50 Quant Desk →", key="btn_hp_launch_nifty", type="primary"):
-            p_nifty_obj = ctx.get("p_nifty")
-            if p_nifty_obj:
-                st.switch_page(p_nifty_obj)
-            else:
-                st.query_params["stock"] = "Nifty"
-                st.rerun()
 
     sensex_tile_border = "rgba(168, 85, 247, 0.55)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.35)"
     sensex_status_pill = f'<span style="background: {"rgba(168, 85, 247, 0.25)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.20)"}; color: {"#C084FC" if is_sensex_tradable_today else "#94A3B8"}; border: 1px solid {"rgba(168, 85, 247, 0.5)" if is_sensex_tradable_today else "rgba(100, 116, 139, 0.4)"}; padding: 3px 8px; border-radius: 5px; font-size: 0.70rem; font-weight: 800;">{sensex_tradable_info["badge_label"]}</span>'
 
     with col_idx2:
         st.html(f"""
-        <a href="./Sensex?stock=Sensex" target="_self" style="text-decoration: none; color: inherit; display: block;">
-            <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid {sensex_tile_border}; border-radius: 12px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 270px; height: 270px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
+        <a href="{sensex_url}" target="_blank" style="text-decoration: none; color: inherit; display: block;">
+            <div class="quant-desk-tile tile-sensex" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(88, 28, 135, 0.85) 100%); border: 1.5px solid {sensex_tile_border}; border-radius: 12px; padding: 18px 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); min-height: 290px; height: 290px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; cursor: pointer;">
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; min-height: 44px;">
                         <div>
@@ -224,25 +253,23 @@ def render_homepage(ctx: dict):
                         </div>
                         <div>
                             <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; margin-bottom: 2px;">SIZING (6 LOTS)</div>
-                            <div style="font-size: 1.00rem; font-weight: 800; color: #C084FC;">120 Qty</div>
+                            <div style="font-size: 1.00rem; font-weight: 800; color: #C084FC;">{spec_sensex_hp.lot_size * 6} Qty</div>
                         </div>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(168, 85, 247, 0.2); padding-top: 6px; font-size: 0.74rem; color: #C084FC; font-weight: 700;">
                         <span>Benchmark Execution Terminal</span>
-                        <span>Launch Desk →</span>
+                        <span>Open Desk (New Tab) ↗</span>
                     </div>
                 </div>
             </div>
         </a>
+        <div style="height: 10px;"></div>
+        <a href="{sensex_url}" target="_blank" style="text-decoration: none; display: block; width: 100%;">
+            <div class="quant-launch-btn quant-launch-sensex" style="background: linear-gradient(135deg, #7C3AED 0%, #2563EB 100%); border: 1.5px solid rgba(192, 132, 252, 0.6); border-radius: 8px; padding: 11px 16px; text-align: center; color: #FFFFFF; font-weight: 800; font-size: 0.90rem; letter-spacing: 0.5px; box-shadow: 0 4px 18px rgba(168, 85, 247, 0.35); cursor: pointer;">
+                🏛️ Open Sensex Quant Desk (New Tab) ↗
+            </div>
+        </a>
         """)
-        st.html("<div style='height: 8px;'></div>")
-        if st_button_stretch("🏛️ Open Sensex Quant Desk →", key="btn_hp_launch_sensex"):
-            p_sensex_obj = ctx.get("p_sensex")
-            if p_sensex_obj:
-                st.switch_page(p_sensex_obj)
-            else:
-                st.query_params["stock"] = "Sensex"
-                st.rerun()
 
     PreMarketHealthCheckEngine.render_diagnostic_card(key_prefix="hp")
     EODSessionSummaryEngine.render_eod_card(key_prefix="hp")

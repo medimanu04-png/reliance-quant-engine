@@ -93,6 +93,8 @@ def is_user_authenticated() -> bool:
     Supports in-memory session_state and URL query param token restoration across F5 refreshes.
     """
     if st.session_state.get("is_authenticated") is True:
+        if "_auth" not in st.query_params and st.session_state.get("auth_user"):
+            st.query_params["_auth"] = generate_session_token(str(st.session_state["auth_user"]))
         return True
 
     q_token = st.query_params.get("_auth")
@@ -102,9 +104,37 @@ def is_user_authenticated() -> bool:
             st.session_state["is_authenticated"] = True
             st.session_state["auth_user"] = identifier
             st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
+            st.query_params["_auth"] = str(q_token)
             return True
 
     return False
+
+
+def get_active_auth_token() -> str:
+    """Retrieves or generates an active HMAC-SHA256 session token for link sharing/new tabs."""
+    q_token = st.query_params.get("_auth")
+    if q_token:
+        is_valid, _ = verify_session_token(str(q_token))
+        if is_valid:
+            return str(q_token)
+
+    if st.session_state.get("is_authenticated") and st.session_state.get("auth_user"):
+        token = generate_session_token(str(st.session_state["auth_user"]))
+        st.query_params["_auth"] = token
+        return token
+
+    return ""
+
+
+def get_desk_url(desk_name: str) -> str:
+    """Constructs a target URL for a benchmark desk, embedding HMAC auth token for new-tab authentication."""
+    import urllib.parse
+    token = get_active_auth_token()
+    clean_desk = desk_name.capitalize()
+    if token:
+        safe_token = urllib.parse.quote(token)
+        return f"./{clean_desk}?stock={clean_desk}&_auth={safe_token}"
+    return f"./{clean_desk}?stock={clean_desk}"
 
 
 def logout_user():

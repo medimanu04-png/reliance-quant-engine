@@ -1,8 +1,11 @@
 {
-  "current_state": "TRADE CLOSED & AUDITED",
+  "current_state": "IDLE / SCANNING",
   "symbol": "NIFTY",
   "active_trade": null,
-  "last_closed_trade": {
+  "last_closed_trade": null,
+  "today_trade_count": 0,
+  "updated_at": "2026-10-19 12:39:58 AM IST",
+  "archived_last_closed_trade": {
     "trade_num": 1,
     "instrument": "NIFTY 23050 CE (19-OCT-2026)",
     "planned_entry": 97.55,
@@ -14,19 +17,6 @@
     "exit_price": 59.55,
     "exit_time": "09:31:28 AM IST",
     "pnl": "\u20b9-9,880.00 (-38.00 pts)"
-  },
-  "today_trade_count": 0,
-  "updated_at": "2026-10-18 10:54:37 PM IST",
-  "archived_last_closed_trade": {
-    "trade_num": 7,
-    "instrument": "NIFTY 22900 CE (19-OCT-2026)",
-    "planned_entry": 147.55,
-    "actual_entry": 147.55,
-    "executed": "Yes",
-    "sl": 109.95,
-    "target": 199.85,
-    "status": "Target Hit",
-    "pnl": "+\u20b913,598.00"
   },
   "armed_setup": null,
   "re_entry_armed": null,
