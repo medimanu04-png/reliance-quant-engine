@@ -154,20 +154,47 @@ def render_radar_tab(ctx: dict):
     )
     call_oi_chg_val = opt_telemetry.get('call_oi_change_pct', 0.0)
     put_oi_chg_val = opt_telemetry.get('put_oi_change_pct', 0.0)
-    call_trap_str = f"trapped and unwinding positions ({call_oi_chg_val:+.1f}%)" if call_oi_chg_val < 0 else f"adding resistance contracts ({call_oi_chg_val:+.1f}%)"
-    put_trap_str = f"builds aggressive support ({put_oi_chg_val:+.1f}%)" if put_writing else f"maintains support ({put_oi_chg_val:+.1f}%)"
+    if abs(call_oi_chg_val) < 0.05:
+        call_trap_str = f"flat with neutral activity ({call_oi_chg_val:+.1f}%)"
+    elif call_oi_chg_val < 0:
+        call_trap_str = f"trapped and unwinding positions ({call_oi_chg_val:+.1f}%)"
+    else:
+        call_trap_str = f"adding resistance contracts ({call_oi_chg_val:+.1f}%)"
+
+    if abs(put_oi_chg_val) < 0.05:
+        put_trap_str = f"remains balanced ({put_oi_chg_val:+.1f}%)"
+    elif put_writing:
+        put_trap_str = f"builds aggressive support ({put_oi_chg_val:+.1f}%)"
+    else:
+        put_trap_str = f"maintains steady buildup ({put_oi_chg_val:+.1f}%)"
     v3_beh = f"Call writers are {call_trap_str} while Put open interest {put_trap_str}. Total corridor PCR sits at {pcr_val:.2f} with Max Pain at ₹{chain_oi.get('max_pain', 0.0):.0f}, Call Wall at ₹{call_wall:.0f}, and Put Wall at ₹{put_wall:.0f}."
 
     v4_beh = (
-        f"Daily ATR of ₹{float(latest.get('ATR', 0.0)):.2f} (5m ATR ₹{stock_atr:.2f} -> Dynamic 1.5x SL: {effective_sl_pts:.1f} pts, ≤4% Account Risk). "
+        f"Daily ATR of ₹{float(latest.get('ATR', 0.0)):.2f} (5m ATR ₹{stock_atr:.2f} -> Dynamic 1.5x SL: {effective_sl_pts:.1f} pts, {'Safe ≤4% Account Risk' if capital_risk_safe else 'Exceeds 4% Budget (-4 pt penalty)'}). "
         f"Choppiness Index (CHOP-14) at {chop_val:.1f} signals {'a strong directional expansion regime' if is_trending_regime else ('an extreme sideways consolidation trap (Stand Down enforced)' if is_choppy_regime else 'moderate fluctuation')}. "
         f"{scrip_name} ATM Implied Volatility sits at {rel_iv*100.0:.1f}% (IV Percentile: {iv_percentile:.1f}%, {'🟢 Clean Buying Window (<50%)' if iv_cheap_window else ('🔴 Peak Volatility Crush Hazard (>70%)' if iv_elevated_crush_risk else '🟡 Fair Volatility')}). "
         f"India VIX sits at {vix_val:.2f} ({vix_pct_chg:+.2f}%). "
         f"Bollinger bands show {'active breakout expansion' if bb_expanding else 'steady oscillation'}."
     )
+    if is_bull:
+        v5_mom_str = (
+            'harmonious upward momentum with zero divergence, confirming directional expansion'
+            if (rsi_sweetspot_bull and macd_expanding_bull)
+            else ('opposing downward velocity dampening bullish momentum'
+                  if (rsi_sweetspot_bear or macd_expanding_bear)
+                  else 'controlled oscillator velocity')
+        )
+    else:
+        v5_mom_str = (
+            'harmonious downward momentum with zero divergence, confirming directional breakdown'
+            if (rsi_sweetspot_bear and macd_expanding_bear)
+            else ('opposing upward velocity dampening bearish momentum'
+                  if (rsi_sweetspot_bull or macd_expanding_bull)
+                  else 'controlled oscillator velocity')
+        )
     v5_beh = (
         f"RSI at {float(latest.get('RSI', 50.0)):.1f} and MACD histogram at {float(latest.get('MACD_Hist', 0.0)):+.2f} reflect "
-        f"{'harmonious upward momentum with zero divergence, confirming directional expansion' if (rsi_sweetspot_bull and macd_expanding_bull) else ('strong downward velocity' if (rsi_sweetspot_bear and macd_expanding_bear) else 'controlled oscillator velocity')} against spot."
+        f"{v5_mom_str} against spot."
     )
     v6_risk_val = effective_sl_pts * lot_size * kelly_recommended_lots
     v6_beh = (
