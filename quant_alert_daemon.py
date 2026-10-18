@@ -526,7 +526,7 @@ class RelianceQuantAlertDaemon:
         today_date = now_dt.strftime("%Y-%m-%d")
         time_str = now_dt.strftime("%I:%M:%S %p IST")
 
-        # 0. Check Weekly Theta Decay Shield Schedule & Post-1:00 PM Expiry Gamma Blast Exception
+        # 0. Check Weekly Theta Decay Shield Schedule & Post-1:30 PM Expiry Gamma Blast Exception
         from asset_config import get_daily_asset_schedule
         sched = get_daily_asset_schedule(now_dt)
         if not hasattr(self, "_expiry_gamma_calls"):
@@ -536,20 +536,20 @@ class RelianceQuantAlertDaemon:
         today_exc_key = f"{today_date}_{sym}"
 
         if sym == sched["locked_symbol"] and sched["is_weekday"] and not self.force_run:
-            # Check if today is the asset's weekly expiry day and post-1:00 PM
+            # Check if today is the asset's weekly expiry day and 01:30–02:45 PM
             if sym == sched["gamma_exception_symbol"] and sched["is_gamma_exception_active"]:
                 if self._expiry_gamma_calls.get(today_exc_key, False):
                     logger.debug(f"[{time_str}] 🔒 [EXPIRY EXCEPTION] 1/1 Expiry call already delivered today for {sym}. Standing down.")
                     return
                 # Eligible for exactly 1 high-probability Gamma Blast trade call
                 is_gamma_exception_tick = True
-                logger.info(f"[{time_str}] ⚡ [EXPIRY GAMMA RADAR] Post-1:00 PM Expiry Window active for {sym}. Scanning for 1/1 Gamma Blast setup...")
+                logger.info(f"[{time_str}] ⚡ [EXPIRY GAMMA RADAR] 01:30–02:45 PM Expiry Window active for {sym}. Scanning for 1/1 Gamma Blast setup...")
             else:
                 if sym == sched["gamma_exception_symbol"]:
-                    if now_dt.time() < dt_time(13, 0):
-                        logger.info(f"[{time_str}] ⏳ [THETA SHIELD] {sym} is locked until 01:00 PM IST (Expiry Gamma Blast Window unlocks at 1:00 PM).")
+                    if now_dt.time() < dt_time(13, 30):
+                        logger.info(f"[{time_str}] ⏳ [THETA SHIELD] {sym} is locked until 01:30 PM IST (Expiry Gamma Blast Window unlocks 01:30–02:45 PM).")
                     else:
-                        logger.info(f"[{time_str}] 🛑 [EXPIRY WINDOW CLOSED] {sym} Expiry Gamma Blast window closed at 03:25 PM IST.")
+                        logger.info(f"[{time_str}] 🛑 [EXPIRY WINDOW CLOSED] {sym} Expiry Gamma Blast window closed at 02:45 PM IST (Hard terminal cutoff 02:50 PM).")
                 else:
                     logger.info(f"[{time_str}] 🔒 [THETA SHIELD] {sym} is locked today ({sched['schedule_desc']}). Zero trade alert evaluation.")
                 return
@@ -613,13 +613,13 @@ class RelianceQuantAlertDaemon:
         gamma_telemetry = confluence_eval.get("gamma_trap_telemetry", {})
         if is_gamma_trap_tick:
             logger.info(
-                f"[{time_str}] ⚡ [STRATEGY 3: 1:45 PM GAMMA TRAP] Breakout confirmed on {sym} ({confluence_eval.get('strategy_tag')})! "
+                f"[{time_str}] ⚡ [STRATEGY 3: 01:30 PM GAMMA TRAP] Breakout confirmed on {sym} ({confluence_eval.get('strategy_tag')})! "
                 f"Box: ₹{gamma_telemetry.get('box_low', 0):.1f} - ₹{gamma_telemetry.get('box_high', 0):.1f} ({gamma_telemetry.get('box_ratio_pct', 0):.3f}%) | "
                 f"RVOL: {gamma_telemetry.get('rvol', 1.0):.2f}x | 12m Time-Stop Armed"
             )
         elif gamma_telemetry.get("is_building_box"):
             logger.debug(
-                f"[{time_str}] 📦 [STRATEGY 3: BUILDING BOX] {sym} 11:30–1:45 Box: Range ₹{gamma_telemetry.get('box_range', 0):.1f} "
+                f"[{time_str}] 📦 [STRATEGY 3: BUILDING BOX] {sym} 11:30–01:30 Box: Range ₹{gamma_telemetry.get('box_range', 0):.1f} "
                 f"({gamma_telemetry.get('box_ratio_pct', 0):.3f}% vs <=0.45% cap)"
             )
 
@@ -1078,7 +1078,7 @@ class RelianceQuantAlertDaemon:
             )
 
             # Strategy 3: 12-Minute Gamma Trap Time-Stop Check
-            is_active_gamma_trap = active_trade.get("strategy_tag") == "GAMMA_TRAP_145" or int(active_trade.get("time_stop_mins", 0)) > 0
+            is_active_gamma_trap = active_trade.get("strategy_tag") in ("GAMMA_TRAP_145", "GAMMA_TRAP_130") or "GAMMA_TRAP" in str(active_trade.get("strategy_tag", "")) or int(active_trade.get("time_stop_mins", 0)) > 0
             if is_active_gamma_trap and elapsed_mins >= 12 and unrealized_pts < 10.0:
                 time_stop_key = f"tg_sent_gamma_timestop_{today_date}_{sym}_{trade_num}"
                 if tg_enabled and not TelegramNotifier.is_alert_sent(time_stop_key):

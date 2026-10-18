@@ -2439,23 +2439,37 @@ class SequentialTradeEngine:
         t1_qty = int(active.get("t1_qty", qty // 2))
         t2_qty = qty - t1_qty
         t1_status = active.get("t1_status", "PENDING")
-        # Mandatory EOD Cutoff (03:10 PM IST) — Auto-Square-off active in-flight trades to eliminate overnight decay risk
+        # Mandatory EOD Cutoff (02:50 PM IST for Expiry/Gamma Trades, 03:10 PM for Regular Trades)
+        # Strictly exit runners before 02:50 PM IST to avoid broker RMS auto-square-off penalties
+        is_expiry_or_gamma = (
+            active.get("strategy_tag") in ("GAMMA_TRAP_145", "GAMMA_TRAP_130")
+            or "GAMMA_TRAP" in str(active.get("strategy_tag", ""))
+            or active.get("is_gamma_exception", False)
+            or (active.get("dte", 99) == 0)
+            or int(active.get("time_stop_mins", 0)) > 0
+        )
+        eod_cutoff_time = time(14, 50) if is_expiry_or_gamma else time(15, 10)
         now_ist = datetime.now(IST)
-        if now_ist.weekday() < 5 and now_ist.time() >= time(15, 10):
+        if now_ist.weekday() < 5 and now_ist.time() >= eod_cutoff_time:
             exit_pts = round(current_ltp - actual_entry, 2)
             exit_pnl = round(exit_pts * qty, 2)
             status_desc = f"Auto Square-Off (+{exit_pts} pts)" if exit_pts >= 0 else f"Auto Square-Off ({exit_pts} pts)"
+            cutoff_lbl = "02:50 PM IST (0DTE RMS Terminal Cutoff)" if is_expiry_or_gamma else "03:10 PM IST"
             return cls.close_trade(
                 exit_price=current_ltp,
                 status=status_desc,
                 exit_time=now_ist.strftime("%I:%M:%S %p IST"),
-                notes=f"Mandatory EOD Cutoff (03:10 PM IST) enforced. Position closed at market ₹{current_ltp:.2f} (Net: {'+' if exit_pnl>=0 else ''}₹{exit_pnl:,.2f})",
+                notes=f"Mandatory EOD Cutoff ({cutoff_lbl}) enforced. Position closed at market ₹{current_ltp:.2f} (Net: {'+' if exit_pnl>=0 else ''}₹{exit_pnl:,.2f}) to avoid broker RMS penalties.",
                 starting_cash=starting_cash,
                 symbol=active_sym
             )
 
         # Strategy 3: 12-Minute Gamma Trap Time-Stop Enforcement
-        is_gamma_trap = active.get("strategy_tag") == "GAMMA_TRAP_145" or int(active.get("time_stop_mins", 0)) > 0
+        is_gamma_trap = (
+            active.get("strategy_tag") in ("GAMMA_TRAP_145", "GAMMA_TRAP_130")
+            or "GAMMA_TRAP" in str(active.get("strategy_tag", ""))
+            or int(active.get("time_stop_mins", 0)) > 0
+        )
         if is_gamma_trap:
             time_stop_limit = int(active.get("time_stop_mins", 12))
             min_profit_gate = float(active.get("time_stop_profit_gate", 10.0))
@@ -2478,7 +2492,7 @@ class SequentialTradeEngine:
                     exit_price=current_ltp,
                     status=status_desc,
                     exit_time=now_ist.strftime("%I:%M:%S %p IST"),
-                    notes=f"Strategy 3 (1:45 PM Gamma Trap) 12-Min Time-Stop triggered. Position held {elapsed_m}m with gain of {exit_pts:+.2f} pts (< +{min_profit_gate:.1f} pts gate). Scratched at market ₹{current_ltp:.2f} to avert 0DTE theta cliff.",
+                    notes=f"Strategy 3 (01:30 PM Gamma Trap) 12-Min Time-Stop triggered. Position held {elapsed_m}m with gain of {exit_pts:+.2f} pts (< +{min_profit_gate:.1f} pts gate). Scratched at market ₹{current_ltp:.2f} to avert 0DTE theta cliff.",
                     starting_cash=starting_cash,
                     symbol=active_sym
                 )
@@ -2528,9 +2542,9 @@ class SequentialTradeEngine:
                 )
             # Tier 2: Technical Stop Loss Check
             elif current_ltp <= effective_sl:
-                # Institutional Hard Tick SL Gate: Strategy 3 Gamma Trap & Post-1:00 PM 0DTE Expiry trades
+                # Institutional Hard Tick SL Gate: Strategy 3 Gamma Trap & Post-1:30 PM 0DTE Expiry trades
                 # STRICTLY bypass the soft 5m candle close shield to protect against violent 0DTE theta melt.
-                is_afternoon_trade = (now_ist.weekday() < 5 and now_ist.time() >= time(13, 0))
+                is_afternoon_trade = (now_ist.weekday() < 5 and now_ist.time() >= time(13, 30))
                 if is_gamma_trap or is_afternoon_trade:
                     return cls.close_trade(
                         exit_price=current_ltp,

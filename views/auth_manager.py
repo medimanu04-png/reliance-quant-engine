@@ -649,7 +649,7 @@ def render_ultra_premium_login(blocked_route: str = None):
             </div>
             <div class="quant-feature-card">
                 <div style="font-size: 0.70rem; color: #64748B; font-weight: 700;">STRATEGY 3 ENGINE</div>
-                <div style="font-size: 0.85rem; font-weight: 800; color: #38BDF8; margin-top: 2px;">1:45 PM Gamma Trap</div>
+                <div style="font-size: 0.85rem; font-weight: 800; color: #38BDF8; margin-top: 2px;">01:30 PM Gamma Trap</div>
                 <div style="font-size: 0.65rem; color: #94A3B8; margin-top: 2px;">Hard Tick SL &amp; +8pt Breakeven</div>
             </div>
             <div class="quant-feature-card">

@@ -109,7 +109,7 @@ def render_homepage(ctx: dict):
     else:
         hp_banner_icon = "🛡️"
         hp_banner_title = f"THETA DECAY & DAY 1 PREMIUM SHIELD: <span style='color: #818CF8;'>{hp_weekday.upper()} MANDATE</span>"
-        hp_banner_sub = "Standard: <b style='color: #A855F7;'>Tue & Wed = SENSEX ONLY (6 Lots)</b> &bull; <b style='color: #10B981;'>Mon, Thu & Fri = NIFTY ONLY (4 Lots)</b> &bull; <span style='color: #FCD34D;'>Post-1:00 PM Expiry Gamma Blast Exception (1 Call Cap)</span>"
+        hp_banner_sub = "Standard: <b style='color: #A855F7;'>Tue & Wed = SENSEX ONLY (6 Lots)</b> &bull; <b style='color: #10B981;'>Mon, Thu & Fri = NIFTY ONLY (4 Lots)</b> &bull; <span style='color: #FCD34D;'>Post-1:30 PM Expiry Gamma Blast Exception (01:30–02:45 PM, 1 Call Cap)</span>"
 
     st.html(f"""
     <div style="background: linear-gradient(90deg, rgba(30, 27, 75, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid rgba(129, 140, 248, 0.5); border-radius: 10px; padding: 12px 18px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(0,0,0,0.35);">

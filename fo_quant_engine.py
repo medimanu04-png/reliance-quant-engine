@@ -4820,16 +4820,16 @@ class MultiIndicatorMath:
         times: Optional[List[Any]] = None,
         datetimes: Optional[List[Any]] = None,
         box_start_time: time = time(11, 30),
-        box_end_time: time = time(13, 45),
-        window_start_time: time = time(13, 45),
-        window_end_time: time = time(14, 55),
+        box_end_time: time = time(13, 30),
+        window_start_time: time = time(13, 30),
+        window_end_time: time = time(14, 45),
         max_box_ratio: float = 0.0045,
         min_rvol: float = 1.8,
         symbol: str = "NIFTY"
     ) -> Dict[str, Any]:
         """
-        Strategy 3: The 1:45 PM Gamma Trap / Day-High Breakout (Institutional Covering Wave).
-        Identifies tight multi-hour afternoon consolidation (11:30 AM - 1:45 PM < 0.45% of spot),
+        Strategy 3: The 01:30 PM Gamma Trap / Day-High Breakout (Institutional Covering Wave).
+        Identifies tight multi-hour afternoon consolidation (11:30 AM - 01:30 PM < 0.45% of spot),
         where intraday theta sellers (straddles/strangles) have built heavy concentrated exposure.
         A breakout beyond the box accompanied by volume (>= 1.8x 20-bar avg) triggers short covering.
         Mandates a strict 12-minute time stop (+10 pts profit gate).
@@ -4849,7 +4849,7 @@ class MultiIndicatorMath:
             "vol_confirmed": False,
             "is_gamma_trap_setup": False,
             "direction": "NONE",
-            "strategy_name": "1:45 PM GAMMA TRAP / INSTITUTIONAL COVERING WAVE",
+            "strategy_name": "01:30 PM GAMMA TRAP / INSTITUTIONAL COVERING WAVE",
             "target_pts": 40.0 if "SENSEX" not in str(symbol).upper() else 100.0,
             "sl_pts": 15.0 if "SENSEX" not in str(symbol).upper() else 35.0,
             "time_stop_mins": 12,
@@ -4876,7 +4876,7 @@ class MultiIndicatorMath:
         if not session_indices:
             session_indices = list(range(max(0, n_bars - 75), n_bars))
 
-        # 2. Extract indices within the 11:30 AM to 1:45 PM box window
+        # 2. Extract indices within the 11:30 AM to 01:30 PM box window
         box_indices = []
         if times and len(times) == n_bars:
             for idx in session_indices:
@@ -4890,13 +4890,13 @@ class MultiIndicatorMath:
                 if t and box_start_time <= t <= box_end_time:
                     box_indices.append(idx)
         else:
-            # Fallback for 5m bars without time index: 9:15 open -> 11:30 is bar 27, 13:45 is bar 54
+            # Fallback for 5m bars without time index: 9:15 open -> 11:30 is bar 27, 13:30 is bar 51
             if len(session_indices) >= 28:
-                box_indices = session_indices[27:min(55, len(session_indices))]
+                box_indices = session_indices[27:min(52, len(session_indices))]
 
         default_res["bars_in_box"] = len(box_indices)
 
-        # If we are currently building the box (11:30 AM - 1:45 PM)
+        # If we are currently building the box (11:30 AM - 01:30 PM)
         is_building = (box_start_time <= current_time < box_end_time)
         default_res["is_building_box"] = is_building
 
@@ -4925,7 +4925,7 @@ class MultiIndicatorMath:
         default_res["is_in_gamma_window"] = is_in_window
 
         if not is_in_window:
-            default_res["status"] = "OUTSIDE_145_GAMMA_WINDOW"
+            default_res["status"] = "OUTSIDE_0130_GAMMA_WINDOW"
             return default_res
 
         if not is_compressed:
@@ -5050,7 +5050,7 @@ class QuantConfig:
     afternoon_strict_gate_time: time = None
     afternoon_hard_stop_time: time = None
     
-    # Strategy 3: 1:45 PM Gamma Trap / Institutional Covering Wave
+    # Strategy 3: 01:30 PM Gamma Trap / Institutional Covering Wave
     gamma_trap_start_time: time = None
     gamma_trap_end_time: time = None
     gamma_box_start_time: time = None
@@ -5093,15 +5093,15 @@ class QuantConfig:
         if self.afternoon_strict_gate_time is None:
             self.afternoon_strict_gate_time = time(13, 0)
         if self.afternoon_hard_stop_time is None:
-            self.afternoon_hard_stop_time = time(13, 45)
+            self.afternoon_hard_stop_time = time(14, 50)
         if self.gamma_trap_start_time is None:
-            self.gamma_trap_start_time = time(13, 45)
+            self.gamma_trap_start_time = time(13, 30)
         if self.gamma_trap_end_time is None:
-            self.gamma_trap_end_time = time(14, 55)
+            self.gamma_trap_end_time = time(14, 45)
         if self.gamma_box_start_time is None:
             self.gamma_box_start_time = time(11, 30)
         if self.gamma_box_end_time is None:
-            self.gamma_box_end_time = time(13, 45)
+            self.gamma_box_end_time = time(13, 30)
 
         # Auto-load empirical calibration parameters if available
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -5220,15 +5220,24 @@ class UltraHighConvictionRelianceEngine:
         """
         # Strict Execution Timing Gates:
         # 1. 09:15 - 09:30 AM: Opening Price Discovery & ORB Formation (Tradable if allow_orb_early_entry=True)
-        # 2. 09:30 - 14:45 PM: Active High-Probability Execution Window
-        # 3. 14:45 - 15:05 PM: Intraday Expiry / Square-off Cooldown
-        # 4. 15:05+ PM: Auto Square-off Enforcement
+        # 2. 09:30 - 14:45 PM: Active High-Probability Execution Window (Standard Assets)
+        # 3. 13:30 - 14:45 PM: ⚡ High-Conviction Gamma Window (0DTE Expiry Exception, 1 Call Cap)
+        # 4. 14:45 - 14:50 PM: Intraday Expiry / Square-off Cooldown (No new entries)
+        # 5. 14:50 PM IST: Hard Daily Terminal Cutoff (Zero new entries, strictly exit runners)
+        # 6. 15:05+ PM: Auto Square-off Enforcement (Standard Non-Expiry)
         in_orb_window = time(9, 15) <= current_time <= time(9, 30)
         opening_cooldown_active = False  # Unlocked from 09:15 AM market open itself
-        market_open = time(9, 15)
-        market_close = time(15, 20) if is_gamma_exception else time(15, 10)
-        cutoff = time(15, 15) if is_gamma_exception else time(14, 45)
-        auto_sq = time(15, 20) if is_gamma_exception else time(15, 5)
+
+        if is_gamma_exception:
+            market_open = time(13, 30)
+            market_close = time(14, 50)
+            cutoff = time(14, 45)
+            auto_sq = time(14, 50)
+        else:
+            market_open = time(9, 15)
+            market_close = time(15, 10)
+            cutoff = time(14, 45)
+            auto_sq = time(15, 5)
 
         time_allowed = market_open <= current_time <= market_close and current_time <= cutoff
         auto_sq_active = current_time >= auto_sq
@@ -6870,7 +6879,7 @@ class UltraHighConvictionRelianceEngine:
         )
         final_lot_multiplier = round(bet_multiplier * midday_lot_multiplier, 2)
 
-        # Strategy 3: 1:45 PM Gamma Trap / Institutional Covering Wave Evaluation
+        # Strategy 3: 01:30 PM Gamma Trap / Institutional Covering Wave Evaluation
         gamma_trap = MultiIndicatorMath.calculate_gamma_trap_compression(
             highs=c3m.get("high") if (c3m and c3m.get("high")) else c5m.get("high", []),
             lows=c3m.get("low") if (c3m and c3m.get("low")) else c5m.get("low", []),
@@ -6882,9 +6891,9 @@ class UltraHighConvictionRelianceEngine:
             times=c5m.get("times"),
             datetimes=c5m.get("datetimes"),
             box_start_time=getattr(self.config, "gamma_box_start_time", time(11, 30)),
-            box_end_time=getattr(self.config, "gamma_box_end_time", time(13, 45)),
-            window_start_time=getattr(self.config, "gamma_trap_start_time", time(13, 45)),
-            window_end_time=getattr(self.config, "gamma_trap_end_time", time(14, 55)),
+            box_end_time=getattr(self.config, "gamma_box_end_time", time(13, 30)),
+            window_start_time=getattr(self.config, "gamma_trap_start_time", time(13, 30)),
+            window_end_time=getattr(self.config, "gamma_trap_end_time", time(14, 45)),
             max_box_ratio=getattr(self.config, "gamma_box_max_compression_ratio", 0.0045),
             min_rvol=getattr(self.config, "gamma_box_min_rvol", 1.8),
             symbol=active_sym
@@ -6894,8 +6903,12 @@ class UltraHighConvictionRelianceEngine:
 
         # Strict Execution Gate:
         # Time-decay gate: reject new entries after 13:45 (insufficient runway before 15:05 square-off)
-        # Exception: Post-1:00 PM Expiry Gamma Blast setup OR Strategy 3 1:45 PM Gamma Trap allows rapid 0DTE execution
-        is_afternoon_runway_exhausted = (current_time >= time(13, 45)) and not is_gamma_exception and not is_gamma_trap_active
+        # Exception: Post-1:30 PM Expiry Gamma Blast setup OR Strategy 3 01:30 PM Gamma Trap allows rapid 0DTE execution until 14:45 (14:50 hard cutoff)
+        is_afternoon_runway_exhausted = (
+            (current_time >= time(14, 50))
+            if (is_gamma_exception or is_gamma_trap_active)
+            else (current_time >= time(13, 45))
+        )
 
         if is_gamma_trap_active:
             recommended_type = gamma_trap.get("direction", recommended_type)
@@ -7510,7 +7523,7 @@ class UltraHighConvictionRelianceEngine:
             "planned_exit_price": tp_premium if is_tradable else None,
             "actual_exit_price": None,   # Populated post-execution
             "exit_slippage_pts": None,   # actual_exit - planned_exit
-            # Strategy 3: 1:45 PM Gamma Trap / Institutional Covering Wave Telemetry
+            # Strategy 3: 01:30 PM Gamma Trap / Institutional Covering Wave Telemetry
             "gamma_trap_telemetry": gamma_trap,
             "is_gamma_trap_setup": is_gamma_trap_active,
             "strategy_tag": "GAMMA_TRAP_145" if is_gamma_trap_active else "STANDARD_CONFLUENCE",

@@ -427,10 +427,10 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     - Calendar-Aware Expiry Rotation:
       * When NIFTY is on 0DTE Expiry (Tuesday, or preponed Monday if Tuesday is holiday):
         Trade BSE SENSEX ONLY (6 Lots) in the morning to protect capital from 0DTE NIFTY theta decay.
-        Post-1:00 PM: NIFTY Expiry Gamma Radar unlocks (1 high-conviction Gamma Blast setup).
+        01:30–02:45 PM: NIFTY Expiry Gamma Radar unlocks (1 high-conviction Gamma Blast setup; 02:50 PM hard cutoff).
       * When SENSEX is on 0DTE Expiry (Thursday, or preponed Wednesday if Thursday is holiday):
         Trade NIFTY 50 ONLY (4 Lots) in the morning to protect capital from 0DTE SENSEX theta decay.
-        Post-1:00 PM: SENSEX Expiry Gamma Radar unlocks (1 high-conviction Gamma Blast setup).
+        01:30–02:45 PM: SENSEX Expiry Gamma Radar unlocks (1 high-conviction Gamma Blast setup; 02:50 PM hard cutoff).
       * Non-Expiry Days:
         - Monday (when not Nifty expiry): NIFTY 50 (4 Lots) • DTE 1 pre-expiry gamma.
         - Wednesday (when not Sensex expiry): BSE SENSEX (6 Lots) • Day 1 NIFTY shield & SENSEX DTE 1.
@@ -521,9 +521,9 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
     is_sensex_expiry_today = (s_act_dt == dt_today)
     is_sensex_expiry_preponed = is_sensex_expiry_today and sensex_exp_info.get("is_shifted", False)
 
-    # Post-1:00 PM IST Gamma Blast Window (13:00 to 15:25 IST)
-    gamma_window_start = time(13, 0)
-    gamma_window_end = time(15, 25)
+    # Post-1:30 PM IST Gamma Blast Window (13:30 to 14:45 IST, Terminal Cutoff 14:50 IST)
+    gamma_window_start = time(13, 30)
+    gamma_window_end = time(14, 45)
     is_post_1pm_window = (gamma_window_start <= t_curr <= gamma_window_end)
 
     # Dynamic Desk Allocation under the Theta Shield:
@@ -535,9 +535,9 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
         locked_lots = 4
         gamma_exception_symbol = "NIFTY"
         if is_nifty_expiry_preponed:
-            schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots) • NIFTY Preponed 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks Post-1:00 PM)"
+            schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots) • NIFTY Preponed 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks 01:30–02:45 PM)"
         else:
-            schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots) • NIFTY 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks Post-1:00 PM)"
+            schedule_label = f"{day_name} Mandate: BSE SENSEX Active (6 Lots) • NIFTY 0DTE Expiry Theta Shield (NIFTY Gamma Radar Unlocks 01:30–02:45 PM)"
     elif is_sensex_expiry_today:
         # Today is SENSEX 0DTE Expiry: Morning trades NIFTY to shield from SENSEX 0DTE theta crush.
         active_symbol = "NIFTY"
@@ -546,9 +546,9 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
         locked_lots = 6
         gamma_exception_symbol = "SENSEX"
         if is_sensex_expiry_preponed:
-            schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • SENSEX Preponed 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks Post-1:00 PM)"
+            schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • SENSEX Preponed 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks 01:30–02:45 PM)"
         else:
-            schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • SENSEX 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks Post-1:00 PM)"
+            schedule_label = f"{day_name} Mandate: NIFTY 50 Active (4 Lots) • SENSEX 0DTE Expiry Theta Shield (SENSEX Gamma Radar Unlocks 01:30–02:45 PM)"
     else:
         # Standard Non-Expiry Intraday Rotation:
         gamma_exception_symbol = None
@@ -605,7 +605,7 @@ def get_daily_asset_schedule(now_dt: Optional[Any] = None) -> Dict[str, Any]:
 def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_call_used: bool = False) -> Dict[str, Any]:
     """
     Evaluates whether an asset is authorized for trade calls right now,
-    incorporating the weekly schedule and the Post-1:00 PM Expiry Gamma Blast Exception.
+    incorporating the weekly schedule and the 01:30–02:45 PM Expiry Gamma Blast Exception.
     """
     if now_dt is None:
         now_dt = datetime.now(IST)
@@ -671,23 +671,23 @@ def is_asset_tradable_now(symbol: str, now_dt: Optional[Any] = None, exception_c
                         "can_trade": True,
                         "tradable": True,
                         "status": "GAMMA_EXCEPTION_ACTIVE",
-                        "reason": f"Post-1:00 PM Expiry Gamma Blast window active for {target_sym} (1 exception call permitted).",
+                        "reason": f"Post-1:30 PM Expiry Gamma Blast window (01:30–02:45 PM) active for {target_sym} (1 exception call permitted).",
                         "badge_label": "⚡ EXPIRY GAMMA RADAR ACTIVE (1 CALL CAP)",
                         "mandate_lots": sched["locked_lots"],
                         "is_gamma_exception": True
                     }
             else:
-                is_after_window = (t_curr > time(15, 15))
+                is_after_window = (t_curr > time(14, 45))
                 return {
                     "can_trade": False,
                     "tradable": False,
-                    "status": "EXPIRY_WINDOW_CLOSED" if is_after_window else "EXPIRY_LOCKED_UNTIL_1PM",
+                    "status": "EXPIRY_WINDOW_CLOSED" if is_after_window else "EXPIRY_LOCKED_UNTIL_130PM",
                     "reason": (
-                        f"{target_sym} Expiry Gamma Blast window closed at 03:15 PM IST."
+                        f"{target_sym} Expiry Gamma Blast window closed at 02:45 PM IST (Hard terminal cutoff 02:50 PM)."
                         if is_after_window
-                        else f"{target_sym} is locked until 01:00 PM IST (Expiry Gamma Blast radar unlocks post-1:00 PM)."
+                        else f"{target_sym} is locked until 01:30 PM IST (Expiry Gamma Blast radar unlocks 01:30–02:45 PM)."
                     ),
-                    "badge_label": "🛑 EXPIRY WINDOW CLOSED (03:15 PM)" if is_after_window else "⏳ LOCKED UNTIL 01:00 PM (EXPIRY WATCH)",
+                    "badge_label": "🛑 EXPIRY WINDOW CLOSED (02:45 PM)" if is_after_window else "⏳ LOCKED UNTIL 01:30 PM (EXPIRY WATCH)",
                     "mandate_lots": sched["locked_lots"],
                     "is_gamma_exception": False
                 }

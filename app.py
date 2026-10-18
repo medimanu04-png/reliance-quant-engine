@@ -2352,7 +2352,7 @@ else:
     scrip_be_pts = spec.be_pts
 scrip_min_gate = spec.min_confluence_gate
 
-# Theta Decay Expiry Protection Schedule & Post-1:00 PM Gamma Exception
+# Theta Decay Expiry Protection Schedule & Post-1:30 PM Gamma Exception
 from asset_config import get_daily_asset_schedule, is_asset_tradable_now
 desk_sched = get_daily_asset_schedule(datetime.now(IST))
 seq_state_init = SequentialTradeEngine.get_state(symbol=scrip_symbol)
@@ -2414,7 +2414,7 @@ if is_gamma_exception_desk:
             </div>
         </div>
         <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); line-height: 1.4;">
-            Post-1:00 PM Expiry Window open on {scrip_symbol}. Exactly 1 high-probability Gamma Blast trade call allowed.
+            Post-1:30 PM Expiry Window (01:30–02:45 PM) open on {scrip_symbol}. Exactly 1 high-probability Gamma Blast trade call allowed.
         </div>
     </div>
     """)
@@ -2427,7 +2427,7 @@ elif is_current_desk_locked:
     st.sidebar.html(f"""
     <div style="background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.90) 100%); border: 1.5px solid #818CF8; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
         <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.3rem;">{'⏳' if tradable_decision.get('status') == 'EXPIRY_LOCKED_UNTIL_1PM' else '🔒'}</span>
+            <span style="font-size: 1.3rem;">{'⏳' if tradable_decision.get('status') in ('EXPIRY_LOCKED_UNTIL_1PM', 'EXPIRY_LOCKED_UNTIL_130PM') else '🔒'}</span>
             <div>
                 <div style="font-size: 0.88rem; font-weight: 800; color: #E0E7FF;">{tradable_decision['badge_label']}</div>
                 <div style="font-size: 0.68rem; color: #C7D2FE; font-weight: 700;">{desk_sched['weekday_name'].upper()}: {sb_active_sub}</div>
@@ -4200,10 +4200,10 @@ def render_execution_trigger_card(trade_plan: dict, spot: float, broker_call_ltp
         else:
             dist_to_tgt = round(act_target - active_track_ltp, 2)
             dist_to_sl = round(active_track_ltp - effective_sl, 2)
-            is_act_gamma = (active_trade_obj.get("strategy_tag") == "GAMMA_TRAP_145" or int(active_trade_obj.get("time_stop_mins", 0)) > 0)
+            is_act_gamma = (active_trade_obj.get("strategy_tag") in ("GAMMA_TRAP_145", "GAMMA_TRAP_130") or "GAMMA_TRAP" in str(active_trade_obj.get("strategy_tag", "")) or int(active_trade_obj.get("time_stop_mins", 0)) > 0)
             gamma_tag_badge = """
                         <span style="background: rgba(139, 92, 246, 0.35); color: #EDE9FE; font-size: 0.76rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1px solid #A78BFA;">
-                            ⚡ 1:45 PM GAMMA TRAP
+                            ⚡ 01:30 PM GAMMA TRAP
                         </span>
             """ if is_act_gamma else ""
             gamma_sub_desc = f"⚡ <b>Strategy 3 Active</b>: Position must achieve ≥ +{float(active_trade_obj.get('time_stop_profit_gate', 10.0)):.1f} pts gain within {int(active_trade_obj.get('time_stop_mins', 12))} min of entry, or tactical scratch will be executed to avert 0DTE theta cliff." if is_act_gamma else f"Trade #{act_trade_num} is actively running! Tracking every 1-second tick to conclusion (+{plan_target_pts:.1f} pts Target or -{plan_sl_pts:.1f} pts Stop Loss). Will not revert to armed."

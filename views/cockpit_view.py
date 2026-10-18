@@ -293,40 +293,63 @@ def render_trade_status_panel(ctx: dict):
                 cap_badge_title = "🔴 HOLIDAY CLOSED"
                 cap_badge_style = "background: rgba(239, 68, 68, 0.20); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.50);"
                 cap_sub_desc = f"🔴 {h_name} &bull; Closed today"
-            elif lock_status_code == "EXPIRY_LOCKED_UNTIL_1PM":
-                stand_down_status_title = f"⏳ TRADE STATUS: {scrip_symbol} LOCKED UNTIL 01:00 PM &bull; EXPIRY GAMMA WATCH"
-                stand_down_badge = f"⏳ EXPIRY GAMMA RADAR: {scrip_symbol} LOCKED UNTIL 01:00 PM IST"
+            elif lock_status_code in ("EXPIRY_LOCKED_UNTIL_1PM", "EXPIRY_LOCKED_UNTIL_130PM"):
+                stand_down_status_title = f"⏳ TRADE STATUS: {scrip_symbol} LOCKED UNTIL 01:30 PM &bull; EXPIRY GAMMA WATCH"
+                stand_down_badge = f"⏳ EXPIRY GAMMA RADAR: {scrip_symbol} LOCKED UNTIL 01:30 PM IST"
                 stand_down_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.45) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.70); box-shadow: 0 0 12px rgba(245, 158, 11, 0.30);"
-                stand_down_sub = f"Weekly Expiry Rule: Fast morning theta decay protected. Setup unlocks after 01:00 PM IST if a high-conviction Gamma Blast breakout presents itself (1 call cap). Active desk right now: {alt_desk_label}."
+                stand_down_sub = f"Weekly Expiry Rule: Fast morning theta decay protected. Setup unlocks at 01:30 PM – 02:45 PM IST if volume ≥ 1.8x and breakout clears the 11:30–01:30 consolidation box (1 call cap). Active desk right now: {alt_desk_label}."
                 gate_card_bg = "linear-gradient(135deg, rgba(180, 83, 9, 0.35) 0%, rgba(69, 26, 3, 0.60) 100%)"
                 gate_card_border = "1.5px solid rgba(251, 191, 36, 0.50)"
                 gate_card_title = "EXPIRY GAMMA WATCH"
-                gate_card_val = "⏳ Unlocks @ 01:00 PM"
+                gate_card_val = "⏳ Unlocks @ 01:30 PM"
                 gate_card_sub = "⚡ 1/1 Gamma Blast Setup Watch"
                 why_stand_down_html = f"""
-                <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked Until 01:00 PM?</b> Today is {scrip_symbol} weekly expiry! Trading in the morning incurs severe theta decay without clear institutional directional bias.<br>
-                • <b>Morning Window (09:15 AM – 01:00 PM):</b> <b style="color: #F59E0B;">LOCKED</b> to prevent theta bleed. Active desk: <b style="color: #38BDF8;">{alt_desk_label}</b>.<br>
-                • <b>Afternoon Window (01:00 PM – 03:15 PM):</b> Unlocks for <b>1 single High-Conviction Gamma Blast Call</b> if institutional breakout criteria clear the gate.<br>
+                <b style="color: #FFFFFF;">Institutional Expiry Roadmap for {scrip_symbol}:</b> Stand down in the morning to prevent theta bleed while sellers burn premium.<br>
+                • <b>Morning Theta Shield (09:15 AM – 01:15 PM):</b> <b style="color: #F59E0B;">LOCKED</b>. Stand down to prevent theta bleed. Active desk: <b style="color: #38BDF8;">{alt_desk_label}</b>.<br>
+                • <b>Box Formation / Consolidation (11:30 AM – 01:30 PM):</b> Engine monitors range (&lt; 0.45% of spot) for maximum seller trap compression.<br>
+                • <b>⚡ High-Conviction Gamma Window (01:30 PM – 02:45 PM):</b> <b style="color: #10B981;">UNLOCKED (1 Call Cap)</b>. Executes only if volume &ge; 1.8&times; and breakout clears the box.<br>
+                • <b>Hard Daily Terminal Cutoff (02:50 PM IST):</b> <b style="color: #EF4444;">HARD LOCK</b>. Zero new entries allowed; strictly exit runners to avoid broker RMS penalties.<br>
                 <div style="margin-top: 8px;">
                     👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to trade today's primary active asset.
                 </div>
                 """
                 dot_color = "#F59E0B"
-                cap_badge_title = "⏳ EXPIRY RADAR (UNLOCKS 1 PM)"
+                cap_badge_title = "⏳ EXPIRY RADAR (UNLOCKS 1:30 PM)"
                 cap_badge_style = "background: linear-gradient(135deg, rgba(245, 158, 11, 0.20) 0%, rgba(217, 119, 6, 0.30) 100%); color: #FEF3C7; border: 1.5px solid rgba(251, 191, 36, 0.50);"
-                cap_sub_desc = f"⏳ Watch unlocks post-1 PM &bull; Trade {alt_desk_label} now"
+                cap_sub_desc = f"⏳ Watch unlocks 01:30 PM &bull; Trade {alt_desk_label} now"
+            elif lock_status_code == "EXPIRY_WINDOW_CLOSED":
+                stand_down_status_title = f"🛑 TRADE STATUS: {scrip_symbol} EXPIRY WINDOW CLOSED &bull; 02:45 PM CUTOFF"
+                stand_down_badge = f"🛑 EXPIRY GAMMA RADAR: {scrip_symbol} CLOSED AT 02:45 PM IST"
+                stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
+                stand_down_sub = f"Terminal Expiry Cutoff: Window closed at 02:45 PM IST. Hard daily terminal cutoff at 02:50 PM IST strictly prevents new entries to avoid broker RMS auto-square-off penalties."
+                gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
+                gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
+                gate_card_title = "EXPIRY WINDOW CLOSED"
+                gate_card_val = "🛑 Closed @ 02:45 PM"
+                gate_card_sub = "Hard Cutoff 02:50 PM Enforced"
+                why_stand_down_html = f"""
+                <b style="color: #FFFFFF;">Why is {scrip_symbol} Closed?</b> Expiry Day Gamma Window strictly operates between <b>01:30 PM and 02:45 PM IST</b>.<br>
+                • <b>Hard Daily Terminal Cutoff (02:50 PM IST):</b> Zero new entries permitted; strictly exit runners to avoid broker RMS auto-square-off penalties.<br>
+                <div style="margin-top: 8px;">
+                    👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to view today's active signals.
+                </div>
+                """
+                dot_color = "#EF4444"
+                cap_badge_title = "🛑 EXPIRY WINDOW CLOSED"
+                cap_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.20) 0%, rgba(185, 28, 28, 0.30) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.50);"
+                cap_sub_desc = f"🛑 Gamma window closed &bull; 02:50 PM hard cutoff"
             elif lock_status_code == "GAMMA_EXCEPTION_COMPLETED":
                 stand_down_status_title = f"🛑 TRADE STATUS: 1/1 EXPIRY GAMMA CALL COMPLETED TODAY &bull; LOCKED"
                 stand_down_badge = f"🛑 1/1 EXPIRY CALL COMPLETED TODAY: {scrip_symbol}"
                 stand_down_badge_style = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.45) 100%); color: #FEE2E2; border: 1.5px solid rgba(239, 68, 68, 0.70); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30);"
-                stand_down_sub = f"Strict 1/1 Expiry Exception Mandate: The single permitted post-1 PM expiry trade call has already been executed for today. Desk is strictly re-locked to protect profits."
+                stand_down_sub = f"Strict 1/1 Expiry Exception Mandate: The single permitted 01:30–02:45 PM expiry trade call has already been executed for today. Desk is strictly re-locked to protect profits."
                 gate_card_bg = "linear-gradient(135deg, rgba(127, 29, 29, 0.35) 0%, rgba(30, 20, 25, 0.60) 100%)"
                 gate_card_border = "1.5px solid rgba(239, 68, 68, 0.50)"
                 gate_card_title = "EXPIRY CAP REACHED"
                 gate_card_val = "🛑 1/1 Call Executed"
                 gate_card_sub = "Re-locked to Protect Profits"
                 why_stand_down_html = f"""
-                <b style="color: #FFFFFF;">1/1 Expiry Exception Call Limit Cleared:</b> The single permitted post-1 PM expiry call for {scrip_symbol} was triggered and completed. To prevent over-trading in zero-DTE late session chop, no further calls will be issued today.
+                <b style="color: #FFFFFF;">1/1 Expiry Exception Call Limit Cleared:</b> The single permitted 01:30–02:45 PM expiry call for {scrip_symbol} was triggered and completed. To prevent over-trading in zero-DTE late session chop, no further calls will be issued today.
                 <div style="margin-top: 8px;">
                     👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to trade today's primary active asset.
                 </div>
@@ -348,9 +371,9 @@ def render_trade_status_panel(ctx: dict):
                 gate_card_sub = f"🛑 {scrip_symbol} Locked Today"
                 why_stand_down_html = f"""
                 <b style="color: #FFFFFF;">Why is {scrip_symbol} Locked?</b> Under the Institutional Theta Decay Shield, trading calls are rotated to protect buyer capital from morning 0DTE decay and Day 1 premium inflation:<br>
-                • <b>Tuesday (NIFTY Expiry):</b> <b style="color: #A855F7;">BSE SENSEX (6 Lots)</b> shields capital from morning 0DTE NIFTY theta bleed; NIFTY Expiry Gamma Radar unlocks post-1:00 PM.<br>
+                • <b>Tuesday (NIFTY Expiry):</b> <b style="color: #A855F7;">BSE SENSEX (6 Lots)</b> shields capital from morning 0DTE NIFTY theta bleed; NIFTY Expiry Gamma Radar unlocks 01:30–02:45 PM.<br>
                 • <b>Wednesday:</b> <b style="color: #A855F7;">BSE SENSEX (6 Lots)</b> captures SENSEX DTE 1 pre-expiry gamma while shielding against Day 1 NIFTY premium inflation.<br>
-                • <b>Thursday (SENSEX Expiry):</b> <b style="color: #10B981;">NIFTY 50 (4 Lots)</b> shields capital from morning 0DTE SENSEX theta bleed; SENSEX Expiry Gamma Radar unlocks post-1:00 PM.<br>
+                • <b>Thursday (SENSEX Expiry):</b> <b style="color: #10B981;">NIFTY 50 (4 Lots)</b> shields capital from morning 0DTE SENSEX theta bleed; SENSEX Expiry Gamma Radar unlocks 01:30–02:45 PM.<br>
                 • <b>Monday & Friday:</b> <b style="color: #10B981;">NIFTY 50 (4 Lots)</b> trades DTE 1 pre-expiry gamma (Mon) and clean weekend momentum (Fri).<br>
                 <div style="margin-top: 8px;">
                     👉 <a href="{alt_desk_url}" target="_blank" style="color: #38BDF8; font-weight: 800; text-decoration: underline;">Switch to {alt_desk_label} Quant Desk →</a> to view today's active signals.
@@ -500,7 +523,7 @@ def render_trade_status_panel(ctx: dict):
             armed_data = seq_state["armed_setup"]
             inst_str = armed_data.get("instrument", scrip_symbol)
             trig_val = float(armed_data.get("breakout_trigger", 0.0))
-            is_gamma_armed = (armed_data.get("strategy_tag") == "GAMMA_TRAP_145")
+            is_gamma_armed = (armed_data.get("strategy_tag") in ("GAMMA_TRAP_145", "GAMMA_TRAP_130") or "GAMMA_TRAP" in str(armed_data.get("strategy_tag", "")))
             if is_gamma_armed:
                 gbox = armed_data.get("gamma_box_telemetry") or {}
                 b_high = float(gbox.get("box_high", 0.0))
@@ -508,15 +531,15 @@ def render_trade_status_panel(ctx: dict):
                 b_ratio = float(gbox.get("box_ratio", 0.0))
                 b_rvol = float(gbox.get("breakout_rvol", 0.0))
                 stand_down_status_title = "⚡ TRADE STATUS: STRATEGY 3 GAMMA TRAP ARMED &bull; AWAITING BREAKOUT"
-                stand_down_badge = f"⚡ 1:45 PM GAMMA TRAP: {inst_str} @ ₹{trig_val:.2f}"
+                stand_down_badge = f"⚡ 01:30 PM GAMMA TRAP: {inst_str} @ ₹{trig_val:.2f}"
                 stand_down_badge_style = "background: linear-gradient(135deg, rgba(124, 58, 237, 0.40) 0%, rgba(91, 33, 182, 0.50) 100%); color: #EDE9FE; border: 1.5px solid rgba(139, 92, 246, 0.70); box-shadow: 0 0 14px rgba(139, 92, 246, 0.35);"
-                stand_down_sub = f"Institutional Covering Wave: 11:30–13:45 Box Compression ({b_ratio*100:.2f}% < 0.45%) &bull; Range [₹{b_low:,.1f} - ₹{b_high:,.1f}] &bull; RVOL: {b_rvol:.1f}x &bull; 12M Time Stop Active"
+                stand_down_sub = f"Institutional Covering Wave: 11:30–01:30 Box Compression ({b_ratio*100:.2f}% < 0.45%) &bull; Range [₹{b_low:,.1f} - ₹{b_high:,.1f}] &bull; RVOL: {b_rvol:.1f}x &bull; 12M Time Stop Active"
                 gate_card_bg = "linear-gradient(135deg, rgba(88, 28, 135, 0.40) 0%, rgba(30, 27, 75, 0.60) 100%)"
                 gate_card_border = "1.5px solid rgba(167, 139, 250, 0.60)"
                 gate_card_title = "GAMMA BREAKOUT TRIGGER"
                 gate_card_val = f"₹{trig_val:.2f}"
                 gate_card_sub = "⚡ 12M Time-Stop Active on Fill"
-                why_stand_down_html = f"<b style='color: #FFFFFF;'>Strategy 3 Gamma Trap Armed:</b> Spot coiled tightly between 11:30 AM and 1:45 PM in a {b_ratio*100:.2f}% compression box [₹{b_low:,.1f} - ₹{b_high:,.1f}]. ATM option breakout trigger armed at <b>₹{trig_val:.2f}</b>. <i>Once filled: Position must deliver +10 pts gain within 12 minutes, or tactical scratch exit will be taken immediately to prevent 0DTE theta burn.</i>"
+                why_stand_down_html = f"<b style='color: #FFFFFF;'>Strategy 3 Gamma Trap Armed:</b> Spot coiled tightly between 11:30 AM and 01:30 PM in a {b_ratio*100:.2f}% compression box [₹{b_low:,.1f} - ₹{b_high:,.1f}]. ATM option breakout trigger armed at <b>₹{trig_val:.2f}</b>. <i>Once filled: Position must deliver +10 pts gain within 12 minutes, or tactical scratch exit will be taken immediately to prevent 0DTE theta burn.</i>"
                 dot_color = "#A855F7"
                 cap_badge_title = "⚡ GAMMA TRAP ARMED"
                 cap_badge_style = "background: linear-gradient(135deg, rgba(124, 58, 237, 0.30) 0%, rgba(91, 33, 182, 0.40) 100%); color: #EDE9FE; border: 1.5px solid rgba(139, 92, 246, 0.60);"
@@ -674,10 +697,10 @@ def render_cockpit_tab(ctx: dict):
                     <span style="font-size: 1.6rem;">⚡</span>
                     <div>
                         <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF;">
-                            POST-1:00 PM EXPIRY GAMMA RADAR ACTIVE: {scrip_symbol}
+                            EXPIRY GAMMA RADAR ACTIVE (01:30–02:45 PM): {scrip_symbol}
                         </div>
                         <div style="font-size: 0.78rem; color: #6EE7B7; margin-top: 3px;">
-                            Weekly Expiry Exception: <b>1 Single High-Conviction Gamma Blast Setup Permitted</b> if institutional breakout criteria clear the gate. Sizing: {num_lots} Lots strictly.
+                            Weekly Expiry Window: <b>1 Single High-Conviction Gamma Blast Setup Permitted (01:30–02:45 PM)</b> if volume &ge; 1.8x and breakout clears the 11:30–01:30 box. Sizing: {num_lots} Lots strictly.
                         </div>
                     </div>
                 </div>
@@ -726,7 +749,7 @@ def render_cockpit_tab(ctx: dict):
         sl_p = float(active_trade.get("sl", act_entry - 8.0))
         trail_sl = float(active_trade.get("trailing_sl", sl_p))
 
-        is_gamma_active = (active_trade.get("strategy_tag") == "GAMMA_TRAP_145" or int(active_trade.get("time_stop_mins", 0)) > 0)
+        is_gamma_active = (active_trade.get("strategy_tag") in ("GAMMA_TRAP_145", "GAMMA_TRAP_130") or "GAMMA_TRAP" in str(active_trade.get("strategy_tag", "")) or int(active_trade.get("time_stop_mins", 0)) > 0)
         if is_gamma_active:
             ts_mins = int(active_trade.get("time_stop_mins", 12))
             min_pts = float(active_trade.get("time_stop_profit_gate", 10.0))
@@ -750,7 +773,7 @@ def render_cockpit_tab(ctx: dict):
                     <span style="font-size: 1.3rem;">⚡</span>
                     <div>
                         <div style="font-size: 0.86rem; font-weight: 900; color: #EDE9FE; letter-spacing: 0.3px;">
-                            STRATEGY 3: 1:45 PM GAMMA TRAP &bull; 12-MINUTE TIME STOP ENGAGED
+                            STRATEGY 3: 01:30 PM GAMMA TRAP &bull; 12-MINUTE TIME STOP ENGAGED
                         </div>
                         <div style="font-size: 0.74rem; color: #DDD6FE; margin-top: 2px;">
                             Rule: Position must clear ≥ +{min_pts:.1f} pts within {ts_mins} min to stay open. Current: <b style="color: {'#34D399' if cur_gain>=min_pts else '#FCA5A5'};">{cur_gain:+.2f} pts</b> | Elapsed: <b style="color: {timer_color};">{elap_txt}</b>. Scratches are exempt from One-and-Done daily lockout.

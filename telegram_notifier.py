@@ -1462,7 +1462,7 @@ class TelegramNotifier:
         symbol: str = "NIFTY",
         **kwargs
     ) -> str:
-        """Formats an institutional Strategy 3 (1:45 PM Gamma Trap Breakout) entry alert for Telegram."""
+        """Formats an institutional Strategy 3 (01:30 PM Gamma Trap Breakout) entry alert for Telegram."""
         spot = cls._resolve_live_spot(spot, symbol=symbol, contract=contract)
         now_str = datetime.now(IST).strftime("%I:%M:%S %p IST")
         total_qty = num_lots * lot_size
@@ -1473,14 +1473,14 @@ class TelegramNotifier:
         is_ce = "CE" in contract.upper() or "CALL" in direction.upper()
         dir_icon = "🟢" if is_ce else "🔴"
 
-        return f"""<b>⚡ 1:45 PM GAMMA TRAP BREAKOUT • {symbol}</b>
+        return f"""<b>⚡ 01:30 PM GAMMA TRAP BREAKOUT • {symbol}</b>
 ────────────────────────
 🎯 <b>Strategy:</b> Institutional Covering Wave (Strategy 3)
 {dir_icon} <b>Setup:</b> <b>{direction}</b>
 📌 <b>Contract:</b> <code>{contract}</code>
 ⏱️ <b>Time:</b> {now_str}
 
-📦 <b>Theta Box:</b> 11:30–1:45 PM Range ₹{box_low:.1f} – ₹{box_high:.1f}
+📦 <b>Theta Box:</b> 11:30–01:30 PM Range ₹{box_low:.1f} – ₹{box_high:.1f}
 📐 <b>Compression:</b> <b>{box_ratio_pct:.3f}%</b> (Strictly &lt; 0.45% Threshold)
 🔊 <b>Breakout RVOL:</b> <b>{rvol:.2f}x</b> (&gt; 1.8x Institutional Vol)
 
