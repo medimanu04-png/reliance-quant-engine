@@ -179,6 +179,7 @@ def render_radar_tab(ctx: dict):
             "icon": "📈",
             "score": sim_v1,
             "max": 20.0,
+            "source": "M15 Structural + M5 Trigger + CPR + SuperTrend + ORB",
             "metrics": [
                 ("M15 Structural Compass", f"{mtf_matrix['m15']['regime'].replace('_', ' ')}", f"{'🟢' if mtf_matrix['m15']['is_bullish'] else ('🔴' if mtf_matrix['m15']['is_bearish'] else '🟡')} 9/20/50 Stack"),
                 ("SuperTrend (5m Pillar)", f"ST ₹{float(latest.get('SuperTrend', 0.0)):.1f}", f"{'🟢 Buy Regime (+4)' if st_bullish else '🔴 Sell Regime (0 pts)'}"),
@@ -340,7 +341,7 @@ def render_radar_tab(ctx: dict):
 
                 <div style="font-size: 0.66rem; color: #64748B; border-top: 1px solid #1E293B; margin-top: 8px; padding-top: 4px; display: flex; justify-content: space-between;">
                     <span>Source:</span>
-                    <span style="color: #38BDF8; font-weight: 600;">{v["source"]}</span>
+                    <span style="color: #38BDF8; font-weight: 600;">{v.get("source", "Quantitative Engine Feed")}</span>
                 </div>
             </div>
         </div>
