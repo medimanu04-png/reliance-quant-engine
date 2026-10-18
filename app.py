@@ -1637,15 +1637,30 @@ def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
 prof = groww_feed.user_profile or {}
 ucc_val = prof.get("ucc") or prof.get("client_id") or prof.get("user_id") or "5697793414"
 name_val = prof.get("name") or prof.get("user_name") or prof.get("client_name") or "Verified Trader"
-is_groww_active = (
-    groww_feed.is_connected
-    or bool(groww_feed.user_profile)
-    or bool(groww_feed._access_token)
-    or bool(getattr(groww_feed, "_totp_secret", None))
-    or bool(groww_feed.saved_api_key)
-)
 
-if is_groww_active:
+tok_status = groww_feed.get_token_expiration() if hasattr(groww_feed, "get_token_expiration") else {}
+is_tok_expired = tok_status.get("has_exp") and tok_status.get("is_expired")
+is_groww_connected = groww_feed.is_connected and not is_tok_expired
+
+if is_tok_expired:
+    st.html(f"""
+    <div style="background: linear-gradient(135deg, rgba(127, 29, 29, 0.40) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1.5px solid #EF4444; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #EF4444; box-shadow: 0 0 10px #EF4444; display: inline-block;"></span>
+            <span style="font-size: 0.78rem; font-weight: 800; color: #F87171; letter-spacing: 0.5px; text-transform: uppercase;">
+                GROWW BROKER: SESSION TOKEN EXPIRED
+            </span>
+            <span style="color: #94A3B8; font-size: 0.74rem;">|</span>
+            <span style="font-size: 0.76rem; color: #FCA5A5;">
+                Expired at {tok_status.get('exp_str')} &bull; Account UCC: <b>{ucc_val}</b>
+            </span>
+        </div>
+        <div style="font-size: 0.72rem; color: #F87171; font-weight: 600;">
+            ⚠️ Renew Session Token in Settings or Terminal to Restore Live Order Execution
+        </div>
+    </div>
+    """)
+elif is_groww_connected:
     st.html(f"""
     <div style="background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid #10B981; border-radius: 8px; padding: 8px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 8px;">

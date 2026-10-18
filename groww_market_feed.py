@@ -150,7 +150,18 @@ class GrowwMarketFeed:
         self._token_exp = None
 
     def get_token_expiration(self) -> dict:
-        """Returns token expiration telemetry and remaining validity."""
+        """Returns token expiration telemetry and remaining validity.
+        Automatically detects on-disk token updates and reloads credentials dynamically.
+        """
+        if os.path.exists(CONFIG_FILE):
+            try:
+                mtime = os.path.getmtime(CONFIG_FILE)
+                if mtime > getattr(self, "_last_config_mtime", 0):
+                    self._last_config_mtime = mtime
+                    self._fast_preload_credentials()
+            except Exception:
+                pass
+
         if not getattr(self, "_token_exp", None):
             return {"has_exp": False, "is_expired": False, "remaining_seconds": None, "exp_str": "Unknown"}
         now_ts = time.time()
@@ -654,7 +665,10 @@ class GrowwMarketFeed:
 
     @property
     def is_connected(self) -> bool:
-        """Returns True ONLY if user profile has been successfully validated with Groww."""
+        """Returns True ONLY if user profile has been successfully validated with Groww and token is active."""
+        tok = self.get_token_expiration()
+        if tok.get("has_exp") and tok.get("is_expired"):
+            return False
         return bool(self._is_connected and self._user_profile)
 
     @property
