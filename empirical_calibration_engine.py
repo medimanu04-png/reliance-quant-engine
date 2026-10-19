@@ -153,7 +153,7 @@ class EmpiricalCalibrationEngine:
         
         # If not found by ID, look for most recent unresolved record
         if not record:
-            unresolved = [r for r in dataset if not r.get("outcome", {}).get("is_resolved", False)]
+            unresolved = [r for r in dataset if not (isinstance(r.get("outcome"), dict) and r.get("outcome", {}).get("is_resolved", False))]
             if unresolved:
                 record = unresolved[-1]
 
@@ -181,7 +181,7 @@ class EmpiricalCalibrationEngine:
         Returns calibrated parameters, Brier Score, and goodness of fit metrics.
         """
         dataset = cls.load_dataset()
-        resolved = [r for r in dataset if r.get("outcome", {}).get("is_resolved", False)]
+        resolved = [r for r in dataset if isinstance(r.get("outcome"), dict) and r.get("outcome", {}).get("is_resolved", False)]
 
         sample_size = len(resolved)
         if sample_size < 5:
@@ -205,7 +205,7 @@ class EmpiricalCalibrationEngine:
 
         for r in resolved:
             f = r.get("features", {})
-            outcome = r.get("outcome", {})
+            outcome = r.get("outcome") or {}
             target = outcome.get("target_hit", 0)
             
             x_row = [
@@ -437,7 +437,7 @@ class EmpiricalCalibrationEngine:
         pairs: List[Tuple[float, int]] = []
         for r in resolved:
             f = r.get("features", {})
-            outcome = r.get("outcome", {})
+            outcome = r.get("outcome") or {}
             score = float(f.get("raw_score", f.get("engine_probability", 50.0)))
             target = int(outcome.get("target_hit", 0))
             pairs.append((score, target))
@@ -619,8 +619,7 @@ class EmpiricalCalibrationEngine:
         dataset = cls.load_dataset()
         unresolved = [
             r for r in dataset
-            if not r.get("outcome", {}).get("is_resolved", False)
-            or (r.get("outcome") is None)
+            if not (isinstance(r.get("outcome"), dict) and r.get("outcome", {}).get("is_resolved", False))
         ]
 
         if not unresolved:

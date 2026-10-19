@@ -5265,9 +5265,22 @@ class UltraHighConvictionRelianceEngine:
 
         spot = c5m["close"][-1]
 
+        # Guard: Ensure all mandatory candle keys exist on c5m
+        c5m = dict(c5m)
+        if not c5m.get("high"): c5m["high"] = list(c5m["close"])
+        if not c5m.get("low"): c5m["low"] = list(c5m["close"])
+        if not c5m.get("open"): c5m["open"] = list(c5m["close"])
+        if not c5m.get("volume"): c5m["volume"] = [1000.0] * len(c5m["close"])
+
         # Guard: If c15m is empty or missing, safely fallback to c5m to prevent unhandled IndexError
         if not c15m or not c15m.get("close") or len(c15m["close"]) == 0:
             c15m = c5m
+        else:
+            c15m = dict(c15m)
+            if not c15m.get("high"): c15m["high"] = list(c15m["close"])
+            if not c15m.get("low"): c15m["low"] = list(c15m["close"])
+            if not c15m.get("open"): c15m["open"] = list(c15m["close"])
+            if not c15m.get("volume"): c15m["volume"] = [1000.0] * len(c15m["close"])
 
         # VECTOR 1: Multi-Timeframe Trend & ORB-15 Structure (20 pts)
         ema9 = MultiIndicatorMath.calculate_ema(c5m["close"], 9)[-1]
@@ -5323,7 +5336,7 @@ class UltraHighConvictionRelianceEngine:
         v1_bull = 0.0
         if ema9 > ema20 > ema50 and c15m["close"][-1] > ema200:
             v1_bull += 7.0
-        if st_dir[-1] == 1:
+        if st_dir and st_dir[-1] == 1:
             v1_bull += 4.0
         if adx >= 25.0 and pdi > mdi:
             v1_bull += 3.0
@@ -5352,7 +5365,7 @@ class UltraHighConvictionRelianceEngine:
         v1_bear = 0.0
         if ema9 < ema20 < ema50 and c15m["close"][-1] < ema200:
             v1_bear += 7.0
-        if st_dir[-1] == -1:
+        if st_dir and st_dir[-1] == -1:
             v1_bear += 4.0
         if adx >= 25.0 and mdi > pdi:
             v1_bear += 3.0
@@ -5994,7 +6007,8 @@ class UltraHighConvictionRelianceEngine:
 
         # VECTOR 4: Volatility, Garman-Klass-Yang-Zhang & Parkinson Estimators, TTM Squeeze & RV/IV Edge (15 pts)
         _, bb_upper, bb_lower, bb_width = MultiIndicatorMath.calculate_bollinger_bands(c5m["close"], 20, 2.0)
-        atr_15m = MultiIndicatorMath.calculate_atr(c15m["high"], c15m["low"], c15m["close"], 14)[-1]
+        atr_15m_res = MultiIndicatorMath.calculate_atr(c15m["high"], c15m["low"], c15m["close"], 14)
+        atr_15m = atr_15m_res[-1] if atr_15m_res else 8.5
         parkinson_vol = MultiIndicatorMath.calculate_parkinson_volatility(c5m["high"], c5m["low"], 14)
         yang_zhang_vol = MultiIndicatorMath.calculate_yang_zhang_volatility(c5m["high"], c5m["low"], c5m["close"], c5m.get("open"), 14)
         gk_vol = MultiIndicatorMath.calculate_garman_klass_volatility(c5m.get("open"), c5m["high"], c5m["low"], c5m["close"], 14)

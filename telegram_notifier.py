@@ -155,6 +155,8 @@ class TelegramNotifier:
         cls._alert_cache = records
         cls.save_alert_log(records)
 
+    mark_alert_sent = record_alert_sent
+
     @classmethod
     def clear_entry_alerts_for_symbol(cls, symbol: str) -> None:
         """Clears logged entry and armed alert keys for a specific symbol so subsequent setups can fire."""
@@ -408,7 +410,16 @@ class TelegramNotifier:
         Returns (success: bool, status_summary: str).
         """
         # Guard: Fail-Safe Web Dispatch Architecture
-        if not is_manual_test:
+        # Only defer automated market scan signals. Never defer authentication OTPs,
+        # manual broker order receipts, or explicit user interactive tests.
+        is_exempt_from_deferral = (
+            is_manual_test or 
+            "OTP" in str(html_message).upper() or 
+            "ORDER EXECUTED" in str(html_message).upper() or 
+            "GROWW ORDER" in str(html_message).upper() or
+            "TEST" in str(html_message).upper()
+        )
+        if not is_exempt_from_deferral:
             is_streamlit = (
                 bool(os.environ.get("STREAMLIT_SHARING_MODE")) or 
                 bool(os.environ.get("IS_STREAMLIT_CLOUD")) or 
@@ -688,7 +699,7 @@ class TelegramNotifier:
                     {"text": f"📈 VIEW {scrip_name} POSITIONS", "url": stock_url}
                 ],
                 [
-                    {"text": "📊 RE-CHECK STATUS", "callback_data": f"CMD:STATUS:{scrip_name}"},
+                    {"text": "🔄 SCAN NEXT TRADE", "callback_data": f"CMD:RESET:{scrip_name}"},
                     {"text": "🛑 STAND DOWN", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
@@ -704,7 +715,7 @@ class TelegramNotifier:
                     {"text": "🛑 EXIT POSITION NOW (GROWW)", "url": opt_url}
                 ],
                 [
-                    {"text": f"🚨 EMERGENCY EXIT", "callback_data": f"CMD:EXIT:{scrip_name}"},
+                    {"text": "🔄 SCAN NEXT TRADE", "callback_data": f"CMD:RESET:{scrip_name}"},
                     {"text": "🛑 STAND DOWN DESK", "callback_data": f"CMD:STANDDOWN:{scrip_name}"}
                 ]
             ]
@@ -1269,25 +1280,31 @@ class TelegramNotifier:
         spec = get_asset_spec(symbol=symbol, contract=contract)
         scrip_sym = spec.symbol
         lot_size = spec.lot_size
-        num_lots = kwargs.get("num_lots", spec.default_lots)
+        num_lots = int(kwargs.get("num_lots", spec.default_lots))
         total_qty = num_lots * lot_size
-        half_qty = total_qty // 2
+        t1_lots = max(1, num_lots // 2) if num_lots <= 1 else num_lots // 2
+        t1_qty = t1_lots * lot_size
+        t2_lots = 0 if num_lots <= 1 else num_lots - t1_lots
+        t2_qty = t2_lots * lot_size
         gain_pts = round(exit_price - entry_price, 2)
         if not banked_pnl or banked_pnl <= 0.0:
-            banked_pnl = round(half_qty * gain_pts, 2)
+            banked_pnl = round(t1_qty * gain_pts, 2)
         if target_2 <= 0.0:
             target_2 = round(entry_price + getattr(spec, "target_2_pts", spec.target_pts * 2.0), 2)
-        return f"""<b>🎯 TRANCHE 1 BANKED • {scrip_sym} 50% SECURED</b>
+        pct_lbl = "100% FULL" if num_lots <= 1 else f"{(t1_lots / max(1, num_lots))*100:.0f}%"
+        runner_line = f"📦 <b>Tranche 1:</b> {t1_lots} Lot{'s' if t1_lots>1 else ''} ({t1_qty:,} Qty) Banked • Runner: {t2_lots} Lot{'s' if t2_lots>1 else ''} ({t2_qty:,} Qty)" if t2_lots > 0 else f"📦 <b>Position:</b> 1 Lot ({t1_qty:,} Qty) Fully Banked at Target 1"
+        footer = "<i>Full position booked at Target 1. Trade complete with profit locked.</i>" if t2_lots <= 0 else "<i>Half size booked at Target 1. 50% runner trailing with zero risk.</i>"
+        return f"""<b>🎯 TRANCHE 1 BANKED • {scrip_sym} {pct_lbl} SECURED</b>
 ────────────────────────
 📌 <b>Contract:</b> <code>{contract}</code>
-💰 <b>Banked Profit (50%):</b> <b>+₹{banked_pnl:,.2f}</b> (+{gain_pts:.2f} pts)
+💰 <b>Banked Profit:</b> <b>+₹{banked_pnl:,.2f}</b> (+{gain_pts:.2f} pts)
 
 💵 <b>Entry:</b> ₹{entry_price:.2f}  ➔  🏁 <b>Exit 1:</b> <code>₹{exit_price:.2f}</code>
 🔒 <b>Runner SL:</b> <code>₹{entry_price:.2f}</code> (Locked at Cost)
 🚀 <b>Target 2:</b> <code>₹{target_2:.2f}</code> (Pure Risk-Free Upside)
-📦 <b>Tranche 1:</b> {num_lots // 2} Lots ({half_qty:,} Qty) Banked • Runner: {num_lots - num_lots // 2} Lots ({total_qty - half_qty:,} Qty)
+{runner_line}
 ────────────────────────
-🏁 <i>Half size booked at Target 1. 50% runner trailing with zero risk.</i>"""
+🏁 {footer}"""
 
     @classmethod
     def format_resumption_reentry_alert(

@@ -668,12 +668,14 @@ class NSECalendar:
             except (ValueError, TypeError):
                 target_weekday = 3 if "SENSEX" in str(symbol).upper() else 1
 
+        from datetime import time as dtime
+
         if today_dt is None:
             today_dt = datetime.now(IST)
-        if getattr(today_dt, "tzinfo", None) is not None:
+        elif isinstance(today_dt, date) and not isinstance(today_dt, datetime):
+            today_dt = datetime.combine(today_dt, dtime(9, 15))
+        elif getattr(today_dt, "tzinfo", None) is not None:
             today_dt = today_dt.astimezone(IST).replace(tzinfo=None)
-
-        from datetime import time as dtime
         cur_weekday = today_dt.weekday()
         if cur_weekday < target_weekday:
             days_ahead = target_weekday - cur_weekday
@@ -686,7 +688,12 @@ class NSECalendar:
             days_ahead = 7 - (cur_weekday - target_weekday)
 
         nominal_cand = today_dt + timedelta(days=days_ahead)
-        return self.resolve_expiry_shift(nominal_cand, symbol=symbol)
+        shift_res = self.resolve_expiry_shift(nominal_cand, symbol=symbol)
+        actual_dt = shift_res["actual_dt"]
+        if actual_dt.date() < today_dt.date() or (actual_dt.date() == today_dt.date() and today_dt.time() > dtime(15, 30)):
+            nominal_cand += timedelta(days=7)
+            shift_res = self.resolve_expiry_shift(nominal_cand, symbol=symbol)
+        return shift_res
 
     def get_monthly_stock_expiry(
         self,
@@ -753,8 +760,8 @@ class NSECalendar:
         now = datetime.now(IST)
         market_status = self.is_market_open_today(now)
         next_holiday = self.get_next_holiday(now)
-        nifty_exp = self.get_weekly_expiry(now, target_weekday=3, symbol="NIFTY")
-        sensex_exp = self.get_weekly_expiry(now, target_weekday=4, symbol="SENSEX")
+        nifty_exp = self.get_weekly_expiry(now, target_weekday=1, symbol="NIFTY")
+        sensex_exp = self.get_weekly_expiry(now, target_weekday=3, symbol="SENSEX")
 
         return {
             "calendar_linked": True,

@@ -28,13 +28,22 @@ def render_trade_status_panel(ctx: dict):
     bullish_score = float(ctx.get("bullish_score", 50.0))
     bearish_score = float(ctx.get("bearish_score", 50.0))
     neutral_score = round(max(0.0, 100.0 - bullish_score - bearish_score), 1)
+    # Strictly normalize visual bar widths to 100.0% so flexbox container never overflows or wraps
+    _total_bar = bullish_score + neutral_score + bearish_score
+    if _total_bar > 0:
+        bar_bull_w = round((bullish_score / _total_bar) * 100.0, 1)
+        bar_neu_w = round((neutral_score / _total_bar) * 100.0, 1)
+        bar_bear_w = round(max(0.0, 100.0 - bar_bull_w - bar_neu_w), 1)
+    else:
+        bar_bull_w, bar_neu_w, bar_bear_w = 33.3, 33.4, 33.3
     bull_win_exp = ctx.get("bull_win_exp", round(bullish_score * 0.95, 1))
     bear_win_exp = ctx.get("bear_win_exp", round(bearish_score * 0.95, 1))
     expiry_date_str = ctx.get("expiry_date_str", "")
     target_pts = float(ctx.get("target_pts", 0.0))
     sl_pts = float(ctx.get("sl_pts", 0.0))
     total_trading_qty = int(ctx.get("total_trading_qty", 0))
-    num_lots = int(ctx.get("num_lots", 4))
+    spec_cockpit = get_asset_spec(symbol=scrip_symbol)
+    num_lots = int(ctx.get("num_lots", spec_cockpit.default_lots))
     MIN_HIT_PERCENTAGE = float(ctx.get("min_hit_percentage", 60.0))
     estimated_premium = float(ctx.get("estimated_premium", 0.0))
     sl_premium = float(ctx.get("sl_premium", 0.0))
@@ -102,9 +111,9 @@ def render_trade_status_panel(ctx: dict):
                             <span style="color: #F87171;">🔴 Bearish: {bearish_score}%</span>
                         </div>
                         <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
-                            <div style="width: {bullish_score}%; background: #10B981;" title="Bullish: {bullish_score}%"></div>
-                            <div style="width: {neutral_score}%; background: #E2E8F0;" title="Neutral: {neutral_score}%"></div>
-                            <div style="width: {bearish_score}%; background: #EF4444;" title="Bearish: {bearish_score}%"></div>
+                            <div style="width: {bar_bull_w}%; background: #10B981;" title="Bullish: {bullish_score}%"></div>
+                            <div style="width: {bar_neu_w}%; background: #E2E8F0;" title="Neutral: {neutral_score}%"></div>
+                            <div style="width: {bar_bear_w}%; background: #EF4444;" title="Bearish: {bearish_score}%"></div>
                         </div>
                     </div>
 
@@ -170,9 +179,9 @@ def render_trade_status_panel(ctx: dict):
                             <span style="color: #34D399;">🟢 Bullish: {bullish_score}%</span>
                         </div>
                         <div style="width: 100%; height: 6px; background: #1E293B; border-radius: 3px; overflow: hidden; margin-top: 6px; display: flex;">
-                            <div style="width: {bearish_score}%; background: #EF4444;" title="Bearish: {bearish_score}%"></div>
-                            <div style="width: {neutral_score}%; background: #E2E8F0;" title="Neutral: {neutral_score}%"></div>
-                            <div style="width: {bullish_score}%; background: #10B981;" title="Bullish: {bullish_score}%"></div>
+                            <div style="width: {bar_bear_w}%; background: #EF4444;" title="Bearish: {bearish_score}%"></div>
+                            <div style="width: {bar_neu_w}%; background: #E2E8F0;" title="Neutral: {neutral_score}%"></div>
+                            <div style="width: {bar_bull_w}%; background: #10B981;" title="Bullish: {bullish_score}%"></div>
                         </div>
                     </div>
 
@@ -626,9 +635,9 @@ def render_trade_status_panel(ctx: dict):
                         <span style="color: #F87171; background: rgba(239, 68, 68, 0.18); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.35);">🔴 Bearish: {bearish_score}%</span>
                     </div>
                     <div style="width: 100%; height: 8px; background: #1E293B; border-radius: 4px; overflow: hidden; margin-top: 8px; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);">
-                        <div style="width: {bullish_score}%; background: #10B981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);" title="Bullish Conviction: {bullish_score}%"></div>
-                        <div style="width: {neutral_score}%; background: #E2E8F0; box-shadow: 0 0 8px rgba(226, 232, 240, 0.6);" title="Neutral / Uncommitted Noise: {neutral_score}%"></div>
-                        <div style="width: {bearish_score}%; background: #EF4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);" title="Bearish Conviction: {bearish_score}%"></div>
+                        <div style="width: {bar_bull_w}%; background: #10B981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);" title="Bullish Conviction: {bullish_score}%"></div>
+                        <div style="width: {bar_neu_w}%; background: #E2E8F0; box-shadow: 0 0 8px rgba(226, 232, 240, 0.6);" title="Neutral / Uncommitted Noise: {neutral_score}%"></div>
+                        <div style="width: {bar_bear_w}%; background: #EF4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);" title="Bearish Conviction: {bearish_score}%"></div>
                     </div>
                 </div>
 
@@ -932,7 +941,8 @@ def render_cockpit_tab(ctx: dict):
                                     TelegramNotifier.send_message(
                                         tc.get("bot_token", ""),
                                         tc.get("chat_id", ""),
-                                        f"⚡ <b>1-TAP GROWW ORDER EXECUTED</b>\n\nScrip: {scrip_symbol}\nContract: {inst_label}\nQty: {trade_qty}\nFill Price: ₹{planned_p:.2f}\nOrder ID: <code>{oid}</code>"
+                                        f"⚡ <b>1-TAP GROWW ORDER EXECUTED</b>\n\nScrip: {scrip_symbol}\nContract: {inst_label}\nQty: {trade_qty}\nFill Price: ₹{planned_p:.2f}\nOrder ID: <code>{oid}</code>",
+                                        is_manual_test=True
                                     )
                         except Exception:
                             pass

@@ -1990,8 +1990,8 @@ class SequentialTradeEngine:
             "expiry": expiry,
             "qty": int(qty),
             "num_lots": int(num_lots),
-            "t1_qty": int(qty) // 2,
-            "t2_qty": int(qty) - (int(qty) // 2),
+            "t1_qty": int(qty) if int(num_lots) <= 1 else (int(num_lots) // 2) * (int(qty) // max(1, int(num_lots))),
+            "t2_qty": 0 if int(num_lots) <= 1 else int(qty) - ((int(num_lots) // 2) * (int(qty) // max(1, int(num_lots)))),
             "t1_status": "PENDING",
             "t2_status": "PENDING",
             "confluence": round(float(confluence), 1),
@@ -2118,8 +2118,8 @@ class SequentialTradeEngine:
             "expiry": expiry,
             "qty": int(qty),
             "num_lots": int(num_lots),
-            "t1_qty": int(qty) // 2,
-            "t2_qty": int(qty) - (int(qty) // 2),
+            "t1_qty": int(qty) if int(num_lots) <= 1 else (int(num_lots) // 2) * (int(qty) // max(1, int(num_lots))),
+            "t2_qty": 0 if int(num_lots) <= 1 else int(qty) - ((int(num_lots) // 2) * (int(qty) // max(1, int(num_lots)))),
             "t1_status": "PENDING",
             "t2_status": "PENDING",
             "confluence": round(float(confluence), 1),
@@ -2304,15 +2304,15 @@ class SequentialTradeEngine:
                     if p_qty > 0 and p_qty != active.get("qty"):
                         active["qty"] = p_qty
                         qty = p_qty
-                        lot_sz = max(1, getattr(spec_act, "lot_size", 65 if active_sym == "NIFTY" else 15))
+                        lot_sz = max(1, getattr(spec_act, "lot_size", 65 if active_sym == "NIFTY" else 20))
                         active["num_lots"] = max(1, round(p_qty / lot_sz))
                         changed = True
                     if p_entry > 0 and abs(active.get("actual_entry", 0.0) - p_entry) > 0.01:
                         active["actual_entry"] = round(p_entry, 2)
                         active["planned_entry"] = round(p_entry, 2)
                         actual_entry = round(p_entry, 2)
-                        spec_sl = float(getattr(spec_act, 'sl_pts', 36.0 if active_sym == 'NIFTY' else 4.5))
-                        spec_tgt = float(getattr(spec_act, 'target_pts', 50.0 if active_sym == 'NIFTY' else 10.0))
+                        spec_sl = float(getattr(spec_act, 'sl_pts', 36.0 if active_sym == 'NIFTY' else 60.0))
+                        spec_tgt = float(getattr(spec_act, 'target_pts', 50.0 if active_sym == 'NIFTY' else 120.0))
                         active["sl"] = round(max(0.05, actual_entry - spec_sl), 2)
                         active["target"] = round(actual_entry + spec_tgt, 2)
                         target = active["target"]
@@ -2436,8 +2436,8 @@ class SequentialTradeEngine:
         if target_2 <= target_1:
             target_2 = round(actual_entry + spec_tgt2_pts, 2)
 
-        t1_qty = int(active.get("t1_qty", qty // 2))
-        t2_qty = qty - t1_qty
+        t1_qty = int(active.get("t1_qty", qty if num_lots <= 1 else (num_lots // 2) * (qty // max(1, num_lots))))
+        t2_qty = int(active.get("t2_qty", 0 if num_lots <= 1 else qty - t1_qty))
         t1_status = active.get("t1_status", "PENDING")
         # Mandatory EOD Cutoff (02:50 PM IST for Expiry/Gamma Trades, 03:10 PM for Regular Trades)
         # Strictly exit runners before 02:50 PM IST to avoid broker RMS auto-square-off penalties
@@ -2509,27 +2509,37 @@ class SequentialTradeEngine:
         # Scenario 1: Tranche 1 is still pending
         if t1_status == "PENDING":
             if current_ltp >= target_1 and current_ltp > actual_entry:
-                # Bank Tranche 1 (50% Qty)
-                active["t1_status"] = "BANKED"
-                active["t1_exit_price"] = current_ltp
-                active["t1_exit_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                 t1_pts = round(current_ltp - actual_entry, 2)
-                active["t1_pnl"] = round(t1_pts * t1_qty, 2)
-                # Lock Stop-Loss for Tranche 2 Runner at Cost (Breakeven Free Roll)
-                active["trailing_sl"] = actual_entry
-                active["breakeven_activated"] = True
-                active["t2_status"] = "RUNNER_ACTIVE"
-                active["status"] = "T1 Banked - Runner Active"
-                active["target_2"] = target_2
-                active["notes"] = f"Tranche 1 (50%) Banked @ ₹{current_ltp:.2f} (+{t1_pts} pts). Runner Stop-Loss locked at Cost (₹{actual_entry:.2f}) trailing to Target 2 (₹{target_2:.2f})"
-                cls.save_state(state, symbol=active_sym)
-                return {
-                    "active": True,
-                    "tranche_event": "T1_BANKED",
-                    "t1_pnl": active["t1_pnl"],
-                    "current_ltp": current_ltp,
-                    "state": state
-                }
+                if t2_qty <= 0 or num_lots <= 1:
+                    # Single-lot execution: Complete position booked at Target 1
+                    return cls.close_trade(
+                        exit_price=current_ltp,
+                        status=f"Target 1 Hit (+{t1_pts} pts)",
+                        notes=f"Single-Lot Position Exited at Target 1 @ ₹{current_ltp:.2f} (+{t1_pts} pts net gain).",
+                        starting_cash=starting_cash,
+                        symbol=active_sym
+                    )
+                else:
+                    # Multi-lot execution: Bank Tranche 1 (Integer lots) & trail runner
+                    active["t1_status"] = "BANKED"
+                    active["t1_exit_price"] = current_ltp
+                    active["t1_exit_time"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    active["t1_pnl"] = round(t1_pts * t1_qty, 2)
+                    # Lock Stop-Loss for Tranche 2 Runner at Cost (Breakeven Free Roll)
+                    active["trailing_sl"] = actual_entry
+                    active["breakeven_activated"] = True
+                    active["t2_status"] = "RUNNER_ACTIVE"
+                    active["status"] = "T1 Banked - Runner Active"
+                    active["target_2"] = target_2
+                    active["notes"] = f"Tranche 1 Banked @ ₹{current_ltp:.2f} (+{t1_pts} pts, {t1_qty} qty). Runner Stop-Loss locked at Cost (₹{actual_entry:.2f}) trailing to Target 2 (₹{target_2:.2f}, {t2_qty} qty)"
+                    cls.save_state(state, symbol=active_sym)
+                    return {
+                        "active": True,
+                        "tranche_event": "T1_BANKED",
+                        "t1_pnl": active["t1_pnl"],
+                        "current_ltp": current_ltp,
+                        "state": state
+                    }
             # Solution 2: Two-Tier Stop Loss Check
             # Tier 1: Emergency Hard Catastrophic Stop Loss (Instant Broker Tick Execution)
             elif current_ltp <= hard_sl:

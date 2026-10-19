@@ -2,13 +2,15 @@ import sys
 if sys.platform == "win32":
     try:
         from asyncio.proactor_events import _ProactorBasePipeTransport
-        _orig_call_conn_lost = _ProactorBasePipeTransport._call_connection_lost
-        def _patched_call_conn_lost(self, exc=None):
-            try:
-                _orig_call_conn_lost(self, exc)
-            except (ConnectionResetError, OSError):
-                pass
-        _ProactorBasePipeTransport._call_connection_lost = _patched_call_conn_lost
+        if not getattr(_ProactorBasePipeTransport, "_is_conn_lost_patched", False):
+            _orig_call_conn_lost = _ProactorBasePipeTransport._call_connection_lost
+            def _patched_call_conn_lost(self, exc=None):
+                try:
+                    _orig_call_conn_lost(self, exc)
+                except (ConnectionResetError, OSError):
+                    pass
+            _ProactorBasePipeTransport._call_connection_lost = _patched_call_conn_lost
+            _ProactorBasePipeTransport._is_conn_lost_patched = True
     except Exception:
         pass
 

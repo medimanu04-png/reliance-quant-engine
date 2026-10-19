@@ -1,5 +1,5 @@
 {
-  "current_state": "TRADE CLOSED & AUDITED",
+  "current_state": "IDLE / SCANNING",
   "symbol": "SENSEX",
   "active_trade": null,
   "last_closed_trade": {
@@ -16,7 +16,7 @@
     "pnl": "\u20b9-8,538.00 (-71.15 pts)"
   },
   "today_trade_count": 0,
-  "updated_at": "2026-10-19 12:06:03 AM IST",
+  "updated_at": "2026-10-19 12:59:18 PM IST",
   "re_entry_armed": null,
   "archived_last_closed_trade": {
     "trade_num": 2,
@@ -35,26 +35,52 @@
   "last_cancelled_setup": {
     "setup": {
       "armed": true,
-      "contract": "SENSEX 73100 PE (15-OCT-2026)",
-      "instrument": "SENSEX 73100 PE",
+      "contract": "SENSEX 73900 CE (22-OCT-2026)",
+      "instrument": "SENSEX 73900 CE (22-OCT-2026)",
       "symbol": "SENSEX",
-      "strike": 73100,
-      "contract_type": "PE",
-      "direction": "BEARISH (PUT / PE)",
-      "breakout_trigger": 409.05,
-      "initial_ltp": 374.5,
-      "target_pts": 123.8,
-      "sl_pts": 61.9,
-      "confluence": 86.3,
+      "strike": 73900,
+      "contract_type": "CE",
+      "direction": "BULLISH (CALL / CE)",
+      "breakout_trigger": 449.7,
+      "initial_ltp": 405.65,
+      "target_pts": 96.6,
+      "sl_pts": 45.1,
+      "confluence": 90.8,
       "num_lots": 6,
       "lot_size": 20,
-      "spot": 73012.5,
-      "expiry": "15-OCT-2026",
-      "armed_at": "11:07:30 AM IST",
-      "armed_timestamp": 1791956250.848496,
-      "valid_until_timestamp": 1791957750.848496
+      "spot": 73932.13,
+      "expiry": "22-OCT-2026",
+      "armed_at": "12:59:10 PM IST",
+      "armed_timestamp": 1792394950.500418,
+      "valid_until_timestamp": 1792396450.500418,
+      "strategy_tag": "STANDARD_CONFLUENCE",
+      "time_stop_mins": 0,
+      "time_stop_profit_gate": 0.0,
+      "gamma_box_telemetry": {
+        "is_in_gamma_window": false,
+        "is_building_box": true,
+        "is_compressed": true,
+        "box_high": 74777.84,
+        "box_low": 74495.88,
+        "box_range": 281.96,
+        "box_ratio": 0.00381,
+        "box_ratio_pct": 0.381,
+        "breakout_ce": false,
+        "breakout_pe": false,
+        "rvol": 1.0,
+        "vol_confirmed": false,
+        "is_gamma_trap_setup": false,
+        "direction": "NONE",
+        "strategy_name": "01:30 PM GAMMA TRAP / INSTITUTIONAL COVERING WAVE",
+        "target_pts": 100.0,
+        "sl_pts": 35.0,
+        "time_stop_mins": 12,
+        "time_stop_profit_gate": 10.0,
+        "bars_in_box": 25,
+        "status": "BUILDING_GAMMA_BOX: Range \u20b9282.0 (0.38% vs <=0.45% cap)"
+      }
     },
-    "reason": "Breakout trigger \u20b9409.05 was not breached within 25-minute setup window. Setup timed out.",
-    "cancelled_at": "11:32:41 AM IST"
+    "reason": "Institutional momentum shifted to BEARISH (PUT / PE) (91.6% confluence). Stale setup superseded.",
+    "cancelled_at": "12:59:18 PM IST"
   }
 }

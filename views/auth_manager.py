@@ -175,7 +175,7 @@ def _dispatch_otp_to_telegram(mobile: str, otp_code: str, exp_dt: datetime) -> t
 ⚠️ <i>Never disclose this one-time passcode to anyone.</i>
 """
         from telegram_notifier import TelegramNotifier
-        ok, res = TelegramNotifier.send_message(bot_token, chat_id, msg)
+        ok, res = TelegramNotifier.send_message(bot_token, chat_id, msg, is_manual_test=True)
         return ok, res
     except Exception as e:
         return False, str(e)

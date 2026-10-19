@@ -705,7 +705,9 @@ class RelianceQuantAlertDaemon:
             try:
                 expiry_date = datetime.strptime(up_dt, "%Y-%m-%d").strftime("%d-%b-%Y").upper()
             except Exception:
-                expiry_date = "15-OCT-2026" if sym == "SENSEX" else "13-OCT-2026"
+                from nse_calendar import nse_calendar
+                target_wd = 3 if sym == "SENSEX" else 1
+                expiry_date = nse_calendar.get_weekly_expiry(now_dt, target_weekday=target_wd, symbol=sym)["actual_str"].upper()
 
         # Resolve selected strike & live option LTP
         recommended_strike = best_pick["strike"]
@@ -795,9 +797,43 @@ class RelianceQuantAlertDaemon:
         current_state = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
         active_trade = seq_state.get("active_trade")
 
+        # Auto-Acknowledgment Guard for Autonomous 24/7 Daemon:
+        # If trade closed and 10-minute cooldown has elapsed (and no active re-entry watchdog),
+        # automatically transition back to IDLE so trader is never locked out of subsequent setups.
+        if current_state == SequentialTradeEngine.STATE_TRADE_CLOSED:
+            re_entry = seq_state.get("re_entry_armed")
+            is_re_entry_active = bool(re_entry and re_entry.get("armed"))
+            if not is_re_entry_active:
+                last_cl = seq_state.get("last_closed_trade", {})
+                exit_time_str = str(last_cl.get("exit_time", ""))
+                should_auto_reset = True
+                if exit_time_str:
+                    try:
+                        clean_t = exit_time_str.replace(" IST", "").strip()
+                        for fmt in ("%I:%M:%S %p", "%H:%M:%S"):
+                            try:
+                                t_obj = datetime.strptime(clean_t, fmt).time()
+                                elapsed_mins = int((now_dt.replace(tzinfo=None) - datetime.combine(now_dt.date(), t_obj)).total_seconds() / 60.0)
+                                if elapsed_mins < 10:
+                                    should_auto_reset = False
+                                break
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+                if should_auto_reset:
+                    logger.info(f"[{time_str}] 🔄 Auto-acknowledging closed trade #{last_cl.get('trade_num', 1)} on {sym} after 10m cooldown. Resetting desk to IDLE/SCANNING.")
+                    SequentialTradeEngine.acknowledge_and_reset(symbol=sym)
+                    seq_state = SequentialTradeEngine.get_state(symbol=sym)
+                    current_state = seq_state.get("current_state", SequentialTradeEngine.STATE_IDLE)
+
         # Expiry String
         expiry_info = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=sym)
-        expiry_date = expiry_info.get("selected_expiry", "06-OCT-2026" if sym == "NIFTY" else "08-OCT-2026")
+        expiry_date = expiry_info.get("selected_expiry")
+        if not expiry_date:
+            from nse_calendar import nse_calendar
+            target_wd = 3 if sym == "SENSEX" else 1
+            expiry_date = nse_calendar.get_weekly_expiry(now_dt, target_weekday=target_wd, symbol=sym)["actual_str"].upper()
 
         # ----------------------------------------------------------------------
         # STATE A: IN-TRADE (Monitoring Target, SL, and Trailing SL)
@@ -1351,8 +1387,12 @@ class RelianceQuantAlertDaemon:
                 )
                 initial_armed_ltp = float(armed_setup.get("initial_ltp", 0.0))
                 is_premium_decayed = (initial_armed_ltp > 5.0 and cur_armed_ltp > 0.05 and cur_armed_ltp < (initial_armed_ltp * 0.70))
-                is_gap_widened = (armed_sl_pts > 0 and gap_pts > (armed_sl_pts * 1.5))
-                is_counter_trend = (confluence_eval.get("dominant_side") != armed_type and float(confluence_eval.get("dominant_score", 0.0)) >= 85.0)
+                opposing_type = "PE" if armed_type == "CE" else "CE"
+                is_counter_trend = (
+                    (confluence_eval.get("recommended_type") == opposing_type or (armed_type not in str(confluence_eval.get("dominant_side", ""))))
+                    and float(confluence_eval.get("dominant_score", 0.0)) >= 85.0
+                )
+                is_gap_widened = (gap_pts > (armed_sl_pts * 1.5))
 
                 if is_timed_out or is_spot_reversed or is_premium_decayed or is_gap_widened or is_counter_trend or is_eod:
                     if is_spot_reversed:
@@ -1983,6 +2023,19 @@ class RelianceQuantAlertDaemon:
                 f"Asset: <b>{canon_sym}</b>\n"
                 f"Status: 🛡️ <i>Standing Down. 0 trades will trigger.</i>\n"
                 f"Capital safely preserved."
+            )
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
+
+        elif action in ("RESET", "ACK", "NEXT"):
+            TelegramNotifier.answer_callback_query(bot_token, cb_id, text=f"🔄 {canon_sym} Desk Reset to IDLE/SCANNING.")
+            SequentialTradeEngine.acknowledge_and_reset(symbol=canon_sym)
+            msg = (
+                f"<b>🔄 {canon_sym} DESK RESET TO IDLE / SCANNING</b>\n"
+                f"────────────────────────\n"
+                f"Asset: <b>{canon_sym}</b>\n"
+                f"Status: 🟢 <i>Actively scanning for next institutional setup.</i>\n"
+                f"Previous trade outcome acknowledged."
             )
             buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
             TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)

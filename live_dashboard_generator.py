@@ -272,7 +272,9 @@ def get_all_active_states():
             exp_plan = NSEIndiaFetcher.resolve_dynamic_expiry_mandate(symbol=sym)
             exp_str = exp_plan.get("selected_expiry")
         except Exception:
-            exp_str = "06-OCT-2026" if sym == "NIFTY" else ("08-OCT-2026" if sym == "SENSEX" else "27-OCT-2026")
+            from nse_calendar import nse_calendar
+            target_wd = 3 if sym == "SENSEX" else 1
+            exp_str = nse_calendar.get_weekly_expiry(datetime.now(IST), target_weekday=target_wd, symbol=sym)["actual_str"].upper()
             
         # Dynamic Daily Support & Resistance Zones calculation
         spec_item = get_asset_spec(sym)
