@@ -174,31 +174,31 @@ class EODSessionSummaryEngine:
         turnover = debrief.get("total_turnover", 0.0)
 
         msg = (
-            f"⚡ *MANOJ QUANT ENGINE — 03:30 PM EOD PERFORMANCE DEBRIEF*\n"
+            f"⚡ <b>MANOJ QUANT ENGINE — 03:30 PM EOD PERFORMANCE DEBRIEF</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📅 *Date:* {dt_str} | *Closing Time:* {tm_str}\n"
-            f"🎯 *Session Outcome:* {badge}\n\n"
-            f"📊 *DAILY MANDATE & ACTIVITY*\n"
-            f"• *Index Mandate:* `{debrief.get('active_symbol', 'N/A')}`\n"
-            f"• *Rule:* {debrief.get('schedule_rule', 'Standard Weekly Mandate')}\n"
-            f"• *Executed Trades:* {n_trades} ({hits} Hits • {fails} Fails | {wr:.1f}% Win Rate)\n\n"
-            f"💰 *FINANCIAL & STATUTORY RECONCILIATION*\n"
-            f"• *Gross Realized PnL:* ₹{gross:+,.2f}\n"
-            f"• *Statutory Taxes & Brokerage:* -₹{charges:,.2f} (STT, GST, Exchange)\n"
-            f"• *Net Post-Tax PnL:* *₹{net_pnl:+,.2f}*\n"
-            f"• *Premium Turnover:* ₹{turnover:,.2f}\n"
-            f"• *Closing Margin Funds:* ₹{debrief.get('broker_available_cash', 0.0):,.2f}\n"
+            f"📅 <b>Date:</b> {dt_str} | <b>Closing Time:</b> {tm_str}\n"
+            f"🎯 <b>Session Outcome:</b> {badge}\n\n"
+            f"📊 <b>DAILY MANDATE & ACTIVITY</b>\n"
+            f"• <b>Index Mandate:</b> <code>{debrief.get('active_symbol', 'N/A')}</code>\n"
+            f"• <b>Rule:</b> {debrief.get('schedule_rule', 'Standard Weekly Mandate')}\n"
+            f"• <b>Executed Trades:</b> {n_trades} ({hits} Hits • {fails} Fails | {wr:.1f}% Win Rate)\n\n"
+            f"💰 <b>FINANCIAL & STATUTORY RECONCILIATION</b>\n"
+            f"• <b>Gross Realized PnL:</b> ₹{gross:+,.2f}\n"
+            f"• <b>Statutory Taxes & Brokerage:</b> -₹{charges:,.2f} (STT, GST, Exchange)\n"
+            f"• <b>Net Post-Tax PnL:</b> <b>₹{net_pnl:+,.2f}</b>\n"
+            f"• <b>Premium Turnover:</b> ₹{turnover:,.2f}\n"
+            f"• <b>Closing Margin Funds:</b> ₹{debrief.get('broker_available_cash', 0.0):,.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         )
 
         if not debrief.get("is_trading_day"):
-            msg += f"🛑 *NOTE:* Exchange was closed today. No orders placed."
+            msg += f"🛑 <b>NOTE:</b> Exchange was closed today. No orders placed."
         elif n_trades == 0:
-            msg += f"🛡️ *NOTE:* Zero setup triggers breached confluence threshold. 100% Capital Preserved."
+            msg += f"🛡️ <b>NOTE:</b> Zero setup triggers breached confluence threshold. 100% Capital Preserved."
         elif net_pnl > 0:
-            msg += f"🚀 *VERDICT:* Target achieved within institutional risk tolerance. Great execution!"
+            msg += f"🚀 <b>VERDICT:</b> Target achieved within institutional risk tolerance. Great execution!"
         else:
-            msg += f"🛡️ *VERDICT:* Strict 1-and-Done daily loss cap protected capital from extended drawdown."
+            msg += f"🛡️ <b>VERDICT:</b> Strict 1-and-Done daily loss cap protected capital from extended drawdown."
 
         return msg
 

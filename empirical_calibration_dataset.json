@@ -27995,7 +27995,14 @@
     "vpin": 0.542,
     "kalman_slope": -0.3436,
     "changepoint_prob": 0.194,
-    "outcome": null,
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 1,
+      "realized_pnl": 325.0,
+      "realized_pts": 5.0,
+      "exit_reason": "Auto Square-Off (+5.0 pts)",
+      "resolved_at": "2026-10-19 04:47:17 PM IST"
+    },
     "target_hit": null,
     "is_shadow": true
   }

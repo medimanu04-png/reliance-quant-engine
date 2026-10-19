@@ -317,6 +317,9 @@ class TelegramNotifier:
 
         def _execute_http_post(target_id: str, text_content: str, parse_mode: Optional[str] = "HTML") -> Tuple[bool, str, Optional[int]]:
             api_url = f"https://api.telegram.org/bot{token}/sendMessage"
+            # Telegram character limit is strictly 4096 characters
+            if len(text_content) > 4000:
+                text_content = text_content[:3950] + "\n\n...<i>[Truncated for Telegram length limit]</i>"
             payload: Dict[str, Any] = {
                 "chat_id": target_id,
                 "text": text_content,

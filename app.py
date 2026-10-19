@@ -6945,6 +6945,9 @@ if df is not None and not df.empty:
         spot_drift = curr_spot - spot
         live_bull = min(96.0, max(10.0, round(bullish_score + (spot_drift * 0.35), 1)))
         live_bear = min(96.0, max(10.0, round(bearish_score - (spot_drift * 0.35), 1)))
+        live_neu = max(0.0, round(100.0 - live_bull - live_bear, 1))
+        disp_lots = int(st.session_state.get(f"num_lots_{scrip_symbol}", st.session_state.get("num_lots", num_lots)))
+        disp_qty = int(st.session_state.get("lot_size", lot_size)) * disp_lots
 
         k1, k2, k3, k4, k5 = st.columns(5)
         bias_desc = "Bullish Edge" if live_bull > live_bear + 10 else ("Bearish Edge" if live_bear > live_bull + 10 else "Consolidation Chop")
@@ -6975,9 +6978,12 @@ if df is not None and not df.empty:
         # High-Contrast Directional Probability Meter
         st.html(f"""
         <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 12px 16px; margin: 12px 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
                 <span style="font-size: 0.84rem; font-weight: 800; color: #10B981; letter-spacing: 0.3px;">
                     🟢 BULLISH PROBABILITY (CE / CALL): {live_bull}%
+                </span>
+                <span style="font-size: 0.74rem; background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.30); padding: 2px 10px; border-radius: 4px; font-weight: 700;">
+                    ⚪ NEUTRAL / CONSOLIDATION CHOP: {live_neu}%
                 </span>
                 <span style="font-size: 0.74rem; background: rgba(245, 158, 11, 0.18); color: #FBBF24; padding: 2px 8px; border-radius: 4px; font-weight: 700;">
                     INSTITUTIONAL GATE: &gt; {MIN_HIT_PERCENTAGE:.0f}% HIT PROBABILITY REQUIRED
@@ -6987,8 +6993,9 @@ if df is not None and not df.empty:
                 </span>
             </div>
             <div style="width: 100%; height: 12px; background: #1E293B; border-radius: 6px; overflow: hidden; display: flex;">
-                <div style="width: {live_bull}%; background: linear-gradient(90deg, #059669, #10B981); transition: width 0.3s ease;"></div>
-                <div style="width: {live_bear}%; background: linear-gradient(90deg, #DC2626, #EF4444); transition: width 0.3s ease;"></div>
+                <div style="width: {live_bull}%; background: linear-gradient(90deg, #059669, #10B981); transition: width 0.3s ease;" title="Bullish: {live_bull}%"></div>
+                <div style="width: {live_neu}%; background: #475569; border-left: 1px solid rgba(255,255,255,0.08); border-right: 1px solid rgba(255,255,255,0.08); transition: width 0.3s ease;" title="Neutral / Chop: {live_neu}%"></div>
+                <div style="width: {live_bear}%; background: linear-gradient(90deg, #DC2626, #EF4444); transition: width 0.3s ease;" title="Bearish: {live_bear}%"></div>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 0.76rem; color: #CBD5E1; margin-top: 8px;">
                 <span>Active Call Strike: <b style="color: #FFFFFF;">{scrip_symbol} {atm_strike} CE ({expiry_date_str})</b></span>
@@ -7158,8 +7165,8 @@ if df is not None and not df.empty:
             <div style="display: flex; align-items: center; gap: 12px;">
                 <div style="text-align: right;">
                     <span style="font-size: 0.72rem; color: #94A3B8; font-weight: 700;">💳 MANDATE SIZING</span>
-                    <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{num_lots} Lots ({total_trading_qty} Units)</div>
-                    <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">Strict Rule: {scrip_symbol} {num_lots} Lots Everyday</div>
+                    <div style="font-size: 1.10rem; font-weight: 900; color: {'#34D399' if capital_risk_safe else ('#FBBF24' if capital_risk_warning else '#F87171')};">{disp_lots} Lots ({disp_qty} Units)</div>
+                    <div style="font-size: 0.68rem; color: {'#6EE7B7' if capital_risk_safe else ('#FDE68A' if capital_risk_warning else '#FCA5A5')};">Strict Rule: {scrip_symbol} {disp_lots} Lots Everyday</div>
                 </div>
             </div>
         </div>

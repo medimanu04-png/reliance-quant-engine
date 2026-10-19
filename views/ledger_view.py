@@ -358,10 +358,14 @@ def render_ledger_tab(ctx: dict):
                     pts = round(m_exit_price - m_actual_entry, 2) if m_status != "Open" else 0.0
                     realised_pnl = round(pts * qty_calc, 2) if m_status != "Open" else 0.0
                     t_now = datetime.now(IST).strftime("%I:%M:%S %p IST")
+                    try:
+                        m_day_name = datetime.strptime(str(m_date).strip(), "%Y-%m-%d").strftime("%A") if m_date else "Today"
+                    except Exception:
+                        m_day_name = datetime.now(IST).strftime("%A")
                     t_rec = {
-                        "id": f"TRD-{m_date.replace('-', '')}-{int(time_mod.time()) % 1000:03d}-MANUAL",
+                        "id": f"TRD-{str(m_date).replace('-', '')}-{int(time_mod.time()) % 1000:03d}-MANUAL",
                         "date": m_date,
-                        "day": datetime.strptime(m_date, "%Y-%m-%d").strftime("%A") if m_date else "Today",
+                        "day": m_day_name,
                         "trading_symbol": m_instrument,
                         "instrument": m_instrument,
                         "type": m_action,

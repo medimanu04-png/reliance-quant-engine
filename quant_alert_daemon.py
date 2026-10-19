@@ -2128,6 +2128,18 @@ class RelianceQuantAlertDaemon:
             buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
             TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
 
+        elif cmd in ("/reset", "/ack", "/next", "/scan"):
+            SequentialTradeEngine.acknowledge_and_reset(symbol=canon_sym)
+            msg = (
+                f"<b>🔄 {canon_sym} DESK RESET TO IDLE / SCANNING</b>\n"
+                f"────────────────────────\n"
+                f"Asset: <b>{canon_sym}</b>\n"
+                f"Status: 🟢 <i>Actively scanning for next institutional setup.</i>\n"
+                f"Previous trade outcome acknowledged."
+            )
+            buttons = TelegramNotifier.get_interactive_control_buttons(canon_sym)
+            TelegramNotifier.send_message(bot_token, chat_id, msg, reply_markup=buttons)
+
         elif cmd in ("/exit", "/squareoff"):
             state = SequentialTradeEngine.get_state(symbol=canon_sym)
             if state.get("current_state") == SequentialTradeEngine.STATE_IN_TRADE and state.get("active_trade"):
@@ -2149,11 +2161,14 @@ class RelianceQuantAlertDaemon:
             help_txt = (
                 "<b>🤖 Institutional Quant Bot Commands:</b>\n\n"
                 "• <code>/status</code> - Full multi-desk telemetry\n"
+                "• <code>/reset NIFTY</code> - Reset desk to scan for next setup\n"
+                "• <code>/reset SENSEX</code> - Reset Sensex desk to scan\n"
                 "• <code>/arm NIFTY</code> - Arm Nifty desk\n"
                 "• <code>/arm SENSEX</code> - Arm Sensex desk\n"
                 "• <code>/standdown NIFTY</code> - Stand down Nifty desk\n"
                 "• <code>/standdown SENSEX</code> - Stand down Sensex desk\n"
                 "• <code>/exit NIFTY</code> - Emergency exit Nifty trade\n"
+                "• <code>/exit SENSEX</code> - Emergency exit Sensex trade\n"
                 "• <code>/help</code> - Command menu"
             )
             buttons = TelegramNotifier.get_interactive_control_buttons("NIFTY")

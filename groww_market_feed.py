@@ -3131,6 +3131,13 @@ class GrowwMarketFeed:
                 ex_str = exchange.upper()
             ex = getattr(GrowwAPI, f"EXCHANGE_{ex_str}", ex_str)
 
+            p_val = float(price) if price is not None else 0.0
+            if p_val > 0:
+                p_val = round(round(p_val / 0.05) * 0.05, 2)
+            trig_val = float(trigger_price) if trigger_price is not None else None
+            if trig_val is not None and trig_val > 0:
+                trig_val = round(round(trig_val / 0.05) * 0.05, 2)
+
             res = self._groww_api.place_order(
                 validity=v_type,
                 exchange=ex,
@@ -3140,8 +3147,8 @@ class GrowwMarketFeed:
                 segment=s_type,
                 trading_symbol=trading_symbol,
                 transaction_type=t_type,
-                price=float(price),
-                trigger_price=float(trigger_price) if trigger_price is not None else None,
+                price=p_val,
+                trigger_price=trig_val,
                 timeout=4.0
             )
             order_id = ""
@@ -3175,15 +3182,26 @@ class GrowwMarketFeed:
             from growwapi import GrowwAPI
             order_type = GrowwAPI.SMART_ORDER_TYPE_OCO if (target_price and stop_loss_price) else GrowwAPI.SMART_ORDER_TYPE_GTT
             t_dir = GrowwAPI.TRIGGER_DIRECTION_UP if trigger_direction.upper() == "UP" else GrowwAPI.TRIGGER_DIRECTION_DOWN
-            ex = GrowwAPI.EXCHANGE_NSE
+            sym_up = trading_symbol.upper()
+            ex_str = "BSE" if ("SENSEX" in sym_up or "BANKEX" in sym_up) else "NSE"
+            ex = getattr(GrowwAPI, f"EXCHANGE_{ex_str}", ex_str)
             s_type = getattr(GrowwAPI, f"SEGMENT_{segment.upper()}", segment.upper())
 
+            def _to_tick_str(val: Optional[float]) -> Optional[str]:
+                if val is None or float(val) <= 0:
+                    return None
+                rounded = round(round(float(val) / 0.05) * 0.05, 2)
+                return f"{rounded:.2f}"
+
+            trig_str = _to_tick_str(trigger_price) or f"{float(trigger_price):.2f}"
             target_leg = None
             if target_price:
-                target_leg = {"price": str(target_price), "trigger_price": str(target_price)}
+                tgt_tick = _to_tick_str(target_price)
+                target_leg = {"price": tgt_tick, "trigger_price": tgt_tick}
             sl_leg = None
             if stop_loss_price:
-                sl_leg = {"price": str(stop_loss_price), "trigger_price": str(stop_loss_price)}
+                sl_tick = _to_tick_str(stop_loss_price)
+                sl_leg = {"price": sl_tick, "trigger_price": sl_tick}
 
             res = self._groww_api.create_smart_order(
                 smart_order_type=order_type,
@@ -3193,7 +3211,7 @@ class GrowwMarketFeed:
                 product_type=product_type,
                 exchange=ex,
                 duration="GTC",
-                trigger_price=str(trigger_price),
+                trigger_price=trig_str,
                 trigger_direction=t_dir,
                 target=target_leg,
                 stop_loss=sl_leg,

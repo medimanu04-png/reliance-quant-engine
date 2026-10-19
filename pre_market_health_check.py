@@ -294,34 +294,34 @@ class PreMarketHealthCheckEngine:
         badge = diag.get("readiness_badge", "")
 
         msg = (
-            f"⚡ *MANOJ QUANT ENGINE — 09:00 AM PRE-MARKET HEALTH CHECK*\n"
+            f"⚡ <b>MANOJ QUANT ENGINE — 09:00 AM PRE-MARKET HEALTH CHECK</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📅 *Date:* {diag.get('check_date')} | *Time:* {diag.get('check_time')}\n"
-            f"🎯 *System Status:* {badge}\n\n"
-            f"📊 *DAILY MANDATE & EXCHANGE SCHEDULE*\n"
-            f"• *Active Index:* `{cal.get('active_symbol', 'N/A')}` ({cal.get('active_lots', 0)} Lots)\n"
-            f"• *Rule:* {cal.get('schedule_rule', 'Standard Weekly Schedule')}\n"
+            f"📅 <b>Date:</b> {diag.get('check_date')} | <b>Time:</b> {diag.get('check_time')}\n"
+            f"🎯 <b>System Status:</b> {badge}\n\n"
+            f"📊 <b>DAILY MANDATE & EXCHANGE SCHEDULE</b>\n"
+            f"• <b>Active Index:</b> <code>{cal.get('active_symbol', 'N/A')}</code> ({cal.get('active_lots', 0)} Lots)\n"
+            f"• <b>Rule:</b> {cal.get('schedule_rule', 'Standard Weekly Schedule')}\n"
         )
 
         if not cal.get("is_trading_day"):
-            msg += f"• *Market Note:* 🛑 {cal.get('holiday_name', 'Exchange Closed Today')}\n"
+            msg += f"• <b>Market Note:</b> 🛑 {cal.get('holiday_name', 'Exchange Closed Today')}\n"
         else:
-            msg += f"• *Session:* 🟢 Normal Session • Opens at 09:15 AM IST\n"
+            msg += f"• <b>Session:</b> 🟢 Normal Session • Opens at 09:15 AM IST\n"
 
         msg += (
-            f"\n🔌 *BROKER & NOTIFICATION TELEMETRY*\n"
-            f"• *Groww API:* {gw.get('badge', 'N/A')} ({gw.get('latency_ms', 0)}ms)\n"
-            f"  _{gw.get('message', '')}_\n"
-            f"• *Telegram Alert Gateway:* {tg.get('badge', 'N/A')} ({tg.get('latency_ms', 0)}ms)\n"
+            f"\n🔌 <b>BROKER & NOTIFICATION TELEMETRY</b>\n"
+            f"• <b>Groww API:</b> {gw.get('badge', 'N/A')} ({gw.get('latency_ms', 0)}ms)\n"
+            f"  <i>{gw.get('message', '')}</i>\n"
+            f"• <b>Telegram Alert Gateway:</b> {tg.get('badge', 'N/A')} ({tg.get('latency_ms', 0)}ms)\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         )
 
         if diag.get("combat_ready"):
-            msg += f"🚀 *VERDICT:* Ready for market open at 09:15 AM IST. Good luck!"
+            msg += f"🚀 <b>VERDICT:</b> Ready for market open at 09:15 AM IST. Good luck!"
         elif not cal.get("is_trading_day"):
-            msg += f"🛑 *VERDICT:* Exchange closed today. Desks suspended."
+            msg += f"🛑 <b>VERDICT:</b> Exchange closed today. Desks suspended."
         else:
-            msg += f"⚠️ *VERDICT:* Attention required on broker/alert connection before 09:15 AM."
+            msg += f"⚠️ <b>VERDICT:</b> Attention required on broker/alert connection before 09:15 AM."
 
         return msg
 

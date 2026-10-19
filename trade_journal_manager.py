@@ -1841,7 +1841,12 @@ class SequentialTradeEngine:
         today_losses = [
             t for t in journal
             if t.get("date") == today_str
-            and (sym_kw in str(t.get("trading_symbol", "")).upper() or sym_kw in str(t.get("instrument", "")).upper())
+            and (
+                sym_kw in str(t.get("trading_symbol", "")).upper()
+                or sym_kw in str(t.get("instrument", "")).upper()
+                or sym_kw in str(t.get("symbol", "")).upper()
+                or sym_kw in str(t.get("contract", "")).upper()
+            )
             and (
                 t.get("status") in ["FAIL", "SL Hit", "Hard Catastrophic SL Hit"]
                 or (
@@ -2262,6 +2267,8 @@ class SequentialTradeEngine:
         spec_act = get_asset_spec(symbol=symbol or state.get("symbol"), contract=contract)
         active_sym = spec_act.symbol
         qty = int(active.get("qty", spec_act.lot_size))
+        lot_sz = max(1, getattr(spec_act, "lot_size", 65 if active_sym == "NIFTY" else 20))
+        num_lots = int(active.get("num_lots", max(1, round(qty / lot_sz))))
 
         # Synchronize active trade parameters with authentic Groww broker positions & orders
         if groww_feed and getattr(groww_feed, "is_connected", False):
@@ -2305,7 +2312,8 @@ class SequentialTradeEngine:
                         active["qty"] = p_qty
                         qty = p_qty
                         lot_sz = max(1, getattr(spec_act, "lot_size", 65 if active_sym == "NIFTY" else 20))
-                        active["num_lots"] = max(1, round(p_qty / lot_sz))
+                        num_lots = max(1, round(p_qty / lot_sz))
+                        active["num_lots"] = num_lots
                         changed = True
                     if p_entry > 0 and abs(active.get("actual_entry", 0.0) - p_entry) > 0.01:
                         active["actual_entry"] = round(p_entry, 2)
@@ -2789,8 +2797,7 @@ class SequentialTradeEngine:
 
             # Update shadow signals log
             try:
-                from trade_journal_manager import ShadowSignalTracker
-                recs = ShadowSignalTracker.load_records(symbol=sym_kw)
+                recs = ShadowMonitoringEngine.load_records(symbol=sym_kw)
                 for r in recs:
                     if r.get("date") == datetime.now(IST).strftime("%Y-%m-%d") and sym_kw in str(r.get("symbol", "")):
                         r["actual_entry_price"] = entry_p
@@ -2800,7 +2807,7 @@ class SequentialTradeEngine:
                         r["current_price"] = live_ltp
                         if entry_time:
                             r["actual_entry_time"] = entry_time
-                ShadowSignalTracker.save_records(recs)
+                ShadowMonitoringEngine.save_records(recs)
             except Exception as e:
                 logger.debug(f"Shadow tracker sync update error: {e}")
 
