@@ -28005,6 +28005,36 @@
     "outcome": null,
     "target_hit": null,
     "is_shadow": true
+  },
+  {
+    "id": "BT-20260917-BUY_CE",
+    "timestamp": "2026-09-17 10:00:00",
+    "date": "2026-09-17",
+    "instrument": "NIFTY (Walk-Forward Backtest)",
+    "direction": "BUY CE",
+    "planned_entry": 23293.900390625,
+    "target": 0.0,
+    "sl": 0.0,
+    "features": {
+      "v1_trend": 16.8,
+      "v2_order_flow": 21.0,
+      "v3_gamma_oi": 16.8,
+      "v4_volatility": 12.6,
+      "v5_momentum": 8.4,
+      "v6_greeks": 8.4,
+      "v7_macro": 2.0,
+      "raw_score": 84.0,
+      "engine_probability": 84.0,
+      "win_expectancy": 62.0,
+      "intraday_regime": "TRENDING"
+    },
+    "outcome": {
+      "is_resolved": true,
+      "target_hit": 0,
+      "realized_pnl": 0.0,
+      "realized_pts": 0.0,
+      "exit_reason": "BACKTEST_RESOLUTION"
+    },
+    "is_synthetic_backfill": true
   }
-]
 ]

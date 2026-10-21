@@ -1693,8 +1693,8 @@ class RelianceQuantAlertDaemon:
                                     curr_st["is_active"] = False
                                     curr_st["market_status"] = "MONITORING (09:15 - 15:30 IST)"
                                     curr_st["last_update"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
-                                    with open(sf, "w", encoding="utf-8") as f_st:
-                                        json.dump(curr_st, f_st, indent=2)
+                                    from trade_journal_manager import atomic_json_write
+                                    atomic_json_write(sf, curr_st, indent=2)
                             except Exception:
                                 pass
 

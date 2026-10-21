@@ -372,8 +372,11 @@ class MultiIndicatorMath:
     def calculate_tr(highs: List[float], lows: List[float], closes: List[float]) -> List[float]:
         if not highs or not lows or not closes:
             return []
+        min_len = min(len(highs), len(lows), len(closes))
+        if min_len == 0:
+            return []
         tr = [highs[0] - lows[0]]
-        for i in range(1, len(closes)):
+        for i in range(1, min_len):
             hl = highs[i] - lows[i]
             hc = abs(highs[i] - closes[i - 1])
             lc = abs(lows[i] - closes[i - 1])
@@ -402,14 +405,24 @@ class MultiIndicatorMath:
 
         avg_gain = sum(gains[:period]) / period
         avg_loss = sum(losses[:period]) / period
-        rs = avg_gain / avg_loss if avg_loss != 0 else 100.0
-        rsi = [100.0 - (100.0 / (1.0 + rs))]
+        if avg_loss != 0:
+            rs = avg_gain / avg_loss
+            rsi = [100.0 - (100.0 / (1.0 + rs))]
+        elif avg_gain != 0:
+            rsi = [100.0]
+        else:
+            rsi = [50.0]
 
         for i in range(period, len(gains)):
             avg_gain = (avg_gain * (period - 1) + gains[i]) / period
             avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-            rs = avg_gain / avg_loss if avg_loss != 0 else 100.0
-            rsi.append(100.0 - (100.0 / (1.0 + rs)))
+            if avg_loss != 0:
+                rs = avg_gain / avg_loss
+                rsi.append(100.0 - (100.0 / (1.0 + rs)))
+            elif avg_gain != 0:
+                rsi.append(100.0)
+            else:
+                rsi.append(50.0)
 
         return ([rsi[0]] * period) + rsi
 
@@ -426,17 +439,20 @@ class MultiIndicatorMath:
     def calculate_supertrend(highs: List[float], lows: List[float], closes: List[float], period: int = 10, multiplier: float = 3.0):
         if not highs or not lows or not closes:
             return [], []
-        atr = MultiIndicatorMath.calculate_atr(highs, lows, closes, period)
+        n = min(len(highs), len(lows), len(closes))
+        if n == 0:
+            return [], []
+        atr = MultiIndicatorMath.calculate_atr(highs[:n], lows[:n], closes[:n], period)
         upper_band, lower_band = [], []
-        for i in range(len(closes)):
+        for i in range(n):
             hl2 = (highs[i] + lows[i]) / 2.0
             upper_band.append(hl2 + (multiplier * atr[i]))
             lower_band.append(hl2 - (multiplier * atr[i]))
 
-        direction = [1] * len(closes)
-        supertrend = [lower_band[0]] * len(closes)
+        direction = [1] * n
+        supertrend = [lower_band[0]] * n
 
-        for i in range(1, len(closes)):
+        for i in range(1, n):
             curr_lower = lower_band[i] if lower_band[i] > lower_band[i - 1] or closes[i - 1] < lower_band[i - 1] else lower_band[i - 1]
             lower_band[i] = curr_lower
 
@@ -468,10 +484,13 @@ class MultiIndicatorMath:
           - Bullish (Long / Call): Long Exit = Highest High(period) - (multiplier * ATR)
           - Bearish (Short / Put): Short Exit = Lowest Low(period) + (multiplier * ATR)
         """
-        atr_series = MultiIndicatorMath.calculate_atr(highs, lows, closes, period)
+        n = min(len(highs), len(lows), len(closes))
+        if n == 0:
+            return [], []
+        atr_series = MultiIndicatorMath.calculate_atr(highs[:n], lows[:n], closes[:n], period)
         chandelier_long = []
         chandelier_short = []
-        for i in range(len(closes)):
+        for i in range(n):
             start_idx = max(0, i - period + 1)
             highest_hi = max(highs[start_idx: i + 1])
             lowest_lo = min(lows[start_idx: i + 1])
@@ -502,14 +521,17 @@ class MultiIndicatorMath:
 
     @staticmethod
     def calculate_adx(highs: List[float], lows: List[float], closes: List[float], period: int = 14):
+        n = min(len(highs), len(lows), len(closes))
+        if n <= 1:
+            return 32.0, 30.0, 10.0
         plus_dm, minus_dm = [], []
-        for i in range(1, len(closes)):
+        for i in range(1, n):
             up_move = highs[i] - highs[i - 1]
             down_move = lows[i - 1] - lows[i]
             plus_dm.append(up_move if up_move > down_move and up_move > 0 else 0.0)
             minus_dm.append(down_move if down_move > up_move and down_move > 0 else 0.0)
 
-        tr = MultiIndicatorMath.calculate_tr(highs, lows, closes)[1:]
+        tr = MultiIndicatorMath.calculate_tr(highs[:n], lows[:n], closes[:n])[1:]
         if len(tr) < period:
             return 32.0, 30.0, 10.0
 
@@ -539,8 +561,11 @@ class MultiIndicatorMath:
     def calculate_stochastic(highs: List[float], lows: List[float], closes: List[float], period: int = 14, smooth_k: int = 3):
         if not highs or not lows or not closes:
             return 50.0
+        n = min(len(highs), len(lows), len(closes))
+        if n == 0:
+            return 50.0
         k_vals = []
-        for i in range(len(closes)):
+        for i in range(n):
             start = max(0, i - period + 1)
             highest_h = max(highs[start:i+1])
             lowest_l = min(lows[start:i+1])
@@ -2184,7 +2209,7 @@ class MultiIndicatorMath:
         VPIN < 0.20 => Low Activity / Retail Drift
         Returns: (vpin_value, regime)
         """
-        if not closes or not volumes or len(closes) < bucket_count:
+        if not closes or not volumes or not highs or not lows or min(len(closes), len(volumes), len(highs), len(lows)) < bucket_count:
             return 0.28, "NORMAL_TOXICITY"
 
         total_vol = sum(volumes[-bucket_count:])
@@ -7598,8 +7623,8 @@ class UltraHighConvictionRelianceEngine:
             if len(existing) > 500:
                 existing = existing[-500:]
 
-            with open(cal_path, "w", encoding="utf-8") as f:
-                json.dump(existing, f, indent=2, default=str)
+            from trade_journal_manager import atomic_json_write
+            atomic_json_write(cal_path, existing, indent=2, default=str)
         except Exception:
             pass  # Shadow logging must never block main engine
 

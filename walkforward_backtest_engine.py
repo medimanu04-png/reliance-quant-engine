@@ -614,8 +614,8 @@ class RelianceQuantBacktester:
         }
 
         try:
-            with open(BACKTEST_RESULTS_FILE, "w", encoding="utf-8") as f:
-                json.dump(results, f, indent=2, default=str)
+            from trade_journal_manager import atomic_json_write
+            atomic_json_write(BACKTEST_RESULTS_FILE, results, indent=2, default=str)
         except Exception as e:
             print(f"Error saving backtest results: {e}")
 

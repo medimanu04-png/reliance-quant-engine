@@ -23,7 +23,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timezone, timedelta
 import time as time_mod
 import json
 import os
@@ -1547,7 +1547,8 @@ def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
         """)
     with t3:
         act_nifty = telemetry["active_nifty_expiry"]
-        n_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_nifty['is_shifted'] else '<span style="color: #34D399; font-weight: 800;">STANDARD THU</span>'
+        n_nom_day = act_nifty.get("nominal_weekday", "Tuesday")[:3].upper()
+        n_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_nifty['is_shifted'] else f'<span style="color: #34D399; font-weight: 800;">STANDARD {n_nom_day}</span>'
         st.html(f"""
         <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
             <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">NIFTY 50 EXPIRY</div>
@@ -1557,7 +1558,8 @@ def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
         """)
     with t4:
         act_sensex = telemetry["active_sensex_expiry"]
-        s_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_sensex['is_shifted'] else '<span style="color: #C084FC; font-weight: 800;">STANDARD FRI</span>'
+        s_nom_day = act_sensex.get("nominal_weekday", "Thursday")[:3].upper()
+        s_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_sensex['is_shifted'] else f'<span style="color: #C084FC; font-weight: 800;">STANDARD {s_nom_day}</span>'
         st.html(f"""
         <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
             <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">BSE SENSEX EXPIRY</div>

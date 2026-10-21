@@ -58,10 +58,10 @@ class EmpiricalCalibrationEngine:
 
     @classmethod
     def save_dataset(cls, dataset: List[Dict[str, Any]]):
-        """Persists the empirical dataset to disk."""
+        """Persists the empirical dataset to disk atomically."""
         try:
-            with open(CALIBRATION_DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(dataset, f, indent=2)
+            from trade_journal_manager import atomic_json_write
+            atomic_json_write(CALIBRATION_DATA_FILE, dataset, indent=2, default=str)
         except Exception as e:
             logger.error(f"Error saving calibration dataset: {e}")
 

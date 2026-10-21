@@ -383,7 +383,7 @@ class NSEIndiaFetcher:
             active_expiry = exp_curr
             phase = "CURRENT_WEEK_WEEKLY_MANDATE"
             is_rollover = False
-            weekday_name = "Thursday" if sym == "NIFTY" else "Friday"
+            weekday_name = exp_curr.strftime("%A")
             rule_badge = f"⚡ Current Week Weekly Expiry ({curr_str})"
             rule_desc = f"Trading Current Week's {weekday_name} Expiry {curr_str} for {sym}: Prime gamma responsiveness, tightest bid-ask spread & peak weekly liquidity corridor."
         elif rem_trading_days >= 4:

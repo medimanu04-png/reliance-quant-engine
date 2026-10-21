@@ -36,7 +36,7 @@ SIGNALS_FILE = os.path.join(BASE_DIR, "daily_signals_log.json")
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 
 
-def atomic_json_write(filepath: str, data: Any, indent: int = 2) -> bool:
+def atomic_json_write(filepath: str, data: Any, indent: int = 2, default: Optional[Any] = None) -> bool:
     """Safely and atomically writes JSON data to disk using temporary file and atomic replace.
     Guarantees zero file corruption on crashes, reboots, or mid-stream process interruption."""
     import time
@@ -44,14 +44,14 @@ def atomic_json_write(filepath: str, data: Any, indent: int = 2) -> bool:
     try:
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
         with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=indent)
+            json.dump(data, f, indent=indent, default=default)
         os.replace(temp_path, filepath)
         return True
     except Exception as e:
         logger.warning(f"Atomic JSON replace failed for {filepath}: {e}. Retrying fallback write...")
         try:
             with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=indent)
+                json.dump(data, f, indent=indent, default=default)
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
