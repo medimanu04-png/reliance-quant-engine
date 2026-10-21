@@ -1,14 +1,14 @@
 {
   "is_active": false,
   "symbol": "SENSEX",
-  "contract": "SENSEX 73100 PE (15-OCT-2026)",
-  "action": "BUY SENSEX 73100 PE (15-OCT-2026)",
-  "current_spot": 73008.84,
-  "entry_spot": 418.7,
-  "entry_time": "11:31:35 AM IST",
-  "peak_spot": 73008.84,
-  "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -9090.0,
+  "contract": "SENSEX26O2274400CE",
+  "action": "BUY SENSEX26O2274400CE",
+  "current_spot": 74641.01,
+  "entry_spot": 415.52,
+  "entry_time": "09:21:09 AM IST",
+  "peak_spot": 74641.01,
+  "peak_profit_rs": 7245.6,
+  "unrealized_pnl_2lots": 7245.6,
   "target_pts": 120.0,
   "target_2_pts": 280.0,
   "sl_pts": 60.0,
@@ -23,11 +23,11 @@
     "pnl_rs": 0.0
   },
   "tranche_2": {
-    "status": "PENDING",
+    "status": "PENDING_T1",
     "target_pts": 280.0,
     "qty_pct": "50%",
     "trailing_sl": "INITIAL SL (-60.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "11:45:34 AM IST"
+  "last_update": "09:38:07 AM IST"
 }

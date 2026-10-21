@@ -309,5 +309,31 @@
     "suggested_exit": 148.75,
     "suggested_sl": 60.65,
     "confluence_score": 93.1
+  },
+  "2026-10-21_SENSEX": {
+    "date": "2026-10-21",
+    "trade_given_time": "09:20:49 AM IST",
+    "full_contract": "SENSEX 74400 CE (22-OCT-2026)",
+    "symbol": "SENSEX",
+    "contract_type": "CE",
+    "strike": 22202674400,
+    "expiry": "22-OCT-2026",
+    "suggested_entry": 419.15,
+    "suggested_exit": 585.15,
+    "suggested_sl": 341.55,
+    "confluence_score": 87.0
+  },
+  "2026-10-21": {
+    "date": "2026-10-21",
+    "trade_given_time": "09:20:49 AM IST",
+    "full_contract": "SENSEX 74400 CE (22-OCT-2026)",
+    "symbol": "SENSEX",
+    "contract_type": "CE",
+    "strike": 22202674400,
+    "expiry": "22-OCT-2026",
+    "suggested_entry": 419.15,
+    "suggested_exit": 585.15,
+    "suggested_sl": 341.55,
+    "confluence_score": 87.0
   }
 }

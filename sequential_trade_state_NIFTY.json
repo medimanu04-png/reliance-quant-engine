@@ -1,5 +1,8 @@
 {
   "current_state": "IDLE / SCANNING",
   "symbol": "NIFTY",
-  "updated_at": "2026-10-19 04:47:17 PM IST"
+  "updated_at": "2026-10-21 08:53:33 AM IST",
+  "today_trade_count": 0,
+  "re_entry_armed": null,
+  "armed_setup": null
 }
