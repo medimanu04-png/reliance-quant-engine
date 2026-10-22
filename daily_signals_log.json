@@ -335,5 +335,37 @@
     "suggested_exit": 585.15,
     "suggested_sl": 341.55,
     "confluence_score": 87.0
+  },
+  "2026-10-22_NIFTY": {
+    "date": "2026-10-22",
+    "trade_given_time": "09:21:17 AM IST",
+    "full_contract": "NIFTY 22550 CE (27-OCT-2026)",
+    "symbol": "NIFTY",
+    "contract_type": "CE",
+    "strike": 22550,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 195.05,
+    "limit_entry": 192.95,
+    "suggested_exit": 291.35,
+    "suggested_sl": 150.05,
+    "confluence_score": 96.0,
+    "win_expectancy_pct": 66.0,
+    "tier_rating": "TIER 1 (A+ INSTITUTIONAL CONFLUENCE)"
+  },
+  "2026-10-22": {
+    "date": "2026-10-22",
+    "trade_given_time": "09:21:17 AM IST",
+    "full_contract": "NIFTY 22550 CE (27-OCT-2026)",
+    "symbol": "NIFTY",
+    "contract_type": "CE",
+    "strike": 22550,
+    "expiry": "27-OCT-2026",
+    "suggested_entry": 195.05,
+    "limit_entry": 192.95,
+    "suggested_exit": 291.35,
+    "suggested_sl": 150.05,
+    "confluence_score": 96.0,
+    "win_expectancy_pct": 66.0,
+    "tier_rating": "TIER 1 (A+ INSTITUTIONAL CONFLUENCE)"
   }
 }

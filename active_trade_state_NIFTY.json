@@ -1,14 +1,14 @@
 {
   "is_active": false,
   "symbol": "NIFTY",
-  "contract": "NIFTY 23050 CE (19-OCT-2026)",
-  "action": "BUY NIFTY 23050 CE (19-OCT-2026)",
-  "current_spot": 22953.1,
-  "entry_spot": 97.55,
-  "entry_time": "09:16:21 AM IST",
-  "peak_spot": 22953.1,
+  "contract": "NIFTY 22550 CE (27-OCT-2026)",
+  "action": "BUY NIFTY 22550 CE (27-OCT-2026)",
+  "current_spot": 22590.95,
+  "entry_spot": 195.05,
+  "entry_time": "09:21:21 AM IST",
+  "peak_spot": 22590.95,
   "peak_profit_rs": 0.0,
-  "unrealized_pnl_2lots": -9230.0,
+  "unrealized_pnl_2lots": -377.0,
   "target_pts": 50.0,
   "target_2_pts": 110.0,
   "sl_pts": 36.0,
@@ -29,5 +29,5 @@
     "trailing_sl": "INITIAL SL (-36.0 pts)",
     "pnl_rs": 0.0
   },
-  "last_update": "09:36:11 AM IST"
+  "last_update": "09:33:09 AM IST"
 }
