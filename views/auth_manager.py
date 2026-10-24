@@ -30,18 +30,23 @@ except Exception:
         from datetime import timezone
         IST = timezone(timedelta(hours=5, minutes=30))
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_SECRET = "manoj_quant_secure_vault_2026_institutional_secret"
-TELEGRAM_CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "telegram_config.json")
+TELEGRAM_CONFIG_FILE = os.path.join(BASE_DIR, "telegram_config.json")
+AUTH_CREDENTIALS_FILE = os.path.join(BASE_DIR, "auth_credentials.json")
+SECRETS_FILE = os.path.join(BASE_DIR, ".streamlit", "secrets.toml")
+SMS_CONFIG_FILE = os.path.join(BASE_DIR, "sms_config.json")
 
 
 def _get_auth_credentials() -> tuple[dict, str]:
-    """Retrieves valid master authentication credentials from .streamlit/secrets.toml or defaults."""
+    """Retrieves valid master authentication credentials from auth_credentials.json, secrets.toml, or defaults."""
     creds = {
         "admin": "password",
         "manoj": "password123"
     }
     secret_key = DEFAULT_SECRET
 
+    # 1. Read from secrets.toml if present
     if hasattr(st, "secrets") and "auth" in st.secrets:
         auth_sec = st.secrets["auth"]
         u1 = auth_sec.get("username")
@@ -54,7 +59,111 @@ def _get_auth_credentials() -> tuple[dict, str]:
             creds[str(u2).strip()] = str(p2).strip()
         secret_key = auth_sec.get("session_secret", DEFAULT_SECRET)
 
+    # 2. Read from persistent auth_credentials.json (takes priority for user-reset passwords)
+    if os.path.exists(AUTH_CREDENTIALS_FILE):
+        try:
+            with open(AUTH_CREDENTIALS_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                if isinstance(saved, dict):
+                    if "credentials" in saved and isinstance(saved["credentials"], dict):
+                        for u, p in saved["credentials"].items():
+                            creds[str(u).strip()] = str(p).strip()
+                    if "session_secret" in saved and saved["session_secret"]:
+                        secret_key = str(saved["session_secret"]).strip()
+        except Exception:
+            pass
+
     return creds, secret_key
+
+
+def update_operator_password(operator_id: str, new_password: str) -> tuple[bool, str]:
+    """
+    Updates the master security password for an operator ID.
+    Persists to both auth_credentials.json and .streamlit/secrets.toml,
+    and dispatches a real-time security audit alert to Telegram.
+    """
+    op_clean = (operator_id or "").strip()
+    p_clean = (new_password or "").strip()
+    if not op_clean:
+        return False, "Operator ID cannot be blank."
+    if len(p_clean) < 4:
+        return False, "New security access key must be at least 4 characters long."
+
+    # 1. Update in-memory & auth_credentials.json
+    creds, secret_key = _get_auth_credentials()
+    creds[op_clean] = p_clean
+    try:
+        data = {
+            "credentials": creds,
+            "session_secret": secret_key,
+            "last_updated": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
+        }
+        with open(AUTH_CREDENTIALS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        return False, f"Failed to save credentials file: {e}"
+
+    # 2. Update .streamlit/secrets.toml
+    try:
+        if os.path.exists(SECRETS_FILE):
+            with open(SECRETS_FILE, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            
+            new_lines = []
+            in_auth_section = False
+            password_updated = False
+            
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    in_auth_section = (stripped == "[auth]")
+                
+                if in_auth_section:
+                    if op_clean == "admin" and stripped.startswith("password"):
+                        new_lines.append(f'password = "{p_clean}"\n')
+                        password_updated = True
+                        continue
+                    elif op_clean == "manoj" and stripped.startswith("admin_password"):
+                        new_lines.append(f'admin_password = "{p_clean}"\n')
+                        password_updated = True
+                        continue
+                    elif stripped.startswith(f"{op_clean}_password"):
+                        new_lines.append(f'{op_clean}_password = "{p_clean}"\n')
+                        password_updated = True
+                        continue
+
+                new_lines.append(line)
+
+            if not password_updated and in_auth_section:
+                new_lines.append(f'{op_clean}_password = "{p_clean}"\n')
+
+            with open(SECRETS_FILE, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+    except Exception:
+        pass
+
+    # 3. Dispatch Telegram security audit notification
+    try:
+        if os.path.exists(TELEGRAM_CONFIG_FILE):
+            with open(TELEGRAM_CONFIG_FILE, "r", encoding="utf-8") as f:
+                tg_cfg = json.load(f)
+            b_tok = tg_cfg.get("bot_token", "").strip()
+            c_id = tg_cfg.get("chat_id", "").strip()
+            if b_tok and c_id:
+                from telegram_notifier import TelegramNotifier
+                audit_msg = f"""
+🛡️ <b>MANOJ QUANT TERMINAL // SECURITY AUDIT</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔑 <b>Master Security Key Updated!</b>
+👤 <b>Operator ID:</b> <code>{op_clean}</code>
+🕒 <b>Time:</b> {datetime.now(IST).strftime('%I:%M:%S %p IST, %d %b %Y')}
+📱 <b>Verification:</b> Verified via 2FA Mobile OTP Text Message
+"""
+                TelegramNotifier.send_message(b_tok, c_id, audit_msg, is_manual_test=True)
+    except Exception:
+        pass
+
+    return True, f"Security Access Key for operator '{op_clean}' updated successfully."
 
 
 def generate_session_token(identifier: str) -> str:
@@ -149,7 +258,7 @@ def logout_user():
     st.rerun()
 
 
-def _dispatch_otp_to_telegram(mobile: str, otp_code: str, exp_dt: datetime) -> tuple[bool, str]:
+def _dispatch_otp_to_telegram(mobile: str, otp_code: str, exp_dt: datetime, title: str = "2FA VERIFICATION CODE", mandate_msg: str = None) -> tuple[bool, str]:
     """Dispatches 2FA OTP code directly to trader's Telegram alert bot/channel."""
     if not os.path.exists(TELEGRAM_CONFIG_FILE):
         return False, "Telegram config not found"
@@ -164,14 +273,15 @@ def _dispatch_otp_to_telegram(mobile: str, otp_code: str, exp_dt: datetime) -> t
             return False, "Missing bot_token or chat_id"
 
         masked_mobile = f"+91-XXXXX-{mobile[-4:]}" if len(mobile) >= 4 else mobile
+        mandate_clause = mandate_msg or "Required to unlock benchmark desks and arm 1-Tap Groww order execution."
         msg = f"""
-🔐 <b>MANOJ QUANT TERMINAL // 2FA VERIFICATION CODE</b>
+🔐 <b>MANOJ QUANT TERMINAL // {title}</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📱 <b>Target Mobile:</b> <code>{masked_mobile}</code>
 🔢 <b>Your Security OTP:</b> <code>{otp_code}</code>
 
 ⏱️ <b>Validity:</b> 5 Minutes (Expires at {exp_dt.strftime('%I:%M:%S %p IST')})
-🛡️ <b>Security Mandate:</b> Required to unlock benchmark desks and arm 1-Tap Groww order execution.
+🛡️ <b>Security Mandate:</b> {mandate_clause}
 ⚠️ <i>Never disclose this one-time passcode to anyone.</i>
 """
         from telegram_notifier import TelegramNotifier
@@ -181,21 +291,32 @@ def _dispatch_otp_to_telegram(mobile: str, otp_code: str, exp_dt: datetime) -> t
         return False, str(e)
 
 
-def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str) -> tuple[bool, str]:
+def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str = None) -> tuple[bool, str]:
     """
     Dispatches a real cellular SMS text message directly to the user's mobile number.
-    Supports Fast2SMS, 2Factor.in, and Twilio configured in .streamlit/secrets.toml.
+    Supports Fast2SMS, 2Factor.in, and Twilio configured in secrets.toml or sms_config.json.
     """
     clean_num = mobile[-10:]
     sms_cfg = {}
     if hasattr(st, "secrets") and "sms" in st.secrets:
         sms_cfg = dict(st.secrets["sms"])
 
+    if os.path.exists(SMS_CONFIG_FILE):
+        try:
+            with open(SMS_CONFIG_FILE, "r", encoding="utf-8") as f:
+                dyn_cfg = json.load(f)
+                if isinstance(dyn_cfg, dict):
+                    sms_cfg.update(dyn_cfg)
+        except Exception:
+            pass
+
     provider = str(sms_cfg.get("provider", "fast2sms")).lower().strip()
     api_key = str(sms_cfg.get("api_key", "")).strip()
 
     if not api_key and provider != "twilio":
         return False, "SMS gateway API key not set in secrets.toml (dispatched via Telegram + on-screen preview)"
+
+    msg_body = custom_body or f"Your Manoj Quant Terminal verification passcode is {otp_code}. Valid for 5 minutes."
 
     try:
         import requests
@@ -235,7 +356,7 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str) -> tuple[bool, str
             data = {
                 "To": f"+91{clean_num}",
                 "From": from_num,
-                "Body": f"Your Manoj Quant Terminal verification passcode is {otp_code}. Valid for 5 minutes."
+                "Body": msg_body
             }
             res = requests.post(url, data=data, auth=HTTPBasicAuth(sid, tok), timeout=5)
             if res.status_code in [200, 201]:
@@ -245,6 +366,66 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str) -> tuple[bool, str
         return False, str(e)
 
     return False, "No active carrier SMS provider matched"
+
+
+def send_recovery_otp(mobile_raw: str, country_code: str = "🇮🇳 +91", recovery_mode: str = "forgot_password") -> tuple[bool, str]:
+    """Generates 6-digit cryptographic OTP for Master Key recovery, dispatches via SMS + Telegram, and sets session state."""
+    cc_clean = "+" + "".join([c for c in country_code if c.isdigit()]) if any(c.isdigit() for c in country_code) else "+91"
+    digits = "".join([c for c in mobile_raw if c.isdigit()])
+    if len(digits) < 10:
+        return False, "Please enter a valid 10-digit mobile number."
+
+    clean_mobile = digits[-10:]
+    otp = f"{random.randint(100000, 999999)}"
+    exp_time = time.time() + 300  # 5 minutes
+    exp_dt = datetime.fromtimestamp(exp_time, tz=IST)
+
+    st.session_state["rec_otp_code"] = otp
+    st.session_state["rec_otp_mobile"] = clean_mobile
+    st.session_state["rec_otp_country_code"] = cc_clean
+    st.session_state["rec_otp_expires_at"] = exp_time
+    st.session_state["rec_otp_sent_at"] = time.time()
+    st.session_state["rec_otp_verified"] = False
+    st.session_state["master_rec_flow"] = recovery_mode
+
+    mode_label = "MASTER SECURITY ACCESS KEY RESET" if recovery_mode == "forgot_password" else "MASTER OPERATOR ID RETRIEVAL"
+    mandate_text = "Required to reset your Master Security Access Key." if recovery_mode == "forgot_password" else "Required to retrieve your registered Master Operator ID."
+
+    # 1. Dispatch via Telegram Instant Alert Bot
+    tg_ok, tg_info = _dispatch_otp_to_telegram(
+        f"{cc_clean} {clean_mobile}",
+        otp,
+        exp_dt,
+        title=f"MASTER RECOVERY // {mode_label}",
+        mandate_msg=mandate_text
+    )
+
+    # 2. Dispatch via Cellular SMS Gateway
+    sms_body = f"Your Manoj Quant Terminal recovery passcode is {otp}. Valid for 5 minutes. Use this to reset master credentials."
+    sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp, custom_body=sms_body)
+    st.session_state["rec_sms_carrier_status"] = "SENT_TO_PHONE" if sms_ok else sms_info
+
+    return True, otp
+
+
+def verify_recovery_otp(entered_otp: str) -> tuple[bool, str]:
+    """Verifies user-entered recovery OTP."""
+    clean_otp = (entered_otp or "").strip()
+    expected_otp = st.session_state.get("rec_otp_code")
+    exp_time = st.session_state.get("rec_otp_expires_at", 0)
+
+    if not expected_otp:
+        return False, "No active recovery OTP found. Please request a new OTP first."
+
+    if time.time() > exp_time:
+        return False, "This recovery OTP has expired (5m window). Please request a fresh OTP."
+
+    if clean_otp == expected_otp:
+        st.session_state["rec_otp_verified"] = True
+        st.session_state.pop("rec_otp_code", None)
+        return True, "Identity verified! Mobile ownership confirmed."
+
+    return False, "Invalid OTP code. Please check the 6-digit passcode and try again."
 
 
 def send_security_otp(mobile_raw: str, country_code: str = "🇮🇳 +91") -> tuple[bool, str]:
@@ -614,31 +795,339 @@ def render_ultra_premium_login(blocked_route: str = None):
                         st.rerun()
 
         with tab_master:
-            st.html("<p style='font-size: 0.82rem; color: #94A3B8; margin-bottom: 12px;'>Emergency administrative fallback. Use Operator ID and password configured in <code>secrets.toml</code>.</p>")
-            with st.form("master_login_form"):
-                c_u, c_p = st.columns(2)
-                with c_u:
-                    u_in = st.text_input("👤 Operator ID", value="admin")
-                with c_p:
-                    p_in = st.text_input("🔑 Security Access Key", type="password")
+            rec_mode = st.session_state.get("master_rec_flow")  # None, "forgot_password", "forgot_operator_id"
 
-                master_submit = st_form_submit_button_stretch("⚡ Unlock via Master Credentials")
-                if master_submit:
-                    creds, _ = _get_auth_credentials()
-                    u_clean = (u_in or "").strip()
-                    p_clean = (p_in or "").strip()
-                    if u_clean in creds and creds[u_clean] == p_clean:
-                        st.session_state["is_authenticated"] = True
-                        st.session_state["auth_user"] = u_clean
-                        st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
-                        st.query_params["_auth"] = generate_session_token(u_clean)
-                        st.success("✅ Master credentials verified. Terminal unlocked.")
-                        time.sleep(0.3)
-                        if blocked_route:
-                            st.query_params["stock"] = blocked_route
+            if not rec_mode:
+                # ---------------- NORMAL MASTER LOGIN VIEW ----------------
+                st.html("<p style='font-size: 0.82rem; color: #94A3B8; margin-bottom: 12px;'>Emergency administrative fallback. Use Operator ID and password configured in <code>secrets.toml</code>.</p>")
+                with st.form("master_login_form"):
+                    c_u, c_p = st.columns(2)
+                    with c_u:
+                        default_op = st.session_state.get("last_selected_operator", "admin")
+                        u_in = st.text_input("👤 Operator ID", value=default_op)
+                    with c_p:
+                        p_in = st.text_input("🔑 Security Access Key", type="password")
+
+                    master_submit = st_form_submit_button_stretch("⚡ Unlock via Master Credentials", type="primary")
+                    if master_submit:
+                        creds, _ = _get_auth_credentials()
+                        u_clean = (u_in or "").strip()
+                        p_clean = (p_in or "").strip()
+                        if u_clean in creds and creds[u_clean] == p_clean:
+                            st.session_state["is_authenticated"] = True
+                            st.session_state["auth_user"] = u_clean
+                            st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
+                            st.query_params["_auth"] = generate_session_token(u_clean)
+                            st.success("✅ Master credentials verified. Terminal unlocked.")
+                            time.sleep(0.3)
+                            if blocked_route:
+                                st.query_params["stock"] = blocked_route
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid master operator credentials.")
+
+                # Self-Service Credentials Recovery Options
+                st.html(textwrap.dedent("""
+                <div style="background: rgba(15, 23, 42, 0.55); border: 1px dashed rgba(56, 189, 248, 0.28); border-radius: 12px; padding: 14px 16px; margin-top: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 0.78rem; font-weight: 800; color: #38BDF8; letter-spacing: 0.4px;">
+                            🔐 CREDENTIALS RECOVERY &amp; SELF-SERVICE
+                        </span>
+                        <span style="font-size: 0.70rem; color: #34D399; font-weight: 700; background: rgba(16, 185, 129, 0.15); padding: 2px 8px; border-radius: 12px;">
+                            📱 SMS &amp; TELEGRAM OTP
+                        </span>
+                    </div>
+                    <p style="font-size: 0.75rem; color: #94A3B8; margin: 0 0 10px 0;">
+                        Forgot your Security Access Key or Operator ID? Authenticate via your registered mobile number OTP to retrieve your Operator ID or reset your password.
+                    </p>
+                </div>
+                """))
+
+                col_rec1, col_rec2 = st.columns(2)
+                with col_rec1:
+                    if st_button_stretch("🔑 Forgot Password? (Reset Key)", key="btn_forgot_password"):
+                        st.session_state["master_rec_flow"] = "forgot_password"
+                        st.session_state.pop("rec_otp_code", None)
+                        st.session_state.pop("rec_otp_verified", None)
                         st.rerun()
-                    else:
-                        st.error("❌ Invalid master operator credentials.")
+                with col_rec2:
+                    if st_button_stretch("👤 Forgot Operator ID?", key="btn_forgot_operator_id"):
+                        st.session_state["master_rec_flow"] = "forgot_operator_id"
+                        st.session_state.pop("rec_otp_code", None)
+                        st.session_state.pop("rec_otp_verified", None)
+                        st.rerun()
+
+            else:
+                # ---------------- MASTER CREDENTIALS RECOVERY WORKFLOW ----------------
+                rec_title = "🔑 Master Security Key Password Recovery" if rec_mode == "forgot_password" else "👤 Master Operator ID Retrieval"
+                rec_desc = "Verify your registered mobile number via text message OTP to set a new Security Access Key." if rec_mode == "forgot_password" else "Verify your registered mobile number via text message OTP to retrieve registered Operator IDs."
+
+                # Recovery Header with Back button
+                col_h1, col_h2 = st.columns([3, 1], vertical_alignment="center")
+                with col_h1:
+                    st.html(f"""
+                    <div style="margin-bottom: 8px;">
+                        <span style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 2px 8px; border-radius: 10px; text-transform: uppercase;">
+                            RECOVERY MODE ACTIVE
+                        </span>
+                        <h3 style="margin: 4px 0 0 0; font-size: 1.15rem; font-weight: 800; color: #F8FAFC;">{rec_title}</h3>
+                        <p style="margin: 2px 0 0 0; font-size: 0.78rem; color: #94A3B8;">{rec_desc}</p>
+                    </div>
+                    """)
+                with col_h2:
+                    if st_button_stretch("← Back to Login", key="btn_cancel_recovery"):
+                        st.session_state.pop("master_rec_flow", None)
+                        st.session_state.pop("rec_otp_code", None)
+                        st.session_state.pop("rec_otp_verified", None)
+                        st.rerun()
+
+                rec_otp = st.session_state.get("rec_otp_code")
+                rec_verified = st.session_state.get("rec_otp_verified", False)
+                rec_mobile = st.session_state.get("rec_otp_mobile")
+                rec_exp_time = st.session_state.get("rec_otp_expires_at", 0)
+                rec_cc = st.session_state.get("rec_otp_country_code", "+91")
+
+                # Step Indicators
+                s1_style = "color: #38BDF8; font-weight: 800;" if not rec_otp and not rec_verified else ("color: #10B981; font-weight: 700;" if (rec_otp or rec_verified) else "color: #64748B;")
+                s2_style = "color: #38BDF8; font-weight: 800;" if rec_otp and not rec_verified else ("color: #10B981; font-weight: 700;" if rec_verified else "color: #64748B;")
+                s3_style = "color: #38BDF8; font-weight: 800;" if rec_verified else "color: #64748B;"
+                action_step_label = "3️⃣ Reset Password" if rec_mode == "forgot_password" else "3️⃣ View Operator ID"
+
+                st.html(f"""
+                <div style="display: flex; gap: 10px; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 8px; padding: 8px 14px; margin-bottom: 16px; font-size: 0.75rem;">
+                    <span style="{s1_style}">1️⃣ Enter Mobile</span>
+                    <span style="color: #475569;">&rarr;</span>
+                    <span style="{s2_style}">2️⃣ Match OTP Passcode</span>
+                    <span style="color: #475569;">&rarr;</span>
+                    <span style="{s3_style}">{action_step_label}</span>
+                </div>
+                """)
+
+                # ---------------- STEP 1: ENTER MOBILE & SEND OTP ----------------
+                if not rec_otp and not rec_verified:
+                    st.html("<p style='font-size: 0.82rem; color: #CBD5E1; margin-bottom: 10px;'>Enter your registered mobile number to receive a 6-digit cryptographic verification OTP text message:</p>")
+                    col_r_cc, col_r_m, col_r_btn = st.columns([1.1, 2.0, 1.3], vertical_alignment="bottom")
+                    with col_r_cc:
+                        country_codes = ["🇮🇳 +91", "🇺🇸 +1", "🇬🇧 +44", "🇦🇪 +971", "🇸🇬 +65", "🇨🇦 +1", "🇦🇺 +61", "🇩🇪 +49"]
+                        rec_sel_cc = st.selectbox("🌐 Code", options=country_codes, index=0, key="rec_country_code_select")
+                    with col_r_m:
+                        prev_m = st.session_state.get("last_entered_mobile", "9876543210")
+                        rec_m_in = st.text_input("📱 Registered Mobile Number", value=prev_m, placeholder="10-digit mobile", key="rec_mobile_input")
+                    with col_r_btn:
+                        if st_button_stretch("📩 Send OTP Text", type="primary", key="btn_send_rec_otp"):
+                            st.session_state["last_entered_mobile"] = rec_m_in
+                            ok, code_or_err = send_recovery_otp(rec_m_in, country_code=rec_sel_cc, recovery_mode=rec_mode)
+                            if ok:
+                                st.success(f"✅ Recovery OTP dispatched to {rec_sel_cc} {rec_m_in[-10:]} via Cellular Gateway & Telegram!")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {code_or_err}")
+
+                # ---------------- STEP 2: ENTER & MATCH OTP ----------------
+                elif rec_otp and not rec_verified:
+                    time_left = max(0, int(rec_exp_time - time.time()))
+                    mins = time_left // 60
+                    secs = time_left % 60
+
+                    st.html(textwrap.dedent(f"""
+                    <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.82rem; font-weight: 700; color: #38BDF8;">
+                                📲 Recovery OTP dispatched to {rec_cc} {rec_mobile}
+                            </span>
+                            <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
+                                ⏱️ Expires in {mins:02d}:{secs:02d}
+                            </span>
+                        </div>
+                        <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 4px;">
+                            Passcode delivered to your phone as SMS text message &amp; Telegram alert bot. <b>Instant Passcode Preview:</b> <code style="font-size: 0.95rem; color: #34D399; font-weight: 800; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px;">{rec_otp}</code>
+                        </div>
+                    </div>
+                    """))
+
+                    with st.form("rec_otp_matching_form"):
+                        col_otp1, col_otp2 = st.columns([1.5, 1], vertical_alignment="bottom")
+                        with col_otp1:
+                            rec_otp_in = st.text_input(
+                                "🔢 Enter 6-Digit Recovery Passcode (OTP)",
+                                value=rec_otp,
+                                max_chars=6,
+                                placeholder="e.g. 123456",
+                                key="rec_otp_input"
+                            )
+                        with col_otp2:
+                            match_btn = st_form_submit_button_stretch("⚡ Verify & Match OTP →", type="primary")
+
+                        if match_btn:
+                            ok, msg = verify_recovery_otp(rec_otp_in)
+                            if ok:
+                                st.success(f"✅ {msg}")
+                                time.sleep(0.3)
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")
+
+                    col_r1, col_r2 = st.columns(2)
+                    with col_r1:
+                        if st_button_stretch("🔄 Resend Fresh OTP", key="btn_resend_rec_otp"):
+                            send_recovery_otp(rec_mobile, country_code=rec_cc, recovery_mode=rec_mode)
+                            st.toast("Fresh OTP dispatched to phone & Telegram!")
+                            st.rerun()
+                    with col_r2:
+                        if st_button_stretch("✏️ Use Different Mobile", key="btn_change_rec_mobile"):
+                            st.session_state.pop("rec_otp_code", None)
+                            st.session_state.pop("rec_otp_mobile", None)
+                            st.session_state.pop("rec_otp_expires_at", None)
+                            st.rerun()
+
+                # ---------------- STEP 3: OTP MATCHED -> ACTION ----------------
+                elif rec_verified:
+                    st.html(textwrap.dedent(f"""
+                    <div style="background: rgba(16, 185, 129, 0.15); border: 1.5px solid #10B981; border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 1.5rem;">🛡️</span>
+                        <div>
+                            <div style="font-size: 0.85rem; font-weight: 800; color: #34D399;">
+                                OTP VERIFIED SUCCESSFULLY &bull; MASTER AUTHORIZATION GRANTED
+                            </div>
+                            <div style="font-size: 0.74rem; color: #CBD5E1; margin-top: 2px;">
+                                Mobile ownership confirmed for <code>{rec_cc} {rec_mobile}</code>. You are authorized to manage master credentials below.
+                            </div>
+                        </div>
+                    </div>
+                    """))
+
+                    # SUB-CASE 3A: FORGOT PASSWORD (CHANGE PASSWORD)
+                    if rec_mode == "forgot_password":
+                        creds, _ = _get_auth_credentials()
+                        operator_list = list(creds.keys())
+                        default_idx = 0
+
+                        st.html("<p style='font-size: 0.82rem; color: #E2E8F0; font-weight: 700; margin-bottom: 8px;'>Set New Security Access Key (Password):</p>")
+                        with st.form("reset_password_form"):
+                            c_op, c_np1, c_np2 = st.columns([1.2, 1.4, 1.4])
+                            with c_op:
+                                chosen_op = st.selectbox(
+                                    "👤 Target Operator ID",
+                                    options=operator_list,
+                                    index=default_idx,
+                                    help="Select which operator account to update"
+                                )
+                            with c_np1:
+                                new_pwd1 = st.text_input(
+                                    "🔑 New Security Key",
+                                    type="password",
+                                    placeholder="Min 4 characters",
+                                    help="Enter your new master access key"
+                                )
+                            with c_np2:
+                                new_pwd2 = st.text_input(
+                                    "🔒 Confirm New Key",
+                                    type="password",
+                                    placeholder="Re-enter new key",
+                                    help="Must match new key exactly"
+                                )
+
+                            col_act1, col_act2 = st.columns(2)
+                            with col_act1:
+                                btn_save_unlock = st_form_submit_button_stretch("💾 Change Password & Unlock Terminal", type="primary")
+                            with col_act2:
+                                btn_save_return = st_form_submit_button_stretch("💾 Change Password & Return to Login")
+
+                            if btn_save_unlock or btn_save_return:
+                                if not new_pwd1 or len(new_pwd1.strip()) < 4:
+                                    st.error("❌ Password must be at least 4 characters long.")
+                                elif new_pwd1 != new_pwd2:
+                                    st.error("❌ Passwords do not match. Please re-enter carefully.")
+                                else:
+                                    ok, msg = update_operator_password(chosen_op, new_pwd1)
+                                    if ok:
+                                        st.success(f"✅ {msg}")
+                                        # Cleanup recovery session
+                                        st.session_state.pop("master_rec_flow", None)
+                                        st.session_state.pop("rec_otp_code", None)
+                                        st.session_state.pop("rec_otp_verified", None)
+                                        st.session_state["last_selected_operator"] = chosen_op
+
+                                        if btn_save_unlock:
+                                            # Immediate authenticated login
+                                            st.session_state["is_authenticated"] = True
+                                            st.session_state["auth_user"] = chosen_op
+                                            st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
+                                            st.query_params["_auth"] = generate_session_token(chosen_op)
+                                            time.sleep(0.4)
+                                            if blocked_route:
+                                                st.query_params["stock"] = blocked_route
+                                            st.rerun()
+                                        else:
+                                            time.sleep(0.4)
+                                            st.rerun()
+                                    else:
+                                        st.error(f"❌ {msg}")
+
+                    # SUB-CASE 3B: FORGOT OPERATOR ID (RETRIEVE OPERATOR ID)
+                    elif rec_mode == "forgot_operator_id":
+                        creds, _ = _get_auth_credentials()
+                        st.html("<p style='font-size: 0.82rem; color: #E2E8F0; font-weight: 700; margin-bottom: 10px;'>Registered Master Operator IDs Found in System:</p>")
+
+                        for op_name in creds.keys():
+                            role_badge = "PRIMARY ROOT OPERATOR" if op_name == "admin" else "QUANT BENCHMARK TRADER"
+                            st.html(f"""
+                            <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-size: 0.70rem; color: #38BDF8; font-weight: 800; letter-spacing: 0.6px;">{role_badge}</div>
+                                    <div style="font-size: 1.05rem; font-weight: 900; color: #FFFFFF; margin-top: 2px;">
+                                        👤 Operator ID: <code style="color: #34D399; font-size: 1.1rem; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 4px;">{op_name}</code>
+                                    </div>
+                                </div>
+                                <span style="font-size: 0.72rem; color: #10B981; font-weight: 700; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); padding: 4px 10px; border-radius: 12px;">ACTIVE ACCOUNT</span>
+                            </div>
+                            """)
+
+                        col_op1, col_op2 = st.columns(2)
+                        with col_op1:
+                            if st_button_stretch("🔑 Change Password for an Operator ID", type="primary", key="btn_switch_to_pwd_reset"):
+                                st.session_state["master_rec_flow"] = "forgot_password"
+                                # Keep rec_otp_verified=True so user doesn't have to re-enter OTP!
+                                st.rerun()
+                        with col_op2:
+                            if st_button_stretch("⚡ Return to Login with Operator ID", key="btn_return_with_op"):
+                                st.session_state.pop("master_rec_flow", None)
+                                st.session_state.pop("rec_otp_code", None)
+                                st.session_state.pop("rec_otp_verified", None)
+                                st.rerun()
+
+                # Optional SMS Gateway Setup Expander
+                with st.expander("⚙️ Cellular SMS Gateway Configuration (Optional)", expanded=False):
+                    st.html("<p style='font-size: 0.75rem; color: #94A3B8; margin-bottom: 8px;'>Configure a real SMS gateway (Fast2SMS, 2Factor.in, or Twilio) to deliver OTP text messages directly to mobile carrier networks. Note: OTP is always delivered instantaneously to your Telegram alert bot.</p>")
+                    cur_sms = {}
+                    if os.path.exists(SMS_CONFIG_FILE):
+                        try:
+                            with open(SMS_CONFIG_FILE, "r", encoding="utf-8") as f:
+                                cur_sms = json.load(f)
+                        except Exception:
+                            pass
+                    if not cur_sms and hasattr(st, "secrets") and "sms" in st.secrets:
+                        cur_sms = dict(st.secrets["sms"])
+
+                    c_gw1, c_gw2 = st.columns(2)
+                    with c_gw1:
+                        prov_opts = ["fast2sms", "2factor", "twilio"]
+                        sel_prov = st.selectbox("SMS Provider", options=prov_opts, index=prov_opts.index(cur_sms.get("provider", "fast2sms")) if cur_sms.get("provider") in prov_opts else 0, key="cfg_sms_prov")
+                    with c_gw2:
+                        gw_key = st.text_input("API Key / Authorization Token", value=cur_sms.get("api_key", ""), type="password", key="cfg_sms_key")
+
+                    if st_button_stretch("💾 Save SMS Gateway Config", key="btn_save_sms_cfg"):
+                        new_sms_cfg = {
+                            "provider": sel_prov,
+                            "api_key": gw_key.strip()
+                        }
+                        try:
+                            with open(SMS_CONFIG_FILE, "w", encoding="utf-8") as f:
+                                json.dump(new_sms_cfg, f, indent=2)
+                            st.success("✅ SMS Gateway configuration saved!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Failed to save SMS config: {e}")
 
         st.html(textwrap.dedent("""
         <div class="quant-feature-grid">
