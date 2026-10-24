@@ -517,32 +517,28 @@ def render_dedicated_admin_portal():
     </style>
     """, unsafe_allow_html=True)
 
-    # Top Header Bar with Vertical Centering
-    col_th1, col_th2 = st.columns([4.2, 1.2], vertical_alignment="center")
+    # Top Header Bar with Perfect Vertical Centering
+    col_th1, col_th2 = st.columns([4.4, 1.1], vertical_alignment="center")
     with col_th1:
         st.html("""
         <div style="display: flex; align-items: center; gap: 14px;">
-            <div style="font-size: 2.2rem; background: rgba(56, 189, 248, 0.12); border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 14px; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">👑</div>
+            <div style="font-size: 2.1rem; background: rgba(56, 189, 248, 0.12); border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 14px; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">👑</div>
             <div>
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px;">
-                    <span style="background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.45); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 2px 8px; border-radius: 6px; letter-spacing: 0.8px; text-transform: uppercase;">
-                        ADMINISTRATOR CONSOLE
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.55rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.3px; line-height: 1.2;">
+                        User Access &amp; Registration Approval Center
                     </span>
-                    <span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: #34D399; font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 6px;">
-                        OPERATOR ID: ADMIN
+                    <span style="background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.45); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; letter-spacing: 0.8px; text-transform: uppercase; white-space: nowrap;">
+                        ADMIN CONSOLE
                     </span>
                 </div>
-                <h1 style="margin: 0; font-size: 1.65rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.4px; line-height: 1.2;">
-                    User Access &amp; Registration Approval Center
-                </h1>
-                <div style="font-size: 0.82rem; color: #94A3B8; margin-top: 3px;">
+                <div style="font-size: 0.80rem; color: #94A3B8; margin-top: 3px;">
                     Review pending mobile registrations, approve or reject trader access, and unregister accounts.
                 </div>
             </div>
         </div>
         """)
     with col_th2:
-        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
         if st_button_stretch("🔒 Exit & Logout", key="btn_admin_portal_logout", help="Log out of Administrator Console"):
             logout_user()
 
@@ -553,8 +549,9 @@ def render_dedicated_admin_portal():
     # KPI Metric Cards Grid
     pending_border = "rgba(245, 158, 11, 0.50)" if stats["pending"] > 0 else "rgba(56, 189, 248, 0.25)"
     pending_num_color = "#FBBF24" if stats["pending"] > 0 else "#94A3B8"
-    pending_sub = f"⚠️ {stats['pending']} Awaiting Decision" if stats["pending"] > 0 else "🎉 No Action Required"
+    pending_sub = f"⚠️ {stats['pending']} Awaiting Decision" if stats["pending"] > 0 else "0 Awaiting Approval"
     pending_sub_color = "#F59E0B" if stats["pending"] > 0 else "#64748B"
+    revoked_sub = f"{stats['revoked']} Suspended Traders" if stats["revoked"] > 0 else "0 Suspended Accounts"
 
     st.html(f"""
     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px;">
@@ -565,7 +562,7 @@ def render_dedicated_admin_portal():
             <div style="font-size: 1.95rem; font-weight: 900; color: #FFFFFF; margin-top: 4px; line-height: 1.1;">
                 {stats['total']}
             </div>
-            <div style="font-size: 0.70rem; color: #64748B; margin-top: 4px;">All records in registry</div>
+            <div style="font-size: 0.70rem; color: #64748B; margin-top: 4px;">Total registered traders</div>
         </div>
         <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
             <div style="font-size: 0.76rem; font-weight: 700; color: #34D399; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
@@ -574,7 +571,7 @@ def render_dedicated_admin_portal():
             <div style="font-size: 1.95rem; font-weight: 900; color: #34D399; margin-top: 4px; line-height: 1.1;">
                 {stats['approved']}
             </div>
-            <div style="font-size: 0.70rem; color: #10B981; margin-top: 4px;">Authorized Quant Desk Access</div>
+            <div style="font-size: 0.70rem; color: #10B981; margin-top: 4px;">Active quant desk traders</div>
         </div>
         <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid {pending_border}; border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
             <div style="font-size: 0.76rem; font-weight: 700; color: {pending_num_color}; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
@@ -592,7 +589,7 @@ def render_dedicated_admin_portal():
             <div style="font-size: 1.95rem; font-weight: 900; color: #F87171; margin-top: 4px; line-height: 1.1;">
                 {stats['revoked']}
             </div>
-            <div style="font-size: 0.70rem; color: #EF4444; margin-top: 4px;">Suspended &amp; Unregistered</div>
+            <div style="font-size: 0.70rem; color: #EF4444; margin-top: 4px;">{revoked_sub}</div>
         </div>
     </div>
     """)
