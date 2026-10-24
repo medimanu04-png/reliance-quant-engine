@@ -1412,14 +1412,8 @@ def render_ultra_premium_login(blocked_route: str = None):
 
 def render_authenticated_user_sidebar():
     """Renders the operator identity badge, admin registry panel, and logout button in the Streamlit sidebar."""
-    import user_registry_manager as user_reg
     user = str(st.session_state.get("auth_user", "Operator")).upper()
     login_time = st.session_state.get("auth_time", "--:--")
-    is_admin = user_reg.is_admin_user()
-
-    role_label = "SUPER ADMIN" if is_admin else "TRADER"
-    badge_bg = "rgba(56, 189, 248, 0.18)" if is_admin else "rgba(16, 185, 129, 0.15)"
-    badge_color = "#38BDF8" if is_admin else "#34D399"
 
     st.sidebar.html(textwrap.dedent(f"""
     <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;">
@@ -1428,7 +1422,7 @@ def render_authenticated_user_sidebar():
                 <span style="display: inline-block; width: 8px; height: 8px; background: #10B981; border-radius: 50%; box-shadow: 0 0 8px #10B981;"></span>
                 <span style="font-size: 0.82rem; font-weight: 800; color: #F8FAFC;">{user}</span>
             </div>
-            <span style="font-size: 0.68rem; color: {badge_color}; font-weight: 700; background: {badge_bg}; padding: 2px 6px; border-radius: 4px;">{role_label}</span>
+            <span style="font-size: 0.68rem; color: #34D399; font-weight: 700; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px;">VERIFIED</span>
         </div>
         <div style="font-size: 0.70rem; color: #94A3B8; margin-top: 4px; display: flex; justify-content: space-between;">
             <span>⚡ 1-Tap Groww Armed</span>
@@ -1436,33 +1430,6 @@ def render_authenticated_user_sidebar():
         </div>
     </div>
     """))
-
-    # Admin Exclusive User Management Panel in Sidebar
-    if is_admin:
-        stats = user_reg.get_user_stats()
-        pending = stats.get("pending", 0)
-        total = stats.get("total", 0)
-        approved = stats.get("approved", 0)
-
-        pending_badge_color = "#F59E0B" if pending > 0 else "#10B981"
-        pending_badge_text = f"⚠️ {pending} PENDING" if pending > 0 else "✅ ALL APPROVED"
-
-        st.sidebar.html(f"""
-        <div style="background: rgba(15, 23, 42, 0.85); border: 1.5px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 0.76rem; font-weight: 800; color: #38BDF8;">👑 ADMIN ACCESS CONTROL</span>
-                <span style="font-size: 0.68rem; color: {pending_badge_color}; font-weight: 700; background: rgba(245, 158, 11, 0.15); padding: 2px 6px; border-radius: 4px;">{pending_badge_text}</span>
-            </div>
-            <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 4px; display: flex; justify-content: space-between;">
-                <span>Total: <b style="color: #FFFFFF;">{total}</b></span>
-                <span>Active: <b style="color: #34D399;">{approved}</b></span>
-                <span>Pending: <b style="color: #F59E0B;">{pending}</b></span>
-            </div>
-        </div>
-        """)
-
-        with st.sidebar.expander(f"👥 Manage Registered Users ({pending} Pending)", expanded=(pending > 0)):
-            user_reg.render_user_management_panel()
 
     if st_sidebar_button_stretch("🔒 Lock Terminal (Logout)", key="sb_btn_logout", help="Revoke session and lock terminal"):
         logout_user()

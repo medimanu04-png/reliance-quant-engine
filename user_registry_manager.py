@@ -54,8 +54,8 @@ def load_users() -> dict[str, dict]:
         users[SUPER_ADMIN_MOBILE] = {
             "mobile": SUPER_ADMIN_MOBILE,
             "country_code": "+91",
-            "name": "Manoj (Super Admin)",
-            "role": "admin",
+            "name": "Manoj",
+            "role": "trader",
             "status": "APPROVED",
             "registered_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
             "approved_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
@@ -277,30 +277,13 @@ def get_user_stats() -> dict:
 
 def is_admin_user(user_identifier: str = None) -> bool:
     """
-    Determines if current user has administrator privileges.
-    Admin accounts:
-    - Master key 'admin'
-    - Master key 'manoj'
-    - Super admin mobile '+91 8328580784' / '8328580784'
-    - Any user with role == 'admin' in registered_users.json
+    Determines if current user is the dedicated Administrator.
+    Strictly restricted to the 'admin' master account.
+    All other accounts (including 'manoj' and '8328580784') operate as normal traders.
     """
     ident = str(user_identifier or st.session_state.get("auth_user", "")).strip().lower()
-    if not ident:
-        return False
+    return ident == "admin"
 
-    if ident in ["admin", "manoj"]:
-        return True
-
-    clean = _clean_mobile(ident)
-    if clean == SUPER_ADMIN_MOBILE:
-        return True
-
-    users = load_users()
-    user = users.get(clean)
-    if user and user.get("role") == "admin":
-        return True
-
-    return False
 
 
 def _notify_admin_new_registration(mobile: str, name: str, is_reapply: bool = False):
