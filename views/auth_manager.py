@@ -296,7 +296,7 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
     Dispatches a real cellular SMS text message directly to the user's mobile number.
     Supports Fast2SMS, 2Factor.in, and Twilio configured in secrets.toml or sms_config.json.
     """
-    clean_num = mobile[-10:]
+    clean_num = "".join([c for c in mobile if c.isdigit()])[-10:]
     sms_cfg = {}
     if hasattr(st, "secrets") and "sms" in st.secrets:
         sms_cfg = dict(st.secrets["sms"])
@@ -314,7 +314,7 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
     api_key = str(sms_cfg.get("api_key", "")).strip()
 
     if not api_key and provider != "twilio":
-        return False, "SMS gateway API key not set in secrets.toml (dispatched via Telegram + on-screen preview)"
+        return False, "SMS Gateway API key is not configured. Please enter your Fast2SMS, 2Factor, or Twilio API key in SMS Settings to receive cellular text messages."
 
     msg_body = custom_body or f"Your Manoj Quant Terminal verification passcode is {otp_code}. Valid for 5 minutes."
 
@@ -329,16 +329,22 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
                 "route": "otp",
                 "numbers": clean_num
             }
-            res = requests.post(url, data=payload, headers={"cache-control": "no-cache"}, timeout=5)
-            r_json = res.json()
-            if r_json.get("return") is True:
-                return True, "SMS text message delivered to carrier"
-            return False, r_json.get("message", "Fast2SMS error")
+            res = requests.post(url, data=payload, headers={"cache-control": "no-cache"}, timeout=10)
+            try:
+                r_json = res.json()
+                if r_json.get("return") is True:
+                    return True, "SMS text message delivered to carrier"
+                err = r_json.get("message", "Fast2SMS error")
+                if isinstance(err, list):
+                    err = " ".join(err)
+                return False, f"Fast2SMS error: {err}"
+            except Exception:
+                return False, f"Fast2SMS response error (HTTP {res.status_code})"
 
         # 2. 2Factor.in Transactional OTP SMS
         elif provider in ["2factor", "twofactor"]:
             url = f"https://2factor.in/API/V1/{api_key}/SMS/{clean_num}/{otp_code}/AUTOGEN"
-            res = requests.get(url, timeout=5)
+            res = requests.get(url, timeout=10)
             r_json = res.json()
             if r_json.get("Status") == "Success":
                 return True, "2Factor SMS delivered to carrier"
@@ -358,7 +364,7 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
                 "From": from_num,
                 "Body": msg_body
             }
-            res = requests.post(url, data=data, auth=HTTPBasicAuth(sid, tok), timeout=5)
+            res = requests.post(url, data=data, auth=HTTPBasicAuth(sid, tok), timeout=10)
             if res.status_code in [200, 201]:
                 return True, "Twilio SMS text message sent"
             return False, res.text
@@ -369,7 +375,7 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
 
 
 def send_recovery_otp(mobile_raw: str, country_code: str = "🇮🇳 +91", recovery_mode: str = "forgot_password") -> tuple[bool, str]:
-    """Generates 6-digit cryptographic OTP for Master Key recovery, dispatches via SMS + Telegram, and sets session state."""
+    """Generates 6-digit cryptographic OTP for Master Key recovery, dispatches via Cellular SMS text message ONLY, and sets session state."""
     cc_clean = "+" + "".join([c for c in country_code if c.isdigit()]) if any(c.isdigit() for c in country_code) else "+91"
     digits = "".join([c for c in mobile_raw if c.isdigit()])
     if len(digits) < 10:
@@ -378,7 +384,13 @@ def send_recovery_otp(mobile_raw: str, country_code: str = "🇮🇳 +91", recov
     clean_mobile = digits[-10:]
     otp = f"{random.randint(100000, 999999)}"
     exp_time = time.time() + 300  # 5 minutes
-    exp_dt = datetime.fromtimestamp(exp_time, tz=IST)
+
+    # Dispatch via Cellular SMS Gateway ONLY (Strictly No Telegram, No on-screen leak)
+    sms_body = f"Your Manoj Quant Terminal recovery passcode is {otp}. Valid for 5 minutes. Do not share."
+    sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp, custom_body=sms_body)
+
+    if not sms_ok:
+        return False, sms_info
 
     st.session_state["rec_otp_code"] = otp
     st.session_state["rec_otp_mobile"] = clean_mobile
@@ -387,25 +399,9 @@ def send_recovery_otp(mobile_raw: str, country_code: str = "🇮🇳 +91", recov
     st.session_state["rec_otp_sent_at"] = time.time()
     st.session_state["rec_otp_verified"] = False
     st.session_state["master_rec_flow"] = recovery_mode
+    st.session_state["rec_sms_carrier_status"] = "SENT_TO_PHONE"
 
-    mode_label = "MASTER SECURITY ACCESS KEY RESET" if recovery_mode == "forgot_password" else "MASTER OPERATOR ID RETRIEVAL"
-    mandate_text = "Required to reset your Master Security Access Key." if recovery_mode == "forgot_password" else "Required to retrieve your registered Master Operator ID."
-
-    # 1. Dispatch via Telegram Instant Alert Bot
-    tg_ok, tg_info = _dispatch_otp_to_telegram(
-        f"{cc_clean} {clean_mobile}",
-        otp,
-        exp_dt,
-        title=f"MASTER RECOVERY // {mode_label}",
-        mandate_msg=mandate_text
-    )
-
-    # 2. Dispatch via Cellular SMS Gateway
-    sms_body = f"Your Manoj Quant Terminal recovery passcode is {otp}. Valid for 5 minutes. Use this to reset master credentials."
-    sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp, custom_body=sms_body)
-    st.session_state["rec_sms_carrier_status"] = "SENT_TO_PHONE" if sms_ok else sms_info
-
-    return True, otp
+    return True, "SMS text message sent"
 
 
 def verify_recovery_otp(entered_otp: str) -> tuple[bool, str]:
@@ -429,7 +425,7 @@ def verify_recovery_otp(entered_otp: str) -> tuple[bool, str]:
 
 
 def send_security_otp(mobile_raw: str, country_code: str = "🇮🇳 +91") -> tuple[bool, str]:
-    """Generates 6-digit cryptographic OTP, dispatches via Cellular SMS + Telegram, and sets session state."""
+    """Generates 6-digit cryptographic OTP, dispatches via Cellular SMS, and sets session state."""
     cc_clean = "+" + "".join([c for c in country_code if c.isdigit()]) if any(c.isdigit() for c in country_code) else "+91"
     digits = "".join([c for c in mobile_raw if c.isdigit()])
     if len(digits) < 10:
@@ -438,20 +434,21 @@ def send_security_otp(mobile_raw: str, country_code: str = "🇮🇳 +91") -> tu
     clean_mobile = digits[-10:]
     otp = f"{random.randint(100000, 999999)}"
     exp_time = time.time() + 300  # 5 minutes
-    exp_dt = datetime.fromtimestamp(exp_time, tz=IST)
+
+    # Dispatch via Cellular SMS Gateway ONLY
+    sms_body = f"Your Manoj Quant Terminal verification passcode is {otp}. Valid for 5 minutes."
+    sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp, custom_body=sms_body)
+    if not sms_ok:
+        return False, sms_info
 
     st.session_state["otp_code"] = otp
     st.session_state["otp_mobile"] = clean_mobile
     st.session_state["otp_country_code"] = cc_clean
     st.session_state["otp_expires_at"] = exp_time
     st.session_state["otp_sent_at"] = time.time()
+    st.session_state["otp_sms_carrier_status"] = "SENT_TO_PHONE"
 
-    # 1. Dispatch via Telegram Instant Alert Bot
-    tg_ok, tg_info = _dispatch_otp_to_telegram(f"{cc_clean} {clean_mobile}", otp, exp_dt)
-
-    # 2. Dispatch via Cellular SMS Gateway
-    sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp)
-    st.session_state["otp_sms_carrier_status"] = "SENT_TO_PHONE" if sms_ok else sms_info
+    return True, "SMS text message sent"
 
     return True, otp
 
@@ -737,19 +734,19 @@ def render_ultra_premium_login(blocked_route: str = None):
                 secs = time_left % 60
 
                 active_cc = st.session_state.get("otp_country_code", "+91")
-                # Real-time Dispatch Preview Banner (for instant developer convenience & live verification)
+                masked_m = f"+91-XXXXX-{active_mobile[-4:]}" if len(active_mobile) >= 4 else active_mobile
                 st.html(textwrap.dedent(f"""
                 <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 0.82rem; font-weight: 700; color: #34D399;">
-                            📲 SMS &amp; Telegram Gateway: Passcode dispatched to {active_cc} {active_mobile}
+                        <span style="font-size: 0.85rem; font-weight: 700; color: #34D399;">
+                            📲 SMS Text Message dispatched to {active_cc} {masked_m}
                         </span>
                         <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
                             ⏱️ Expires in {mins:02d}:{secs:02d}
                         </span>
                     </div>
-                    <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 4px;">
-                        Verification Code delivered to Telegram channel &amp; Carrier SMS. <b>Instant Passcode Preview:</b> <code style="font-size: 0.95rem; color: #38BDF8; font-weight: 800; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px;">{active_otp}</code>
+                    <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 6px;">
+                        Passcode sent directly to your phone via cellular SMS text message. Please enter the 6 digits below.
                     </div>
                 </div>
                 """))
@@ -759,7 +756,7 @@ def render_ultra_premium_login(blocked_route: str = None):
                     with col_o1:
                         otp_input = st.text_input(
                             "🔢 Enter 6-Digit One-Time Passcode (OTP)",
-                            value=active_otp,
+                            value="",
                             max_chars=6,
                             placeholder="e.g. 123456",
                             help="Enter the 6-digit passcode sent to your device"
@@ -918,10 +915,11 @@ def render_ultra_premium_login(blocked_route: str = None):
                             st.session_state["last_entered_mobile"] = rec_m_in
                             ok, code_or_err = send_recovery_otp(rec_m_in, country_code=rec_sel_cc, recovery_mode=rec_mode)
                             if ok:
-                                st.success(f"✅ Recovery OTP dispatched to {rec_sel_cc} {rec_m_in[-10:]} via Cellular Gateway & Telegram!")
+                                st.success(f"✅ Recovery OTP text message dispatched to {rec_sel_cc} {rec_m_in[-10:]}!")
                                 st.rerun()
                             else:
                                 st.error(f"❌ {code_or_err}")
+                                st.session_state["show_sms_setup"] = True
 
                 # ---------------- STEP 2: ENTER & MATCH OTP ----------------
                 elif rec_otp and not rec_verified:
@@ -929,18 +927,20 @@ def render_ultra_premium_login(blocked_route: str = None):
                     mins = time_left // 60
                     secs = time_left % 60
 
+                    masked_rec_m = f"+91-XXXXX-{rec_mobile[-4:]}" if len(rec_mobile) >= 4 else rec_mobile
+
                     st.html(textwrap.dedent(f"""
                     <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.82rem; font-weight: 700; color: #38BDF8;">
-                                📲 Recovery OTP dispatched to {rec_cc} {rec_mobile}
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #38BDF8;">
+                                📲 Recovery OTP text message dispatched to {rec_cc} {masked_rec_m}
                             </span>
                             <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
                                 ⏱️ Expires in {mins:02d}:{secs:02d}
                             </span>
                         </div>
-                        <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 4px;">
-                            Passcode delivered to your phone as SMS text message &amp; Telegram alert bot. <b>Instant Passcode Preview:</b> <code style="font-size: 0.95rem; color: #34D399; font-weight: 800; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px;">{rec_otp}</code>
+                        <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 6px;">
+                            Passcode sent directly to your phone as a cellular SMS text message. Please enter the 6-digit passcode below.
                         </div>
                     </div>
                     """))
@@ -950,7 +950,7 @@ def render_ultra_premium_login(blocked_route: str = None):
                         with col_otp1:
                             rec_otp_in = st.text_input(
                                 "🔢 Enter 6-Digit Recovery Passcode (OTP)",
-                                value=rec_otp,
+                                value="",
                                 max_chars=6,
                                 placeholder="e.g. 123456",
                                 key="rec_otp_input"
@@ -1097,8 +1097,9 @@ def render_ultra_premium_login(blocked_route: str = None):
                                 st.rerun()
 
                 # Optional SMS Gateway Setup Expander
-                with st.expander("⚙️ Cellular SMS Gateway Configuration (Optional)", expanded=False):
-                    st.html("<p style='font-size: 0.75rem; color: #94A3B8; margin-bottom: 8px;'>Configure a real SMS gateway (Fast2SMS, 2Factor.in, or Twilio) to deliver OTP text messages directly to mobile carrier networks. Note: OTP is always delivered instantaneously to your Telegram alert bot.</p>")
+                show_sms = st.session_state.get("show_sms_setup", False)
+                with st.expander("⚙️ Cellular SMS Gateway Configuration (Required for Real Text Messages)", expanded=show_sms):
+                    st.html("<p style='font-size: 0.75rem; color: #94A3B8; margin-bottom: 8px;'>Connect your cellular SMS gateway (Fast2SMS, 2Factor.in, or Twilio) to deliver OTP text messages directly to mobile carrier networks (Airtel, Jio, Vi, BSNL). For India, Fast2SMS (fast2sms.com) offers instant API keys.</p>")
                     cur_sms = {}
                     if os.path.exists(SMS_CONFIG_FILE):
                         try:
@@ -1124,7 +1125,38 @@ def render_ultra_premium_login(blocked_route: str = None):
                         try:
                             with open(SMS_CONFIG_FILE, "w", encoding="utf-8") as f:
                                 json.dump(new_sms_cfg, f, indent=2)
+
+                            # Also sync to .streamlit/secrets.toml
+                            if os.path.exists(SECRETS_FILE):
+                                with open(SECRETS_FILE, "r", encoding="utf-8") as f:
+                                    s_lines = f.readlines()
+                                new_sl = []
+                                in_sms = False
+                                prov_updated = False
+                                key_updated = False
+                                for sl in s_lines:
+                                    s_strip = sl.strip()
+                                    if s_strip.startswith("[") and s_strip.endswith("]"):
+                                        in_sms = (s_strip == "[sms]")
+                                    if in_sms:
+                                        if s_strip.startswith("provider"):
+                                            new_sl.append(f'provider = "{sel_prov}"\n')
+                                            prov_updated = True
+                                            continue
+                                        elif s_strip.startswith("api_key"):
+                                            new_sl.append(f'api_key = "{gw_key.strip()}"\n')
+                                            key_updated = True
+                                            continue
+                                    new_sl.append(sl)
+                                if not prov_updated and not key_updated:
+                                    new_sl.append("\n[sms]\n")
+                                    new_sl.append(f'provider = "{sel_prov}"\n')
+                                    new_sl.append(f'api_key = "{gw_key.strip()}"\n')
+                                with open(SECRETS_FILE, "w", encoding="utf-8") as f:
+                                    f.writelines(new_sl)
+
                             st.success("✅ SMS Gateway configuration saved!")
+                            st.session_state["show_sms_setup"] = False
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Failed to save SMS config: {e}")
