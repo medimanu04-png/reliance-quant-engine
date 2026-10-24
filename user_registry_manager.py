@@ -460,32 +460,71 @@ def render_dedicated_admin_portal():
     """
     from views.auth_manager import logout_user
 
-    st.html("""
+    st.markdown("""
     <style>
-    .block-container {
-        max-width: 1050px !important;
-        padding-top: 1.5rem !important;
+    /* Center and constrain admin portal container across all viewports */
+    .main .block-container,
+    [data-testid="block-container"],
+    .stMainBlockContainer,
+    section.main > div.block-container {
+        max-width: 1120px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        padding-top: 1.8rem !important;
         padding-bottom: 3rem !important;
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
     }
-    .admin-card {
-        background: radial-gradient(ellipse at 50% 0%, rgba(14, 165, 233, 0.12) 0%, rgba(8, 13, 26, 0.98) 100%) !important;
+
+    /* Tab Bar Container Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px !important;
+        background-color: rgba(15, 23, 42, 0.70) !important;
+        padding: 6px !important;
+        border-radius: 12px !important;
+        border: 1px solid rgba(148, 163, 184, 0.18) !important;
+        margin-bottom: 18px !important;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 40px !important;
+        background-color: transparent !important;
+        border-radius: 8px !important;
+        color: #94A3B8 !important;
+        font-size: 0.84rem !important;
+        font-weight: 700 !important;
+        padding: 0 16px !important;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(56, 189, 248, 0.18) !important;
+        color: #38BDF8 !important;
+        border-bottom: 2px solid #38BDF8 !important;
+    }
+
+    /* Search input field */
+    [data-testid="stTextInput"] div[data-baseweb="input"] {
+        background: rgba(15, 23, 42, 0.75) !important;
         border: 1px solid rgba(56, 189, 248, 0.28) !important;
-        border-radius: 16px !important;
-        padding: 22px 26px !important;
-        margin-bottom: 20px !important;
-        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6) !important;
+        border-radius: 10px !important;
+    }
+
+    /* Button alignment */
+    [data-testid="stButton"] button {
+        border-radius: 10px !important;
+        font-weight: 800 !important;
     }
     </style>
-    """)
+    """, unsafe_allow_html=True)
 
-    # Top Header Bar with Logout
-    col_th1, col_th2 = st.columns([3.8, 1.2], vertical_alignment="center")
+    # Top Header Bar with Vertical Centering
+    col_th1, col_th2 = st.columns([4.2, 1.2], vertical_alignment="center")
     with col_th1:
         st.html("""
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="font-size: 2.2rem; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 12px; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;">👑</div>
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="font-size: 2.2rem; background: rgba(56, 189, 248, 0.12); border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 14px; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">👑</div>
             <div>
-                <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px;">
                     <span style="background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.45); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 2px 8px; border-radius: 6px; letter-spacing: 0.8px; text-transform: uppercase;">
                         ADMINISTRATOR CONSOLE
                     </span>
@@ -493,38 +532,77 @@ def render_dedicated_admin_portal():
                         OPERATOR ID: ADMIN
                     </span>
                 </div>
-                <h1 style="margin: 2px 0 0 0; font-size: 1.65rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.4px;">
+                <h1 style="margin: 0; font-size: 1.65rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.4px; line-height: 1.2;">
                     User Access &amp; Registration Approval Center
                 </h1>
-                <div style="font-size: 0.80rem; color: #94A3B8; margin-top: 2px;">
+                <div style="font-size: 0.82rem; color: #94A3B8; margin-top: 3px;">
                     Review pending mobile registrations, approve or reject trader access, and unregister accounts.
                 </div>
             </div>
         </div>
         """)
     with col_th2:
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
         if st_button_stretch("🔒 Exit & Logout", key="btn_admin_portal_logout", help="Log out of Administrator Console"):
             logout_user()
 
-    st.markdown("---")
+    st.markdown("<div style='border-bottom: 1px solid rgba(56, 189, 248, 0.20); margin: 18px 0 22px 0;'></div>", unsafe_allow_html=True)
 
     stats = get_user_stats()
 
-    # KPI Metric Cards
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("👥 Total Registered", stats["total"])
-    with c2:
-        st.metric("✅ Approved Active", stats["approved"])
-    with c3:
-        st.metric("⏳ Pending Approval", stats["pending"], delta="Action Required" if stats["pending"] > 0 else None)
-    with c4:
-        st.metric("⛔ Revoked / Inactive", stats["revoked"])
+    # KPI Metric Cards Grid
+    pending_border = "rgba(245, 158, 11, 0.50)" if stats["pending"] > 0 else "rgba(56, 189, 248, 0.25)"
+    pending_num_color = "#FBBF24" if stats["pending"] > 0 else "#94A3B8"
+    pending_sub = f"⚠️ {stats['pending']} Awaiting Decision" if stats["pending"] > 0 else "🎉 No Action Required"
+    pending_sub_color = "#F59E0B" if stats["pending"] > 0 else "#64748B"
 
-    st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+    st.html(f"""
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px;">
+        <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.76rem; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                👥 Total Registered
+            </div>
+            <div style="font-size: 1.95rem; font-weight: 900; color: #FFFFFF; margin-top: 4px; line-height: 1.1;">
+                {stats['total']}
+            </div>
+            <div style="font-size: 0.70rem; color: #64748B; margin-top: 4px;">All records in registry</div>
+        </div>
+        <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.76rem; font-weight: 700; color: #34D399; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                ✅ Approved Active
+            </div>
+            <div style="font-size: 1.95rem; font-weight: 900; color: #34D399; margin-top: 4px; line-height: 1.1;">
+                {stats['approved']}
+            </div>
+            <div style="font-size: 0.70rem; color: #10B981; margin-top: 4px;">Authorized Quant Desk Access</div>
+        </div>
+        <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid {pending_border}; border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.76rem; font-weight: 700; color: {pending_num_color}; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                ⏳ Pending Approval
+            </div>
+            <div style="font-size: 1.95rem; font-weight: 900; color: {pending_num_color}; margin-top: 4px; line-height: 1.1;">
+                {stats['pending']}
+            </div>
+            <div style="font-size: 0.70rem; color: {pending_sub_color}; margin-top: 4px;">{pending_sub}</div>
+        </div>
+        <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(239, 68, 68, 0.30); border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.76rem; font-weight: 700; color: #F87171; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                ⛔ Revoked / Inactive
+            </div>
+            <div style="font-size: 1.95rem; font-weight: 900; color: #F87171; margin-top: 4px; line-height: 1.1;">
+                {stats['revoked']}
+            </div>
+            <div style="font-size: 0.70rem; color: #EF4444; margin-top: 4px;">Suspended &amp; Unregistered</div>
+        </div>
+    </div>
+    """)
 
     # Search Bar
-    search_query = st.text_input("🔍 Search Users", placeholder="Search by trader name or 10-digit mobile number...", key="admin_search_query")
+    search_query = st.text_input(
+        "🔍 Search Trader Records",
+        placeholder="Filter by trader name, 10-digit mobile number, or status...",
+        key="admin_search_query"
+    )
 
     users = load_users()
     if search_query and search_query.strip():
@@ -636,7 +714,11 @@ def render_dedicated_admin_portal():
     with t_approved:
         approved_users = [item for item in users.items() if item[1].get("status") == "APPROVED"]
         if not approved_users:
-            st.info("No approved users found.")
+            st.html("""
+            <div style="background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 22px; text-align: center; color: #94A3B8; font-size: 0.90rem;">
+                ℹ️ No approved traders currently active in registry.
+            </div>
+            """)
         else:
             for m, u in approved_users:
                 _render_portal_row(m, u, prefix="portal_appr")
@@ -644,14 +726,25 @@ def render_dedicated_admin_portal():
     with t_revoked:
         revoked_users = [item for item in users.items() if item[1].get("status") == "REVOKED"]
         if not revoked_users:
-            st.info("No revoked / unregistered users found.")
+            st.html("""
+            <div style="background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(239, 68, 68, 0.3); border-radius: 10px; padding: 22px; text-align: center; color: #94A3B8; font-size: 0.90rem;">
+                ℹ️ No revoked or suspended traders in registry.
+            </div>
+            """)
         else:
             for m, u in revoked_users:
                 _render_portal_row(m, u, prefix="portal_rev")
 
     with t_all:
-        for m, u in users.items():
-            _render_portal_row(m, u, prefix="portal_all")
+        if not users:
+            st.html("""
+            <div style="background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 22px; text-align: center; color: #94A3B8; font-size: 0.90rem;">
+                ℹ️ Registry is completely clean (0 records). New trader mobile registrations will appear here.
+            </div>
+            """)
+        else:
+            for m, u in users.items():
+                _render_portal_row(m, u, prefix="portal_all")
 
     with t_manual:
         st.html("<p style='font-size: 0.82rem; color: #CBD5E1;'>Directly add and pre-approve a trader mobile number without requiring them to wait in pending queue:</p>")
