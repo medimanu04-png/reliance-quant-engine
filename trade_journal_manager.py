@@ -381,7 +381,15 @@ class IndianFOTransactionCostEngine:
 class TradeJournalManager:
     @classmethod
     def _load_raw_entries(cls) -> List[Dict[str, Any]]:
-        """Loads all raw journal records from disk without symbol filtering."""
+        """Loads all raw journal records from SQLite or fallback disk file."""
+        try:
+            from core.database import QuantDatabaseManager
+            db_entries = QuantDatabaseManager.get_trade_journal()
+            if isinstance(db_entries, list) and len(db_entries) > 0:
+                return db_entries
+        except Exception:
+            pass
+
         if not os.path.exists(JOURNAL_FILE):
             cls.save_journal([])
             return []
@@ -424,7 +432,12 @@ class TradeJournalManager:
 
     @classmethod
     def save_journal(cls, entries: List[Dict[str, Any]]):
-        """Saves journal records to JSON file atomically."""
+        """Saves journal records to SQLite database and mirrors to JSON file atomically."""
+        try:
+            from core.database import QuantDatabaseManager
+            QuantDatabaseManager.save_trade_journal(entries, sync_json=False)
+        except Exception as e:
+            logger.debug(f"SQLite journal save note: {e}")
         atomic_json_write(JOURNAL_FILE, entries, indent=2)
 
     @classmethod
@@ -1032,10 +1045,13 @@ class ShadowMonitoringEngine:
     @classmethod
     def save_records(cls, records: List[Dict[str, Any]]):
         try:
-            with open(SHADOW_SIGNALS_FILE, "w", encoding="utf-8") as f:
-                json.dump(records, f, indent=2)
+            from core.database import QuantDatabaseManager
+            for r in records[-5:]:
+                s = r.get("symbol", "NIFTY")
+                QuantDatabaseManager.log_shadow_signal(s, r)
         except Exception as e:
-            logger.warning(f"Could not persist shadow signals: {e}")
+            logger.debug(f"SQLite shadow signal note: {e}")
+        atomic_json_write(SHADOW_SIGNALS_FILE, records, indent=2)
 
     @classmethod
     def _bootstrap_from_existing(cls) -> List[Dict[str, Any]]:
@@ -1715,6 +1731,11 @@ class SequentialTradeEngine:
             act = state["active_trade"]
             sym_str = str(act.get("contract", "")) + " " + str(act.get("instrument", ""))
             sym = resolve_symbol(sym_str)
+        try:
+            from core.database import QuantDatabaseManager
+            QuantDatabaseManager.set_sequential_trade_state(sym, state, sync_json=False)
+        except Exception as e:
+            logger.debug(f"SQLite sequential state note: {e}")
         state_file = cls.get_state_file_path(sym)
         atomic_json_write(state_file, state, indent=2)
 

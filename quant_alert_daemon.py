@@ -60,6 +60,7 @@ from trade_journal_manager import (
 )
 from fo_quant_engine import MultiIndicatorMath, UltraHighConvictionRelianceEngine
 from asset_config import get_asset_spec
+from core.database import QuantDatabaseManager
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BREAKOUT_FILE = os.path.join(BASE_DIR, "breakout_triggers_log.json")
@@ -433,6 +434,7 @@ class RelianceQuantAlertDaemon:
     def _update_heartbeat(self, status: str = "RUNNING"):
         """Writes real-time heartbeat to disk for supervisor monitoring."""
         try:
+            QuantDatabaseManager.record_daemon_heartbeat(os.getpid(), status=status)
             hb_data = {
                 "pid": os.getpid(),
                 "timestamp": time.time(),
@@ -947,10 +949,7 @@ class RelianceQuantAlertDaemon:
                     "last_update": datetime.now(IST).strftime("%I:%M:%S %p IST")
                 }
                 st_target = os.path.join(BASE_DIR, f"active_trade_state_{sym}.json")
-                st_tmp = f"{st_target}.tmp.{os.getpid()}"
-                with open(st_tmp, "w", encoding="utf-8") as f_st:
-                    json.dump(active_state_data, f_st, indent=2)
-                os.replace(st_tmp, st_target)
+                QuantDatabaseManager.set_active_trade_state(sym, active_state_data)
             except Exception as e:
                 logger.debug(f"Error persisting active state: {e}")
 
@@ -1695,6 +1694,7 @@ class RelianceQuantAlertDaemon:
                                     curr_st["last_update"] = datetime.now(IST).strftime("%I:%M:%S %p IST")
                                     from trade_journal_manager import atomic_json_write
                                     atomic_json_write(sf, curr_st, indent=2)
+                                    QuantDatabaseManager.set_active_trade_state(s, curr_st)
                             except Exception:
                                 pass
 

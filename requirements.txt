@@ -9,3 +9,4 @@ beautifulsoup4>=4.12.0
 websockets>=12.0
 growwapi>=1.5.0
 pyotp>=2.9.0
+pytest>=8.0.0

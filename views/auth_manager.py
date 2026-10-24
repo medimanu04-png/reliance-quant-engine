@@ -31,17 +31,22 @@ except Exception:
         IST = timezone(timedelta(hours=5, minutes=30))
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_SECRET = "manoj_quant_secure_vault_2026_institutional_secret"
+_machine_seed = os.environ.get("COMPUTERNAME", os.environ.get("HOSTNAME", "quant_vault_node"))
+DEFAULT_SECRET = os.environ.get("AUTH_SESSION_SECRET", hashlib.sha256(f"quant_{_machine_seed}".encode()).hexdigest())
 TELEGRAM_CONFIG_FILE = os.path.join(BASE_DIR, "telegram_config.json")
 AUTH_CREDENTIALS_FILE = os.path.join(BASE_DIR, "auth_credentials.json")
 SECRETS_FILE = os.path.join(BASE_DIR, ".streamlit", "secrets.toml")
 SMS_CONFIG_FILE = os.path.join(BASE_DIR, "sms_config.json")
-AUTHORIZED_RECOVERY_MOBILE = "8328580784"
+DEFAULT_RECOVERY_MOBILE = os.environ.get("RECOVERY_MOBILE", "")
 
 
 def _get_authorized_recovery_mobiles() -> set[str]:
-    """Retrieves whitelist of authorized recovery mobile numbers from code and secrets.toml."""
-    authorized = {AUTHORIZED_RECOVERY_MOBILE}
+    """Retrieves whitelist of authorized recovery mobile numbers from secrets.toml and environment."""
+    authorized = set()
+    if DEFAULT_RECOVERY_MOBILE:
+        digits = "".join([c for c in str(DEFAULT_RECOVERY_MOBILE) if c.isdigit()])[-10:]
+        if len(digits) == 10:
+            authorized.add(digits)
     if hasattr(st, "secrets") and "auth" in st.secrets:
         sec_m = st.secrets["auth"].get("recovery_mobile", "")
         if sec_m:
@@ -52,10 +57,8 @@ def _get_authorized_recovery_mobiles() -> set[str]:
 
 
 def _get_auth_credentials() -> tuple[dict, str]:
-    """Retrieves valid master authentication credentials from auth_credentials.json, secrets.toml, or defaults."""
-    creds = {
-        "admin": "password"
-    }
+    """Retrieves valid master authentication credentials from secrets.toml, auth_credentials.json, or environment."""
+    creds = {}
     secret_key = DEFAULT_SECRET
 
     # 1. Read from secrets.toml if present
@@ -66,6 +69,12 @@ def _get_auth_credentials() -> tuple[dict, str]:
         if u1 and p1:
             creds[str(u1).strip()] = str(p1).strip()
         secret_key = auth_sec.get("session_secret", DEFAULT_SECRET)
+
+    # Fallback to environment variables if secrets.toml was empty
+    if not creds:
+        env_u = os.environ.get("QUANT_ADMIN_USER", "admin")
+        env_p = os.environ.get("QUANT_ADMIN_PASS", "password")
+        creds[env_u] = env_p
 
     # 2. Read from persistent auth_credentials.json (takes priority for user-reset passwords)
     if os.path.exists(AUTH_CREDENTIALS_FILE):

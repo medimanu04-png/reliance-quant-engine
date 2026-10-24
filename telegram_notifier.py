@@ -64,6 +64,14 @@ def is_daemon_active(max_heartbeat_age_secs: float = 45.0) -> bool:
     """Checks if background quant_alert_daemon is actively running and healthy."""
     now = time.time()
     try:
+        from core.database import QuantDatabaseManager
+        alive, _ = QuantDatabaseManager.is_daemon_heartbeat_alive(max_heartbeat_age_secs)
+        if alive:
+            return True
+    except Exception:
+        pass
+
+    try:
         if os.path.exists(DAEMON_HEARTBEAT_FILE):
             with open(DAEMON_HEARTBEAT_FILE, "r", encoding="utf-8") as f:
                 hb = json.load(f)

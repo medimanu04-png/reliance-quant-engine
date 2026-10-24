@@ -77,9 +77,10 @@ from views.homepage_view import render_homepage
 from views.cockpit_view import render_cockpit_tab
 from views.radar_view import render_radar_tab
 from views.corridor_view import render_corridor_tab
-from views.calendar_view import render_calendar_tab
+from views.calendar_view import render_calendar_tab, render_nse_calendar_hub
 from views.ledger_view import render_ledger_tab
 from views.settings_view import render_settings_tab
+from views.chart_view import render_institutional_candlestick_and_cvd_chart, render_tradingview_canvas_chart
 
 # ==============================================================================
 # MULTI-PAGE NAVIGATION ROUTER & AIRTIGHT 2FA SECURITY GATEKEEPER
@@ -93,9 +94,6 @@ st.set_page_config(
 
 import views.auth_manager as auth_mgr
 import user_registry_manager as user_reg
-import importlib
-importlib.reload(auth_mgr)
-importlib.reload(user_reg)
 
 # 1. Midnight Session Rollover (Cleanly resets intraday states on calendar date transition)
 today_iso = datetime.now(IST).strftime("%Y-%m-%d")
@@ -1449,195 +1447,7 @@ def render_quant_desk_clock():
     components.html(html_code, height=96, scrolling=False)
 
 
-def render_nse_calendar_hub(active_symbol: str = "NIFTY"):
-    """
-    Renders the Official NSE Holiday Calendar & Expiry Shift Intelligence Hub.
-    Provides live connection telemetry, today's market status, expiry shift radars,
-    and official holiday master schedules.
-    """
-    now = datetime.now(IST)
-    telemetry = nse_calendar.get_calendar_status_telemetry()
-    mkt = telemetry["market_status"]
-    next_h = telemetry["next_holiday"]
-    cur_sym = resolve_symbol(active_symbol)
-
-    # Header Bar with Live Sync Button
-    c_head1, c_head2 = st.columns([3.2, 0.8])
-    with c_head1:
-        st.html(f"""
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-            <span style="font-size: 1.4rem;">📅</span>
-            <div>
-                <span style="font-size: 1.05rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.3px;">
-                    NSE OFFICIAL HOLIDAY & EXPIRY SHIFT CALENDAR
-                </span>
-                <div style="font-size: 0.72rem; color: #94A3B8;">
-                    Live Synchronized with <b style="color: #38BDF8;">NSE India Master Portal</b> (api/holiday-master) &bull; Source: <span style="color: #34D399; font-weight: 700;">{telemetry['sync_source']}</span> &bull; {telemetry['total_holidays']} Holidays Indexed
-                </div>
-            </div>
-        </div>
-        """)
-    with c_head2:
-        if st_button_stretch("🔄 Sync NSE API", key="btn_sync_nse_cal"):
-            with st.spinner("Connecting to NSE India official API..."):
-                res = nse_calendar.sync_with_nse(force=True)
-                if res.get("success"):
-                    st.toast(f"✅ NSE Calendar Synced: {res.get('holiday_count')} holidays updated!")
-                else:
-                    st.toast(f"⚠️ NSE API notice: {res.get('message')}")
-                st.rerun()
-
-    # 4 Quick Metrics Tiles
-    t1, t2, t3, t4 = st.columns(4)
-    with t1:
-        st.html(f"""
-        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">TODAY'S MARKET SESSION</div>
-            <div style="font-size: 0.95rem; font-weight: 800; color: {mkt['badge_color']}; margin-top: 3px;">{mkt['status_label']}</div>
-            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px;">{telemetry['today_str']} ({telemetry['today_weekday']})</div>
-        </div>
-        """)
-    with t2:
-        next_title = next_h['tradingDate'] if next_h else "None"
-        next_sub = f"{next_h['description']} (in {next_h['days_left']}d)" if next_h else "No upcoming holidays"
-        st.html(f"""
-        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">NEXT EXCHANGE HOLIDAY</div>
-            <div style="font-size: 0.95rem; font-weight: 800; color: #FCD34D; margin-top: 3px;">{next_title}</div>
-            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{next_sub}</div>
-        </div>
-        """)
-    with t3:
-        act_nifty = telemetry["active_nifty_expiry"]
-        n_nom_day = act_nifty.get("nominal_weekday", "Tuesday")[:3].upper()
-        n_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_nifty['is_shifted'] else f'<span style="color: #34D399; font-weight: 800;">STANDARD {n_nom_day}</span>'
-        st.html(f"""
-        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">NIFTY 50 EXPIRY</div>
-            <div style="font-size: 0.95rem; font-weight: 800; color: #38BDF8; margin-top: 3px;">{act_nifty['actual_str']}</div>
-            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px;">{act_nifty['actual_weekday']} &bull; {n_shift_badge}</div>
-        </div>
-        """)
-    with t4:
-        act_sensex = telemetry["active_sensex_expiry"]
-        s_nom_day = act_sensex.get("nominal_weekday", "Thursday")[:3].upper()
-        s_shift_badge = '<span style="color: #F87171; font-weight: 800;">⚠️ PREPONED</span>' if act_sensex['is_shifted'] else f'<span style="color: #C084FC; font-weight: 800;">STANDARD {s_nom_day}</span>'
-        st.html(f"""
-        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-            <div style="font-size: 0.65rem; color: #94A3B8; font-weight: 700; text-transform: uppercase;">BSE SENSEX EXPIRY</div>
-            <div style="font-size: 0.95rem; font-weight: 800; color: #C084FC; margin-top: 3px;">{act_sensex['actual_str']}</div>
-            <div style="font-size: 0.68rem; color: #94A3B8; margin-top: 2px;">{act_sensex['actual_weekday']} &bull; {s_shift_badge}</div>
-        </div>
-        """)
-
-    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-
-    # Expiry Shift Radar & Collision Audit Section
-    st.html("""
-    <div style="background: linear-gradient(90deg, rgba(30, 27, 75, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 8px; padding: 10px 16px; margin-bottom: 12px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.1rem;">⚡</span>
-                <span style="font-size: 0.86rem; font-weight: 800; color: #FFFFFF;">
-                    EXPIRY SHIFT RADAR (SEBI / NSE MANDATE COLLISION AUDIT)
-                </span>
-            </div>
-            <span style="font-size: 0.70rem; color: #94A3B8;">
-                Rules: When an expiry falls on an exchange holiday, contracts <b style="color: #FCD34D;">automatically prepone</b> to the preceding trading day.
-            </span>
-        </div>
-    </div>
-    """)
-
-    year_shifts = nse_calendar.scan_all_expiry_shifts_for_year(now.year)
-    shift_col1, shift_col2 = st.columns(2)
-    with shift_col1:
-        st.markdown(f"**⚡ NIFTY 50 Weekly Expiry Shifts ({len(year_shifts['NIFTY_WEEKLY_SHIFTS'])})**")
-        for s in year_shifts["NIFTY_WEEKLY_SHIFTS"]:
-            st.html(f"""
-            <div style="background: #0F172A; border-left: 3px solid #F59E0B; border-top: 1px solid #1E293B; border-right: 1px solid #1E293B; border-bottom: 1px solid #1E293B; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.78rem; font-weight: 800; color: #38BDF8;">
-                        Nominal: <del style="color: #94A3B8;">{s['nominal_str']} ({s['nominal_weekday']})</del>
-                    </span>
-                    <span style="background: rgba(245, 158, 11, 0.2); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">
-                        PREPONED &bull; {s['actual_str']} ({s['actual_weekday']})
-                    </span>
-                </div>
-                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 3px;">
-                    Reason: <b>{', '.join(s['holiday_triggers'])}</b>
-                </div>
-            </div>
-            """)
-
-    with shift_col2:
-        st.markdown(f"**⚡ BSE SENSEX Weekly Expiry Shifts ({len(year_shifts['SENSEX_WEEKLY_SHIFTS'])})**")
-        for s in year_shifts["SENSEX_WEEKLY_SHIFTS"]:
-            st.html(f"""
-            <div style="background: #0F172A; border-left: 3px solid #A855F7; border-top: 1px solid #1E293B; border-right: 1px solid #1E293B; border-bottom: 1px solid #1E293B; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.78rem; font-weight: 800; color: #C084FC;">
-                        Nominal: <del style="color: #94A3B8;">{s['nominal_str']} ({s['nominal_weekday']})</del>
-                    </span>
-                    <span style="background: rgba(168, 85, 247, 0.2); color: #D8B4FE; border: 1px solid rgba(168, 85, 247, 0.4); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">
-                        PREPONED &bull; {s['actual_str']} ({s['actual_weekday']})
-                    </span>
-                </div>
-                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 3px;">
-                    Reason: <b>{', '.join(s['holiday_triggers'])}</b>
-                </div>
-            </div>
-            """)
-
-    if year_shifts.get("MONTHLY_STOCK_SHIFTS"):
-        st.markdown(f"**⚡ Equity Stock Monthly Expiry Shifts ({len(year_shifts['MONTHLY_STOCK_SHIFTS'])}) (Last Tuesday Mandate)**")
-        for s in year_shifts["MONTHLY_STOCK_SHIFTS"]:
-            st.html(f"""
-            <div style="background: #0F172A; border-left: 3px solid #10B981; border-top: 1px solid #1E293B; border-right: 1px solid #1E293B; border-bottom: 1px solid #1E293B; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.78rem; font-weight: 800; color: #34D399;">
-                        Nominal: <del style="color: #94A3B8;">{s['nominal_str']} ({s['nominal_weekday']})</del>
-                    </span>
-                    <span style="background: rgba(16, 185, 129, 0.2); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">
-                        PREPONED &bull; {s['actual_str']} ({s['actual_weekday']})
-                    </span>
-                </div>
-                <div style="font-size: 0.70rem; color: #CBD5E1; margin-top: 3px;">
-                    Reason: <b>{', '.join(s['holiday_triggers'])}</b>
-                </div>
-            </div>
-            """)
-
-    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-
-    # Master NSE Trading Holidays Table
-    st.markdown(f"### 📋 Official NSE Trading Holidays Schedule")
-    hol_year_filter = st.radio("Select Calendar Year:", ["2026 (Active)", "2025", "2024", "All Indexed Years"], horizontal=True, key="sel_cal_year_filter")
-    y_target = 2026 if "2026" in hol_year_filter else (2025 if "2025" in hol_year_filter else (2024 if "2024" in hol_year_filter else None))
-    holidays_display = nse_calendar.get_all_holidays(year=y_target)
-
-    import pandas as pd
-    rows = []
-    today_d = now.date()
-    for h in holidays_display:
-        h_d = h["date"]
-        diff = (h_d - today_d).days
-        if diff == 0:
-            status_tag = "🔴 TODAY (MARKET CLOSED)"
-        elif diff > 0:
-            status_tag = f"⏳ In {diff} days"
-        else:
-            status_tag = f"Completed ({abs(diff)}d ago)"
-        
-        rows.append({
-            "Trading Date": h["tradingDate"],
-            "Weekday": h["weekDay"],
-            "Holiday Description": h["description"],
-            "Status": status_tag
-        })
-
-    df_hol = pd.DataFrame(rows)
-    st_dataframe_stretch(df_hol, hide_index=True)
+# render_nse_calendar_hub is modularized in views.calendar_view
 
 
 # Active Groww Account Profile (Mandatory Link)
@@ -1935,6 +1745,40 @@ def resolve_rescan_cadence():
     return run_every_str, cycle_label, is_active
 
 
+# ==============================================================================
+# STATIC MODULE-LEVEL STREAMLIT FRAGMENTS (@st.fragment)
+# Eliminates dynamic closure recreation and memory leaks on reruns
+# ==============================================================================
+@st.fragment(run_every="5s")
+def stream_desk_pills_banner_frag(render_fn, auto_active: bool, full_rescan_sec: float):
+    if auto_active and full_rescan_sec > 0:
+        now_ts = time_mod.time()
+        last_full_ts = float(st.session_state.get("last_full_auto_rescan_ts", 0.0))
+        if last_full_ts <= 0:
+            st.session_state["last_full_auto_rescan_ts"] = now_ts
+        elif (now_ts - last_full_ts) >= full_rescan_sec:
+            st.session_state["last_full_auto_rescan_ts"] = now_ts
+            execute_global_multi_desk_rescan(is_manual=False)
+            st.rerun(scope="app")
+    render_fn()
+
+@st.fragment(run_every="15s")
+def stream_live_macro_benchmarks_frag(render_fn):
+    render_fn()
+
+@st.fragment(run_every="2s")
+def stream_dynamic_1s_atm_feed_frag(render_fn, spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
+    render_fn(spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, trade_plan=trade_plan, is_streaming=True)
+
+@st.fragment(run_every="3s")
+def stream_reliance_spot_hero_frag(render_fn):
+    render_fn()
+
+@st.fragment(run_every="3s")
+def stream_quant_radar_kpis_frag(render_fn):
+    render_fn()
+
+
 def render_auto_rescan_controller():
     # 1. Action Bar: Rendered directly outside any fragment so button & selectbox NEVER clear or blink
     col_rb, col_cb = st.columns([1.6, 1.2], gap="small")
@@ -2071,20 +1915,7 @@ def render_auto_rescan_controller():
     if not auto_active:
         _render_desk_pills_banner()
     else:
-        @st.fragment(run_every=run_every_cadence)
-        def _stream_desk_pills_banner_frag():
-            # Dual-Cadence Full Rescan Engine: Triggers full indicator & market refresh on schedule
-            if auto_active and full_rescan_sec > 0:
-                now_ts = time_mod.time()
-                last_full_ts = float(st.session_state.get("last_full_auto_rescan_ts", 0.0))
-                if last_full_ts <= 0:
-                    st.session_state["last_full_auto_rescan_ts"] = now_ts
-                elif (now_ts - last_full_ts) >= full_rescan_sec:
-                    st.session_state["last_full_auto_rescan_ts"] = now_ts
-                    execute_global_multi_desk_rescan(is_manual=False)
-                    st.rerun(scope="app")
-            _render_desk_pills_banner()
-        _stream_desk_pills_banner_frag()
+        stream_desk_pills_banner_frag(_render_desk_pills_banner, auto_active, full_rescan_sec)
 
 
 
@@ -2193,22 +2024,9 @@ def _render_live_macro_benchmarks_strip_body():
 def render_live_macro_benchmarks_strip():
     run_cadence, _, auto_active = resolve_rescan_cadence()
     if not auto_active:
-        # Zero fragment, zero background timers, completely static & blink-free in Off state!
         _render_live_macro_benchmarks_strip_body()
     else:
-        sec_val = 15
-        if isinstance(run_cadence, str) and run_cadence.endswith("s"):
-            try:
-                sec_val = int(run_cadence[:-1])
-            except ValueError:
-                sec_val = 15
-        elif isinstance(run_cadence, (int, float)):
-            sec_val = int(run_cadence)
-        bench_cadence = f"{max(15, sec_val)}s"
-        @st.fragment(run_every=bench_cadence)
-        def _stream_live_macro_benchmarks_frag():
-            _render_live_macro_benchmarks_strip_body()
-        _stream_live_macro_benchmarks_frag()
+        stream_live_macro_benchmarks_frag(_render_live_macro_benchmarks_strip_body)
 
 # ==============================================================================
 # HOMEPAGE EXECUTIVE ROUTING GATE (Limited ONLY to General Market Telemetry)
@@ -2879,157 +2697,11 @@ class MultiTimeframeMatrixEngine:
 
 
 def render_institutional_candlestick_and_cvd_chart(df: pd.DataFrame, spot: float, atm_strike: int, scrip_symbol: str = "NIFTY"):
-    """
-    Renders an institutional interactive Plotly dual-panel chart:
-    Panel 1: Candlesticks, Session VWAP, VWAP Bands, ORB-15 Anchored VWAP, 9/20 EMAs
-    Panel 2: Cumulative Volume Delta (CVD) Aggressor Flow, Delta Bars, 20-period CVD EMA
-    """
-    if df.empty or len(df) < 5:
-        return
-    
-    chart_df = df.iloc[-60:].copy()
-    
-    fig = make_subplots(
-        rows=2, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.04,
-        row_heights=[0.70, 0.30]
-    )
-    
-    # 1. Candlestick
-    fig.add_trace(go.Candlestick(
-        x=chart_df.index,
-        open=chart_df['Open'],
-        high=chart_df['High'],
-        low=chart_df['Low'],
-        close=chart_df['Close'],
-        name=scrip_symbol,
-        increasing_line_color="#10B981",
-        decreasing_line_color="#EF4444"
-    ), row=1, col=1)
-    
-    # 2. Session VWAP
-    if 'VWAP' in chart_df.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_df.index, y=chart_df['VWAP'],
-            name="Session VWAP",
-            line=dict(color="#38BDF8", width=1.8)
-        ), row=1, col=1)
-        
-    # 3. VWAP Upper Band (+1.5σ)
-    if 'VWAP_Upper' in chart_df.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_df.index, y=chart_df['VWAP_Upper'],
-            name="VWAP +1.5σ",
-            line=dict(color="rgba(56, 189, 248, 0.5)", width=1.2, dash="dash")
-        ), row=1, col=1)
-        
-    # 4. ORB-15 Anchored VWAP (Gold / Amber dotted line)
-    if 'AVWAP_ORB' in chart_df.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_df.index, y=chart_df['AVWAP_ORB'],
-            name="ORB-15 Anchored VWAP",
-            line=dict(color="#FBBF24", width=2.2, dash="dot")
-        ), row=1, col=1)
-        
-    # 5. EMA 9 & EMA 20
-    if 'EMA_9' in chart_df.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_df.index, y=chart_df['EMA_9'],
-            name="EMA 9",
-            line=dict(color="#34D399", width=1.0)
-        ), row=1, col=1)
-    if 'EMA_20' in chart_df.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_df.index, y=chart_df['EMA_20'],
-            name="EMA 20",
-            line=dict(color="#F59E0B", width=1.0)
-        ), row=1, col=1)
-        
-    # 6. Panel 2: Bar Delta & CVD
-    if 'Delta' in chart_df.columns:
-        bar_colors = ["#10B981" if d >= 0 else "#EF4444" for d in chart_df['Delta']]
-        fig.add_trace(go.Bar(
-            x=chart_df.index, y=chart_df['Delta'],
-            name="Bar Delta",
-            marker_color=bar_colors,
-            opacity=0.60
-        ), row=2, col=1)
-        
-    if 'CVD' in chart_df.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_df.index, y=chart_df['CVD'],
-            name="CVD Line",
-            line=dict(color="#C084FC", width=2.0)
-        ), row=2, col=1)
-        
-    if 'CVD_EMA20' in chart_df.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_df.index, y=chart_df['CVD_EMA20'],
-            name="CVD EMA-20",
-            line=dict(color="#F472B6", width=1.2, dash="dash")
-        ), row=2, col=1)
-        
-    fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="#0F172A",
-        plot_bgcolor="#0B1120",
-        margin=dict(l=10, r=10, t=24, b=10),
-        height=480,
-        hovermode="x unified",
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            font=dict(size=10, color="#94A3B8")
-        ),
-        xaxis=dict(showgrid=True, gridcolor="#1E293B", rangeslider=dict(visible=False), showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B"),
-        yaxis=dict(showgrid=True, gridcolor="#1E293B", title="Spot (₹)", title_font=dict(size=10, color="#94A3B8"), showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B"),
-        xaxis2=dict(showgrid=True, gridcolor="#1E293B", showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B"),
-        yaxis2=dict(showgrid=True, gridcolor="#1E293B", title="Delta / CVD", title_font=dict(size=10, color="#94A3B8"), showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1, spikecolor="#64748B")
-    )
-    
-    st.plotly_chart(fig, width="stretch")
-    render_order_tape_hud(scrip_symbol)
+    from views.chart_view import render_institutional_candlestick_and_cvd_chart as _render_chart
+    return _render_chart(df, spot, atm_strike, scrip_symbol)
 
 
-def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0):
-    hl2 = (df['High'] + df['Low']) / 2.0
-    atr = df['ATR']
-    upper_band = hl2 + (multiplier * atr)
-    lower_band = hl2 - (multiplier * atr)
-
-    supertrend = pd.Series(index=df.index, dtype='float64')
-    direction = pd.Series(index=df.index, dtype='int64')
-
-    for i in range(len(df)):
-        if i == 0:
-            supertrend.iloc[i] = lower_band.iloc[i]
-            direction.iloc[i] = 1
-            continue
-
-        prev_upper = upper_band.iloc[i - 1]
-        prev_lower = lower_band.iloc[i - 1]
-        curr_close = df['Close'].iloc[i - 1]
-
-        lower_band.iloc[i] = lower_band.iloc[i] if (lower_band.iloc[i] > prev_lower or curr_close < prev_lower) else prev_lower
-        upper_band.iloc[i] = upper_band.iloc[i] if (upper_band.iloc[i] < prev_upper or curr_close > prev_upper) else prev_upper
-
-        if df['Close'].iloc[i] > prev_upper:
-            direction.iloc[i] = 1
-        elif df['Close'].iloc[i] < prev_lower:
-            direction.iloc[i] = -1
-        else:
-            direction.iloc[i] = direction.iloc[i - 1]
-
-        supertrend.iloc[i] = lower_band.iloc[i] if direction.iloc[i] == 1 else upper_band.iloc[i]
-
-    df['SuperTrend'] = supertrend
-    df['SuperTrend_Dir'] = direction
-    return df
+# calculate_supertrend is vectorized and cached via views.indicator_calculator (imported at line 58)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -5219,13 +4891,9 @@ def _render_dynamic_1s_atm_feed_body(spot: float, broker_call_ltp: float, stock_
 def render_dynamic_1s_atm_feed(spot: float, broker_call_ltp: float, stock_volume: int, rel_vol: float, selected_strike: int = None, trade_plan: dict = None):
     run_atm_cadence, _, auto_active = resolve_rescan_cadence()
     if not auto_active:
-        # Zero fragment, zero timers, zero WebSocket re-renders in Off state!
         _render_dynamic_1s_atm_feed_body(spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, trade_plan=trade_plan, is_streaming=False)
     else:
-        @st.fragment(run_every=run_atm_cadence)
-        def _stream_dynamic_1s_atm_feed_frag():
-            _render_dynamic_1s_atm_feed_body(spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, trade_plan=trade_plan, is_streaming=True)
-        _stream_dynamic_1s_atm_feed_frag()
+        stream_dynamic_1s_atm_feed_frag(_render_dynamic_1s_atm_feed_body, spot, broker_call_ltp, stock_volume, rel_vol, selected_strike, trade_plan=trade_plan)
 
 # ==============================================================================
 if df is not None and not df.empty:
@@ -6901,13 +6569,9 @@ if df is not None and not df.empty:
 
     def render_reliance_spot_hero():
         if not auto_active_desk:
-            # Zero fragment, zero timers, zero WebSocket re-renders in Off state!
             _render_reliance_spot_hero_body()
         else:
-            @st.fragment(run_every=desk_cadence)
-            def _stream_reliance_spot_hero_frag():
-                _render_reliance_spot_hero_body()
-            _stream_reliance_spot_hero_frag()
+            stream_reliance_spot_hero_frag(_render_reliance_spot_hero_body)
 
     def _render_quant_radar_kpis_body():
         radar_sym = scrip_symbol
@@ -7150,13 +6814,9 @@ if df is not None and not df.empty:
 
     def render_quant_radar_kpis():
         if not auto_active_desk:
-            # Zero fragment, zero timers, zero WebSocket re-renders in Off state!
             _render_quant_radar_kpis_body()
         else:
-            @st.fragment(run_every=desk_cadence)
-            def _stream_quant_radar_kpis_frag():
-                _render_quant_radar_kpis_body()
-            _stream_quant_radar_kpis_frag()
+            stream_quant_radar_kpis_frag(_render_quant_radar_kpis_body)
 
     # Clean Stock Name Heading for Dedicated Desk Mode
     st.html(f"""
