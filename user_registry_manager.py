@@ -12,7 +12,7 @@ import os
 import json
 from datetime import datetime, timedelta
 import streamlit as st
-from views.ui_components import st_button_stretch
+from views.ui_components import st_button_stretch, st_form_submit_button_stretch
 
 try:
     import pytz
