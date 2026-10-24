@@ -407,7 +407,7 @@ def send_recovery_otp(mobile_raw: str, country_code: str = "🇮🇳 +91", recov
     exp_time = time.time() + 300  # 5 minutes
 
     # Dispatch via Cellular SMS Gateway ONLY (Strictly No Telegram, No on-screen leak)
-    sms_body = f"Your Manoj Quant Terminal recovery passcode is {otp}. Valid for 5 minutes. Do not share."
+    sms_body = f"[Manoj Quant Engine] Your security recovery OTP is {otp}. Valid for 5 minutes. Do not share."
     sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp, custom_body=sms_body)
 
     if not sms_ok:
@@ -457,7 +457,7 @@ def send_security_otp(mobile_raw: str, country_code: str = "🇮🇳 +91") -> tu
     exp_time = time.time() + 300  # 5 minutes
 
     # Dispatch via Cellular SMS Gateway ONLY
-    sms_body = f"Your Manoj Quant Terminal verification passcode is {otp}. Valid for 5 minutes."
+    sms_body = f"[Manoj Quant Engine] Your login verification OTP is {otp}. Valid for 5 minutes."
     sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp, custom_body=sms_body)
     if not sms_ok:
         return False, sms_info
