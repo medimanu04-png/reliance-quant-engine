@@ -600,12 +600,17 @@ def render_ultra_premium_login(blocked_route: str = None):
     - Direct URL interception alert banner.
     - Persistent HMAC session protection.
     """
-    st.html(textwrap.dedent("""
+    st.markdown(textwrap.dedent("""
     <style>
-    .block-container {
-        padding-top: 1.5rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 820px !important;
+    .main .block-container,
+    [data-testid="block-container"],
+    .stMainBlockContainer,
+    section.main > div.block-container {
+        padding-top: 4.8rem !important;
+        padding-bottom: 3rem !important;
+        max-width: 840px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
     
     [data-testid="stVerticalBlockBorderWrapper"] {
@@ -745,7 +750,7 @@ def render_ultra_premium_login(blocked_route: str = None):
         box-shadow: 0 6px 25px rgba(16, 185, 129, 0.55) !important;
     }
     </style>
-    """))
+    """), unsafe_allow_html=True)
 
     blocked_alert_html = ""
     if blocked_route:
