@@ -33,6 +33,7 @@ telegram_config.json
 .streamlit/secrets.toml
 sms_config.json
 auth_credentials.json
+registered_users.json
 
 # Runtime persistent log files
 *_log.json

@@ -289,3 +289,11 @@ def render_settings_tab(
                         st.success(f"Sent: {msg}")
                     else:
                         st.error(f"Error: {msg}")
+
+    # Institutional User Access Control Registry (Admin Exclusive)
+    import user_registry_manager as user_reg
+    if user_reg.is_admin_user():
+        st.markdown("---")
+        with st.container(border=True):
+            user_reg.render_user_management_panel()
+

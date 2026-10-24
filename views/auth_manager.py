@@ -465,13 +465,20 @@ def verify_recovery_otp(entered_otp: str) -> tuple[bool, str]:
 
 
 def send_security_otp(mobile_raw: str, country_code: str = "🇮🇳 +91") -> tuple[bool, str]:
-    """Generates 6-digit cryptographic OTP, dispatches via Cellular SMS, and sets session state."""
+    """Generates 6-digit cryptographic OTP, dispatches via Cellular SMS, and sets session state after verifying approval status."""
+    import user_registry_manager as user_reg
     cc_clean = "+" + "".join([c for c in country_code if c.isdigit()]) if any(c.isdigit() for c in country_code) else "+91"
     digits = "".join([c for c in mobile_raw if c.isdigit()])
     if len(digits) < 10:
         return False, "Please enter a valid 10-digit mobile number."
 
     clean_mobile = digits[-10:]
+
+    # Approval Gatekeeper: Only APPROVED users can receive login OTP
+    status, status_msg, _ = user_reg.check_mobile_status(clean_mobile)
+    if status != "APPROVED":
+        return False, status_msg
+
     otp = f"{random.randint(100000, 999999)}"
     exp_time = time.time() + 300  # 5 minutes
 
@@ -490,11 +497,10 @@ def send_security_otp(mobile_raw: str, country_code: str = "🇮🇳 +91") -> tu
 
     return True, "SMS text message sent"
 
-    return True, otp
-
 
 def verify_security_otp(entered_otp: str) -> tuple[bool, str]:
     """Verifies user-entered OTP against active session passcode."""
+    import user_registry_manager as user_reg
     clean_otp = (entered_otp or "").strip()
     expected_otp = st.session_state.get("otp_code")
     exp_time = st.session_state.get("otp_expires_at", 0)
@@ -513,13 +519,83 @@ def verify_security_otp(entered_otp: str) -> tuple[bool, str]:
         st.session_state["auth_user"] = user_id
         st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
 
+        # Record login & store user details in session
+        user_reg.record_user_login(mobile)
+        u_rec = user_reg.get_user(mobile)
+        role = u_rec.get("role", "trader") if u_rec else "trader"
+        name = u_rec.get("name", user_id) if u_rec else user_id
+        st.session_state["auth_role"] = role
+        st.session_state["auth_user_name"] = name
+
         # Persist session in URL query parameter
         st.query_params["_auth"] = generate_session_token(user_id)
 
         # Clear OTP from memory
         st.session_state.pop("otp_code", None)
         st.session_state.pop("otp_expires_at", None)
-        return True, "2FA Verification Successful. Terminal unlocked."
+        return True, f"2FA Verification Successful. Welcome, {name}!"
+
+    return False, "Invalid OTP code. Please check the 6-digit passcode and try again."
+
+
+def send_registration_otp(mobile_raw: str, name: str, country_code: str = "🇮🇳 +91") -> tuple[bool, str]:
+    """Generates 6-digit OTP for new user registration and sends via Cellular SMS text message."""
+    import user_registry_manager as user_reg
+    cc_clean = "+" + "".join([c for c in country_code if c.isdigit()]) if any(c.isdigit() for c in country_code) else "+91"
+    digits = "".join([c for c in mobile_raw if c.isdigit()])
+    if len(digits) < 10:
+        return False, "Please enter a valid 10-digit mobile number."
+
+    clean_mobile = digits[-10:]
+    existing = user_reg.get_user(clean_mobile)
+    if existing:
+        curr_status = existing.get("status")
+        if curr_status == "APPROVED":
+            return False, f"Mobile number +91 {clean_mobile} is already registered and APPROVED. Please switch to Login mode."
+        elif curr_status == "PENDING_APPROVAL":
+            return False, f"Registration for +91 {clean_mobile} has already been submitted and is pending Administrator approval."
+
+    otp = f"{random.randint(100000, 999999)}"
+    exp_time = time.time() + 300  # 5 minutes
+
+    sms_body = f"[Manoj Quant Engine] Your registration verification OTP is {otp}. Valid for 5 minutes. Do not share."
+    sms_ok, sms_info = _dispatch_otp_to_cellular_sms(f"{cc_clean}{clean_mobile}", otp, custom_body=sms_body)
+    if not sms_ok:
+        return False, sms_info
+
+    st.session_state["reg_otp_code"] = otp
+    st.session_state["reg_otp_mobile"] = clean_mobile
+    st.session_state["reg_otp_name"] = name
+    st.session_state["reg_otp_country_code"] = cc_clean
+    st.session_state["reg_otp_expires_at"] = exp_time
+    st.session_state["reg_otp_sent_at"] = time.time()
+
+    return True, "SMS text message sent"
+
+
+def verify_registration_otp(entered_otp: str) -> tuple[bool, str]:
+    """Verifies registration OTP and registers user with PENDING_APPROVAL status."""
+    import user_registry_manager as user_reg
+    clean_otp = (entered_otp or "").strip()
+    expected_otp = st.session_state.get("reg_otp_code")
+    exp_time = st.session_state.get("reg_otp_expires_at", 0)
+    mobile = st.session_state.get("reg_otp_mobile")
+    name = st.session_state.get("reg_otp_name", "Trader")
+    cc = st.session_state.get("reg_otp_country_code", "+91")
+
+    if not expected_otp or not mobile:
+        return False, "No active registration OTP found. Please request a new OTP first."
+
+    if time.time() > exp_time:
+        return False, "This verification OTP has expired. Please request a fresh OTP."
+
+    if clean_otp == expected_otp:
+        ok, msg = user_reg.register_user(mobile=mobile, name=name, country_code=cc)
+        st.session_state.pop("reg_otp_code", None)
+        st.session_state["reg_submitted"] = True
+        st.session_state["reg_submitted_mobile"] = mobile
+        st.session_state["reg_submitted_name"] = name
+        return True, msg
 
     return False, "Invalid OTP code. Please check the 6-digit passcode and try again."
 
@@ -723,113 +799,269 @@ def render_ultra_premium_login(blocked_route: str = None):
         tab_otp, tab_master = st.tabs(["📱 Mobile OTP Verification (2FA)", "🔑 Master Security Key"])
 
         with tab_otp:
-            active_otp = st.session_state.get("otp_code")
-            active_mobile = st.session_state.get("otp_mobile")
-            exp_time = st.session_state.get("otp_expires_at", 0)
+            submode = st.session_state.get("auth_otp_submode", "login")
 
-            # Step 1: Request OTP
-            if not active_otp:
-                st.html("<p style='font-size: 0.85rem; color: #CBD5E1; margin-bottom: 12px;'>Select country code and enter your registered mobile number to receive your institutional login passcode.</p>")
-                col_cc, col_m1, col_m2 = st.columns([1.1, 2.0, 1.3], vertical_alignment="bottom")
-                with col_cc:
-                    country_codes = [
-                        "🇮🇳 +91",
-                        "🇺🇸 +1",
-                        "🇬🇧 +44",
-                        "🇦🇪 +971",
-                        "🇸🇬 +65",
-                        "🇨🇦 +1",
-                        "🇦🇺 +61",
-                        "🇩🇪 +49"
-                    ]
-                    selected_cc = st.selectbox(
-                        "🌐 Code",
-                        options=country_codes,
-                        index=0,
-                        help="Country dialing code",
-                        key="login_country_code_select"
-                    )
-                with col_m1:
-                    mobile_val = st.text_input(
-                        "📱 Mobile Number",
-                        value=st.session_state.get("last_entered_mobile", "9876543210"),
-                        placeholder="Enter 10-digit mobile",
-                        help="Your registered mobile number for quant desk access"
-                    )
-                with col_m2:
-                    if st_button_stretch("📩 Send Security OTP", type="primary", key="btn_send_otp"):
-                        st.session_state["last_entered_mobile"] = mobile_val
-                        st.session_state["last_country_code"] = selected_cc
-                        ok, code_or_err = send_security_otp(mobile_val, country_code=selected_cc)
-                        if ok:
-                            st.success(f"✅ Security OTP dispatched to {selected_cc} {mobile_val[-10:]} via Carrier Gateway & Telegram!")
+            c_sub1, c_sub2 = st.columns(2)
+            with c_sub1:
+                if st_button_stretch(
+                    "🔐 Trader Login (Approved Mobile)",
+                    key="btn_sub_login",
+                    type="primary" if submode == "login" else "secondary"
+                ):
+                    st.session_state["auth_otp_submode"] = "login"
+                    st.rerun()
+            with c_sub2:
+                if st_button_stretch(
+                    "📝 Register New Trader Mobile",
+                    key="btn_sub_register",
+                    type="primary" if submode == "register" else "secondary"
+                ):
+                    st.session_state["auth_otp_submode"] = "register"
+                    st.rerun()
+
+            st.html("<div style='margin-bottom: 12px;'></div>")
+
+            # ---------------- MODE 1: TRADER LOGIN ----------------
+            if submode == "login":
+                active_otp = st.session_state.get("otp_code")
+                active_mobile = st.session_state.get("otp_mobile")
+                exp_time = st.session_state.get("otp_expires_at", 0)
+
+                # Step 1: Request Login OTP
+                if not active_otp:
+                    st.html("<p style='font-size: 0.85rem; color: #CBD5E1; margin-bottom: 12px;'>Enter your registered mobile number to receive your institutional login passcode:</p>")
+                    col_cc, col_m1, col_m2 = st.columns([1.1, 2.0, 1.3], vertical_alignment="bottom")
+                    with col_cc:
+                        country_codes = [
+                            "🇮🇳 +91",
+                            "🇺🇸 +1",
+                            "🇬🇧 +44",
+                            "🇦🇪 +971",
+                            "🇸🇬 +65",
+                            "🇨🇦 +1",
+                            "🇦🇺 +61",
+                            "🇩🇪 +49"
+                        ]
+                        selected_cc = st.selectbox(
+                            "🌐 Code",
+                            options=country_codes,
+                            index=0,
+                            help="Country dialing code",
+                            key="login_country_code_select"
+                        )
+                    with col_m1:
+                        mobile_val = st.text_input(
+                            "📱 Registered Mobile Number",
+                            value=st.session_state.get("last_entered_mobile", "8328580784"),
+                            placeholder="Enter 10-digit mobile",
+                            help="Your registered mobile number for quant desk access"
+                        )
+                    with col_m2:
+                        if st_button_stretch("📩 Send Security OTP", type="primary", key="btn_send_otp"):
+                            st.session_state["last_entered_mobile"] = mobile_val
+                            st.session_state["last_country_code"] = selected_cc
+                            ok, code_or_err = send_security_otp(mobile_val, country_code=selected_cc)
+                            if ok:
+                                st.success(f"✅ Security OTP dispatched to {selected_cc} {mobile_val[-10:]} via Cellular SMS!")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {code_or_err}")
+
+                    st.html("""
+                    <div style="font-size: 0.74rem; color: #94A3B8; margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>🔒 <i>Only administrator-approved mobile numbers can log in. New traders must register first.</i></span>
+                    </div>
+                    """)
+
+                # Step 2: Enter & Verify Login OTP
+                else:
+                    time_left = max(0, int(exp_time - time.time()))
+                    mins = time_left // 60
+                    secs = time_left % 60
+
+                    active_cc = st.session_state.get("otp_country_code", "+91")
+                    masked_m = f"+91-XXXXX-{active_mobile[-4:]}" if len(active_mobile) >= 4 else active_mobile
+                    st.html(textwrap.dedent(f"""
+                    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.85rem; font-weight: 700; color: #34D399;">
+                                📲 SMS Text Message dispatched to {active_cc} {masked_m}
+                            </span>
+                            <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
+                                ⏱️ Expires in {mins:02d}:{secs:02d}
+                            </span>
+                        </div>
+                        <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 6px;">
+                            Passcode sent directly to your phone via cellular SMS text message. Please enter the 6 digits below.
+                        </div>
+                    </div>
+                    """))
+
+                    with st.form("otp_verification_form"):
+                        col_o1, col_o2 = st.columns([1.5, 1], vertical_alignment="bottom")
+                        with col_o1:
+                            otp_input = st.text_input(
+                                "🔢 Enter 6-Digit One-Time Passcode (OTP)",
+                                value="",
+                                max_chars=6,
+                                placeholder="e.g. 123456",
+                                help="Enter the 6-digit passcode sent to your device"
+                            )
+                        with col_o2:
+                            verify_btn = st_form_submit_button_stretch(
+                                "⚡ Verify & Unlock Quant Desk →",
+                                type="primary"
+                            )
+
+                        if verify_btn:
+                            ok, msg = verify_security_otp(otp_input)
+                            if ok:
+                                st.success(f"✅ {msg}")
+                                time.sleep(0.3)
+                                if blocked_route:
+                                    st.query_params["stock"] = blocked_route
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")
+
+                    col_resend1, col_resend2 = st.columns(2)
+                    with col_resend1:
+                        if st_button_stretch("🔄 Resend Fresh OTP", key="btn_resend_otp"):
+                            send_security_otp(active_mobile)
+                            st.toast("Fresh OTP dispatched via SMS!")
                             st.rerun()
-                        else:
-                            st.error(f"❌ {code_or_err}")
+                    with col_resend2:
+                        if st_button_stretch("✏️ Use Different Mobile", key="btn_change_mobile"):
+                            st.session_state.pop("otp_code", None)
+                            st.session_state.pop("otp_mobile", None)
+                            st.session_state.pop("otp_expires_at", None)
+                            st.rerun()
 
-            # Step 2: Enter & Verify OTP
+            # ---------------- MODE 2: NEW TRADER REGISTRATION ----------------
             else:
-                time_left = max(0, int(exp_time - time.time()))
-                mins = time_left // 60
-                secs = time_left % 60
+                reg_submitted = st.session_state.get("reg_submitted", False)
 
-                active_cc = st.session_state.get("otp_country_code", "+91")
-                masked_m = f"+91-XXXXX-{active_mobile[-4:]}" if len(active_mobile) >= 4 else active_mobile
-                st.html(textwrap.dedent(f"""
-                <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 0.85rem; font-weight: 700; color: #34D399;">
-                            📲 SMS Text Message dispatched to {active_cc} {masked_m}
-                        </span>
-                        <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
-                            ⏱️ Expires in {mins:02d}:{secs:02d}
-                        </span>
+                if reg_submitted:
+                    s_name = st.session_state.get("reg_submitted_name", "Trader")
+                    s_mob = st.session_state.get("reg_submitted_mobile", "")
+                    st.html(textwrap.dedent(f"""
+                    <div style="background: rgba(16, 185, 129, 0.14); border: 1.5px solid #10B981; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                            <span style="font-size: 1.6rem;">🎉</span>
+                            <div>
+                                <h4 style="margin: 0; color: #34D399; font-size: 1.05rem; font-weight: 800;">REGISTRATION SUBMITTED SUCCESSFULLY</h4>
+                                <div style="font-size: 0.74rem; color: #94A3B8;">Mobile number ownership verified via cellular SMS OTP</div>
+                            </div>
+                        </div>
+                        <div style="background: rgba(15, 23, 42, 0.7); border-radius: 8px; padding: 10px 14px; margin: 10px 0; font-size: 0.82rem;">
+                            <div>👤 <b>Trader Name:</b> <span style="color: #FFFFFF;">{s_name}</span></div>
+                            <div style="margin-top: 4px;">📱 <b>Mobile Number:</b> <code style="color: #38BDF8;">+91 {s_mob}</code></div>
+                            <div style="margin-top: 4px;">⏳ <b>Status:</b> <span style="background: rgba(245, 158, 11, 0.2); color: #FBBF24; padding: 2px 8px; border-radius: 4px; font-weight: 800;">PENDING ADMINISTRATOR APPROVAL</span></div>
+                        </div>
+                        <p style="font-size: 0.78rem; color: #CBD5E1; margin: 8px 0 0 0;">
+                            Your registration has been forwarded to Administrator (Manoj). You will be able to log in as soon as Admin approves your account.
+                        </p>
                     </div>
-                    <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 6px;">
-                        Passcode sent directly to your phone via cellular SMS text message. Please enter the 6 digits below.
-                    </div>
-                </div>
-                """))
+                    """))
 
-                with st.form("otp_verification_form"):
-                    col_o1, col_o2 = st.columns([1.5, 1], vertical_alignment="bottom")
-                    with col_o1:
-                        otp_input = st.text_input(
-                            "🔢 Enter 6-Digit One-Time Passcode (OTP)",
-                            value="",
-                            max_chars=6,
-                            placeholder="e.g. 123456",
-                            help="Enter the 6-digit passcode sent to your device"
-                        )
-                    with col_o2:
-                        verify_btn = st_form_submit_button_stretch(
-                            "⚡ Verify & Unlock Quant Desk →",
-                            type="primary"
-                        )
-
-                    if verify_btn:
-                        ok, msg = verify_security_otp(otp_input)
-                        if ok:
-                            st.success(f"✅ {msg}")
-                            time.sleep(0.3)
-                            if blocked_route:
-                                st.query_params["stock"] = blocked_route
-                            st.rerun()
-                        else:
-                            st.error(f"❌ {msg}")
-
-                col_resend1, col_resend2 = st.columns(2)
-                with col_resend1:
-                    if st_button_stretch("🔄 Resend Fresh OTP", key="btn_resend_otp"):
-                        send_security_otp(active_mobile)
-                        st.toast("Fresh OTP dispatched to Telegram & SMS!")
+                    if st_button_stretch("← Return to Login", type="primary", key="btn_return_from_reg"):
+                        st.session_state.pop("reg_submitted", None)
+                        st.session_state.pop("reg_submitted_mobile", None)
+                        st.session_state.pop("reg_submitted_name", None)
+                        st.session_state["auth_otp_submode"] = "login"
                         st.rerun()
-                with col_resend2:
-                    if st_button_stretch("✏️ Use Different Mobile", key="btn_change_mobile"):
-                        st.session_state.pop("otp_code", None)
-                        st.session_state.pop("otp_mobile", None)
-                        st.session_state.pop("otp_expires_at", None)
-                        st.rerun()
+
+                else:
+                    reg_active_otp = st.session_state.get("reg_otp_code")
+                    reg_exp_time = st.session_state.get("reg_otp_expires_at", 0)
+                    reg_mobile = st.session_state.get("reg_otp_mobile", "")
+                    reg_cc = st.session_state.get("reg_otp_country_code", "+91")
+
+                    # Step 1: Enter Name & Mobile -> Send Reg OTP
+                    if not reg_active_otp:
+                        st.html("<p style='font-size: 0.82rem; color: #CBD5E1; margin-bottom: 12px;'>Enter your name and mobile number. You will receive an SMS OTP to confirm your device, after which your account will be sent to Administrator (Manoj) for approval:</p>")
+                        with st.form("new_user_reg_form"):
+                            r_col_name, r_col_cc, r_col_m = st.columns([1.5, 0.9, 1.6], vertical_alignment="bottom")
+                            with r_col_name:
+                                reg_name_in = st.text_input("👤 Your Full / Trader Name", placeholder="e.g. Rahul Sharma", key="reg_input_name")
+                            with r_col_cc:
+                                reg_cc_sel = st.selectbox("🌐 Code", options=["🇮🇳 +91", "🇺🇸 +1", "🇬🇧 +44", "🇦🇪 +971", "🇸🇬 +65"], index=0, key="reg_input_cc")
+                            with r_col_m:
+                                reg_m_in = st.text_input("📱 Mobile Number", placeholder="10-digit mobile", key="reg_input_mobile")
+
+                            btn_send_reg = st_form_submit_button_stretch("📩 Verify Mobile & Send OTP", type="primary")
+
+                        if btn_send_reg:
+                            if not reg_name_in or len(reg_name_in.strip()) < 2:
+                                st.error("❌ Please enter your full name (minimum 2 characters).")
+                            elif not reg_m_in or len("".join([c for c in reg_m_in if c.isdigit()])) < 10:
+                                st.error("❌ Please enter a valid 10-digit mobile number.")
+                            else:
+                                ok, err = send_registration_otp(reg_m_in, name=reg_name_in, country_code=reg_cc_sel)
+                                if ok:
+                                    st.success(f"✅ Registration OTP dispatched to {reg_cc_sel} {reg_m_in[-10:]}!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {err}")
+
+                    # Step 2: Match Reg OTP
+                    else:
+                        time_left = max(0, int(reg_exp_time - time.time()))
+                        mins = time_left // 60
+                        secs = time_left % 60
+                        masked_m = f"+91-XXXXX-{reg_mobile[-4:]}" if len(reg_mobile) >= 4 else reg_mobile
+
+                        st.html(textwrap.dedent(f"""
+                        <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 0.85rem; font-weight: 700; color: #38BDF8;">
+                                    📲 Registration OTP dispatched to {reg_cc} {masked_m}
+                                </span>
+                                <span style="font-size: 0.72rem; color: #FCD34D; font-weight: 700; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px;">
+                                    ⏱️ Expires in {mins:02d}:{secs:02d}
+                                </span>
+                            </div>
+                            <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 6px;">
+                                Please enter the 6-digit passcode sent to your device to verify phone ownership.
+                            </div>
+                        </div>
+                        """))
+
+                        with st.form("reg_otp_verification_form"):
+                            col_ro1, col_ro2 = st.columns([1.5, 1], vertical_alignment="bottom")
+                            with col_ro1:
+                                reg_otp_in = st.text_input(
+                                    "🔢 Enter 6-Digit Registration OTP",
+                                    value="",
+                                    max_chars=6,
+                                    placeholder="e.g. 123456",
+                                    key="reg_otp_input_field"
+                                )
+                            with col_ro2:
+                                verify_reg_btn = st_form_submit_button_stretch("⚡ Verify & Submit Registration →", type="primary")
+
+                            if verify_reg_btn:
+                                ok, msg = verify_registration_otp(reg_otp_in)
+                                if ok:
+                                    st.success(f"✅ {msg}")
+                                    time.sleep(0.3)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {msg}")
+
+                        col_rr1, col_rr2 = st.columns(2)
+                        with col_rr1:
+                            if st_button_stretch("🔄 Resend Registration OTP", key="btn_resend_reg_otp"):
+                                reg_name = st.session_state.get("reg_otp_name", "Trader")
+                                send_registration_otp(reg_mobile, name=reg_name, country_code=reg_cc)
+                                st.toast("Fresh registration OTP sent via SMS!")
+                                st.rerun()
+                        with col_rr2:
+                            if st_button_stretch("✏️ Change Details", key="btn_cancel_reg_otp"):
+                                st.session_state.pop("reg_otp_code", None)
+                                st.session_state.pop("reg_otp_mobile", None)
+                                st.session_state.pop("reg_otp_expires_at", None)
+                                st.rerun()
 
         with tab_master:
             rec_mode = st.session_state.get("master_rec_flow")  # None, "forgot_password", "forgot_operator_id"
@@ -853,6 +1085,7 @@ def render_ultra_premium_login(blocked_route: str = None):
                         if u_clean in creds and creds[u_clean] == p_clean:
                             st.session_state["is_authenticated"] = True
                             st.session_state["auth_user"] = u_clean
+                            st.session_state["auth_role"] = "admin"
                             st.session_state["auth_time"] = datetime.now(IST).strftime("%I:%M %p")
                             st.query_params["_auth"] = generate_session_token(u_clean)
                             st.success("✅ Master credentials verified. Terminal unlocked.")
@@ -1178,9 +1411,15 @@ def render_ultra_premium_login(blocked_route: str = None):
 
 
 def render_authenticated_user_sidebar():
-    """Renders the operator identity badge and logout button in the Streamlit sidebar."""
+    """Renders the operator identity badge, admin registry panel, and logout button in the Streamlit sidebar."""
+    import user_registry_manager as user_reg
     user = str(st.session_state.get("auth_user", "Operator")).upper()
     login_time = st.session_state.get("auth_time", "--:--")
+    is_admin = user_reg.is_admin_user()
+
+    role_label = "SUPER ADMIN" if is_admin else "TRADER"
+    badge_bg = "rgba(56, 189, 248, 0.18)" if is_admin else "rgba(16, 185, 129, 0.15)"
+    badge_color = "#38BDF8" if is_admin else "#34D399"
 
     st.sidebar.html(textwrap.dedent(f"""
     <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;">
@@ -1189,7 +1428,7 @@ def render_authenticated_user_sidebar():
                 <span style="display: inline-block; width: 8px; height: 8px; background: #10B981; border-radius: 50%; box-shadow: 0 0 8px #10B981;"></span>
                 <span style="font-size: 0.82rem; font-weight: 800; color: #F8FAFC;">{user}</span>
             </div>
-            <span style="font-size: 0.68rem; color: #34D399; font-weight: 700; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px;">VERIFIED</span>
+            <span style="font-size: 0.68rem; color: {badge_color}; font-weight: 700; background: {badge_bg}; padding: 2px 6px; border-radius: 4px;">{role_label}</span>
         </div>
         <div style="font-size: 0.70rem; color: #94A3B8; margin-top: 4px; display: flex; justify-content: space-between;">
             <span>⚡ 1-Tap Groww Armed</span>
@@ -1197,6 +1436,33 @@ def render_authenticated_user_sidebar():
         </div>
     </div>
     """))
+
+    # Admin Exclusive User Management Panel in Sidebar
+    if is_admin:
+        stats = user_reg.get_user_stats()
+        pending = stats.get("pending", 0)
+        total = stats.get("total", 0)
+        approved = stats.get("approved", 0)
+
+        pending_badge_color = "#F59E0B" if pending > 0 else "#10B981"
+        pending_badge_text = f"⚠️ {pending} PENDING" if pending > 0 else "✅ ALL APPROVED"
+
+        st.sidebar.html(f"""
+        <div style="background: rgba(15, 23, 42, 0.85); border: 1.5px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.76rem; font-weight: 800; color: #38BDF8;">👑 ADMIN ACCESS CONTROL</span>
+                <span style="font-size: 0.68rem; color: {pending_badge_color}; font-weight: 700; background: rgba(245, 158, 11, 0.15); padding: 2px 6px; border-radius: 4px;">{pending_badge_text}</span>
+            </div>
+            <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 4px; display: flex; justify-content: space-between;">
+                <span>Total: <b style="color: #FFFFFF;">{total}</b></span>
+                <span>Active: <b style="color: #34D399;">{approved}</b></span>
+                <span>Pending: <b style="color: #F59E0B;">{pending}</b></span>
+            </div>
+        </div>
+        """)
+
+        with st.sidebar.expander(f"👥 Manage Registered Users ({pending} Pending)", expanded=(pending > 0)):
+            user_reg.render_user_management_panel()
 
     if st_sidebar_button_stretch("🔒 Lock Terminal (Logout)", key="sb_btn_logout", help="Revoke session and lock terminal"):
         logout_user()
