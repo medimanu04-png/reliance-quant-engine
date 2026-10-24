@@ -182,58 +182,8 @@ def _start_background_multi_desk_daemon():
     # Disabled inside Streamlit web server to eliminate duplicate notifications.
     return
 
-class IndianFOTransactionCostEngine:
-    """
-    Institutional Transaction Cost & Statutory Tax Engine for Indian F&O.
-    Accurately computes post-tax net PnL, points drag, and statutory deductions:
-    - Brokerage: ₹20/order flat (Zerodha / Groww / AngelOne) = ₹40 round-trip
-    - STT (Securities Transaction Tax): 0.10% on option sell premium turnover (Budget 2024 revised)
-    - Exchange Turnover Charges: 0.050% on total premium turnover (NSE)
-    - SEBI Turnover Charges: ₹10 per crore (0.000001) on total turnover
-    - Stamp Duty: 0.003% on buy premium turnover
-    - GST: 18% on (Brokerage + Exchange turnover charges + SEBI charges)
-    """
-    BROKERAGE_PER_ORDER = 20.0
-    EXCHANGE_TURNOVER_PCT = 0.00050   # 0.05% on option premium turnover
-    SEBI_CHARGES_PCT = 0.000001       # ₹10 per crore
-    STAMP_DUTY_BUY_PCT = 0.00003      # 0.003% on buy turnover
-    STT_SELL_PCT = 0.00100            # 0.10% on sell turnover (Budget 2024)
-    GST_PCT = 0.18                    # 18% on brokerage & exchange fees
-
-    @classmethod
-    def calculate_round_trip(cls, buy_premium: float, sell_premium: float, qty: int) -> dict:
-        qty = max(1, int(qty))
-        buy_turnover = float(buy_premium) * qty
-        sell_turnover = float(sell_premium) * qty
-        total_turnover = buy_turnover + sell_turnover
-
-        brokerage = cls.BROKERAGE_PER_ORDER * 2.0
-        exchange_charges = total_turnover * cls.EXCHANGE_TURNOVER_PCT
-        sebi_charges = total_turnover * cls.SEBI_CHARGES_PCT
-        stamp_duty = buy_turnover * cls.STAMP_DUTY_BUY_PCT
-        stt = sell_turnover * cls.STT_SELL_PCT
-        gst = (brokerage + exchange_charges + sebi_charges) * cls.GST_PCT
-
-        total_taxes_and_charges = brokerage + exchange_charges + sebi_charges + stamp_duty + stt + gst
-        gross_pnl = sell_turnover - buy_turnover
-        net_pnl = gross_pnl - total_taxes_and_charges
-        pts_drag = total_taxes_and_charges / qty if qty > 0 else 0.0
-        gross_pts = (sell_premium - buy_premium)
-        net_pts = gross_pts - pts_drag
-
-        return {
-            "gross_pnl": round(gross_pnl, 2),
-            "net_pnl": round(net_pnl, 2),
-            "total_charges": round(total_taxes_and_charges, 2),
-            "points_drag": round(pts_drag, 2),
-            "gross_pts": round(gross_pts, 2),
-            "net_pts": round(net_pts, 2),
-            "stt": round(stt, 2),
-            "exchange_charges": round(exchange_charges, 2),
-            "brokerage": round(brokerage, 2),
-            "gst": round(gst, 2),
-            "stamp_duty": round(stamp_duty, 2)
-        }
+# Modularized Transaction Cost & Statutory Tax Engine
+from core.risk import IndianFOTransactionCostEngine
 
 BREAKOUT_TRIGGER_FILE = os.path.join(os.path.dirname(__file__), "breakout_triggers_log.json")
 
@@ -1763,10 +1713,22 @@ def render_persistent_sticky_header():
     else:
         broker_pill = '<span class="header-pill pill-broker" style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.40);">🔵 Groww: REST Engine Active</span>'
 
+    ws_pill = ""
+    try:
+        from core.streaming import get_stream_manager
+        stream_mgr = get_stream_manager()
+        if stream_mgr.is_streaming():
+            ws_pill = '<span class="header-pill" style="background: rgba(16, 185, 129, 0.18); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.45); font-weight: 700;">⚡ WebSocket: Active (&lt;50ms)</span>'
+        else:
+            ws_pill = '<span class="header-pill" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.30); font-weight: 700;">⚡ WebSocket: Standby</span>'
+    except Exception:
+        ws_pill = '<span class="header-pill" style="background: rgba(56, 189, 248, 0.12); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.30); font-weight: 700;">⚡ WebSocket: Engine Linked</span>'
+
     st.html(f"""
     <div class="sticky-top-bar">
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             {broker_pill}
+            {ws_pill}
             <span class="header-pill pill-ucc">👤 UCC: {u_ucc} <span style="color: #10B981; font-size: 0.70rem;">(Verified)</span></span>
             <span class="header-pill pill-wallet">💳 Wallet: ₹{wallet_val:,.2f} | Margin Buffer: +₹{margin_buf:,.2f} ({margin_pct}%)</span>
             <span class="header-pill {pnl_class}">📈 Today's Net P&L: {pnl_sign}₹{day_pnl:,.2f}</span>

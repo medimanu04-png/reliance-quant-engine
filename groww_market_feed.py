@@ -293,6 +293,14 @@ class GrowwMarketFeed:
             return
         self._bg_active = True
 
+        # 0. Dedicated Ultra-Low Latency WebSocket & NATS Binary Stream (Sub-100ms)
+        try:
+            if self._groww_api:
+                from core.streaming.websocket_manager import WebSocketStreamManager
+                WebSocketStreamManager.get_instance().initialize_stream(self._groww_api)
+        except Exception as e:
+            logger.debug(f"Groww WebSocket stream initialization notice: {e}")
+
         def _launch_worker(target, name):
             t = threading.Thread(target=target, daemon=True, name=name)
             t.start()
