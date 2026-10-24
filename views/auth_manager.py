@@ -323,23 +323,44 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
         # 1. Fast2SMS Integration (Fastest OTP route in India)
         if provider == "fast2sms":
             url = "https://www.fast2sms.com/dev/bulkV2"
-            payload = {
+            headers = {
                 "authorization": api_key,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cache-Control": "no-cache"
+            }
+            # Attempt 1: Dedicated OTP route
+            payload_otp = {
                 "variables_values": otp_code,
                 "route": "otp",
                 "numbers": clean_num
             }
-            res = requests.post(url, data=payload, headers={"cache-control": "no-cache"}, timeout=10)
+            res = requests.post(url, data=payload_otp, headers=headers, timeout=10)
             try:
                 r_json = res.json()
                 if r_json.get("return") is True:
                     return True, "SMS text message delivered to carrier"
-                err = r_json.get("message", "Fast2SMS error")
+            except Exception:
+                r_json = {}
+
+            # Attempt 2: Fallback to Quick SMS route (q) which delivers instantly without website verification
+            payload_q = {
+                "route": "q",
+                "message": msg_body,
+                "language": "english",
+                "flash": 0,
+                "numbers": clean_num
+            }
+            res_q = requests.post(url, data=payload_q, headers=headers, timeout=10)
+            try:
+                rq_json = res_q.json()
+                if rq_json.get("return") is True:
+                    return True, "SMS text message delivered to carrier"
+                err = rq_json.get("message", "Fast2SMS error")
                 if isinstance(err, list):
                     err = " ".join(err)
                 return False, f"Fast2SMS error: {err}"
             except Exception:
-                return False, f"Fast2SMS response error (HTTP {res.status_code})"
+                return False, f"Fast2SMS response error (HTTP {res_q.status_code})"
 
         # 2. 2Factor.in Transactional OTP SMS
         elif provider in ["2factor", "twofactor"]:
