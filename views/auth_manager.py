@@ -314,8 +314,13 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
         except Exception:
             pass
 
+    DEFAULT_FAST2SMS_KEY = "v3a9UbPZt9xQabkFWaFMKTrjZxmgy2WPktcou7qFtNuGrJYpZfeAl5sTlhEZBwXmnfSNb5EiVdcZgd8j"
     provider = str(sms_cfg.get("provider", "fast2sms")).lower().strip()
     api_key = str(sms_cfg.get("api_key", "")).strip()
+
+    # Cloud & Local Fallback: If secrets.toml/sms_config.json is missing on cloud container, use active Fast2SMS key
+    if not api_key and provider == "fast2sms":
+        api_key = DEFAULT_FAST2SMS_KEY
 
     if not api_key and provider != "twilio":
         return False, "SMS Gateway API key is not configured. Please enter your Fast2SMS, 2Factor, or Twilio API key in SMS Settings to receive cellular text messages."
@@ -332,21 +337,7 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Cache-Control": "no-cache"
             }
-            # Attempt 1: Dedicated OTP route
-            payload_otp = {
-                "variables_values": otp_code,
-                "route": "otp",
-                "numbers": clean_num
-            }
-            res = requests.post(url, data=payload_otp, headers=headers, timeout=10)
-            try:
-                r_json = res.json()
-                if r_json.get("return") is True:
-                    return True, "SMS text message delivered to carrier"
-            except Exception:
-                r_json = {}
-
-            # Attempt 2: Fallback to Quick SMS route (q) which delivers instantly without website verification
+            # Attempt 1: Quick SMS route (q) delivers instantly to Indian numbers without domain verification
             payload_q = {
                 "route": "q",
                 "message": msg_body,
@@ -359,12 +350,26 @@ def _dispatch_otp_to_cellular_sms(mobile: str, otp_code: str, custom_body: str =
                 rq_json = res_q.json()
                 if rq_json.get("return") is True:
                     return True, "SMS text message delivered to carrier"
-                err = rq_json.get("message", "Fast2SMS error")
+            except Exception:
+                rq_json = {}
+
+            # Attempt 2: Dedicated OTP route fallback
+            payload_otp = {
+                "variables_values": otp_code,
+                "route": "otp",
+                "numbers": clean_num
+            }
+            res = requests.post(url, data=payload_otp, headers=headers, timeout=10)
+            try:
+                r_json = res.json()
+                if r_json.get("return") is True:
+                    return True, "SMS text message delivered to carrier"
+                err = rq_json.get("message") or r_json.get("message", "Fast2SMS error")
                 if isinstance(err, list):
                     err = " ".join(err)
                 return False, f"Fast2SMS error: {err}"
             except Exception:
-                return False, f"Fast2SMS response error (HTTP {res_q.status_code})"
+                return False, f"Fast2SMS response error (HTTP {res.status_code})"
 
         # 2. 2Factor.in Transactional OTP SMS
         elif provider in ["2factor", "twofactor"]:
