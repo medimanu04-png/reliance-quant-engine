@@ -908,7 +908,7 @@ def render_ultra_premium_login(blocked_route: str = None):
                         country_codes = ["🇮🇳 +91", "🇺🇸 +1", "🇬🇧 +44", "🇦🇪 +971", "🇸🇬 +65", "🇨🇦 +1", "🇦🇺 +61", "🇩🇪 +49"]
                         rec_sel_cc = st.selectbox("🌐 Code", options=country_codes, index=0, key="rec_country_code_select")
                     with col_r_m:
-                        prev_m = st.session_state.get("last_entered_mobile", "9876543210")
+                        prev_m = st.session_state.get("last_entered_mobile", "8328580784")
                         rec_m_in = st.text_input("📱 Registered Mobile Number", value=prev_m, placeholder="10-digit mobile", key="rec_mobile_input")
                     with col_r_btn:
                         if st_button_stretch("📩 Send OTP Text", type="primary", key="btn_send_rec_otp"):
@@ -919,7 +919,6 @@ def render_ultra_premium_login(blocked_route: str = None):
                                 st.rerun()
                             else:
                                 st.error(f"❌ {code_or_err}")
-                                st.session_state["show_sms_setup"] = True
 
                 # ---------------- STEP 2: ENTER & MATCH OTP ----------------
                 elif rec_otp and not rec_verified:
@@ -1096,70 +1095,6 @@ def render_ultra_premium_login(blocked_route: str = None):
                                 st.session_state.pop("rec_otp_verified", None)
                                 st.rerun()
 
-                # Optional SMS Gateway Setup Expander
-                show_sms = st.session_state.get("show_sms_setup", False)
-                with st.expander("⚙️ Cellular SMS Gateway Configuration (Required for Real Text Messages)", expanded=show_sms):
-                    st.html("<p style='font-size: 0.75rem; color: #94A3B8; margin-bottom: 8px;'>Connect your cellular SMS gateway (Fast2SMS, 2Factor.in, or Twilio) to deliver OTP text messages directly to mobile carrier networks (Airtel, Jio, Vi, BSNL). For India, Fast2SMS (fast2sms.com) offers instant API keys.</p>")
-                    cur_sms = {}
-                    if os.path.exists(SMS_CONFIG_FILE):
-                        try:
-                            with open(SMS_CONFIG_FILE, "r", encoding="utf-8") as f:
-                                cur_sms = json.load(f)
-                        except Exception:
-                            pass
-                    if not cur_sms and hasattr(st, "secrets") and "sms" in st.secrets:
-                        cur_sms = dict(st.secrets["sms"])
-
-                    c_gw1, c_gw2 = st.columns(2)
-                    with c_gw1:
-                        prov_opts = ["fast2sms", "2factor", "twilio"]
-                        sel_prov = st.selectbox("SMS Provider", options=prov_opts, index=prov_opts.index(cur_sms.get("provider", "fast2sms")) if cur_sms.get("provider") in prov_opts else 0, key="cfg_sms_prov")
-                    with c_gw2:
-                        gw_key = st.text_input("API Key / Authorization Token", value=cur_sms.get("api_key", ""), type="password", key="cfg_sms_key")
-
-                    if st_button_stretch("💾 Save SMS Gateway Config", key="btn_save_sms_cfg"):
-                        new_sms_cfg = {
-                            "provider": sel_prov,
-                            "api_key": gw_key.strip()
-                        }
-                        try:
-                            with open(SMS_CONFIG_FILE, "w", encoding="utf-8") as f:
-                                json.dump(new_sms_cfg, f, indent=2)
-
-                            # Also sync to .streamlit/secrets.toml
-                            if os.path.exists(SECRETS_FILE):
-                                with open(SECRETS_FILE, "r", encoding="utf-8") as f:
-                                    s_lines = f.readlines()
-                                new_sl = []
-                                in_sms = False
-                                prov_updated = False
-                                key_updated = False
-                                for sl in s_lines:
-                                    s_strip = sl.strip()
-                                    if s_strip.startswith("[") and s_strip.endswith("]"):
-                                        in_sms = (s_strip == "[sms]")
-                                    if in_sms:
-                                        if s_strip.startswith("provider"):
-                                            new_sl.append(f'provider = "{sel_prov}"\n')
-                                            prov_updated = True
-                                            continue
-                                        elif s_strip.startswith("api_key"):
-                                            new_sl.append(f'api_key = "{gw_key.strip()}"\n')
-                                            key_updated = True
-                                            continue
-                                    new_sl.append(sl)
-                                if not prov_updated and not key_updated:
-                                    new_sl.append("\n[sms]\n")
-                                    new_sl.append(f'provider = "{sel_prov}"\n')
-                                    new_sl.append(f'api_key = "{gw_key.strip()}"\n')
-                                with open(SECRETS_FILE, "w", encoding="utf-8") as f:
-                                    f.writelines(new_sl)
-
-                            st.success("✅ SMS Gateway configuration saved!")
-                            st.session_state["show_sms_setup"] = False
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Failed to save SMS config: {e}")
 
         st.html(textwrap.dedent("""
         <div class="quant-feature-grid">

@@ -31,6 +31,8 @@ git_sync_state.json
 groww_config.json
 telegram_config.json
 .streamlit/secrets.toml
+sms_config.json
+auth_credentials.json
 
 # Runtime persistent log files
 *_log.json
