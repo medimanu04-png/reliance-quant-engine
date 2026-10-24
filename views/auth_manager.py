@@ -36,6 +36,19 @@ TELEGRAM_CONFIG_FILE = os.path.join(BASE_DIR, "telegram_config.json")
 AUTH_CREDENTIALS_FILE = os.path.join(BASE_DIR, "auth_credentials.json")
 SECRETS_FILE = os.path.join(BASE_DIR, ".streamlit", "secrets.toml")
 SMS_CONFIG_FILE = os.path.join(BASE_DIR, "sms_config.json")
+AUTHORIZED_RECOVERY_MOBILE = "8328580784"
+
+
+def _get_authorized_recovery_mobiles() -> set[str]:
+    """Retrieves whitelist of authorized recovery mobile numbers from code and secrets.toml."""
+    authorized = {AUTHORIZED_RECOVERY_MOBILE}
+    if hasattr(st, "secrets") and "auth" in st.secrets:
+        sec_m = st.secrets["auth"].get("recovery_mobile", "")
+        if sec_m:
+            digits = "".join([c for c in str(sec_m) if c.isdigit()])[-10:]
+            if len(digits) == 10:
+                authorized.add(digits)
+    return authorized
 
 
 def _get_auth_credentials() -> tuple[dict, str]:
@@ -403,6 +416,12 @@ def send_recovery_otp(mobile_raw: str, country_code: str = "🇮🇳 +91", recov
         return False, "Please enter a valid 10-digit mobile number."
 
     clean_mobile = digits[-10:]
+    authorized_mobiles = _get_authorized_recovery_mobiles()
+
+    # Strict Whitelist Gatekeeper: Only the owner's mobile number (+91 8328580784) is authorized
+    if cc_clean != "+91" or clean_mobile not in authorized_mobiles:
+        return False, f"Access Denied: Mobile number {cc_clean} {clean_mobile} is NOT authorized for Master Recovery. Only the registered administrator mobile number (+91 8328580784) is permitted."
+
     otp = f"{random.randint(100000, 999999)}"
     exp_time = time.time() + 300  # 5 minutes
 
@@ -852,11 +871,11 @@ def render_ultra_premium_login(blocked_route: str = None):
                             🔐 CREDENTIALS RECOVERY &amp; SELF-SERVICE
                         </span>
                         <span style="font-size: 0.70rem; color: #34D399; font-weight: 700; background: rgba(16, 185, 129, 0.15); padding: 2px 8px; border-radius: 12px;">
-                            📱 SMS &amp; TELEGRAM OTP
+                            📱 CELLULAR SMS OTP
                         </span>
                     </div>
                     <p style="font-size: 0.75rem; color: #94A3B8; margin: 0 0 10px 0;">
-                        Forgot your Security Access Key or Operator ID? Authenticate via your registered mobile number OTP to retrieve your Operator ID or reset your password.
+                        Forgot your Security Access Key or Operator ID? Authenticate via your registered administrator mobile (+91 8328580784) OTP to retrieve your Operator ID or reset your password.
                     </p>
                 </div>
                 """))
@@ -923,14 +942,20 @@ def render_ultra_premium_login(blocked_route: str = None):
 
                 # ---------------- STEP 1: ENTER MOBILE & SEND OTP ----------------
                 if not rec_otp and not rec_verified:
-                    st.html("<p style='font-size: 0.82rem; color: #CBD5E1; margin-bottom: 10px;'>Enter your registered mobile number to receive a 6-digit cryptographic verification OTP text message:</p>")
+                    st.html("<p style='font-size: 0.82rem; color: #CBD5E1; margin-bottom: 8px;'>Enter your authorized administrator mobile number to receive a 6-digit cryptographic verification OTP text message:</p>")
                     col_r_cc, col_r_m, col_r_btn = st.columns([1.1, 2.0, 1.3], vertical_alignment="bottom")
                     with col_r_cc:
-                        country_codes = ["🇮🇳 +91", "🇺🇸 +1", "🇬🇧 +44", "🇦🇪 +971", "🇸🇬 +65", "🇨🇦 +1", "🇦🇺 +61", "🇩🇪 +49"]
+                        country_codes = ["🇮🇳 +91"]
                         rec_sel_cc = st.selectbox("🌐 Code", options=country_codes, index=0, key="rec_country_code_select")
                     with col_r_m:
                         prev_m = st.session_state.get("last_entered_mobile", "8328580784")
-                        rec_m_in = st.text_input("📱 Registered Mobile Number", value=prev_m, placeholder="10-digit mobile", key="rec_mobile_input")
+                        rec_m_in = st.text_input(
+                            "📱 Registered Administrator Mobile",
+                            value=prev_m,
+                            placeholder="8328580784",
+                            help="Only authorized mobile number +91 8328580784 can initiate credentials recovery",
+                            key="rec_mobile_input"
+                        )
                     with col_r_btn:
                         if st_button_stretch("📩 Send OTP Text", type="primary", key="btn_send_rec_otp"):
                             st.session_state["last_entered_mobile"] = rec_m_in
@@ -940,6 +965,13 @@ def render_ultra_premium_login(blocked_route: str = None):
                                 st.rerun()
                             else:
                                 st.error(f"❌ {code_or_err}")
+
+                    st.html("""
+                    <div style="font-size: 0.72rem; color: #94A3B8; margin-top: 6px; display: flex; align-items: center; gap: 6px;">
+                        <span>🔒</span>
+                        <span><b>Security Policy:</b> Master recovery is strictly locked to registered administrator mobile <b>+91 8328580784</b>. Unregistered numbers cannot initiate recovery.</span>
+                    </div>
+                    """)
 
                 # ---------------- STEP 2: ENTER & MATCH OTP ----------------
                 elif rec_otp and not rec_verified:
@@ -990,11 +1022,14 @@ def render_ultra_premium_login(blocked_route: str = None):
                     col_r1, col_r2 = st.columns(2)
                     with col_r1:
                         if st_button_stretch("🔄 Resend Fresh OTP", key="btn_resend_rec_otp"):
-                            send_recovery_otp(rec_mobile, country_code=rec_cc, recovery_mode=rec_mode)
-                            st.toast("Fresh OTP dispatched to phone & Telegram!")
+                            ok, msg = send_recovery_otp(rec_mobile, country_code=rec_cc, recovery_mode=rec_mode)
+                            if ok:
+                                st.toast("Fresh OTP dispatched via SMS text message!")
+                            else:
+                                st.error(f"❌ {msg}")
                             st.rerun()
                     with col_r2:
-                        if st_button_stretch("✏️ Use Different Mobile", key="btn_change_rec_mobile"):
+                        if st_button_stretch("✏️ Edit Mobile Number", key="btn_change_rec_mobile"):
                             st.session_state.pop("rec_otp_code", None)
                             st.session_state.pop("rec_otp_mobile", None)
                             st.session_state.pop("rec_otp_expires_at", None)
