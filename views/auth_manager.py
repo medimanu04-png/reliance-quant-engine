@@ -54,8 +54,7 @@ def _get_authorized_recovery_mobiles() -> set[str]:
 def _get_auth_credentials() -> tuple[dict, str]:
     """Retrieves valid master authentication credentials from auth_credentials.json, secrets.toml, or defaults."""
     creds = {
-        "admin": "password",
-        "manoj": "password123"
+        "admin": "password"
     }
     secret_key = DEFAULT_SECRET
 
@@ -66,10 +65,6 @@ def _get_auth_credentials() -> tuple[dict, str]:
         p1 = auth_sec.get("password")
         if u1 and p1:
             creds[str(u1).strip()] = str(p1).strip()
-        u2 = auth_sec.get("admin_username")
-        p2 = auth_sec.get("admin_password")
-        if u2 and p2:
-            creds[str(u2).strip()] = str(p2).strip()
         secret_key = auth_sec.get("session_secret", DEFAULT_SECRET)
 
     # 2. Read from persistent auth_credentials.json (takes priority for user-reset passwords)
@@ -134,10 +129,6 @@ def update_operator_password(operator_id: str, new_password: str) -> tuple[bool,
                 if in_auth_section:
                     if op_clean == "admin" and stripped.startswith("password"):
                         new_lines.append(f'password = "{p_clean}"\n')
-                        password_updated = True
-                        continue
-                    elif op_clean == "manoj" and stripped.startswith("admin_password"):
-                        new_lines.append(f'admin_password = "{p_clean}"\n')
                         password_updated = True
                         continue
                     elif stripped.startswith(f"{op_clean}_password"):

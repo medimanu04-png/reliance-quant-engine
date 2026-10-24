@@ -38,7 +38,7 @@ def _clean_mobile(mobile_raw: str) -> str:
 
 
 def load_users() -> dict[str, dict]:
-    """Loads all registered users from JSON file, initializing super admin if missing."""
+    """Loads all registered users from JSON file."""
     users = {}
     if os.path.exists(REGISTERED_USERS_FILE):
         try:
@@ -49,22 +49,8 @@ def load_users() -> dict[str, dict]:
         except Exception:
             users = {}
 
-    # Ensure Super Admin always exists and is pre-approved
-    if SUPER_ADMIN_MOBILE not in users:
-        users[SUPER_ADMIN_MOBILE] = {
-            "mobile": SUPER_ADMIN_MOBILE,
-            "country_code": "+91",
-            "name": "Manoj",
-            "role": "trader",
-            "status": "APPROVED",
-            "registered_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
-            "approved_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
-            "approved_by": "SYSTEM_ROOT",
-            "last_login": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
-        }
-        save_users(users)
-
     return users
+
 
 
 def save_users(users: dict) -> bool:
@@ -133,12 +119,13 @@ def check_mobile_status(mobile_raw: str) -> tuple[str, str, dict | None]:
         return "PENDING_APPROVAL", f"Account status '{status}' is not authorized to log in.", user
 
 
-def register_user(mobile_raw: str, name: str, country_code: str = "+91") -> tuple[bool, str]:
+def register_user(mobile_raw: str = None, name: str = "", country_code: str = "+91", mobile: str = None) -> tuple[bool, str]:
     """
     Registers a new user after mobile OTP verification.
     Sets initial status to 'PENDING_APPROVAL' and dispatches Telegram alert to Admin.
     """
-    clean = _clean_mobile(mobile_raw)
+    raw = mobile_raw if mobile_raw is not None else (mobile or "")
+    clean = _clean_mobile(raw)
     if len(clean) != 10:
         return False, "Invalid mobile number. Must be 10 digits."
 
@@ -204,9 +191,6 @@ def approve_user(mobile_raw: str, approved_by: str = "admin") -> tuple[bool, str
 def revoke_user(mobile_raw: str, revoked_by: str = "admin") -> tuple[bool, str]:
     """Suspends / unregisters a user, blocking all future logins."""
     clean = _clean_mobile(mobile_raw)
-    if clean == SUPER_ADMIN_MOBILE:
-        return False, "Cannot revoke Super Administrator account."
-
     users = load_users()
     if clean not in users:
         return False, f"User +91 {clean} not found in registry."
@@ -224,9 +208,6 @@ def revoke_user(mobile_raw: str, revoked_by: str = "admin") -> tuple[bool, str]:
 def delete_user(mobile_raw: str) -> tuple[bool, str]:
     """Permanently deletes a user from registry."""
     clean = _clean_mobile(mobile_raw)
-    if clean == SUPER_ADMIN_MOBILE:
-        return False, "Cannot delete Super Administrator account."
-
     users = load_users()
     if clean not in users:
         return False, f"User +91 {clean} not found in registry."
@@ -431,7 +412,7 @@ def render_user_management_panel():
                     else:
                         st.error(f"❌ {msg}")
         with col_act2:
-            if status == "APPROVED" and not is_super:
+            if status == "APPROVED":
                 if st_button_stretch("⛔ Unregister / Revoke", key=f"{key_prefix}_rev_{mobile}"):
                     ok, msg = revoke_user(mobile, revoked_by=admin_op)
                     if ok:
@@ -440,14 +421,13 @@ def render_user_management_panel():
                     else:
                         st.error(f"❌ {msg}")
         with col_act3:
-            if not is_super:
-                if st_button_stretch("🗑️ Delete", key=f"{key_prefix}_del_{mobile}"):
-                    ok, msg = delete_user(mobile)
-                    if ok:
-                        st.toast(f"User +91 {mobile} deleted")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {msg}")
+            if st_button_stretch("🗑️ Delete", key=f"{key_prefix}_del_{mobile}"):
+                ok, msg = delete_user(mobile)
+                if ok:
+                    st.toast(f"User +91 {mobile} deleted")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg}")
 
     with tab_pending:
         pending_list = [item for item in users.items() if item[1].get("status") == "PENDING_APPROVAL"]
@@ -622,7 +602,7 @@ def render_dedicated_admin_portal():
                         st.rerun()
                     else:
                         st.error(f"❌ {msg}")
-            elif status == "APPROVED" and not is_super:
+            elif status == "APPROVED":
                 if st_button_stretch("⛔ Unregister / Revoke", key=f"{prefix}_rev_{mobile}"):
                     ok, msg = revoke_user(mobile, revoked_by="admin")
                     if ok:
@@ -631,7 +611,7 @@ def render_dedicated_admin_portal():
                     else:
                         st.error(f"❌ {msg}")
         with b_c3:
-            if not is_super and status != "PENDING_APPROVAL":
+            if status != "PENDING_APPROVAL":
                 if st_button_stretch("🗑️ Remove User", key=f"{prefix}_del_{mobile}"):
                     ok, msg = delete_user(mobile)
                     if ok:
