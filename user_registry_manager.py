@@ -470,7 +470,7 @@ def render_dedicated_admin_portal():
         max-width: 1120px !important;
         margin-left: auto !important;
         margin-right: auto !important;
-        padding-top: 1.8rem !important;
+        padding-top: 5.0rem !important;
         padding-bottom: 3rem !important;
         padding-left: 1.5rem !important;
         padding-right: 1.5rem !important;
@@ -521,11 +521,11 @@ def render_dedicated_admin_portal():
     col_th1, col_th2 = st.columns([4.4, 1.1], vertical_alignment="center")
     with col_th1:
         st.html("""
-        <div style="display: flex; align-items: center; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 14px; padding: 6px 0;">
             <div style="font-size: 2.1rem; background: rgba(56, 189, 248, 0.12); border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 14px; width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">👑</div>
             <div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 1.55rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.3px; line-height: 1.2;">
+                    <span style="font-size: 1.50rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.3px; line-height: 1.25;">
                         User Access &amp; Registration Approval Center
                     </span>
                     <span style="background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.45); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 3px 8px; border-radius: 6px; letter-spacing: 0.8px; text-transform: uppercase; white-space: nowrap;">
