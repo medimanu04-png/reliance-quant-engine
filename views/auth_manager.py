@@ -1438,5 +1438,8 @@ def render_authenticated_user_sidebar():
 def render_dedicated_admin_portal():
     """Renders dedicated full-page Administrator Console solely for user approval/reject/unregistered."""
     import user_registry_manager as user_reg
+    import importlib
+    importlib.reload(user_reg)
     user_reg.render_dedicated_admin_portal()
+
 
