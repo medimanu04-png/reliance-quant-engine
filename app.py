@@ -134,6 +134,14 @@ if not is_authenticated:
     auth_mgr.render_ultra_premium_login(blocked_route=blocked_route)
     st.stop()
 
+# 2.1 Dedicated Administrator User Management Console
+# Admin login credentials are strictly for user approval, rejection, and unregistering.
+# Decoupled completely from regular quant trading UI.
+active_auth_user = str(st.session_state.get("auth_user", "")).strip().lower()
+if active_auth_user == "admin":
+    auth_mgr.render_dedicated_admin_portal()
+    st.stop()
+
 # 3. Authenticated Session Routing
 pg = st.navigation({
     "Overview": [p_home],

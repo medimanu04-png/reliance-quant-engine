@@ -237,6 +237,20 @@ def delete_user(mobile_raw: str) -> tuple[bool, str]:
     return True, f"User {user_name} (+91 {clean}) permanently deleted from registry."
 
 
+def reject_user(mobile_raw: str, rejected_by: str = "admin") -> tuple[bool, str]:
+    """Rejects a pending registration request and removes it from the queue."""
+    clean = _clean_mobile(mobile_raw)
+    users = load_users()
+    if clean not in users:
+        return False, f"User +91 {clean} not found in registry."
+
+    user_name = users[clean].get("name", "Trader")
+    del users[clean]
+    save_users(users)
+    _notify_admin_user_status_change(clean, user_name, "REJECTED_AND_REMOVED", rejected_by)
+    return True, f"Registration for {user_name} (+91 {clean}) rejected and removed from registry."
+
+
 def record_user_login(mobile_raw: str):
     """Updates last login timestamp for user."""
     clean = _clean_mobile(mobile_raw)
@@ -472,3 +486,240 @@ def render_user_management_panel():
     with tab_all:
         for mobile, u in users.items():
             _render_user_card(mobile, u, key_prefix="all")
+
+
+def render_dedicated_admin_portal():
+    """
+    Renders dedicated, full-page Administrator Console.
+    This page is shown strictly when logged in via 'admin' credentials.
+    It provides complete controls to view registered users, approve, reject, unregister, or remove users.
+    Completely decoupled from the regular quant trading desk.
+    """
+    from views.auth_manager import logout_user
+
+    st.html("""
+    <style>
+    .block-container {
+        max-width: 1050px !important;
+        padding-top: 1.5rem !important;
+        padding-bottom: 3rem !important;
+    }
+    .admin-card {
+        background: radial-gradient(ellipse at 50% 0%, rgba(14, 165, 233, 0.12) 0%, rgba(8, 13, 26, 0.98) 100%) !important;
+        border: 1px solid rgba(56, 189, 248, 0.28) !important;
+        border-radius: 16px !important;
+        padding: 22px 26px !important;
+        margin-bottom: 20px !important;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6) !important;
+    }
+    </style>
+    """)
+
+    # Top Header Bar with Logout
+    col_th1, col_th2 = st.columns([3.8, 1.2], vertical_alignment="center")
+    with col_th1:
+        st.html("""
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 2.2rem; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 12px; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;">👑</div>
+            <div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.45); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 2px 8px; border-radius: 6px; letter-spacing: 0.8px; text-transform: uppercase;">
+                        ADMINISTRATOR CONSOLE
+                    </span>
+                    <span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: #34D399; font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 6px;">
+                        OPERATOR ID: ADMIN
+                    </span>
+                </div>
+                <h1 style="margin: 2px 0 0 0; font-size: 1.65rem; font-weight: 900; color: #FFFFFF; letter-spacing: -0.4px;">
+                    User Access &amp; Registration Approval Center
+                </h1>
+                <div style="font-size: 0.80rem; color: #94A3B8; margin-top: 2px;">
+                    Review pending mobile registrations, approve or reject trader access, and unregister accounts.
+                </div>
+            </div>
+        </div>
+        """)
+    with col_th2:
+        if st_button_stretch("🔒 Exit & Logout", key="btn_admin_portal_logout", help="Log out of Administrator Console"):
+            logout_user()
+
+    st.markdown("---")
+
+    stats = get_user_stats()
+
+    # KPI Metric Cards
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("👥 Total Registered", stats["total"])
+    with c2:
+        st.metric("✅ Approved Active", stats["approved"])
+    with c3:
+        st.metric("⏳ Pending Approval", stats["pending"], delta="Action Required" if stats["pending"] > 0 else None)
+    with c4:
+        st.metric("⛔ Revoked / Inactive", stats["revoked"])
+
+    st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+
+    # Search Bar
+    search_query = st.text_input("🔍 Search Users", placeholder="Search by trader name or 10-digit mobile number...", key="admin_search_query")
+
+    users = load_users()
+    if search_query and search_query.strip():
+        sq = search_query.strip().lower()
+        users = {m: u for m, u in users.items() if sq in m or sq in u.get("name", "").lower()}
+
+    # Tabs
+    t_pending, t_approved, t_revoked, t_all, t_manual = st.tabs([
+        f"⏳ Pending Approvals ({stats['pending']})",
+        f"✅ Approved Traders ({stats['approved']})",
+        f"⛔ Revoked / Unregistered ({stats['revoked']})",
+        f"📋 All Records ({len(users)})",
+        "➕ Direct Add / Whitelist"
+    ])
+
+    def _render_portal_row(mobile: str, u: dict, prefix: str):
+        status = str(u.get("status", "PENDING_APPROVAL")).upper()
+        name = u.get("name", "Trader")
+        reg_time = u.get("registered_at", "--")
+        last_login = u.get("last_login", "Never")
+        approved_at = u.get("approved_at", "--")
+        role = str(u.get("role", "trader")).upper()
+        is_super = (mobile == SUPER_ADMIN_MOBILE)
+
+        if status == "APPROVED":
+            status_badge = '<span style="background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid #10B981; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 800;">ACTIVE APPROVED</span>'
+            border_c = "rgba(16, 185, 129, 0.35)"
+        elif status == "PENDING_APPROVAL":
+            status_badge = '<span style="background: rgba(245, 158, 11, 0.2); color: #FBBF24; border: 1px solid #F59E0B; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 800;">AWAITING APPROVAL</span>'
+            border_c = "rgba(245, 158, 11, 0.5)"
+        else:
+            status_badge = '<span style="background: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid #EF4444; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 800;">UNREGISTERED / REVOKED</span>'
+            border_c = "rgba(239, 68, 68, 0.35)"
+
+        role_badge = f'<span style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">{role}</span>'
+
+        st.html(f"""
+        <div style="background: rgba(15, 23, 42, 0.75); border: 1.5px solid {border_c}; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.10rem; font-weight: 800; color: #FFFFFF;">👤 {name}</span>
+                    {role_badge}
+                    {status_badge}
+                </div>
+                <div style="font-size: 1.05rem; font-weight: 900; color: #38BDF8; font-family: monospace;">
+                    📱 +91 {mobile}
+                </div>
+            </div>
+            <div style="font-size: 0.76rem; color: #94A3B8; margin-top: 8px; display: flex; justify-content: space-between; border-top: 1px solid rgba(148, 163, 184, 0.1); padding-top: 6px;">
+                <span>📅 Registered: <b style="color: #E2E8F0;">{reg_time}</b></span>
+                <span>✅ Approved: <b style="color: #E2E8F0;">{approved_at}</b></span>
+                <span>⏱️ Last Login: <b style="color: #E2E8F0;">{last_login}</b></span>
+            </div>
+        </div>
+        """)
+
+        # Action Buttons
+        b_c1, b_c2, b_c3, _ = st.columns([1.3, 1.5, 1.2, 2.0])
+
+        with b_c1:
+            if status != "APPROVED":
+                if st_button_stretch("✅ Approve User", key=f"{prefix}_app_{mobile}", type="primary"):
+                    ok, msg = approve_user(mobile, approved_by="admin")
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+        with b_c2:
+            if status == "PENDING_APPROVAL":
+                if st_button_stretch("❌ Reject Request", key=f"{prefix}_rej_{mobile}"):
+                    ok, msg = reject_user(mobile, rejected_by="admin")
+                    if ok:
+                        st.warning(f"⚠️ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+            elif status == "APPROVED" and not is_super:
+                if st_button_stretch("⛔ Unregister / Revoke", key=f"{prefix}_rev_{mobile}"):
+                    ok, msg = revoke_user(mobile, revoked_by="admin")
+                    if ok:
+                        st.warning(f"⚠️ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+        with b_c3:
+            if not is_super and status != "PENDING_APPROVAL":
+                if st_button_stretch("🗑️ Remove User", key=f"{prefix}_del_{mobile}"):
+                    ok, msg = delete_user(mobile)
+                    if ok:
+                        st.toast(f"User +91 {mobile} removed")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+
+    with t_pending:
+        pending_users = [item for item in users.items() if item[1].get("status") == "PENDING_APPROVAL"]
+        if not pending_users:
+            st.html("""
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px dashed rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 18px; text-align: center; color: #34D399; font-weight: 700;">
+                🎉 All caught up! No pending registration requests awaiting review.
+            </div>
+            """)
+        else:
+            st.warning(f"⚠️ {len(pending_users)} trader registration request(s) awaiting your decision:")
+            for m, u in pending_users:
+                _render_portal_row(m, u, prefix="portal_pend")
+
+    with t_approved:
+        approved_users = [item for item in users.items() if item[1].get("status") == "APPROVED"]
+        if not approved_users:
+            st.info("No approved users found.")
+        else:
+            for m, u in approved_users:
+                _render_portal_row(m, u, prefix="portal_appr")
+
+    with t_revoked:
+        revoked_users = [item for item in users.items() if item[1].get("status") == "REVOKED"]
+        if not revoked_users:
+            st.info("No revoked / unregistered users found.")
+        else:
+            for m, u in revoked_users:
+                _render_portal_row(m, u, prefix="portal_rev")
+
+    with t_all:
+        for m, u in users.items():
+            _render_portal_row(m, u, prefix="portal_all")
+
+    with t_manual:
+        st.html("<p style='font-size: 0.82rem; color: #CBD5E1;'>Directly add and pre-approve a trader mobile number without requiring them to wait in pending queue:</p>")
+        with st.form("manual_add_trader_form"):
+            ca_n, ca_m = st.columns(2)
+            with ca_n:
+                add_name = st.text_input("👤 Trader Full Name", placeholder="e.g. Vikram Verma")
+            with ca_m:
+                add_mob = st.text_input("📱 Mobile Number (10 digits)", placeholder="e.g. 9876543210")
+
+            add_submit = st_form_submit_button_stretch("⚡ Add & Pre-Approve Trader", type="primary")
+            if add_submit:
+                clean_m = _clean_mobile(add_mob)
+                if len(clean_m) != 10:
+                    st.error("❌ Please enter a valid 10-digit mobile number.")
+                elif not add_name or len(add_name.strip()) < 2:
+                    st.error("❌ Please enter trader name.")
+                else:
+                    all_u = load_users()
+                    all_u[clean_m] = {
+                        "mobile": clean_m,
+                        "country_code": "+91",
+                        "name": add_name.strip(),
+                        "role": "trader",
+                        "status": "APPROVED",
+                        "registered_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
+                        "approved_at": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST"),
+                        "approved_by": "admin (manual_whitelist)",
+                        "last_login": None
+                    }
+                    save_users(all_u)
+                    st.success(f"✅ Trader {add_name} (+91 {clean_m}) has been directly added and APPROVED!")
+                    st.rerun()
+

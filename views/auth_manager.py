@@ -1466,3 +1466,10 @@ def render_authenticated_user_sidebar():
 
     if st_sidebar_button_stretch("🔒 Lock Terminal (Logout)", key="sb_btn_logout", help="Revoke session and lock terminal"):
         logout_user()
+
+
+def render_dedicated_admin_portal():
+    """Renders dedicated full-page Administrator Console solely for user approval/reject/unregistered."""
+    import user_registry_manager as user_reg
+    user_reg.render_dedicated_admin_portal()
+
