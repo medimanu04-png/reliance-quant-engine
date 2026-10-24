@@ -92,6 +92,8 @@ st.set_page_config(
 )
 
 import views.auth_manager as auth_mgr
+import importlib
+importlib.reload(auth_mgr)
 
 # 1. Midnight Session Rollover (Cleanly resets intraday states on calendar date transition)
 today_iso = datetime.now(IST).strftime("%Y-%m-%d")
